@@ -1,0 +1,29 @@
+// pass: verification syntax (C13) parses, checks, and is erased in C
+spec def size(xs: List): I64 = xs match
+  case Nil => 0
+  case Cons(_, t) => 1 + size(t)
+
+def count(xs: List): I64
+  requires size(xs) >= 0
+  ensures result == size(xs)
+  proof using size
+=
+  var c = xs
+  var n = 0
+  while c match
+    case Nil => false
+    case Cons(_, _) => true
+  do
+    invariant n + size(c) == size(xs)
+    decreases size(c)
+    c = c match
+      case Nil => c
+      case Cons(_, t) => t
+    n = n + 1
+  n
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(count(build(r, 5)))
+  rt_print("\n")
+  0

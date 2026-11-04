@@ -140,7 +140,7 @@ def check(r: Region, ds: Nodes): Unit =
   while !isNil(c) do
     val d = head(c)
     if kind(d) == DFn then checkSig(r, ds, d) else ()
-    if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else ()
+    if kind(d) == DFn && num(d) != 1 then checkFn(r, ds, d) else ()
     if kind(d) == DEnum then checkEnum(ds, d) else ()
     if kind(d) == DProto then checkProto(ds, d) else ()
     if kind(d) == DHandler then checkHandler(r, ds, d) else ()
@@ -537,7 +537,8 @@ def chkBlock(r: Region, ds: Nodes, env0: Nodes, gam0: Nodes, ss: Nodes, line: I6
   while !isNil(c) do
     val s = head(c)
     val k = kind(s)
-    if k == SVal then
+    if k == SClause then ()
+    else if k == SVal then
       val x = chk(r, ds, env, gam, kid(s, 0))
       gam = tgGam(x)
       var t = tgTy(x)

@@ -16,7 +16,7 @@ enum Kind:
   case TyTo
   case TyCap
   // decls
-  case DFn       // s name, n 1 = extern, a = [Params, ret Ty, body?]
+  case DFn       // s name, n 0 def / 1 extern / 2 spec def (Lean only), a = [Params, ret Ty, body?, Names clauses?]
   case DEnum     // s name, a = cases
   case DCase     // s name, t enum name, n tag, a = [Params]
   case DProto    // s name, t start, a = [Names states, Names ends, Name drop, Ops]
@@ -45,6 +45,7 @@ enum Kind:
   case XAssign   // s name, a = [e]
   case SVal      // s name, n 1 = var, a = [e, Ty?]
   case SHandle   // s name, t handler, a = args
+  case SClause   // s requires/ensures/decreases/invariant/proof, t proof mode using/by/lean, a = [e] or names
   // checker
   case BVar      // s name, t protocol or "", n local id (-1 = param), a = [Ty] (checker)
   case BCap      // s name, t C name, a = [Ty protocol]

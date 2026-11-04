@@ -57,6 +57,7 @@ def parseFile(r: Region, toks: Nodes): Nodes =
 def decl(r: Region, ts: Nodes): PR =
   if isT(ts, "extern") then fn(r, tail(ts), 1)
   else if isT(ts, "def") then fn(r, ts, 0)
+  else if isT(ts, "spec") then fn(r, tail(ts), 2)
   else if isT(ts, "enum") then enumDecl(r, tail(ts))
   else if isT(ts, "protocol") then protoDecl(r, tail(ts))
   else if isT(ts, "handler") then handlerDecl(r, tail(ts))
@@ -72,8 +73,49 @@ def fn(r: Region, ts0: Nodes, ext: I64): PR =
   val rt = ty(r, expect(pr(ps), ":"))
   if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), one(r, pn(rt)))), pr(rt))
   else
-    val b = rhs(r, expect(pr(rt), "="))
-    PR(Node(DFn, name, "", 0, line, NCons(pn(ps), NCons(pn(rt), one(r, pn(b))))), pr(b))
+    // contract clauses, indented between the signature and `=`
+    val cl = if isK(pr(rt), TNl) && isK(tail(pr(rt)), TIndent) then clauses(r, tail(pr(rt))) else PR(list(r, Names, line, NNil), pr(rt))
+    val b = rhs(r, expect(pr(cl), "="))
+    PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), one(r, pn(cl)))))), pr(b))
+
+def clauses(r: Region, ts0: Nodes): PR =
+  var ts = expectK(ts0, TIndent, "indent")
+  var cs = NNil
+  while !isK(ts, TDedent) do
+    val p = clause(r, ts)
+    cs = NCons(pn(p), cs)
+    ts = endLine(pr(p))
+  PR(list(r, Names, at(ts0), rev(r, cs)), tail(ts))
+
+def isClause(ts: Nodes): Bool =
+  isT(ts, "requires") || isT(ts, "ensures") || isT(ts, "decreases") || isT(ts, "invariant") || isT(ts, "proof")
+
+// requires e | ensures e | decreases e | invariant e | proof using a, b | proof by induction x | proof lean "tactics"
+def clause(r: Region, ts0: Nodes): PR =
+  val line = at(ts0)
+  val kw = text(head(ts0))
+  if !isClause(ts0) then perr(ts0, "requires, ensures, decreases, invariant or proof") else ()
+  if eqs(kw, "proof") then
+    val ts = tail(ts0)
+    if isT(ts, "using") then
+      var t = tail(ts)
+      var xs = NNil
+      xs = NCons(leaf(r, Name, needIdent(t), line), xs)
+      t = tail(t)
+      while isT(t, ",") do
+        xs = NCons(leaf(r, Name, needIdent(tail(t)), line), xs)
+        t = drop(t, 2)
+      PR(Node(SClause, kw, "using", 0, line, rev(r, xs)), t)
+    else if isT(ts, "by") then
+      val t = expect(tail(ts), "induction")
+      PR(Node(SClause, kw, "by", 0, line, one(r, leaf(r, Name, needIdent(t), line))), tail(t))
+    else
+      val t = expect(ts, "lean")
+      if !isK(t, TStr) then perr(t, "a string of Lean tactics") else ()
+      PR(Node(SClause, kw, "lean", 0, line, one(r, leaf(r, XStr, text(head(t)), line))), tail(t))
+  else
+    val e = expr(r, tail(ts0))
+    PR(Node(SClause, kw, "", 0, line, one(r, pn(e))), pr(e))
 
 def enumDecl(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
@@ -237,6 +279,7 @@ def stmt(r: Region, ts0: Nodes): PR =
     else ()
     val e = rhs(r, expect(ts, "="))
     PR(Node(SVal, name, "", mut, line, NCons(pn(e), tyk)), pr(e))
+  else if isT(ts0, "invariant") || isT(ts0, "decreases") then clause(r, ts0)
   else if isT(ts0, "handle") then
     val name = needIdent(tail(ts0))
     val ts = expect(drop(ts0, 2), "=")

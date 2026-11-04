@@ -92,7 +92,7 @@ def emitProgram(r: Region, ds: Nodes): Unit =
   c = ds
   while !isNil(c) do
     val d = head(c)
-    if kind(d) == DFn then
+    if kind(d) == DFn && num(d) != 2 then
       sig(ds, d, 1 - num(d), "")
       say(";\n")
     else if kind(d) == DHandler then
@@ -407,7 +407,8 @@ def exBlock(r: Region, ds: Nodes, cs: Nodes, env0: Nodes, ss: Nodes): Unit =
   while !isNil(c) do
     val s = head(c)
     val k = kind(s)
-    if k == SVal then
+    if k == SClause then ()
+    else if k == SVal then
       val b = Node(BVar, text(s), "", len(env), lineOf(s), NNil)
       if isNil(tail(kids(s))) then say("__auto_type ") else ctype(ds, kid(s, 1))
       say(" ")
