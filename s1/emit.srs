@@ -1,0 +1,464 @@
+// S1 emitter: decl nodes -> GNU C (statement expressions), same lowering as s0/emit.zig.
+// cs = all DCase nodes (t = enum name). env = BVar nodes, innermost first.
+
+def allCases(r: Region, ds: Nodes): Nodes =
+  var out = NNil
+  var c = ds
+  while !isNil(c) do
+    if kind(head(c)) == DEnum then out = append(r, kids(head(c)), out) else ()
+    c = tail(c)
+  out
+
+def ctype(ds: Nodes, t: Node): Unit =
+  val n = text(t)
+  if eqs(n, "I64") || eqs(n, "Unit") then say("int64_t")
+  else if eqs(n, "Bool") then say("bool")
+  else if eqs(n, "Str") then say("srs_str")
+  else if eqs(n, "Ptr") then say("void*")
+  else if found(find(ds, DEnum, n)) then
+    say("struct E_")
+    say(n)
+    say("*")
+  else if found(find(ds, DProto, n)) then say("srs_cap*")
+  else
+    rt_eprint(n)
+    fatal(": unknown type", lineOf(t))
+
+// C name of a binding
+def cname(b: Node): Unit =
+  if num(b) < 0 then
+    say("p_")
+    say(text(b))
+  else
+    say("v_")
+    say(text(b))
+    say("_")
+    sayn(num(b))
+
+// fn naming: tag 0 = extern (C name), 1 = def (f_), 2 = handler fn (h_<H>_)
+def fname(f: Node, tag: I64, h: Str): Unit =
+  if tag == 1 then say("f_") else ()
+  if tag == 2 then
+    say("h_")
+    say(h)
+    say("_")
+  else ()
+  say(text(f))
+
+def sig(ds: Nodes, f: Node, tag: I64, h: Str): Unit =
+  if tag != 0 then say("static ") else ()
+  ctype(ds, kid(f, 1))
+  say(" ")
+  fname(f, tag, h)
+  say("(")
+  var ps = kids(kid(f, 0))
+  if isNil(ps) then say("void") else ()
+  var first = true
+  while !isNil(ps) do
+    if !first then say(", ") else ()
+    first = false
+    ctype(ds, kid(head(ps), 0))
+    say(" p_")
+    say(text(head(ps)))
+    ps = tail(ps)
+  say(")")
+
+def unescLen(s: Str): I64 =
+  var n = 0
+  var i = 0
+  while i < rt_str_len(s) do
+    if rt_str_at(s, i) == '\\' then i = i + 2 else i = i + 1
+    n = n + 1
+  n
+
+def emitProgram(r: Region, ds: Nodes): Unit =
+  val cs = allCases(r, ds)
+  say("#include <stdint.h>\n#include <stdbool.h>\n")
+  say("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
+  say("typedef struct { void* self; void* const* vt; int64_t live; } srs_cap;\n")
+  say("void rt_init(int argc, char** argv);\n")
+  var c = ds
+  while !isNil(c) do
+    if kind(head(c)) == DEnum then
+      say("struct E_")
+      say(text(head(c)))
+      say(";\n")
+    else ()
+    c = tail(c)
+  c = ds
+  while !isNil(c) do
+    if kind(head(c)) == DEnum then enumDef(ds, head(c)) else ()
+    c = tail(c)
+  c = ds
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == DFn then
+      sig(ds, d, 1 - num(d), "")
+      say(";\n")
+    else if kind(d) == DHandler then
+      var fs = kids(d)
+      while !isNil(fs) do
+        sig(ds, head(fs), 2, text(d))
+        say(";\n")
+        fs = tail(fs)
+    else ()
+    c = tail(c)
+  c = ds
+  while !isNil(c) do
+    if kind(head(c)) == DHandler then vtable(ds, head(c)) else ()
+    c = tail(c)
+  c = ds
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == DFn && num(d) == 0 then body(r, ds, cs, d, 1, "")
+    else if kind(d) == DHandler then
+      var fs = kids(d)
+      while !isNil(fs) do
+        body(r, ds, cs, head(fs), 2, text(d))
+        fs = tail(fs)
+    else ()
+    c = tail(c)
+  if found(find(ds, DFn, "main")) then say("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()
+
+def protoOps(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 3))
+
+def vtable(ds: Nodes, h: Node): Unit =
+  say("static void* const vt_")
+  say(text(h))
+  say("[] = {")
+  var ops = protoOps(ds, text2(h))
+  while !isNil(ops) do
+    say(" (void*)h_")
+    say(text(h))
+    say("_")
+    say(text(head(ops)))
+    say(",")
+    ops = tail(ops)
+  say(" 0 };\n")
+
+def enumDef(ds: Nodes, d: Node): Unit =
+  say("struct E_")
+  say(text(d))
+  say(" { int64_t tag; union {")
+  var c = kids(d)
+  while !isNil(c) do
+    var fs = kids(kid(head(c), 0))
+    if !isNil(fs) then
+      say(" struct {")
+      while !isNil(fs) do
+        say(" ")
+        ctype(ds, kid(head(fs), 0))
+        say(" f_")
+        say(text(head(fs)))
+        say(";")
+        fs = tail(fs)
+      say(" } C_")
+      say(text(head(c)))
+      say(";")
+    else ()
+    c = tail(c)
+  say(" int64_t none_; } u; };\n")
+  c = kids(d)
+  while !isNil(c) do
+    if isNil(kids(kid(head(c), 0))) then
+      say("static struct E_")
+      say(text(d))
+      say(" N_")
+      say(text(head(c)))
+      say(" = { ")
+      sayn(num(head(c)))
+      say(", { 0 } };\n")
+    else ()
+    c = tail(c)
+
+def paramEnv(r: Region, ds: Nodes, ps: Nodes): Nodes =
+  var env = NNil
+  var c = ps
+  while !isNil(c) do
+    val p = head(c)
+    val tn = text(kid(p, 0))
+    env = NCons(Node(BVar, text(p), if found(find(ds, DProto, tn)) then tn else "", -1, lineOf(p), kids(p)), env)
+    c = tail(c)
+  env
+
+def body(r: Region, ds: Nodes, cs: Nodes, f: Node, tag: I64, h: Str): Unit =
+  sig(ds, f, tag, h)
+  say(" { return ")
+  ex(r, ds, cs, paramEnv(r, ds, kids(kid(f, 0))), kid(f, 2))
+  say("; }\n")
+
+def exArgs(r: Region, ds: Nodes, cs: Nodes, env: Nodes, xs: Nodes, lead: Bool): Unit =
+  var c = xs
+  var first = !lead
+  while !isNil(c) do
+    if !first then say(", ") else ()
+    first = false
+    ex(r, ds, cs, env, head(c))
+    c = tail(c)
+
+// innermost Region capability
+def regionOf(env: Nodes): Node =
+  var c = env
+  var res = NoNode
+  while !found(res) && !isNil(c) do
+    if eqs(text2(head(c)), "Region") then res = head(c) else ()
+    c = tail(c)
+  res
+
+def opIndex(ops: Nodes, name: Str): I64 = index(ops, name)
+
+def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
+  val k = kind(e)
+  if k == XInt then
+    say("((int64_t)")
+    sayn(num(e))
+    say(")")
+  else if k == XBool then say(if num(e) == 1 then "true" else "false")
+  else if k == XUnit then say("((int64_t)0)")
+  else if k == XStr then
+    say("((srs_str){(const uint8_t*)\"")
+    say(text(e))
+    say("\", ")
+    sayn(unescLen(text(e)))
+    say("})")
+  else if k == XName then
+    val b = find(env, BVar, text(e))
+    if found(b) then cname(b)
+    else
+      say("(&N_")
+      say(text(e))
+      say(")")
+  else if k == XCall then
+    val c = find(cs, DCase, text(e))
+    if found(c) then exCtor(r, ds, cs, env, c, kids(e))
+    else
+      val f = find(ds, DFn, text(e))
+      if num(f) == 0 then say("f_") else ()
+      say(text(e))
+      say("(")
+      exArgs(r, ds, cs, env, kids(e), false)
+      say(")")
+  else if k == XMethod then exMethod(r, ds, cs, env, e)
+  else if k == XBin then
+    say("(")
+    ex(r, ds, cs, env, kid(e, 0))
+    say(" ")
+    say(text(e))
+    say(" ")
+    ex(r, ds, cs, env, kid(e, 1))
+    say(")")
+  else if k == XUn then
+    say("(")
+    say(text(e))
+    ex(r, ds, cs, env, kid(e, 0))
+    say(")")
+  else if k == XIf then
+    say("(")
+    ex(r, ds, cs, env, kid(e, 0))
+    say(" ? ")
+    ex(r, ds, cs, env, kid(e, 1))
+    say(" : ")
+    ex(r, ds, cs, env, kid(e, 2))
+    say(")")
+  else if k == XMatch then exMatch(r, ds, cs, env, e)
+  else if k == XBlock then exBlock(r, ds, cs, env, kids(e))
+  else if k == XWhile then
+    say("({ while (")
+    ex(r, ds, cs, env, kid(e, 0))
+    say(") { (void)(")
+    ex(r, ds, cs, env, kid(e, 1))
+    say("); } (int64_t)0; })")
+  else if k == XAssign then
+    say("(")
+    cname(find(env, BVar, text(e)))
+    say(" = (")
+    ex(r, ds, cs, env, kid(e, 0))
+    say("), (int64_t)0)")
+  else fatal("internal: expression kind", lineOf(e))
+
+def exMethod(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
+  val b = find(env, BVar, text(e))
+  val p = find(ds, DProto, text2(b))
+  val ops = kids(kid(p, 3))
+  val op = find(ops, DOp, text2(e))
+  val ends = kids(kid(p, 1))
+  var tr = kids(kid(op, 2))
+  var kills = !isNil(tr)
+  while !isNil(tr) do
+    kills = kills && has(ends, text2(head(tr)))
+    tr = tail(tr)
+  say("({ __auto_type r_ = ((")
+  ctype(ds, kid(op, 1))
+  say("(*)(void*")
+  var ps = kids(kid(op, 0))
+  while !isNil(ps) do
+    say(", ")
+    ctype(ds, kid(head(ps), 0))
+    ps = tail(ps)
+  say("))(")
+  cname(b)
+  say("->vt[")
+  sayn(opIndex(ops, text2(e)))
+  say("]))(")
+  cname(b)
+  say("->self")
+  exArgs(r, ds, cs, env, kids(e), true)
+  say("); ")
+  if kills then
+    cname(b)
+    say("->live = 0; ")
+  else ()
+  say("r_; })")
+
+def exCtor(r: Region, ds: Nodes, cs: Nodes, env: Nodes, c: Node, xs: Nodes): Unit =
+  val reg = regionOf(env)
+  val u = len(env)
+  say("({ struct E_")
+  say(text2(c))
+  say("* o")
+  sayn(u)
+  say(" = (struct E_")
+  say(text2(c))
+  say("*)((void*(*)(void*, int64_t))(")
+  cname(reg)
+  say("->vt[")
+  sayn(opIndex(protoOps(ds, "Region"), "alloc"))
+  say("]))(")
+  cname(reg)
+  say("->self, (int64_t)sizeof(struct E_")
+  say(text2(c))
+  say(")); o")
+  sayn(u)
+  say("->tag = ")
+  sayn(num(c))
+  say(";")
+  var a = xs
+  var fs = kids(kid(c, 0))
+  while !isNil(a) do
+    say(" o")
+    sayn(u)
+    say("->u.C_")
+    say(text(c))
+    say(".f_")
+    say(text(head(fs)))
+    say(" = ")
+    ex(r, ds, cs, env, head(a))
+    say(";")
+    a = tail(a)
+    fs = tail(fs)
+  say(" o")
+  sayn(u)
+  say("; })")
+
+def exMatch(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
+  val u = len(env)
+  say("({ __auto_type s")
+  sayn(u)
+  say(" = ")
+  ex(r, ds, cs, env, kid(e, 0))
+  say("; ")
+  var arms = tail(kids(e))
+  while !isNil(arms) do
+    val arm = head(arms)
+    val last = isNil(tail(arms))
+    var env2 = env
+    if !eqs(text(arm), "_") then
+      val c = find(cs, DCase, text(arm))
+      if !last then
+        say("s")
+        sayn(u)
+        say("->tag == ")
+        sayn(num(c))
+        say(" ? ")
+      else ()
+      say("({ ")
+      var bs = tail(kids(arm))
+      var fs = kids(kid(c, 0))
+      while !isNil(bs) do
+        val bn = text(head(bs))
+        if !eqs(bn, "_") then
+          val b = Node(BVar, bn, "", len(env2), lineOf(arm), kids(head(fs)))
+          say("__auto_type ")
+          cname(b)
+          say(" = s")
+          sayn(u)
+          say("->u.C_")
+          say(text(c))
+          say(".f_")
+          say(text(head(fs)))
+          say("; ")
+          env2 = NCons(b, env2)
+        else ()
+        bs = tail(bs)
+        fs = tail(fs)
+    else say("({ ")
+    ex(r, ds, cs, env2, kid(arm, 0))
+    say("; })")
+    if !last then say(" : ") else ()
+    arms = tail(arms)
+  say("; })")
+
+def exBlock(r: Region, ds: Nodes, cs: Nodes, env0: Nodes, ss: Nodes): Unit =
+  var env = env0
+  var caps = NNil
+  var c = ss
+  var hasLast = false
+  say("({ ")
+  while !isNil(c) do
+    val s = head(c)
+    val k = kind(s)
+    if k == SVal then
+      val b = Node(BVar, text(s), "", len(env), lineOf(s), NNil)
+      if isNil(tail(kids(s))) then say("__auto_type ") else ctype(ds, kid(s, 1))
+      say(" ")
+      cname(b)
+      say(" = ")
+      ex(r, ds, cs, env, kid(s, 0))
+      say("; ")
+      env = NCons(b, env)
+    else if k == SHandle then
+      val h = find(ds, DHandler, text2(s))
+      val b = Node(BVar, text(s), text2(h), len(env), lineOf(s), NNil)
+      say("srs_cap ")
+      cname(b)
+      say("_v = { h_")
+      say(text2(s))
+      say("_init(")
+      exArgs(r, ds, cs, env, kids(s), false)
+      say("), vt_")
+      say(text2(s))
+      say(", 1 }; srs_cap* ")
+      cname(b)
+      say(" = &")
+      cname(b)
+      say("_v; ")
+      env = NCons(b, env)
+      caps = NCons(b, caps)
+    else if isNil(tail(c)) then
+      say("__auto_type res_ = ")
+      ex(r, ds, cs, env, s)
+      say("; ")
+      hasLast = true
+    else
+      say("(void)(")
+      ex(r, ds, cs, env, s)
+      say("); ")
+    c = tail(c)
+  if !hasLast then say("__auto_type res_ = (int64_t)0; ") else ()
+  while !isNil(caps) do
+    val b = head(caps)
+    val p = find(ds, DProto, text2(b))
+    val dn = text(kid(p, 2))
+    if rt_str_len(dn) > 0 then
+      say("if (")
+      cname(b)
+      say("->live) ((int64_t(*)(void*))(")
+      cname(b)
+      say("->vt[")
+      sayn(opIndex(kids(kid(p, 3)), dn))
+      say("]))(")
+      cname(b)
+      say("->self); ")
+    else ()
+    caps = tail(caps)
+  say("res_; })")
