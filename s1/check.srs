@@ -1,2 +1,581 @@
-// S1 checker (stub until B8 lands).
-def check(r: Region, ds: Nodes): Unit = ()
+// S1 checker: types + flow-typed effects (vic/c/effects.md, fx-rs#20).
+// Judgment Γ1 ⊢ e : T ⊣ Γ2. Γ = GState(s = cap, t = state) list, innermost first.
+// env = BVar(s = name, t = protocol or "", n = 0 val / 1 var / 2 cap, a = [Ty]).
+// Ty a = [TyTo, TyCap...]: value caps = regions the value lives in.
+// "*" = the caller's capture variable ρ of a signature: never in Γ, always live.
+
+enum TG:
+  case TG(ty: Node, gam: Nodes)
+
+def tgTy(x: TG): Node = x match
+  case TG(t, _) => t
+def tgGam(x: TG): Nodes = x match
+  case TG(_, g) => g
+
+def err(what: Str, name: Str, line: I64): Unit =
+  rt_eprint("srs:")
+  rt_eprint_i64(line)
+  rt_eprint(": error: ")
+  rt_eprint(what)
+  rt_eprint(" '")
+  rt_eprint(name)
+  rt_eprint("'\n")
+  rt_exit(1)
+
+def tyCaps(t: Node): Nodes = tail(kids(t))
+def tyTo(t: Node): Str = text(head(kids(t)))
+def mkTy(r: Region, name: Str, caps: Nodes): Node = Node(Ty, name, "", 1, 0, NCons(leaf(r, TyTo, "", 0), caps))
+def prim(r: Region, name: Str): Node = mkTy(r, name, NNil)
+
+def isBuiltin(n: Str): Bool = eqs(n, "I64") || eqs(n, "Bool") || eqs(n, "Unit") || eqs(n, "Str") || eqs(n, "Ptr")
+def isEnum(ds: Nodes, n: Str): Bool = found(find(ds, DEnum, n))
+def isProto(ds: Nodes, n: Str): Bool = found(find(ds, DProto, n))
+
+def union(r: Region, a: Nodes, b: Nodes): Nodes =
+  var out = a
+  var c = b
+  while !isNil(c) do
+    if !has(out, text(head(c))) then out = NCons(head(c), out) else ()
+    c = tail(c)
+  out
+def subset(a: Nodes, b: Nodes): Bool =
+  var c = a
+  var ok = true
+  while ok && !isNil(c) do
+    ok = has(b, text(head(c)))
+    c = tail(c)
+  ok
+
+def state(gam: Nodes, cap: Str): Str = text2(find(gam, GState, cap))
+def setState(r: Region, gam: Nodes, cap: Str, s: Str): Nodes =
+  var out = NNil
+  var c = gam
+  var done = false
+  while !isNil(c) do
+    if !done && eqs(text(head(c)), cap) then
+      out = NCons(Node(GState, cap, s, 0, 0, NNil), out)
+      done = true
+    else out = NCons(head(c), out)
+    c = tail(c)
+  rev(r, out)
+def sameGam(a: Nodes, b: Nodes): Bool =
+  var c = a
+  var ok = len(a) == len(b)
+  while ok && !isNil(c) do
+    ok = eqs(state(b, text(head(c))), text2(head(c)))
+    c = tail(c)
+  ok
+
+def protoEnds(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 1))
+def protoStates(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 0))
+
+// capture c is live: not a tracked cap (ρ), or its state is not an end state
+def live(ds: Nodes, env: Nodes, gam: Nodes, c: Str): Bool =
+  val b = find(env, BVar, c)
+  if !found(b) || num(b) != 2 then true
+  else !has(protoEnds(ds, text2(b)), state(gam, c))
+def needLive(ds: Nodes, env: Nodes, gam: Nodes, t: Node, line: I64): Unit =
+  var c = tyCaps(t)
+  while !isNil(c) do
+    if !live(ds, env, gam, text(head(c))) then err("use of value after its region ended:", text(head(c)), line) else ()
+    c = tail(c)
+
+// every Region capability in scope + ρ: the capture of an unannotated var
+def scopeCaps(r: Region, env: Nodes): Nodes =
+  var out = one(r, leaf(r, TyCap, "*", 0))
+  var c = env
+  while !isNil(c) do
+    val b = head(c)
+    if num(b) == 2 && eqs(text2(b), "Region") && !has(out, text(b)) then out = NCons(leaf(r, TyCap, text(b), 0), out) else ()
+    c = tail(c)
+  out
+
+def assignable(a: Node, b: Node): Bool = eqs(text(a), text(b)) && subset(tyCaps(a), tyCaps(b))
+def needAssign(a: Node, b: Node, line: I64): Unit =
+  if !eqs(text(a), text(b)) then
+    rt_eprint("srs:")
+    rt_eprint_i64(line)
+    rt_eprint(": error: type mismatch: ")
+    rt_eprint(text(a))
+    rt_eprint(" is not ")
+    rt_eprint(text(b))
+    rt_eprint("\n")
+    rt_exit(1)
+  else if !subset(tyCaps(a), tyCaps(b)) then err("value escapes its region, expected type", text(b), line)
+  else ()
+
+def needTy(ds: Nodes, t: Node): Unit =
+  val n = text(t)
+  if !isBuiltin(n) && !isEnum(ds, n) && !isProto(ds, n) then err("unknown type", n, lineOf(t)) else ()
+  if isProto(ds, n) then
+    val st = protoStates(ds, n)
+    if rt_str_len(text2(t)) > 0 && (!has(st, text2(t)) || !has(st, tyTo(t))) then err("unknown protocol state in", n, lineOf(t)) else ()
+  else ()
+
+// region (cap) params of a signature
+def regionParams(r: Region, ps: Nodes): Nodes =
+  var out = NNil
+  var c = ps
+  while !isNil(c) do
+    if eqs(text(kid(head(c), 0)), "Region") then out = NCons(leaf(r, TyCap, text(head(c)), 0), out) else ()
+    c = tail(c)
+  out
+
+// signature type as seen in the body: unannotated enum = region params + ρ
+def sigTy(r: Region, ds: Nodes, ps: Nodes, t: Node): Node =
+  if isEnum(ds, text(t)) && num(t) == 0 then mkTy(r, text(t), NCons(leaf(r, TyCap, "*", 0), regionParams(r, ps)))
+  else t
+
+def check(r: Region, ds: Nodes): Unit =
+  var c = ds
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == DFn then checkSig(r, ds, d) else ()
+    if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else ()
+    if kind(d) == DEnum then checkEnum(ds, d) else ()
+    if kind(d) == DProto then checkProto(ds, d) else ()
+    if kind(d) == DHandler then checkHandler(r, ds, d) else ()
+    c = tail(c)
+
+def checkEnum(ds: Nodes, d: Node): Unit =
+  var cs = kids(d)
+  while !isNil(cs) do
+    var fs = kids(kid(head(cs), 0))
+    while !isNil(fs) do
+      val t = kid(head(fs), 0)
+      needTy(ds, t)
+      if isProto(ds, text(t)) then err("capability stored in data:", text(head(fs)), lineOf(t)) else ()
+      fs = tail(fs)
+    cs = tail(cs)
+
+def checkProto(ds: Nodes, d: Node): Unit =
+  val st = protoStates(ds, text(d))
+  if !has(st, text2(d)) then err("unknown start state in protocol", text(d), lineOf(d)) else ()
+  var ops = kids(kid(d, 3))
+  while !isNil(ops) do
+    var tr = kids(kid(head(ops), 2))
+    while !isNil(tr) do
+      if !has(st, text(head(tr))) || !has(st, text2(head(tr))) then err("unknown state in op", text(head(ops)), lineOf(head(ops))) else ()
+      tr = tail(tr)
+    ops = tail(ops)
+  val dn = text(kid(d, 2))
+  if rt_str_len(dn) > 0 && !found(find(kids(kid(d, 3)), DOp, dn)) then err("unknown drop op", dn, lineOf(d)) else ()
+
+def checkHandler(r: Region, ds: Nodes, h: Node): Unit =
+  val p = find(ds, DProto, text2(h))
+  if !found(p) then err("unknown protocol", text2(h), lineOf(h)) else ()
+  if !found(find(kids(h), DFn, "init")) then err("handler needs init:", text(h), lineOf(h)) else ()
+  var ops = kids(kid(p, 3))
+  while !isNil(ops) do
+    val op = head(ops)
+    val f = find(kids(h), DFn, text(op))
+    if !found(f) then err("handler misses op", text(op), lineOf(h)) else ()
+    // impl = (self: Ptr, op params...): op ret
+    if len(kids(kid(f, 0))) != len(kids(kid(op, 0))) + 1 || !eqs(text(kid(f, 1)), text(kid(op, 1))) then err("handler op signature differs from protocol:", text(op), lineOf(f)) else ()
+    ops = tail(ops)
+  var fs = kids(h)
+  while !isNil(fs) do
+    checkSig(r, ds, head(fs))
+    checkFn(r, ds, head(fs))
+    fs = tail(fs)
+
+def checkSig(r: Region, ds: Nodes, f: Node): Unit =
+  var ps = kids(kid(f, 0))
+  while !isNil(ps) do
+    needTy(ds, kid(head(ps), 0))
+    ps = tail(ps)
+  needTy(ds, kid(f, 1))
+  if isProto(ds, text(kid(f, 1))) then err("capability returned from", text(f), lineOf(f)) else ()
+
+def checkFn(r: Region, ds: Nodes, f: Node): Unit =
+  val ps = kids(kid(f, 0))
+  var env = NNil
+  var gam = NNil
+  var c = ps
+  while !isNil(c) do
+    val p = head(c)
+    val t = kid(p, 0)
+    if isProto(ds, text(t)) then
+      val from = if rt_str_len(text2(t)) > 0 then text2(t) else text2(find(ds, DProto, text(t)))
+      env = NCons(Node(BVar, text(p), text(t), 2, lineOf(p), one(r, t)), env)
+      gam = NCons(Node(GState, text(p), from, 0, 0, NNil), gam)
+    else env = NCons(Node(BVar, text(p), "", 0, lineOf(p), one(r, sigTy(r, ds, ps, t))), env)
+    c = tail(c)
+  val res = chk(r, ds, env, gam, kid(f, 2))
+  needAssign(tgTy(res), sigTy(r, ds, ps, kid(f, 1)), lineOf(f))
+  c = ps
+  while !isNil(c) do
+    val t = kid(head(c), 0)
+    if isProto(ds, text(t)) then
+      val want = if rt_str_len(text2(t)) > 0 then tyTo(t) else text2(find(ds, DProto, text(t)))
+      if !eqs(state(tgGam(res), text(head(c))), want) then err("capability must end in its declared state:", text(head(c)), lineOf(f)) else ()
+    else ()
+    c = tail(c)
+
+def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
+  val k = kind(e)
+  val line = lineOf(e)
+  if k == XInt then TG(prim(r, "I64"), gam)
+  else if k == XBool then TG(prim(r, "Bool"), gam)
+  else if k == XStr then TG(prim(r, "Str"), gam)
+  else if k == XUnit then TG(prim(r, "Unit"), gam)
+  else if k == XName then
+    val b = find(env, BVar, text(e))
+    if found(b) then
+      if num(b) == 2 then err("capability is second-class, only a call argument:", text(e), line) else ()
+      needLive(ds, env, gam, kid(b, 0), line)
+      TG(kid(b, 0), gam)
+    else
+      val c = find(allCases(r, ds), DCase, text(e))
+      if !found(c) then err("unknown name", text(e), line) else ()
+      if !isNil(kids(kid(c, 0))) then err("constructor needs arguments:", text(e), line) else ()
+      TG(prim(r, text2(c)), gam)
+  else if k == XCall then
+    val c = find(allCases(r, ds), DCase, text(e))
+    if found(c) then chkCtor(r, ds, env, gam, c, e) else chkCall(r, ds, env, gam, e)
+  else if k == XMethod then chkMethod(r, ds, env, gam, e)
+  else if k == XBin then chkBin(r, ds, env, gam, e)
+  else if k == XUn then
+    val a = chk(r, ds, env, gam, kid(e, 0))
+    val want = if eqs(text(e), "-") then "I64" else "Bool"
+    needAssign(tgTy(a), prim(r, want), line)
+    a
+  else if k == XIf then
+    val c = chk(r, ds, env, gam, kid(e, 0))
+    needAssign(tgTy(c), prim(r, "Bool"), line)
+    val t = chk(r, ds, env, tgGam(c), kid(e, 1))
+    val f = chk(r, ds, env, tgGam(c), kid(e, 2))
+    TG(join(r, tgTy(t), tgTy(f), line), joinGam(tgGam(t), tgGam(f), line))
+  else if k == XMatch then chkMatch(r, ds, env, gam, e)
+  else if k == XBlock then chkBlock(r, ds, env, gam, kids(e), line)
+  else if k == XWhile then
+    val c = chk(r, ds, env, gam, kid(e, 0))
+    needAssign(tgTy(c), prim(r, "Bool"), line)
+    val b = chk(r, ds, env, tgGam(c), kid(e, 1))
+    if !sameGam(gam, tgGam(c)) || !sameGam(gam, tgGam(b)) then err("loop changes capability state, protocol needs a fixed count:", "while", line) else ()
+    TG(prim(r, "Unit"), gam)
+  else if k == XAssign then
+    val b = find(env, BVar, text(e))
+    if !found(b) || num(b) != 1 then err("assignment to non-var", text(e), line) else ()
+    val a = chk(r, ds, env, gam, kid(e, 0))
+    needAssign(tgTy(a), kid(b, 0), line)
+    TG(prim(r, "Unit"), tgGam(a))
+  else
+    err("internal: expression", "?", line)
+    TG(prim(r, "Unit"), gam)
+
+def join(r: Region, a: Node, b: Node, line: I64): Node =
+  if !eqs(text(a), text(b)) then needAssign(a, b, line) else ()
+  mkTy(r, text(a), union(r, tyCaps(a), tyCaps(b)))
+def joinGam(a: Nodes, b: Nodes, line: I64): Nodes =
+  if !sameGam(a, b) then err("branches leave capabilities in different states:", "if/match", line) else ()
+  a
+
+def chkBin(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
+  val op = text(e)
+  val line = lineOf(e)
+  val a = chk(r, ds, env, gam, kid(e, 0))
+  val b = chk(r, ds, env, tgGam(a), kid(e, 1))
+  val ta = tgTy(a)
+  val tb = tgTy(b)
+  if eqs(op, "&&") || eqs(op, "||") then
+    needAssign(ta, prim(r, "Bool"), line)
+    needAssign(tb, prim(r, "Bool"), line)
+    TG(prim(r, "Bool"), tgGam(b))
+  else if eqs(op, "==") || eqs(op, "!=") then
+    if !eqs(text(ta), text(tb)) then needAssign(tb, ta, line) else ()
+    if eqs(text(ta), "Str") then err("Str has no ==, use", "rt_str_eq", line) else ()
+    TG(prim(r, "Bool"), tgGam(b))
+  else
+    needAssign(ta, prim(r, "I64"), line)
+    needAssign(tb, prim(r, "I64"), line)
+    val cmp = eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")
+    TG(prim(r, if cmp then "Bool" else "I64"), tgGam(b))
+
+// unique Region capability in scope (effects.md)
+def theRegion(env: Nodes, line: I64): Str =
+  var c = env
+  var res = ""
+  var n = 0
+  while !isNil(c) do
+    val b = head(c)
+    if num(b) == 2 && eqs(text2(b), "Region") && !eqs(text(b), res) then
+      if n == 0 then res = text(b) else ()
+      n = n + 1
+    else ()
+    c = tail(c)
+  if n == 0 then err("constructor needs a Region capability in scope", "", line) else ()
+  if n > 1 then err("constructor region is ambiguous, more than one Region in scope", "", line) else ()
+  res
+
+// one protocol step on cap: Γ(cap) must have a transition in op
+def step(r: Region, ds: Nodes, gam: Nodes, cap: Str, proto: Str, opName: Str, line: I64): Nodes =
+  val op = find(kids(kid(find(ds, DProto, proto), 3)), DOp, opName)
+  if !found(op) then err("unknown op", opName, line) else ()
+  val s = state(gam, cap)
+  val tr = find(kids(kid(op, 2)), DTrans, s)
+  if !found(tr) then
+    rt_eprint("srs:")
+    rt_eprint_i64(line)
+    rt_eprint(": error: protocol ")
+    rt_eprint(proto)
+    rt_eprint(": op '")
+    rt_eprint(opName)
+    rt_eprint("' not allowed in state ")
+    rt_eprint(s)
+    rt_eprint(" of '")
+    rt_eprint(cap)
+    rt_eprint("'\n")
+    rt_exit(1)
+  else ()
+  setState(r, gam, cap, text2(tr))
+
+def chkCtor(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node): TG =
+  val line = lineOf(e)
+  var fs = kids(kid(c, 0))
+  if len(fs) != len(kids(e)) then err("constructor arity", text(c), line) else ()
+  if isNil(fs) then err("nullary constructor takes no ()", text(c), line) else ()
+  val reg = theRegion(env, line)
+  var gam = step(r, ds, gam0, reg, "Region", "alloc", line)
+  var caps = one(r, leaf(r, TyCap, reg, line))
+  var a = kids(e)
+  while !isNil(a) do
+    val x = chk(r, ds, env, gam, head(a))
+    val ft = kid(head(fs), 0)
+    if !eqs(text(tgTy(x)), text(ft)) then needAssign(tgTy(x), ft, line) else ()
+    caps = union(r, caps, tyCaps(tgTy(x)))
+    gam = tgGam(x)
+    a = tail(a)
+    fs = tail(fs)
+  TG(mkTy(r, text2(c), caps), gam)
+
+def chkMethod(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node): TG =
+  val line = lineOf(e)
+  val b = find(env, BVar, text(e))
+  if !found(b) || num(b) != 2 then err("not a capability:", text(e), line) else ()
+  val op = find(kids(kid(find(ds, DProto, text2(b)), 3)), DOp, text2(e))
+  if !found(op) then err("unknown op", text2(e), line) else ()
+  var ps = kids(kid(op, 0))
+  if len(ps) != len(kids(e)) then err("op arity", text2(e), line) else ()
+  var gam = gam0
+  var a = kids(e)
+  while !isNil(a) do
+    val x = chk(r, ds, env, gam, head(a))
+    needAssign(tgTy(x), kid(head(ps), 0), line)
+    gam = tgGam(x)
+    a = tail(a)
+    ps = tail(ps)
+  TG(kid(op, 1), step(r, ds, gam, text(e), text2(b), text2(e), line))
+
+// map callee cap-param name -> caller cap name
+def mapCaps(r: Region, caps: Nodes, m: Nodes): Nodes =
+  var out = NNil
+  var c = caps
+  while !isNil(c) do
+    val g = find(m, GState, text(head(c)))
+    out = NCons(leaf(r, TyCap, if found(g) then text2(g) else text(head(c)), 0), out)
+    c = tail(c)
+  out
+
+def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node): TG =
+  val line = lineOf(e)
+  val f = find(ds, DFn, text(e))
+  if !found(f) then err("unknown function", text(e), line) else ()
+  var ps = kids(kid(f, 0))
+  if len(ps) != len(kids(e)) then err("arity of", text(e), line) else ()
+  // pass 1: cap args, protocol state transitions S1 -> S2
+  var m = NNil
+  var gam = gam0
+  var a = kids(e)
+  var p = ps
+  while !isNil(a) do
+    val pt = kid(head(p), 0)
+    if isProto(ds, text(pt)) then
+      val x = head(a)
+      val b = find(env, BVar, text(x))
+      if kind(x) != XName || !found(b) || num(b) != 2 || !eqs(text2(b), text(pt)) then err("expected capability argument of protocol", text(pt), line) else ()
+      if found(find(m, GState, text(head(p)))) || has(mapVals(r, m), text(x)) then err("capability passed twice:", text(x), line) else ()
+      m = NCons(Node(GState, text(head(p)), text(x), 0, 0, NNil), m)
+    else ()
+    a = tail(a)
+    p = tail(p)
+  // pass 2: value args, left to right
+  var rho = NNil
+  a = kids(e)
+  p = ps
+  while !isNil(a) do
+    val pt = kid(head(p), 0)
+    if !isProto(ds, text(pt)) then
+      val x = chk(r, ds, env, gam, head(a))
+      gam = tgGam(x)
+      if isEnum(ds, text(pt)) && num(pt) == 0 then
+        if !eqs(text(tgTy(x)), text(pt)) then needAssign(tgTy(x), pt, line) else ()
+        rho = union(r, rho, tyCaps(tgTy(x)))
+      else needAssign(tgTy(x), mkTy(r, text(pt), mapCaps(r, tyCaps(pt), m)), line)
+    else ()
+    a = tail(a)
+    p = tail(p)
+  // cap transitions happen during the call, after the args
+  p = ps
+  while !isNil(p) do
+    val pt = kid(head(p), 0)
+    if isProto(ds, text(pt)) then
+      val cap = text2(find(m, GState, text(head(p))))
+      val from = if rt_str_len(text2(pt)) > 0 then text2(pt) else text2(find(ds, DProto, text(pt)))
+      val to = if rt_str_len(text2(pt)) > 0 then tyTo(pt) else from
+      if !eqs(state(gam, cap), from) then
+        rt_eprint("srs:")
+        rt_eprint_i64(line)
+        rt_eprint(": error: '")
+        rt_eprint(text(e))
+        rt_eprint("' needs '")
+        rt_eprint(cap)
+        rt_eprint("' in state ")
+        rt_eprint(from)
+        rt_eprint(", it is ")
+        rt_eprint(state(gam, cap))
+        rt_eprint("\n")
+        rt_exit(1)
+      else ()
+      gam = setState(r, gam, cap, to)
+    else ()
+    p = tail(p)
+  val rt = kid(f, 1)
+  val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(r, rho, mapCaps(r, regionParams(r, ps), m)) else mapCaps(r, tyCaps(rt), m)
+  TG(mkTy(r, text(rt), caps), gam)
+
+def mapVals(r: Region, m: Nodes): Nodes =
+  var out = NNil
+  var c = m
+  while !isNil(c) do
+    out = NCons(leaf(r, Name, text2(head(c)), 0), out)
+    c = tail(c)
+  out
+
+def chkMatch(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
+  val line = lineOf(e)
+  val s = chk(r, ds, env, gam, kid(e, 0))
+  val st = tgTy(s)
+  val en = find(ds, DEnum, text(st))
+  if !found(en) then err("match on non-enum type", text(st), line) else ()
+  var arms = tail(kids(e))
+  var seen = NNil
+  var wild = false
+  var res = NoNode
+  var out = NNil
+  while !isNil(arms) do
+    val arm = head(arms)
+    var env2 = env
+    if eqs(text(arm), "_") then wild = true
+    else
+      val c = find(kids(en), DCase, text(arm))
+      if !found(c) then err("not a case of the scrutinee enum:", text(arm), lineOf(arm)) else ()
+      seen = NCons(leaf(r, Name, text(arm), 0), seen)
+      var bs = tail(kids(arm))
+      var fs = kids(kid(c, 0))
+      if len(bs) != len(fs) then err("pattern arity", text(arm), lineOf(arm)) else ()
+      while !isNil(bs) do
+        val ft = kid(head(fs), 0)
+        // fields share the capture of the scrutinee
+        val bt = if isEnum(ds, text(ft)) then mkTy(r, text(ft), tyCaps(st)) else ft
+        env2 = NCons(Node(BVar, text(head(bs)), "", 0, lineOf(arm), one(r, bt)), env2)
+        bs = tail(bs)
+        fs = tail(fs)
+    val x = chk(r, ds, env2, tgGam(s), kid(arm, 0))
+    if found(res) then
+      res = join(r, res, tgTy(x), lineOf(arm))
+      out = joinGam(out, tgGam(x), lineOf(arm))
+    else
+      res = tgTy(x)
+      out = tgGam(x)
+    arms = tail(arms)
+  if !wild then
+    var cs = kids(en)
+    while !isNil(cs) do
+      if !has(seen, text(head(cs))) then err("match is not exhaustive, missing case", text(head(cs)), line) else ()
+      cs = tail(cs)
+  else ()
+  TG(res, out)
+
+def chkBlock(r: Region, ds: Nodes, env0: Nodes, gam0: Nodes, ss: Nodes, line: I64): TG =
+  var env = env0
+  var gam = gam0
+  var caps = NNil
+  var res = prim(r, "Unit")
+  var c = ss
+  while !isNil(c) do
+    val s = head(c)
+    val k = kind(s)
+    if k == SVal then
+      val x = chk(r, ds, env, gam, kid(s, 0))
+      gam = tgGam(x)
+      var t = tgTy(x)
+      if !isNil(tail(kids(s))) then
+        val ann = kid(s, 1)
+        needTy(ds, ann)
+        if isProto(ds, text(ann)) then err("capability bound to a val:", text(s), lineOf(s)) else ()
+        val annT = if isEnum(ds, text(ann)) && num(ann) == 0 then mkTy(r, text(ann), scopeCaps(r, env)) else ann
+        needAssign(t, annT, lineOf(s))
+        t = annT
+      else if num(s) == 1 && isEnum(ds, text(t)) then t = mkTy(r, text(t), scopeCaps(r, env))
+      else ()
+      env = NCons(Node(BVar, text(s), "", num(s), lineOf(s), one(r, t)), env)
+      res = prim(r, "Unit")
+    else if k == SHandle then
+      val h = find(ds, DHandler, text2(s))
+      if !found(h) then err("unknown handler", text2(s), lineOf(s)) else ()
+      val init = find(kids(h), DFn, "init")
+      var ps = kids(kid(init, 0))
+      var a = kids(s)
+      if len(ps) != len(a) then err("handler init arity", text2(s), lineOf(s)) else ()
+      while !isNil(a) do
+        val x = chk(r, ds, env, gam, head(a))
+        needAssign(tgTy(x), kid(head(ps), 0), lineOf(s))
+        gam = tgGam(x)
+        a = tail(a)
+        ps = tail(ps)
+      val p = find(ds, DProto, text2(h))
+      env = NCons(Node(BVar, text(s), text(p), 2, lineOf(s), one(r, mkTy(r, text(p), NNil))), env)
+      gam = NCons(Node(GState, text(s), text2(p), 0, 0, NNil), gam)
+      caps = NCons(Node(BVar, text(s), text(p), 2, lineOf(s), NNil), caps)
+      res = prim(r, "Unit")
+    else
+      val x = chk(r, ds, env, gam, s)
+      gam = tgGam(x)
+      res = tgTy(x)
+    c = tail(c)
+  // scope end: each handled cap reaches an end state, by itself or by its drop op
+  while !isNil(caps) do
+    val b = head(caps)
+    val p = find(ds, DProto, text2(b))
+    val s = state(gam, text(b))
+    if !has(kids(kid(p, 1)), s) then
+      val dn = text(kid(p, 2))
+      val op = find(kids(kid(p, 3)), DOp, dn)
+      val tr = find(kids(kid(op, 2)), DTrans, s)
+      if rt_str_len(dn) == 0 || !found(tr) || !has(kids(kid(p, 1)), text2(tr)) then
+        rt_eprint("srs:")
+        rt_eprint_i64(lineOf(b))
+        rt_eprint(": error: protocol ")
+        rt_eprint(text(p))
+        rt_eprint(": '")
+        rt_eprint(text(b))
+        rt_eprint("' ends its scope in state ")
+        rt_eprint(s)
+        rt_eprint(", not an end state\n")
+        rt_exit(1)
+      else ()
+    else ()
+    if has(tyCaps(res), text(b)) then err("value escapes the scope of its region", text(b), lineOf(b)) else ()
+    gam = dropGam(r, gam, text(b))
+    caps = tail(caps)
+  TG(res, gam)
+
+def dropGam(r: Region, gam: Nodes, cap: Str): Nodes =
+  var out = NNil
+  var c = gam
+  var done = false
+  while !isNil(c) do
+    if !done && eqs(text(head(c)), cap) then done = true else out = NCons(head(c), out)
+    c = tail(c)
+  rev(r, out)
