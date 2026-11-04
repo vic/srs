@@ -1,12 +1,15 @@
 // pass: verification syntax (C13) parses, checks, and is erased in C
-spec def size(xs: List): I64 = xs match
+spec def size(xs: List): I64
+  ensures result >= 0
+  proof by induction xs
+= xs match
   case Nil => 0
   case Cons(_, t) => 1 + size(t)
 
 def count(xs: List): I64
   requires size(xs) >= 0
   ensures result == size(xs)
-  proof lean "by have key : ∀ (c : «List») (n : Int), ∃ m d, «count_loop0» n c «xs» = some (m, d) ∧ m = n + «size» c := by { intro c; induction c with | «Nil» => intro n; exact ⟨n, .«Nil», by rw [«count_loop0»]; rfl, by simp [«size»]⟩ | «Cons» h t ih => intro n; obtain ⟨m, d, hl, he⟩ := ih (n + 1); exact ⟨m, d, by rw [«count_loop0»]; simpa [bind, Option.bind, pure] using hl, by rw [he]; simp [«size»]; omega⟩ }; obtain ⟨m, d, hl, he⟩ := key «xs» 0; exact ⟨m, by simp [«count», hl, bind, Option.bind, pure], by simp [he]⟩"
+  proof using size
 =
   var c = xs
   var n = 0

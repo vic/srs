@@ -14,6 +14,10 @@ end
 def «size» («xs» : «List») : Int :=
   (match «xs» with | «List».«Nil» => (0 : Int) | «List».«Cons» _ «t» => ((1 : Int) + («size» «t»)))
 
+theorem «size_spec» («xs» : «List») :
+    (((«size» «xs») ≥ (0 : Int))) := by
+  induction «xs» <;> srs_auto [«size»]
+
 mutual
 def «build» («n» : Int) : Option «List» := do {
 if («n» == (0 : Int)) then {
@@ -41,10 +45,9 @@ partial_fixpoint
 
 end
 
-def «count_loop0» («n» : Int) («c» : «List») («xs» : «List») : Option (Int × «List») := do {
-let mut «n» := «n»;
-let mut «c» := «c»;
-if (← (do {
+def «count_loop0» («xs» : «List») (st' : (Int × «List»)) : Option (Int × «List») := do {
+if (← (fun ((_, «c») : (Int × «List»)) => (do {
+pure (← (do {
 match «c» with
 | «List».«Nil» => {
 pure false;
@@ -53,7 +56,10 @@ pure false;
 pure true;
 }
 ;
-})) then {
+}))
+} : Option Bool)) st') then «count_loop0» «xs» (← (fun ((«n», «c») : (Int × «List»)) => (do {
+let mut «n» := «n»;
+let mut «c» := «c»;
 «c» := (← (do {
 match «c» with
 | «List».«Nil» => {
@@ -65,17 +71,15 @@ pure «t»;
 ;
 }));
 «n» := («n» + (1 : Int));
-«count_loop0» «n» «c» «xs»
-} else {
 pure («n», «c»)
-}
+} : Option (Int × «List»))) st') else pure st'
 }
 partial_fixpoint
 
 def «count» («xs» : «List») : Option Int := do {
 let mut «c» := «xs»;
 let mut «n» := (0 : Int);
-let t_ ← «count_loop0» «n» «c» «xs»;
+let t_ ← «count_loop0» «xs» («n», «c»);
 «n» := t_.1;
 «c» := t_.2;
 pure «n»;
@@ -87,7 +91,15 @@ let _ := (← «rt_print» "\n".toUTF8);
 pure (0 : Int);
 }
 
-theorem «count_spec» («xs» : «List») (_h_req : ((decide ((«size» «xs») >= (0 : Int)))) = true) :
-    ∃ «result», «count» «xs» = some «result» ∧ ((«result» == («size» «xs»))) = true := by have key : ∀ (c : «List») (n : Int), ∃ m d, «count_loop0» n c «xs» = some (m, d) ∧ m = n + «size» c := by { intro c; induction c with | «Nil» => intro n; exact ⟨n, .«Nil», by rw [«count_loop0»]; rfl, by simp [«size»]⟩ | «Cons» h t ih => intro n; obtain ⟨m, d, hl, he⟩ := ih (n + 1); exact ⟨m, d, by rw [«count_loop0»]; simpa [bind, Option.bind, pure] using hl, by rw [he]; simp [«size»]; omega⟩ }; obtain ⟨m, d, hl, he⟩ := key «xs» 0; exact ⟨m, by simp [«count», hl, bind, Option.bind, pure], by simp [he]⟩
+theorem «count_spec» («xs» : «List») (_h_req : (((«size» «xs») ≥ (0 : Int)))) :
+    ∃ «result», «count» «xs» = some «result» ∧ ((«result» = («size» «xs»))) := by
+  rw [«count»]
+  dsimp only
+  refine Srs.loop_bind («count_loop0» _) _ _ (fun _ => by rw [«count_loop0»]) (fun ((«n», «c») : (Int × «List»)) => (((«n» + («size» «c»)) = («size» «xs»)))) (fun ((«n», «c») : (Int × «List»)) => ((«size» «c»)).toNat) ?_ _ _ _ ?_ ?_
+  · rintro ⟨«n», «c»⟩ hI
+    cases «c» <;> srs_auto [«size», «size_spec»]
+  · srs_auto [«size», «size_spec»]
+  · rintro ⟨«n», «c»⟩ hI hc
+    cases «c» <;> srs_auto [«size», «size_spec»]
 
 end Srs.Contracts

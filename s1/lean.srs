@@ -44,6 +44,7 @@ def emitLean(r: Region, ds: Nodes, ns: Str): Unit =
   while !isNil(c) do
     if kind(head(c)) == DFn && num(head(c)) == 2 then specDef(r, ds, head(c)) else ()
     c = tail(c)
+  specTheorems(r, ds)
   // each call-graph SCC after the SCCs it calls: a cycle = one mutual block, else a plain def (Lean needs
   // partial_fixpoint exactly on recursive defs)
   val g = callGraph(r, ds)
@@ -347,7 +348,9 @@ def lsLoop(r: Region, ds: Nodes, fn: Str, env: Nodes, e: Node, mode: I64): Unit 
   val mu = mutated(r, sc, kid(e, 1))
   say("let t_ ← ")
   auxName(ds, true, fn, e)
-  auxArgs(true, sc)
+  auxArgs(true, captured(r, sc, mu))
+  say(" ")
+  tuple(true, mu)
   say(";\n")
   var c = mu
   var i = 0
@@ -363,9 +366,10 @@ def lsLoop(r: Region, ds: Nodes, fn: Str, env: Nodes, e: Node, mode: I64): Unit 
 def leanAux(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node): Unit =
   val sc = scope(r, env)
   val mu = mutated(r, sc, kid(e, 1))
+  // canonical shape, the one Srs.loop_inv covers: aux cap st = do if (← cond st) then aux cap (← body st) else pure st
   say("def ")
   auxName(ds, true, fn, e)
-  var c = sc
+  var c = captured(r, sc, mu)
   while !isNil(c) do
     say(" (")
     lid(true, text(head(c)))
@@ -373,9 +377,24 @@ def leanAux(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node): Uni
     lty(kid(head(c), 0))
     say(")")
     c = tail(c)
-  say(" : Option ")
+  say(" (st' : ")
   tupleTy(mu)
-  say(" := do {\n")
+  say(") : Option ")
+  tupleTy(mu)
+  say(" := do {\nif (← (fun (")
+  tupleUsed(mu, kid(e, 0))
+  say(" : ")
+  tupleTy(mu)
+  say(") => (do {\npure ")
+  lx(r, ds, fn, env, gam, kid(e, 0), true)
+  say("\n} : Option Bool)) st') then ")
+  auxName(ds, true, fn, e)
+  auxArgs(true, captured(r, sc, mu))
+  say(" (← (fun (")
+  tuple(true, mu)
+  say(" : ")
+  tupleTy(mu)
+  say(") => (do {\n")
   c = mu
   while !isNil(c) do
     say("let mut ")
@@ -384,15 +403,42 @@ def leanAux(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node): Uni
     lid(true, text(head(c)))
     say(";\n")
     c = tail(c)
-  say("if ")
-  lx(r, ds, fn, env, gam, kid(e, 0), true)
-  say(" then {\n")
   ls(r, ds, fn, env, gam, kid(e, 1), true, 0)
-  auxName(ds, true, fn, e)
-  auxArgs(true, sc)
-  say("\n} else {\npure ")
+  say("pure ")
   tuple(true, mu)
-  say("\n}\n}\npartial_fixpoint\n\n")
+  say("\n} : Option ")
+  tupleTy(mu)
+  say(")) st') else pure st'\n}\npartial_fixpoint\n\n")
+
+// the tuple pattern, `_` for vars e does not read
+def tupleUsed(mu: Nodes, e: Node): Unit =
+  if isNil(mu) then say("()")
+  else if isNil(tail(mu)) then useOr(head(mu), e)
+  else
+    say("(")
+    var c = mu
+    while !isNil(c) do
+      useOr(head(c), e)
+      if !isNil(tail(c)) then say(", ") else ()
+      c = tail(c)
+    say(")")
+def useOr(v: Node, e: Node): Unit = if reads(e, text(v)) then lid(true, text(v)) else say("_")
+def reads(e: Node, x: Str): Bool =
+  var hit = kind(e) == XName && eqs(text(e), x)
+  var c = kids(e)
+  while !hit && !isNil(c) do
+    hit = reads(head(c), x)
+    c = tail(c)
+  hit
+
+// the scope vars a loop reads but does not assign
+def captured(r: Region, sc: Nodes, mu: Nodes): Nodes =
+  var out = NNil
+  var c = sc
+  while !isNil(c) do
+    if !found(find(mu, BVar, text(head(c)))) then out = NCons(head(c), out) else ()
+    c = tail(c)
+  rev(r, out)
 
 // e as a Lean term; effects lifted with (← ..) in srs order; control in value position = a nested do
 def lx(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node, on: Bool): Unit =

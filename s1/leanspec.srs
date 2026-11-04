@@ -12,7 +12,10 @@ def clauseExprs(r: Region, cs: Nodes, kw: Str): Nodes =
 def proofOf(cs: Nodes): Node = find(cs, SClause, "proof")
 
 // e as a pure Lean term
-def lp(r: Region, ds: Nodes, e: Node): Unit =
+def lp(r: Region, ds: Nodes, e: Node): Unit = lpr(r, ds, NoNode, e)
+
+// res: the term `result` stands for (NoNode = the name «result»)
+def lpr(r: Region, ds: Nodes, res: Node, e: Node): Unit =
   val k = kind(e)
   if k == XInt then
     say("(")
@@ -25,7 +28,8 @@ def lp(r: Region, ds: Nodes, e: Node): Unit =
     say("\".toUTF8")
   else if k == XUnit then say("()")
   else if k == XName then
-    if found(find(allCases(r, ds), DCase, text(e))) then ctorName(r, true, ds, text(e)) else lid(true, text(e))
+    if found(res) && eqs(text(e), "result") then lpr(r, ds, NoNode, res)
+    else if found(find(allCases(r, ds), DCase, text(e))) then ctorName(r, true, ds, text(e)) else lid(true, text(e))
   else if k == XCall then
     val f = find(ds, DFn, text(e))
     say("(")
@@ -38,36 +42,36 @@ def lp(r: Region, ds: Nodes, e: Node): Unit =
     var a = kids(e)
     while !isNil(a) do
       say(" ")
-      lp(r, ds, head(a))
+      lpr(r, ds, res, head(a))
       a = tail(a)
     say(")")
   else if k == XBin then
     val op = text(e)
     val cmp = eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")
     say(if cmp then "(decide (" else if eqs(op, "/") then "(Int.tdiv " else if eqs(op, "%") then "(Int.tmod " else "(")
-    lp(r, ds, kid(e, 0))
+    lpr(r, ds, res, kid(e, 0))
     if !eqs(op, "/") && !eqs(op, "%") then
       say(" ")
       say(op)
     else ()
     say(" ")
-    lp(r, ds, kid(e, 1))
+    lpr(r, ds, res, kid(e, 1))
     say(if cmp then "))" else ")")
   else if k == XUn then
     say(if eqs(text(e), "-") then "(0 - " else "(!")
-    lp(r, ds, kid(e, 0))
+    lpr(r, ds, res, kid(e, 0))
     say(")")
   else if k == XIf then
     say("(if ")
-    lp(r, ds, kid(e, 0))
+    lpr(r, ds, res, kid(e, 0))
     say(" then ")
-    lp(r, ds, kid(e, 1))
+    lpr(r, ds, res, kid(e, 1))
     say(" else ")
-    lp(r, ds, kid(e, 2))
+    lpr(r, ds, res, kid(e, 2))
     say(")")
   else if k == XMatch then
     say("(match ")
-    lp(r, ds, kid(e, 0))
+    lpr(r, ds, res, kid(e, 0))
     say(" with")
     var arms = tail(kids(e))
     while !isNil(arms) do
@@ -82,7 +86,7 @@ def lp(r: Region, ds: Nodes, e: Node): Unit =
           if eqs(text(head(bs)), "_") then say("_") else lid(true, text(head(bs)))
           bs = tail(bs)
       say(" => ")
-      lp(r, ds, kid(arm, 0))
+      lpr(r, ds, res, kid(arm, 0))
       arms = tail(arms)
     say(")")
   else if k == XBlock then
@@ -94,11 +98,11 @@ def lp(r: Region, ds: Nodes, e: Node): Unit =
         say("(let ")
         lid(true, text(s))
         say(" := ")
-        lp(r, ds, kid(s, 0))
+        lpr(r, ds, res, kid(s, 0))
         say("; ")
         opens = opens + 1
       else if kind(s) == SClause then ()
-      else lp(r, ds, s)
+      else lpr(r, ds, res, s)
       c = tail(c)
     while opens > 0 do
       say(")")
@@ -106,16 +110,45 @@ def lp(r: Region, ds: Nodes, e: Node): Unit =
   else say("srs_unsupported_in_spec")
 
 // conjunction of clause exprs, as Bool
-def lpAll(r: Region, ds: Nodes, es: Nodes): Unit =
-  if isNil(es) then say("true")
+def lpAll(r: Region, ds: Nodes, es: Nodes): Unit = lpAllR(r, ds, NoNode, es)
+def lpAllR(r: Region, ds: Nodes, res: Node, es: Nodes): Unit =
+  if isNil(es) then say("True")
   else
     say("(")
     var c = es
     while !isNil(c) do
-      lp(r, ds, head(c))
-      if !isNil(tail(c)) then say(" && ") else ()
+      lpp(r, ds, res, head(c))
+      if !isNil(tail(c)) then say(" ∧ ") else ()
       c = tail(c)
     say(")")
+
+// a contract as a Prop: logic and comparisons as Lean props (facts simp and omega use), other terms `= true`
+def lpp(r: Region, ds: Nodes, res: Node, e: Node): Unit =
+  val op = text(e)
+  if kind(e) == XBin && (eqs(op, "&&") || eqs(op, "||")) then
+    say("(")
+    lpp(r, ds, res, kid(e, 0))
+    say(if eqs(op, "&&") then " ∧ " else " ∨ ")
+    lpp(r, ds, res, kid(e, 1))
+    say(")")
+  else if kind(e) == XBin && (eqs(op, "==") || eqs(op, "!=") || eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")) then
+    say("(")
+    lpr(r, ds, res, kid(e, 0))
+    say(if eqs(op, "==") then " = " else if eqs(op, "!=") then " ≠ " else if eqs(op, "<=") then " ≤ " else if eqs(op, ">=") then " ≥ " else " ")
+    if eqs(op, "<") || eqs(op, ">") then
+      say(op)
+      say(" ")
+    else ()
+    lpr(r, ds, res, kid(e, 1))
+    say(")")
+  else if kind(e) == XUn && eqs(op, "!") then
+    say("(¬ ")
+    lpp(r, ds, res, kid(e, 0))
+    say(")")
+  else
+    say("(")
+    lpr(r, ds, res, e)
+    say(" = true)")
 
 def lparams(ds: Nodes, ps: Nodes): Unit =
   var c = ps
@@ -146,30 +179,35 @@ def specDef(r: Region, ds: Nodes, f: Node): Unit =
   say("\n\n")
 
 // the proof of a contract: srs_auto with the `using` facts, induction, or Lean tactics
-def proofText(r: Region, ds: Nodes, p: Node): Unit =
+def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
   if found(p) && eqs(text2(p), "lean") then say(text(kid(p, 0)))
   else
     say("by\n  ")
-    if found(p) && eqs(text2(p), "by") then
+    val lp0 = invLoop(r, kid(f, 2))
+    if found(lp0) then loopSkeleton(r, ds, f, lp0, p)
+    else if found(p) && eqs(text2(p), "by") then
       say("induction ")
       lid(true, text(kid(p, 0)))
       say(" <;> ")
+      autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
+    else autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
+
+// srs_auto with the `proof using` facts + `extra` (the fns a loop calls): each fn and its contract theorem
+def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
+  say("srs_auto [")
+  var c = if found(p) && eqs(text2(p), "using") then append(r, kids(p), extra) else extra
+  while !isNil(c) do
+    val f = find(ds, DFn, text(head(c)))
+    lid(true, text(head(c)))
+    // n 1 = the fn being proven: its own contract is not a fact yet
+    if found(f) && num(head(c)) == 0 && num(f) != 1 && !isNil(clauseExprs(r, clausesOf(f), "ensures")) then
+      say(", «")
+      say(text(head(c)))
+      say("_spec»")
     else ()
-    say("srs_auto [")
-    if found(p) && eqs(text2(p), "using") then
-      var c = kids(p)
-      while !isNil(c) do
-        val f = find(ds, DFn, text(head(c)))
-        lid(true, text(head(c)))
-        if found(f) && num(f) == 0 && !isNil(clauseExprs(r, clausesOf(f), "ensures")) then
-          say(", «")
-          say(text(head(c)))
-          say("_spec»")
-        else ()
-        if !isNil(tail(c)) then say(", ") else ()
-        c = tail(c)
-    else ()
-    say("]")
+    if !isNil(tail(c)) then say(", ") else ()
+    c = tail(c)
+  say("]")
 
 // theorem f_spec (params) (h : requires) : ∃ result, f params = some result ∧ ensures
 def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
@@ -184,7 +222,7 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
     if !isNil(req) then
       say(" (_h_req : ")
       lpAll(r, ds, req)
-      say(" = true)")
+      say(")")
     else ()
     say(" :\n    ∃ «result», ")
     lid(true, text(f))
@@ -197,8 +235,8 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
       c = tail(c)
     say(" = some «result» ∧ ")
     lpAll(r, ds, ens)
-    say(" = true := ")
-    proofText(r, ds, proofOf(cs))
+    say(" := ")
+    proofText(r, ds, f, proofOf(cs))
     say("\n\n")
   else ()
 
@@ -206,4 +244,133 @@ def verification(r: Region, ds: Nodes): Unit =
   var c = ds
   while !isNil(c) do
     if kind(head(c)) == DFn && num(head(c)) == 0 then fnTheorem(r, ds, head(c)) else ()
+    c = tail(c)
+
+// spec def f with ensures: theorem f_spec (params) : ensures, `result` = the call f params
+def specTheorems(r: Region, ds: Nodes): Unit =
+  var c = ds
+  while !isNil(c) do
+    val f = head(c)
+    val ens = if kind(f) == DFn && num(f) == 2 then clauseExprs(r, clausesOf(f), "ensures") else NNil
+    if !isNil(ens) then
+      say("theorem «")
+      say(text(f))
+      say("_spec»")
+      lparams(ds, kids(kid(f, 0)))
+      say(" :\n    ")
+      // `result` = the call itself: a fact simp can use
+      var args = NNil
+      var a = kids(kid(f, 0))
+      while !isNil(a) do
+        args = NCons(leaf(r, XName, text(head(a)), 0), args)
+        a = tail(a)
+      lpAllR(r, ds, Node(XCall, text(f), "", 0, 0, rev(r, args)), ens)
+      say(" := ")
+      proofText(r, ds, f, proofOf(clausesOf(f)))
+      say("\n\n")
+    else ()
+    c = tail(c)
+
+// the first top-level loop of a fn body that has an invariant, else NoNode
+def invLoop(r: Region, body: Node): Node =
+  var res = NoNode
+  var c = if kind(body) == XBlock then kids(body) else one(r, body)
+  while !found(res) && !isNil(c) do
+    val s = head(c)
+    if kind(s) == XWhile && found(find(kids(kid(s, 1)), SClause, "invariant")) then res = s else ()
+    c = tail(c)
+  res
+
+// env at loop w: params + the vals before it (types from the checker, as lsBlock does)
+def loopEnv(r: Region, ds: Nodes, f: Node, w: Node): Nodes =
+  var env = fnEnv(r, ds, kids(kid(f, 0)))
+  var gam = fnGam(r, ds, kids(kid(f, 0)))
+  var c = if kind(kid(f, 2)) == XBlock then kids(kid(f, 2)) else NNil
+  while !isNil(c) && !(kind(head(c)) == XWhile && lineOf(head(c)) == lineOf(w)) do
+    val s = head(c)
+    if kind(s) == SVal then
+      val x = chk(r, ds, env, gam, kid(s, 0))
+      val t = if !isNil(tail(kids(s))) then kid(s, 1) else if num(s) == 1 then uncapped(r, text(tgTy(x))) else tgTy(x)
+      gam = tgGam(x)
+      env = NCons(Node(BVar, text(s), "", num(s), lineOf(s), one(r, t)), env)
+    else if kind(s) == SClause || kind(s) == SHandle then ()
+    else gam = tgGam(chk(r, ds, env, gam, s))
+    c = tail(c)
+  env
+
+def rpat(mu: Nodes): Unit =
+  if isNil(mu) then say("_")
+  else if isNil(tail(mu)) then lid(true, text(head(mu)))
+  else
+    say("⟨")
+    var c = mu
+    while !isNil(c) do
+      lid(true, text(head(c)))
+      if !isNil(tail(c)) then say(", ") else ()
+      c = tail(c)
+    say("⟩")
+
+// the user fns a loop calls: unfolded by srs_auto
+def loopCalls(r: Region, ds: Nodes, w: Node): Nodes =
+  var out = NNil
+  var c = callsOf(r, ds, w, NNil)
+  while !isNil(c) do
+    out = NCons(leaf(r, Name, text(head(c)), 0), out)
+    c = tail(c)
+  out
+
+// the proof of a fn whose body loop has an invariant: Srs.loop_bind with the loop's invariant and measure;
+// left: one turn keeps it (step), it holds on entry, the contract holds at exit
+def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
+  val env = loopEnv(r, ds, f, w)
+  val sc = scope(r, env)
+  val mu = mutated(r, sc, kid(w, 1))
+  val cap = captured(r, sc, mu)
+  val inv = clauseExprs(r, kids(kid(w, 1)), "invariant")
+  val dec = clauseExprs(r, kids(kid(w, 1)), "decreases")
+  val hints = loopCalls(r, ds, w)
+  say("rw [")
+  lid(true, text(f))
+  say("]\n  dsimp only\n  refine Srs.loop_bind (")
+  auxName(ds, true, text(f), w)
+  var c = cap
+  while !isNil(c) do
+    say(" _")
+    c = tail(c)
+  say(") _ _ (fun _ => by rw [")
+  auxName(ds, true, text(f), w)
+  say("]) (fun (")
+  tuple(true, mu)
+  say(" : ")
+  tupleTy(mu)
+  say(") => ")
+  lpAll(r, ds, inv)
+  say(") (fun (")
+  tuple(true, mu)
+  say(" : ")
+  tupleTy(mu)
+  say(") => (")
+  if isNil(dec) then say("srs_loop_needs_decreases") else lp(r, ds, head(dec))
+  say(").toNat) ?_ _ _ _ ?_ ?_\n  · rintro ")
+  rpat(mu)
+  say(" hI\n    ")
+  casesEnums(ds, mu)
+  autoCall(r, ds, p, hints)
+  say("\n  · ")
+  autoCall(r, ds, p, hints)
+  say("\n  · rintro ")
+  rpat(mu)
+  say(" hI hc\n    ")
+  casesEnums(ds, mu)
+  autoCall(r, ds, p, hints)
+
+// case split on each enum-typed loop var: conditions and bodies match on them
+def casesEnums(ds: Nodes, mu: Nodes): Unit =
+  var c = mu
+  while !isNil(c) do
+    if isEnum(ds, text(kid(head(c), 0))) then
+      say("cases ")
+      lid(true, text(head(c)))
+      say(" <;> ")
+    else ()
     c = tail(c)
