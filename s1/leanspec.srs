@@ -141,6 +141,14 @@ def lpp(r: Region, ds: Nodes, res: Node, e: Node): Unit =
     else ()
     lpr(r, ds, res, kid(e, 1))
     say(")")
+  else if kind(e) == XForall then
+    say("(∀ (")
+    lid(true, text(e))
+    say(" : ")
+    lty(kid(e, 0))
+    say("), ")
+    lpp(r, ds, res, kid(e, 1))
+    say(")")
   else if kind(e) == XUn && eqs(op, "!") then
     say("(¬ ")
     lpp(r, ds, res, kid(e, 0))

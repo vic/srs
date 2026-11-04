@@ -40,6 +40,7 @@ inductive «Kind» where
   | «XUn»
   | «XIf»
   | «XMatch»
+  | «XForall»
   | «XArm»
   | «XBlock»
   | «XWhile»
@@ -1608,6 +1609,12 @@ let _ := ();
 let «e» := (← «rhs» (← «expect» «ts» "else".toUTF8));
 pure («PR».«PR» («Node».«Node» «Kind».«XIf» "".toUTF8 "".toUTF8 (0 : Int) «line» («Nodes».«NCons» (← «pn» «c») («Nodes».«NCons» (← «pn» «t») (← «one» (← «pn» «e»))))) (← «pr» «e»));
 } else {
+if (← «isT» «ts0» "forall".toUTF8) then {
+let «x» := (← «needIdent» (← «tail» «ts0»));
+let «t» := (← «ty» (← «expect» (← «drop» «ts0» (2 : Int)) ":".toUTF8));
+let «b» := (← «expr» (← «expect» (← «pr» «t») "=>".toUTF8));
+pure («PR».«PR» («Node».«Node» «Kind».«XForall» «x» "".toUTF8 (0 : Int) «line» («Nodes».«NCons» (← «pn» «t») (← «one» (← «pn» «b»)))) (← «pr» «b»));
+} else {
 if (← «isT» «ts0» "while".toUTF8) then {
 let «c» := (← «expr» (← «tail» «ts0»));
 let «b» := (← «rhs» (← «expect» (← «pr» «c») "do".toUTF8));
@@ -1634,6 +1641,7 @@ if (← «isT» (← «pr» «b») "match".toUTF8) then {
 pure (← «arms» (← «pn» «b») (← «tail» (← «pr» «b»)));
 } else {
 pure «b»;
+};
 };
 };
 };
@@ -4344,6 +4352,15 @@ let _ := ();
 let _ := (← «lpr» «ds» «res» (← «kid» «e» (1 : Int)));
 pure (← «say» ")".toUTF8);
 } else {
+if ((← «kind» «e») == «Kind».«XForall») then {
+let _ := (← «say» "(∀ (".toUTF8);
+let _ := (← «lid» true (← «text» «e»));
+let _ := (← «say» " : ".toUTF8);
+let _ := (← «lty» (← «kid» «e» (0 : Int)));
+let _ := (← «say» "), ".toUTF8);
+let _ := (← «lpp» «ds» «res» (← «kid» «e» (1 : Int)));
+pure (← «say» ")".toUTF8);
+} else {
 if (← (do {
 if ((← «kind» «e») == «Kind».«XUn») then {
 pure (← «eqs» «op» "!".toUTF8)
@@ -4358,6 +4375,7 @@ pure (← «say» ")".toUTF8);
 let _ := (← «say» "(".toUTF8);
 let _ := (← «lpr» «ds» «res» «e»);
 pure (← «say» " = true)".toUTF8);
+};
 };
 };
 };

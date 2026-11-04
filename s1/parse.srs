@@ -306,6 +306,11 @@ def expr(r: Region, ts0: Nodes): PR =
     if isK(ts, TNl) && isT(tail(ts), "else") then ts = tail(ts) else ()
     val e = rhs(r, expect(ts, "else"))
     PR(Node(XIf, "", "", 0, line, NCons(pn(c), NCons(pn(t), one(r, pn(e))))), pr(e))
+  else if isT(ts0, "forall") then
+    val x = needIdent(tail(ts0))
+    val t = ty(r, expect(drop(ts0, 2), ":"))
+    val b = expr(r, expect(pr(t), "=>"))
+    PR(Node(XForall, x, "", 0, line, NCons(pn(t), one(r, pn(b)))), pr(b))
   else if isT(ts0, "while") then
     val c = expr(r, tail(ts0))
     val b = rhs(r, expect(pr(c), "do"))

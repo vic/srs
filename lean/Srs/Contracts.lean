@@ -14,6 +14,9 @@ end
 def «size» («xs» : «List») : Int :=
   (match «xs» with | «List».«Nil» => (0 : Int) | «List».«Cons» _ «t» => ((1 : Int) + («size» «t»)))
 
+def «memL» («v» : Int) («xs» : «List») : Bool :=
+  (match «xs» with | «List».«Nil» => false | «List».«Cons» «h» «t» => ((«h» == «v») || («memL» «v» «t»)))
+
 theorem «size_spec» :
     ∀ («xs» : «List»), (((«size» «xs») ≥ (0 : Int)))
   | «List».«Nil» => by
@@ -89,6 +92,10 @@ let t_ ← «count_loop0» «xs» («n», «c»);
 pure «n»;
 }
 
+def «push» («h» : Int) («xs» : «List») : Option «List» := do {
+pure («List».«Cons» «h» «xs»);
+}
+
 def «main» : Option Int := do {
 let _ := (← «rt_print_i64» (← «count» (← «build» (5 : Int))));
 let _ := (← «rt_print» "\n".toUTF8);
@@ -105,5 +112,9 @@ theorem «count_spec» («xs» : «List») (_h_req : (((«size» «xs») ≥ (0 
   · srs_auto [«size», «size_spec», «size», «size_spec»]
   · rintro ⟨«n», «c»⟩ hI hc
     rcases «c» with (⟨⟩ | ⟨_, (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«size», «size_spec», «size», «size_spec»]
+
+theorem «push_spec» («h» : Int) («xs» : «List») :
+    ∃ «result», «push» «h» «xs» = some «result» ∧ ((∀ («v» : Int), ((«memL» «v» «result») = ((«h» == «v») || («memL» «v» «xs»))))) := by
+  srs_auto [«memL», «push»]
 
 end Srs.Contracts
