@@ -196,16 +196,26 @@ def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
 def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
   say("srs_auto [")
   var c = if found(p) && eqs(text2(p), "using") then append(r, kids(p), extra) else extra
+  var first = true
   while !isNil(c) do
     val f = find(ds, DFn, text(head(c)))
-    lid(true, text(head(c)))
     // n 1 = the fn being proven: its own contract is not a fact yet
-    if found(f) && num(head(c)) == 0 && num(f) != 1 && !isNil(clauseExprs(r, clausesOf(f), "ensures")) then
-      say(", «")
-      say(text(head(c)))
-      say("_spec»")
+    val spec = found(f) && num(head(c)) == 0 && num(f) != 1 && !isNil(clauseExprs(r, clausesOf(f), "ensures"))
+    val ce = clausesOf(f)
+    val eqn = spec && num(f) == 0 && isNil(clauseExprs(r, ce, "requires")) && isNil(tail(clauseExprs(r, ce, "ensures"))) && resultEq(head(clauseExprs(r, ce, "ensures")))
+    // a fn with an _eq rule is used through it, not unfolded
+    if !eqn then
+      if !first then say(", ") else ()
+      lid(true, text(head(c)))
+      first = false
     else ()
-    if !isNil(tail(c)) then say(", ") else ()
+    if spec then
+      if !first then say(", ") else ()
+      say("«")
+      say(text(head(c)))
+      say(if eqn then "_eq»" else "_spec»")
+      first = false
+    else ()
     c = tail(c)
   say("]")
 
@@ -238,6 +248,7 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
     say(" := ")
     proofText(r, ds, f, proofOf(cs))
     say("\n\n")
+    if isNil(req) && isNil(tail(ens)) && resultEq(head(ens)) then eqTheorem(r, ds, f, kid(head(ens), 1)) else ()
   else ()
 
 def verification(r: Region, ds: Nodes): Unit =
@@ -483,3 +494,32 @@ def specCalls(r: Region, ds: Nodes, e: Node, acc: Nodes): Nodes =
     out = specCalls(r, ds, head(c), out)
     c = tail(c)
   out
+
+// ensures `result == E`
+def resultEq(e: Node): Bool = kind(e) == XBin && eqs(text(e), "==") && kind(kid(e, 0)) == XName && eqs(text(kid(e, 0)), "result")
+
+// theorem f_eq (params) : f params = some E: the contract as a rewrite rule for the proofs of callers
+def eqTheorem(r: Region, ds: Nodes, f: Node, e: Node): Unit =
+  say("theorem «")
+  say(text(f))
+  say("_eq»")
+  lparams(ds, kids(kid(f, 0)))
+  say(" :\n    ")
+  lid(true, text(f))
+  largs(ds, kids(kid(f, 0)))
+  say(" = some ")
+  lp(r, ds, e)
+  say(" := by\n  obtain ⟨_, h1, h2⟩ := «")
+  say(text(f))
+  say("_spec»")
+  largs(ds, kids(kid(f, 0)))
+  say("\n  rw [h1, h2]\n\n")
+
+def largs(ds: Nodes, ps: Nodes): Unit =
+  var c = ps
+  while !isNil(c) do
+    if !isProto(ds, text(kid(head(c), 0))) then
+      say(" ")
+      lid(true, text(head(c)))
+    else ()
+    c = tail(c)

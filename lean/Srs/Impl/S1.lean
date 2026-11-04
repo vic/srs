@@ -74,6 +74,9 @@ def «memS» («s» : ByteArray) («xs» : «Nodes») : Bool :=
 def «sizeS» («xs» : «Nodes») : Int :=
   (match «xs» with | «Nodes».«NNil» => (0 : Int) | «Nodes».«NCons» _ «t» => ((1 : Int) + («sizeS» «t»)))
 
+def «allIn» («a» : «Nodes») («b» : «Nodes») : Bool :=
+  (match «a» with | «Nodes».«NNil» => true | «Nodes».«NCons» «h» «t» => ((«memS» («textS» «h») «b») && («allIn» «t» «b»)))
+
 theorem «sizeS_spec» :
     ∀ («xs» : «Nodes»), (((«sizeS» «xs») ≥ (0 : Int)))
   | «Nodes».«NNil» => by
@@ -4381,69 +4384,6 @@ let t_ ← «lparams_loop0» «ps» «ds» «c»;
 pure ()
 }
 
-def «autoCall_loop0» («extra» : «Nodes») («p» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
-if (← (fun («c» : («Nodes»)) => (do {
-pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «autoCall_loop0» «extra» «p» «ds» (← (fun («c» : («Nodes»)) => (do {
-let mut «c» := «c»;
-let «f» := (← «find» «ds» «Kind».«DFn» (← «text» (← «head» «c»)));
-let _ := (← «lid» true (← «text» (← «head» «c»)));
-if (← (do {
-if (← (do {
-if (← (do {
-if (← «found» «f») then {
-pure ((← «num» (← «head» «c»)) == (0 : Int))
-} else {
-pure false
-}
-})) then {
-pure ((← «num» «f») != (1 : Int))
-} else {
-pure false
-}
-})) then {
-pure (!(← «isNil» (← «clauseExprs» (← «clausesOf» «f») "ensures".toUTF8)))
-} else {
-pure false
-}
-})) then {
-let _ := (← «say» ", «".toUTF8);
-let _ := (← «say» (← «text» (← «head» «c»)));
-let _ := (← «say» "_spec»".toUTF8);
-} else {
-let _ := ();
-};
-if (!(← «isNil» (← «tail» «c»))) then {
-let _ := (← «say» ", ".toUTF8);
-} else {
-let _ := ();
-};
-«c» := (← «tail» «c»);
-pure «c»
-} : Option («Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «autoCall» («ds» : «Nodes») («p» : «Node») («extra» : «Nodes») : Option Unit := do {
-let _ := (← «say» "srs_auto [".toUTF8);
-let mut «c» := (← (do {
-if (← (do {
-if (← «found» «p») then {
-pure (← «eqs» (← «text2» «p») "using".toUTF8)
-} else {
-pure false
-}
-})) then {
-pure (← «append» (← «kids» «p») «extra»);
-} else {
-pure «extra»;
-};
-}));
-let t_ ← «autoCall_loop0» «extra» «p» «ds» «c»;
-«c» := t_;
-pure (← «say» "]".toUTF8);
-}
-
 def «invLoop_loop0» («body» : «Node») (st' : («Nodes» × «Node»)) : Option («Nodes» × «Node») := do {
 if (← (fun ((«c», «res») : («Nodes» × «Node»)) => (do {
 pure (← (do {
@@ -4634,96 +4574,6 @@ let t_ ← «without_loop0» «name» «ps» («c», «out»);
 pure (← «rev» «out»);
 }
 
-def «inductionArms_loop1» («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : (Int × «Nodes»)) : Option (Int × «Nodes») := do {
-if (← (fun ((_, «fs») : (Int × «Nodes»)) => (do {
-pure (!(← «isNil» «fs»))
-} : Option Bool)) st') then «inductionArms_loop1» «cs» «ty» «x» «p» «f» «ds» (← (fun ((«i», «fs») : (Int × «Nodes»)) => (do {
-let mut «i» := «i»;
-let mut «fs» := «fs»;
-let _ := (← «say» " a".toUTF8);
-let _ := (← «sayn» «i»);
-«i» := («i» + (1 : Int));
-«fs» := (← «tail» «fs»);
-pure («i», «fs»)
-} : Option (Int × «Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «inductionArms_loop3» («ihs» : «Nodes») («i» : Int) («fs» : «Nodes») («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
-if (← (fun («a» : («Nodes»)) => (do {
-pure (!(← «isNil» «a»))
-} : Option Bool)) st') then «inductionArms_loop3» «ihs» «i» «fs» «cs» «ty» «x» «p» «f» «ds» (← (fun («a» : («Nodes»)) => (do {
-let mut «a» := «a»;
-let _ := (← «say» " ".toUTF8);
-let _ := (← «lid» true (← «text» (← «head» «a»)));
-«a» := (← «tail» «a»);
-pure «a»
-} : Option («Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «inductionArms_loop2» («ihs» : «Nodes») («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : (Int × «Nodes»)) : Option (Int × «Nodes») := do {
-if (← (fun ((_, «fs») : (Int × «Nodes»)) => (do {
-pure (!(← «isNil» «fs»))
-} : Option Bool)) st') then «inductionArms_loop2» «ihs» «cs» «ty» «x» «p» «f» «ds» (← (fun ((«i», «fs») : (Int × «Nodes»)) => (do {
-let mut «i» := «i»;
-let mut «fs» := «fs»;
-if (← «eqs» (← «text» (← «kid» (← «head» «fs») (0 : Int))) «ty») then {
-let _ := (← «say» "have ih".toUTF8);
-let _ := (← «sayn» «i»);
-let _ := (← «say» " := «".toUTF8);
-let _ := (← «say» (← «text» «f»));
-let _ := (← «say» "_spec»".toUTF8);
-let mut «a» := (← «without» (← «kids» (← «kid» «f» (0 : Int))) «x»);
-let t_ ← «inductionArms_loop3» «ihs» «i» «fs» «cs» «ty» «x» «p» «f» «ds» «a»;
-«a» := t_;
-let _ := (← «say» " a".toUTF8);
-let _ := (← «sayn» «i»);
-let _ := (← «say» "\n    ".toUTF8);
-} else {
-let _ := ();
-};
-«i» := («i» + (1 : Int));
-«fs» := (← «tail» «fs»);
-pure («i», «fs»)
-} : Option (Int × «Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «inductionArms_loop0» («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
-if (← (fun («cs» : («Nodes»)) => (do {
-pure (!(← «isNil» «cs»))
-} : Option Bool)) st') then «inductionArms_loop0» «ty» «x» «p» «f» «ds» (← (fun («cs» : («Nodes»)) => (do {
-let mut «cs» := «cs»;
-let _ := (← «say» "\n  | ".toUTF8);
-let _ := (← «ctorName» true «ds» (← «text» (← «head» «cs»)));
-let mut «fs» := (← «kids» (← «kid» (← «head» «cs») (0 : Int)));
-let mut «i» := (0 : Int);
-let t_ ← «inductionArms_loop1» «cs» «ty» «x» «p» «f» «ds» («i», «fs»);
-«i» := t_.1;
-«fs» := t_.2;
-let _ := (← «say» " => by\n    ".toUTF8);
-«fs» := (← «kids» (← «kid» (← «head» «cs») (0 : Int)));
-«i» := (0 : Int);
-let mut «ihs» := «Nodes».«NNil»;
-let t_ ← «inductionArms_loop2» «ihs» «cs» «ty» «x» «p» «f» «ds» («i», «fs»);
-«i» := t_.1;
-«fs» := t_.2;
-let _ := (← «autoCall» «ds» «p» (← «one» («Node».«Node» «Kind».«Name» (← «text» «f») "".toUTF8 (1 : Int) (0 : Int) «Nodes».«NNil»)));
-«cs» := (← «tail» «cs»);
-pure «cs»
-} : Option («Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «inductionArms» («ds» : «Nodes») («f» : «Node») («p» : «Node») («x» : ByteArray) : Option Unit := do {
-let «ty» := (← «text» (← «kid» (← «find» (← «kids» (← «kid» «f» (0 : Int))) «Kind».«Param» «x») (0 : Int)));
-let mut «cs» := (← «kids» (← «find» «ds» «Kind».«DEnum» «ty»));
-let t_ ← «inductionArms_loop0» «ty» «x» «p» «f» «ds» «cs»;
-«cs» := t_;
-pure ()
-}
-
 mutual
 def «specCalls_loop0» («acc» : «Nodes») («e» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
@@ -4772,6 +4622,52 @@ pure «out»;
 partial_fixpoint
 
 end
+
+def «resultEq» («e» : «Node») : Option Bool := do {
+pure (← (do {
+if (← (do {
+if (← (do {
+if ((← «kind» «e») == «Kind».«XBin») then {
+pure (← «eqs» (← «text» «e») "==".toUTF8)
+} else {
+pure false
+}
+})) then {
+pure ((← «kind» (← «kid» «e» (0 : Int))) == «Kind».«XName»)
+} else {
+pure false
+}
+})) then {
+pure (← «eqs» (← «text» (← «kid» «e» (0 : Int))) "result".toUTF8)
+} else {
+pure false
+}
+}));
+}
+
+def «largs_loop0» («ps» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («c» : («Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «largs_loop0» «ps» «ds» (← (fun («c» : («Nodes»)) => (do {
+let mut «c» := «c»;
+if (!(← «isProto» «ds» (← «text» (← «kid» (← «head» «c») (0 : Int))))) then {
+let _ := (← «say» " ".toUTF8);
+let _ := (← «lid» true (← «text» (← «head» «c»)));
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure «c»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «largs» («ds» : «Nodes») («ps» : «Nodes») : Option Unit := do {
+let mut «c» := «ps»;
+let t_ ← «largs_loop0» «ps» «ds» «c»;
+«c» := t_;
+pure ()
+}
 
 def «clauses_loop0» («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
@@ -5791,6 +5687,116 @@ let _ := ();
 pure (← «say» "\n\n".toUTF8);
 }
 
+def «autoCall_loop0» («extra» : «Nodes») («p» : «Node») («ds» : «Nodes») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
+if (← (fun ((_, «c») : (Bool × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «autoCall_loop0» «extra» «p» «ds» (← (fun ((«first», «c») : (Bool × «Nodes»)) => (do {
+let mut «first» := «first»;
+let mut «c» := «c»;
+let «f» := (← «find» «ds» «Kind».«DFn» (← «text» (← «head» «c»)));
+let «spec» := (← (do {
+if (← (do {
+if (← (do {
+if (← «found» «f») then {
+pure ((← «num» (← «head» «c»)) == (0 : Int))
+} else {
+pure false
+}
+})) then {
+pure ((← «num» «f») != (1 : Int))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isNil» (← «clauseExprs» (← «clausesOf» «f») "ensures".toUTF8)))
+} else {
+pure false
+}
+}));
+let «ce» := (← «clausesOf» «f»);
+let «eqn» := (← (do {
+if (← (do {
+if (← (do {
+if (← (do {
+if «spec» then {
+pure ((← «num» «f») == (0 : Int))
+} else {
+pure false
+}
+})) then {
+pure (← «isNil» (← «clauseExprs» «ce» "requires".toUTF8))
+} else {
+pure false
+}
+})) then {
+pure (← «isNil» (← «tail» (← «clauseExprs» «ce» "ensures".toUTF8)))
+} else {
+pure false
+}
+})) then {
+pure (← «resultEq» (← «head» (← «clauseExprs» «ce» "ensures".toUTF8)))
+} else {
+pure false
+}
+}));
+if (!«eqn») then {
+if (!«first») then {
+let _ := (← «say» ", ".toUTF8);
+} else {
+let _ := ();
+};
+let _ := (← «lid» true (← «text» (← «head» «c»)));
+«first» := false;
+} else {
+let _ := ();
+};
+if «spec» then {
+if (!«first») then {
+let _ := (← «say» ", ".toUTF8);
+} else {
+let _ := ();
+};
+let _ := (← «say» "«".toUTF8);
+let _ := (← «say» (← «text» (← «head» «c»)));
+let _ := (← «say» (← (do {
+if «eqn» then {
+pure "_eq»".toUTF8;
+} else {
+pure "_spec»".toUTF8;
+};
+})));
+«first» := false;
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («first», «c»)
+} : Option (Bool × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «autoCall» («ds» : «Nodes») («p» : «Node») («extra» : «Nodes») : Option Unit := do {
+let _ := (← «say» "srs_auto [".toUTF8);
+let mut «c» := (← (do {
+if (← (do {
+if (← «found» «p») then {
+pure (← «eqs» (← «text2» «p») "using".toUTF8)
+} else {
+pure false
+}
+})) then {
+pure (← «append» (← «kids» «p») «extra»);
+} else {
+pure «extra»;
+};
+}));
+let mut «first» := true;
+let t_ ← «autoCall_loop0» «extra» «p» «ds» («first», «c»);
+«first» := t_.1;
+«c» := t_.2;
+pure (← «say» "]".toUTF8);
+}
+
 def «loopEnv_loop0» («w» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
 if (← (fun ((«c», _, _) : («Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (← (do {
@@ -5896,6 +5902,96 @@ let t_ ← «casesEnums_loop0» «mu» «ds» «c»;
 pure ()
 }
 
+def «inductionArms_loop1» («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : (Int × «Nodes»)) : Option (Int × «Nodes») := do {
+if (← (fun ((_, «fs») : (Int × «Nodes»)) => (do {
+pure (!(← «isNil» «fs»))
+} : Option Bool)) st') then «inductionArms_loop1» «cs» «ty» «x» «p» «f» «ds» (← (fun ((«i», «fs») : (Int × «Nodes»)) => (do {
+let mut «i» := «i»;
+let mut «fs» := «fs»;
+let _ := (← «say» " a".toUTF8);
+let _ := (← «sayn» «i»);
+«i» := («i» + (1 : Int));
+«fs» := (← «tail» «fs»);
+pure («i», «fs»)
+} : Option (Int × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «inductionArms_loop3» («ihs» : «Nodes») («i» : Int) («fs» : «Nodes») («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («a» : («Nodes»)) => (do {
+pure (!(← «isNil» «a»))
+} : Option Bool)) st') then «inductionArms_loop3» «ihs» «i» «fs» «cs» «ty» «x» «p» «f» «ds» (← (fun («a» : («Nodes»)) => (do {
+let mut «a» := «a»;
+let _ := (← «say» " ".toUTF8);
+let _ := (← «lid» true (← «text» (← «head» «a»)));
+«a» := (← «tail» «a»);
+pure «a»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «inductionArms_loop2» («ihs» : «Nodes») («cs» : «Nodes») («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : (Int × «Nodes»)) : Option (Int × «Nodes») := do {
+if (← (fun ((_, «fs») : (Int × «Nodes»)) => (do {
+pure (!(← «isNil» «fs»))
+} : Option Bool)) st') then «inductionArms_loop2» «ihs» «cs» «ty» «x» «p» «f» «ds» (← (fun ((«i», «fs») : (Int × «Nodes»)) => (do {
+let mut «i» := «i»;
+let mut «fs» := «fs»;
+if (← «eqs» (← «text» (← «kid» (← «head» «fs») (0 : Int))) «ty») then {
+let _ := (← «say» "have ih".toUTF8);
+let _ := (← «sayn» «i»);
+let _ := (← «say» " := «".toUTF8);
+let _ := (← «say» (← «text» «f»));
+let _ := (← «say» "_spec»".toUTF8);
+let mut «a» := (← «without» (← «kids» (← «kid» «f» (0 : Int))) «x»);
+let t_ ← «inductionArms_loop3» «ihs» «i» «fs» «cs» «ty» «x» «p» «f» «ds» «a»;
+«a» := t_;
+let _ := (← «say» " a".toUTF8);
+let _ := (← «sayn» «i»);
+let _ := (← «say» "\n    ".toUTF8);
+} else {
+let _ := ();
+};
+«i» := («i» + (1 : Int));
+«fs» := (← «tail» «fs»);
+pure («i», «fs»)
+} : Option (Int × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «inductionArms_loop0» («ty» : ByteArray) («x» : ByteArray) («p» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («cs» : («Nodes»)) => (do {
+pure (!(← «isNil» «cs»))
+} : Option Bool)) st') then «inductionArms_loop0» «ty» «x» «p» «f» «ds» (← (fun («cs» : («Nodes»)) => (do {
+let mut «cs» := «cs»;
+let _ := (← «say» "\n  | ".toUTF8);
+let _ := (← «ctorName» true «ds» (← «text» (← «head» «cs»)));
+let mut «fs» := (← «kids» (← «kid» (← «head» «cs») (0 : Int)));
+let mut «i» := (0 : Int);
+let t_ ← «inductionArms_loop1» «cs» «ty» «x» «p» «f» «ds» («i», «fs»);
+«i» := t_.1;
+«fs» := t_.2;
+let _ := (← «say» " => by\n    ".toUTF8);
+«fs» := (← «kids» (← «kid» (← «head» «cs») (0 : Int)));
+«i» := (0 : Int);
+let mut «ihs» := «Nodes».«NNil»;
+let t_ ← «inductionArms_loop2» «ihs» «cs» «ty» «x» «p» «f» «ds» («i», «fs»);
+«i» := t_.1;
+«fs» := t_.2;
+let _ := (← «autoCall» «ds» «p» (← «one» («Node».«Node» «Kind».«Name» (← «text» «f») "".toUTF8 (1 : Int) (0 : Int) «Nodes».«NNil»)));
+«cs» := (← «tail» «cs»);
+pure «cs»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «inductionArms» («ds» : «Nodes») («f» : «Node») («p» : «Node») («x» : ByteArray) : Option Unit := do {
+let «ty» := (← «text» (← «kid» (← «find» (← «kids» (← «kid» «f» (0 : Int))) «Kind».«Param» «x») (0 : Int)));
+let mut «cs» := (← «kids» (← «find» «ds» «Kind».«DEnum» «ty»));
+let t_ ← «inductionArms_loop0» «ty» «x» «p» «f» «ds» «cs»;
+«cs» := t_;
+pure ()
+}
+
 def «specClosure_loop0» («acc» : «Nodes») («es» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
@@ -5916,6 +6012,23 @@ let t_ ← «specClosure_loop0» «acc» «es» «ds» («c», «out»);
 «c» := t_.1;
 «out» := t_.2;
 pure «out»;
+}
+
+def «eqTheorem» («ds» : «Nodes») («f» : «Node») («e» : «Node») : Option Unit := do {
+let _ := (← «say» "theorem «".toUTF8);
+let _ := (← «say» (← «text» «f»));
+let _ := (← «say» "_eq»".toUTF8);
+let _ := (← «lparams» «ds» (← «kids» (← «kid» «f» (0 : Int))));
+let _ := (← «say» " :\n    ".toUTF8);
+let _ := (← «lid» true (← «text» «f»));
+let _ := (← «largs» «ds» (← «kids» (← «kid» «f» (0 : Int))));
+let _ := (← «say» " = some ".toUTF8);
+let _ := (← «lp» «ds» «e»);
+let _ := (← «say» " := by\n  obtain ⟨_, h1, h2⟩ := «".toUTF8);
+let _ := (← «say» (← «text» «f»));
+let _ := (← «say» "_spec»".toUTF8);
+let _ := (← «largs» «ds» (← «kids» (← «kid» «f» (0 : Int))));
+pure (← «say» "\n  rw [h1, h2]\n\n".toUTF8);
 }
 
 def «fn» («ts0» : «Nodes») («ext» : Int) : Option «PR» := do {
@@ -7082,7 +7195,24 @@ let _ := (← «say» " = some «result» ∧ ".toUTF8);
 let _ := (← «lpAll» «ds» «ens»);
 let _ := (← «say» " := ".toUTF8);
 let _ := (← «proofText» «ds» «f» (← «proofOf» «cs»));
-pure (← «say» "\n\n".toUTF8);
+let _ := (← «say» "\n\n".toUTF8);
+if (← (do {
+if (← (do {
+if (← «isNil» «req») then {
+pure (← «isNil» (← «tail» «ens»))
+} else {
+pure false
+}
+})) then {
+pure (← «resultEq» (← «head» «ens»))
+} else {
+pure false
+}
+})) then {
+pure (← «eqTheorem» «ds» «f» (← «kid» (← «head» «ens») (1 : Int)));
+} else {
+pure ();
+};
 } else {
 pure ();
 };
@@ -7516,5 +7646,26 @@ theorem «has_spec» («xs» : «Nodes») («s» : ByteArray) :
   · srs_auto [«isNil», «eqs», «text», «head», «tail», «sizeS», «sizeS_spec», «textS», «memS»]
   · rintro ⟨«found», «c»⟩ hI hc
     cases «found» <;> rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «eqs», «text», «head», «tail», «sizeS», «sizeS_spec», «textS», «memS»]
+
+theorem «has_eq» («xs» : «Nodes») («s» : ByteArray) :
+    «has» «xs» «s» = some («memS» «s» «xs») := by
+  obtain ⟨_, h1, h2⟩ := «has_spec» «xs» «s»
+  rw [h1, h2]
+
+theorem «subset_spec» («a» : «Nodes») («b» : «Nodes») :
+    ∃ «result», «subset» «a» «b» = some «result» ∧ ((«result» = («allIn» «a» «b»))) := by
+  rw [«subset»]
+  dsimp only
+  refine Srs.loop_bind («subset_loop0» _ _) _ _ (fun _ => by rw [«subset_loop0»]) (fun ((«ok», «c») : (Bool × «Nodes»)) => (((«ok» && («allIn» «c» «b»)) = («allIn» «a» «b»)))) (fun ((«ok», «c») : (Bool × «Nodes»)) => ((«sizeS» «c»)).toNat) ?_ _ _ _ ?_ ?_
+  · rintro ⟨«ok», «c»⟩ hI
+    cases «ok» <;> rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «has_eq», «text», «head», «tail», «sizeS», «sizeS_spec», «textS», «memS», «allIn»]
+  · srs_auto [«isNil», «has_eq», «text», «head», «tail», «sizeS», «sizeS_spec», «textS», «memS», «allIn»]
+  · rintro ⟨«ok», «c»⟩ hI hc
+    cases «ok» <;> rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «has_eq», «text», «head», «tail», «sizeS», «sizeS_spec», «textS», «memS», «allIn»]
+
+theorem «subset_eq» («a» : «Nodes») («b» : «Nodes») :
+    «subset» «a» «b» = some («allIn» «a» «b») := by
+  obtain ⟨_, h1, h2⟩ := «subset_spec» «a» «b»
+  rw [h1, h2]
 
 end Srs.Impl
