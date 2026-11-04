@@ -180,7 +180,7 @@ def ls(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node, on: Bool,
     put(on, "};\n")
   else if k == XMatch then lsMatch(r, ds, fn, env, gam, e, on, mode)
   else if k == XWhile then
-    if on then lsLoop(r, fn, env, e, mode)
+    if on then lsLoop(r, ds, fn, env, e, mode)
     else
       // nested loops first: an aux def comes after the defs it calls
       lx(r, ds, fn, env, gam, kid(e, 0), false)
@@ -276,12 +276,20 @@ def mutated(r: Region, sc: Nodes, body: Node): Nodes =
     c = tail(c)
   rev(r, out)
 
-def auxName(on: Bool, fn: Str, e: Node): Unit =
+// loop aux name = <fn>_loop<k>, k = loops of the fn on earlier lines: stable under edits outside the fn
+def auxName(ds: Nodes, on: Bool, fn: Str, e: Node): Unit =
   put(on, "«")
   put(on, fn)
-  put(on, "_w")
-  putn(on, lineOf(e))
+  put(on, "_loop")
+  putn(on, loopsBefore(kid(find(ds, DFn, fn), 2), lineOf(e)))
   put(on, "»")
+def loopsBefore(e: Node, line: I64): I64 =
+  var n = if kind(e) == XWhile && lineOf(e) < line then 1 else 0
+  var c = kids(e)
+  while !isNil(c) do
+    n = n + loopsBefore(head(c), line)
+    c = tail(c)
+  n
 def auxArgs(on: Bool, sc: Nodes): Unit =
   var c = sc
   while !isNil(c) do
@@ -317,11 +325,11 @@ def proj(i: I64, n: I64): Unit =
     k = k + 1
   if i < n - 1 then say(".1") else ()
 
-def lsLoop(r: Region, fn: Str, env: Nodes, e: Node, mode: I64): Unit =
+def lsLoop(r: Region, ds: Nodes, fn: Str, env: Nodes, e: Node, mode: I64): Unit =
   val sc = scope(r, env)
   val mu = mutated(r, sc, kid(e, 1))
   say("let t_ ← ")
-  auxName(true, fn, e)
+  auxName(ds, true, fn, e)
   auxArgs(true, sc)
   say(";\n")
   var c = mu
@@ -339,7 +347,7 @@ def leanAux(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node): Uni
   val sc = scope(r, env)
   val mu = mutated(r, sc, kid(e, 1))
   say("def ")
-  auxName(true, fn, e)
+  auxName(ds, true, fn, e)
   var c = sc
   while !isNil(c) do
     say(" (")
@@ -363,7 +371,7 @@ def leanAux(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node): Uni
   lx(r, ds, fn, env, gam, kid(e, 0), true)
   say(" then {\n")
   ls(r, ds, fn, env, gam, kid(e, 1), true, 0)
-  auxName(true, fn, e)
+  auxName(ds, true, fn, e)
   auxArgs(true, sc)
   say("\n} else {\npure ")
   tuple(true, mu)

@@ -23,14 +23,14 @@ theorem text_eq (h : «Node») : ∃ b, «text» h = some b ∧ b.data = txt h :
 
 theorem has_w_spec (s : ByteArray) (xs : «Nodes») :
     ∀ (c : «Nodes») (found : Bool), ∃ c',
-      «has_w133» found c s xs = some (found || decide (s.data ∈ names c), c')
-  | .«NNil», found => ⟨.«NNil», by rw [«has_w133»]; cases found <;> rfl⟩
-  | .«NCons» h t, true => ⟨.«NCons» h t, by rw [«has_w133»]; rfl⟩
+      «has_loop0» found c s xs = some (found || decide (s.data ∈ names c), c')
+  | .«NNil», found => ⟨.«NNil», by rw [«has_loop0»]; cases found <;> rfl⟩
+  | .«NCons» h t, true => ⟨.«NCons» h t, by rw [«has_loop0»]; rfl⟩
   | .«NCons» h t, false => by
     obtain ⟨b, hb, hbd⟩ := text_eq h
     obtain ⟨c', hc⟩ := has_w_spec s xs t (b.data == s.data)
     refine ⟨c', ?_⟩
-    rw [«has_w133»]
+    rw [«has_loop0»]
     simp only [«isNil», «head», «tail», «eqs», rt_str_eq, hb, bind, Option.bind, pure, hc]
     have hbeq : (b.data == s.data) = decide (s.data = b.data) := by
       by_cases e : s.data = b.data
@@ -46,14 +46,14 @@ theorem has_spec (xs : «Nodes») (s : ByteArray) : «has» xs s = some (decide 
 
 theorem subset_w_spec (b a : «Nodes») :
     ∀ (c : «Nodes») (ok : Bool), ∃ c',
-      «subset_w44» ok c b a = some (ok && decide (∀ x ∈ names c, x ∈ names b), c')
-  | .«NNil», ok => ⟨.«NNil», by rw [«subset_w44»]; cases ok <;> simp [«isNil», names, bind, Option.bind, pure]⟩
-  | .«NCons» h t, false => ⟨.«NCons» h t, by rw [«subset_w44»]; rfl⟩
+      «subset_loop0» ok c b a = some (ok && decide (∀ x ∈ names c, x ∈ names b), c')
+  | .«NNil», ok => ⟨.«NNil», by rw [«subset_loop0»]; cases ok <;> simp [«isNil», names, bind, Option.bind, pure]⟩
+  | .«NCons» h t, false => ⟨.«NCons» h t, by rw [«subset_loop0»]; rfl⟩
   | .«NCons» h t, true => by
     obtain ⟨y, hy, hyd⟩ := text_eq h
     obtain ⟨c', hc⟩ := subset_w_spec b a t (decide (y.data ∈ names b))
     refine ⟨c', ?_⟩
-    rw [«subset_w44»]
+    rw [«subset_loop0»]
     simp only [«isNil», «head», «tail», hy, has_spec, bind, Option.bind, pure, hc]
     simp [names, ← hyd]
 
@@ -65,15 +65,15 @@ theorem subset_spec (a b : «Nodes») :
   simp
 
 theorem union_w_spec (b a : «Nodes») :
-    ∀ (c out : «Nodes»), ∃ c' out', «union_w37» c out b a = some (c', out') ∧
+    ∀ (c out : «Nodes»), ∃ c' out', «union_loop0» c out b a = some (c', out') ∧
       ∀ x, x ∈ names out' ↔ x ∈ names out ∨ x ∈ names c
-  | .«NNil», out => ⟨.«NNil», out, by rw [«union_w37»]; rfl, by simp [names]⟩
+  | .«NNil», out => ⟨.«NNil», out, by rw [«union_loop0»]; rfl, by simp [names]⟩
   | .«NCons» h t, out => by
     obtain ⟨y, hy, hyd⟩ := text_eq h
     by_cases hin : y.data ∈ names out
     · obtain ⟨c', out', hc, hm⟩ := union_w_spec b a t out
       refine ⟨c', out', ?_, ?_⟩
-      · rw [«union_w37»]
+      · rw [«union_loop0»]
         simp [«isNil», «head», «tail», hy, has_spec, hin, bind, Option.bind, pure, hc]
       · intro x; rw [hm]; simp only [names, List.mem_cons, ← hyd]
         constructor
@@ -81,7 +81,7 @@ theorem union_w_spec (b a : «Nodes») :
         · rintro (hx | rfl | hx) <;> simp_all
     · obtain ⟨c', out', hc, hm⟩ := union_w_spec b a t (.«NCons» h out)
       refine ⟨c', out', ?_, ?_⟩
-      · rw [«union_w37»]
+      · rw [«union_loop0»]
         simp [«isNil», «head», «tail», hy, has_spec, hin, bind, Option.bind, pure, hc]
       · intro x; rw [hm]; simp only [names, List.mem_cons, ← hyd]
         constructor

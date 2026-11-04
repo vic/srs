@@ -34,15 +34,15 @@ def dropN : Nat → «Nodes» → «Nodes»
   | n + 1, c => dropN n (tlN c)
 
 theorem nth_w_spec (i : Int) (xs : «Nodes») :
-    ∀ (n : Nat) (k : Int) (c : «Nodes»), k.toNat = n → ∃ k', «nth_w100» k c i xs = some (k', dropN n c)
+    ∀ (n : Nat) (k : Int) (c : «Nodes»), k.toNat = n → ∃ k', «nth_loop0» k c i xs = some (k', dropN n c)
   | 0, k, c, hk => ⟨k, by
-      rw [«nth_w100»]
+      rw [«nth_loop0»]
       have : ¬ k > 0 := by omega
       simp [this, pure, dropN]⟩
   | n + 1, k, c, hk => by
     obtain ⟨k', hc⟩ := nth_w_spec i xs n (k - 1) (tlN c) (by omega)
     refine ⟨k', ?_⟩
-    rw [«nth_w100»]
+    rw [«nth_loop0»]
     have : k > 0 := by omega
     simp [this, tail_eq, bind, Option.bind, hc, dropN]
 
@@ -71,11 +71,11 @@ theorem live_spec (ds env gam : «Nodes») (c : ByteArray) : «live» ds env gam
     · simp [find_spec, hb, found_eq, isNode, num_nm, nm, hn, bind, Option.bind, pure]
 
 theorem needLive_w_spec (ds env gam : «Nodes») (t : «Node») (line : Int) :
-    ∀ c : «Nodes», «needLive_w94» c line t gam env ds =
+    ∀ c : «Nodes», «needLive_loop0» c line t gam env ds =
       if ∀ x ∈ toL c, liveS ds env gam (t1 x) = true then some .«NNil» else none
-  | .«NNil» => by rw [«needLive_w94»]; simp [«isNil», toL, pure]
+  | .«NNil» => by rw [«needLive_loop0»]; simp [«isNil», toL, pure]
   | .«NCons» h tl => by
-    rw [«needLive_w94»]
+    rw [«needLive_loop0»]
     by_cases hl : liveS ds env gam (t1 h) = true
     · simp [«isNil», head_eq, hdN_cons, tail_eq, tlN_cons, text_t1, live_spec, hl, bind, Option.bind,
         needLive_w_spec ds env gam t line tl, toL]
