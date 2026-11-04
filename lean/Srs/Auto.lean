@@ -4,12 +4,17 @@ builds, so it is not trusted. `proof using a, b` in srs adds a, b as simp facts.
 -/
 import Srs.Rt
 
+/-- a bind on an `if` (a body `if` whose condition calls fns): push the bind into both arms. Used before
+`bind` unfolds to `match`, where the `if` would be stuck in the match scrutinee. -/
+theorem Srs.ite_bind {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → Option β) :
+    (ite c a b >>= f) = ite c (a >>= f) (b >>= f) := by split <;> rfl
 
 syntax "srs_auto" (" [" Lean.Parser.Tactic.simpLemma,* "]")? : tactic
 
 macro_rules
   | `(tactic| srs_auto) => `(tactic| srs_auto [])
   | `(tactic| srs_auto [$ls,*]) => `(tactic| (
+      (try simp only [$ls,*, pure_bind, Srs.ite_bind, Srs.Rt.rt_str_eq] at *)
       (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at,
         Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at,
         Srs.Rt.P.rt_str_slice] at *)

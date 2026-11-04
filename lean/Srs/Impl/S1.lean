@@ -7703,6 +7703,22 @@ theorem «has_eq» («xs» : «Nodes») («s» : ByteArray) :
   obtain ⟨_, h1, h2⟩ := «has_spec» «xs» «s»
   rw [h1, h2]
 
+theorem «find_spec» («xs» : «Nodes») («k» : «Kind») («s» : ByteArray) :
+    ∃ «result», «find» «xs» «k» «s» = some «result» ∧ ((«result» = («lookS» «xs» «k» «s»))) := by
+  rw [«find»]
+  dsimp only
+  refine Srs.loop_bind («find_loop0» _ _ _) _ _ (fun _ => by rw [«find_loop0»]) (fun ((«found», «res», «c») : (Bool × «Node» × «Nodes»)) => ((((«lookS» «xs» «k» «s») = (if «found» then «res» else («lookS» «c» «k» «s»))) ∧ ((«found» = true) ∨ («res» = «Node».«NoNode»))))) (fun ((«found», «res», «c») : (Bool × «Node» × «Nodes»)) => ((«sizeS» «c»)).toNat) ?_ _ _ _ ?_ ?_
+  · rintro ⟨«found», «res», «c»⟩ hI
+    cases «found» <;> rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «head», «kind», «eqs», «text», «tail», «sizeS», «sizeS_spec», «textS», «kindS», «lookS»]
+  · srs_auto [«isNil», «head», «kind», «eqs», «text», «tail», «sizeS», «sizeS_spec», «textS», «kindS», «lookS»]
+  · rintro ⟨«found», «res», «c»⟩ hI hc
+    cases «found» <;> rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «head», «kind», «eqs», «text», «tail», «sizeS», «sizeS_spec», «textS», «kindS», «lookS»]
+
+theorem «find_eq» («xs» : «Nodes») («k» : «Kind») («s» : ByteArray) :
+    «find» «xs» «k» «s» = some («lookS» «xs» «k» «s») := by
+  obtain ⟨_, h1, h2⟩ := «find_spec» «xs» «k» «s»
+  rw [h1, h2]
+
 theorem «subset_spec» («a» : «Nodes») («b» : «Nodes») :
     ∃ «result», «subset» «a» «b» = some «result» ∧ ((«result» = («allIn» «a» «b»))) := by
   rw [«subset»]

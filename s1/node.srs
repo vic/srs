@@ -168,11 +168,15 @@ spec def lookS(xs: Nodes, k: Kind, s: Str): Node = xs match
   case NCons(h, t) => if kindS(h) == k && rt_str_eq(textS(h), s) then h else lookS(t, k, s)
 
 // first node of kind k with text s, or NoNode if absent
-def find(xs: Nodes, k: Kind, s: Str): Node =
+def find(xs: Nodes, k: Kind, s: Str): Node
+  ensures result == lookS(xs, k, s)
+=
   var c = xs
   var res = NoNode
   var found = false
   while !found && !isNil(c) do
+    invariant lookS(xs, k, s) == (if found then res else lookS(c, k, s)) && (found || res == NoNode)
+    decreases sizeS(c)
     val x = head(c)
     if kind(x) == k && eqs(text(x), s) then
       res = x
