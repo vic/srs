@@ -17,4 +17,12 @@ def rt_str_at (s : ByteArray) (i : Int) : Option Int := pure (s.get! i.toNat).to
 def rt_str_slice (s : ByteArray) (b e : Int) : Option ByteArray := pure (s.extract b.toNat e.toNat)
 def rt_str_eq (a b : ByteArray) : Option Bool := pure (a.data == b.data)
 
+-- pure versions, for specs and contracts (`spec def`, requires, ensures, invariant)
+namespace P
+def rt_str_len (s : ByteArray) : Int := s.size
+def rt_str_at (s : ByteArray) (i : Int) : Int := (s.get! i.toNat).toNat
+def rt_str_slice (s : ByteArray) (b e : Int) : ByteArray := s.extract b.toNat e.toNat
+def rt_str_eq (a b : ByteArray) : Bool := a.data == b.data
+end P
+
 end Srs.Rt

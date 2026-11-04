@@ -1,0 +1,209 @@
+// S1 Lean backend, verification part (C13): spec defs, contracts and loop invariants as Lean defs and theorems.
+// Specs are pure: no ← (they call spec defs, constructors and the pure externs Srs.Rt.P only).
+
+def clausesOf(f: Node): Nodes = if len(kids(f)) > 3 then kids(kid(f, 3)) else NNil
+def clauseExprs(r: Region, cs: Nodes, kw: Str): Nodes =
+  var out = NNil
+  var c = cs
+  while !isNil(c) do
+    if kind(head(c)) == SClause && eqs(text(head(c)), kw) then out = NCons(kid(head(c), 0), out) else ()
+    c = tail(c)
+  rev(r, out)
+def proofOf(cs: Nodes): Node = find(cs, SClause, "proof")
+
+// e as a pure Lean term
+def lp(r: Region, ds: Nodes, e: Node): Unit =
+  val k = kind(e)
+  if k == XInt then
+    say("(")
+    sayn(num(e))
+    say(" : Int)")
+  else if k == XBool then say(if num(e) == 1 then "true" else "false")
+  else if k == XStr then
+    say("\"")
+    say(text(e))
+    say("\".toUTF8")
+  else if k == XUnit then say("()")
+  else if k == XName then
+    if found(find(allCases(r, ds), DCase, text(e))) then ctorName(r, true, ds, text(e)) else lid(true, text(e))
+  else if k == XCall then
+    val f = find(ds, DFn, text(e))
+    say("(")
+    if found(find(allCases(r, ds), DCase, text(e))) then ctorName(r, true, ds, text(e))
+    else if found(f) && num(f) == 1 then
+      say("Srs.Rt.P.")
+      say(text(e))
+    else if found(f) && num(f) == 2 then lid(true, text(e))
+    else say("srs_spec_calls_only_spec_defs")
+    var a = kids(e)
+    while !isNil(a) do
+      say(" ")
+      lp(r, ds, head(a))
+      a = tail(a)
+    say(")")
+  else if k == XBin then
+    val op = text(e)
+    val cmp = eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")
+    say(if cmp then "(decide (" else if eqs(op, "/") then "(Int.tdiv " else if eqs(op, "%") then "(Int.tmod " else "(")
+    lp(r, ds, kid(e, 0))
+    if !eqs(op, "/") && !eqs(op, "%") then
+      say(" ")
+      say(op)
+    else ()
+    say(" ")
+    lp(r, ds, kid(e, 1))
+    say(if cmp then "))" else ")")
+  else if k == XUn then
+    say(if eqs(text(e), "-") then "(0 - " else "(!")
+    lp(r, ds, kid(e, 0))
+    say(")")
+  else if k == XIf then
+    say("(if ")
+    lp(r, ds, kid(e, 0))
+    say(" then ")
+    lp(r, ds, kid(e, 1))
+    say(" else ")
+    lp(r, ds, kid(e, 2))
+    say(")")
+  else if k == XMatch then
+    say("(match ")
+    lp(r, ds, kid(e, 0))
+    say(" with")
+    var arms = tail(kids(e))
+    while !isNil(arms) do
+      val arm = head(arms)
+      say(" | ")
+      if eqs(text(arm), "_") then say("_")
+      else
+        ctorName(r, true, ds, text(arm))
+        var bs = tail(kids(arm))
+        while !isNil(bs) do
+          say(" ")
+          if eqs(text(head(bs)), "_") then say("_") else lid(true, text(head(bs)))
+          bs = tail(bs)
+      say(" => ")
+      lp(r, ds, kid(arm, 0))
+      arms = tail(arms)
+    say(")")
+  else if k == XBlock then
+    var c = kids(e)
+    var opens = 0
+    while !isNil(c) do
+      val s = head(c)
+      if kind(s) == SVal then
+        say("(let ")
+        lid(true, text(s))
+        say(" := ")
+        lp(r, ds, kid(s, 0))
+        say("; ")
+        opens = opens + 1
+      else if kind(s) == SClause then ()
+      else lp(r, ds, s)
+      c = tail(c)
+    while opens > 0 do
+      say(")")
+      opens = opens - 1
+  else say("srs_unsupported_in_spec")
+
+// conjunction of clause exprs, as Bool
+def lpAll(r: Region, ds: Nodes, es: Nodes): Unit =
+  if isNil(es) then say("true")
+  else
+    say("(")
+    var c = es
+    while !isNil(c) do
+      lp(r, ds, head(c))
+      if !isNil(tail(c)) then say(" && ") else ()
+      c = tail(c)
+    say(")")
+
+def lparams(ds: Nodes, ps: Nodes): Unit =
+  var c = ps
+  while !isNil(c) do
+    if !isProto(ds, text(kid(head(c), 0))) then
+      say(" (")
+      lid(true, text(head(c)))
+      say(" : ")
+      lty(kid(head(c), 0))
+      say(")")
+    else ()
+    c = tail(c)
+
+def specDef(r: Region, ds: Nodes, f: Node): Unit =
+  say("def ")
+  lid(true, text(f))
+  lparams(ds, kids(kid(f, 0)))
+  say(" : ")
+  lty(kid(f, 1))
+  say(" :=\n  ")
+  lp(r, ds, kid(f, 2))
+  val dec = clauseExprs(r, clausesOf(f), "decreases")
+  if !isNil(dec) then
+    say("\ntermination_by (")
+    lp(r, ds, head(dec))
+    say(").toNat")
+  else ()
+  say("\n\n")
+
+// the proof of a contract: srs_auto with the `using` facts, induction, or Lean tactics
+def proofText(r: Region, ds: Nodes, p: Node): Unit =
+  if found(p) && eqs(text2(p), "lean") then say(text(kid(p, 0)))
+  else
+    say("by\n  ")
+    if found(p) && eqs(text2(p), "by") then
+      say("induction ")
+      lid(true, text(kid(p, 0)))
+      say(" <;> ")
+    else ()
+    say("srs_auto [")
+    if found(p) && eqs(text2(p), "using") then
+      var c = kids(p)
+      while !isNil(c) do
+        val f = find(ds, DFn, text(head(c)))
+        lid(true, text(head(c)))
+        if found(f) && num(f) == 0 && !isNil(clauseExprs(r, clausesOf(f), "ensures")) then
+          say(", «")
+          say(text(head(c)))
+          say("_spec»")
+        else ()
+        if !isNil(tail(c)) then say(", ") else ()
+        c = tail(c)
+    else ()
+    say("]")
+
+// theorem f_spec (params) (h : requires) : ∃ result, f params = some result ∧ ensures
+def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
+  val cs = clausesOf(f)
+  val ens = clauseExprs(r, cs, "ensures")
+  val req = clauseExprs(r, cs, "requires")
+  if !isNil(ens) then
+    say("theorem «")
+    say(text(f))
+    say("_spec»")
+    lparams(ds, kids(kid(f, 0)))
+    if !isNil(req) then
+      say(" (_h_req : ")
+      lpAll(r, ds, req)
+      say(" = true)")
+    else ()
+    say(" :\n    ∃ «result», ")
+    lid(true, text(f))
+    var c = kids(kid(f, 0))
+    while !isNil(c) do
+      if !isProto(ds, text(kid(head(c), 0))) then
+        say(" ")
+        lid(true, text(head(c)))
+      else ()
+      c = tail(c)
+    say(" = some «result» ∧ ")
+    lpAll(r, ds, ens)
+    say(" = true := ")
+    proofText(r, ds, proofOf(cs))
+    say("\n\n")
+  else ()
+
+def verification(r: Region, ds: Nodes): Unit =
+  var c = ds
+  while !isNil(c) do
+    if kind(head(c)) == DFn && num(head(c)) == 0 then fnTheorem(r, ds, head(c)) else ()
+    c = tail(c)

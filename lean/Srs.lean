@@ -7,3 +7,4 @@ import Srs.Proofs.Lists
 import Srs.Proofs.Gamma
 import Srs.Proofs.Live
 import Srs.Proofs.Step
+import Srs.Contracts
