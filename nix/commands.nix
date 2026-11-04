@@ -41,8 +41,13 @@ in
         "./tests/run.sh"
       )
       (cmd "test" "lean-check"
-        "the Lean model of the effect checker: soundness proof + agreement with tests/ (no sorry)"
+        "Lean: Impl = s1/*.srs via s1 --lean (fresh, must match the committed file), Impl verdicts = S1, model soundness proof (no sorry)"
         ''
+          ${build}
+          ${cc} -o "$B/seed" bootstrap/seed.c rt/srs_rt.c
+          S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/emit.srs s1/lean.srs"
+          timeout 10 "$B/seed" --lean $S1SRC > "$B/S1.lean"
+          cmp -s "$B/S1.lean" lean/Srs/Impl/S1.lean || { cp "$B/S1.lean" lean/Srs/Impl/S1.lean; echo "lean/Srs/Impl/S1.lean was stale: regenerated, commit it" >&2; exit 1; }
           ! grep -rn --include='*.lean' -w -e sorry -e admit -e axiom lean/Srs || { echo "unproven step" >&2; exit 1; }
           cd lean && timeout 600 lake build
         ''
@@ -52,7 +57,7 @@ in
         ${build}
         timeout 120 zig test s0/main.zig
         timeout 120 zig build-exe s0/main.zig -femit-bin="$B/s0"
-        S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/emit.srs s1/main.srs"
+        S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/emit.srs s1/lean.srs s1/main.srs"
         "$B/s0" $S1SRC > "$B/s1.c"
         ${cc} -o "$B/s1" "$B/s1.c" rt/srs_rt.c
         "$B/s1" $S1SRC > bootstrap/seed.c

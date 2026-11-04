@@ -196,23 +196,34 @@ def checkSig(r: Region, ds: Nodes, f: Node): Unit =
   needTy(ds, kid(f, 1))
   if isProto(ds, text(kid(f, 1))) then err("capability returned from", text(f), lineOf(f)) else ()
 
-def checkFn(r: Region, ds: Nodes, f: Node): Unit =
-  val ps = kids(kid(f, 0))
+// the env and Γ a fn body starts in: params, caps in their `from` state (also used by the Lean backend)
+def fnEnv(r: Region, ds: Nodes, ps: Nodes): Nodes =
   var env = NNil
-  var gam = NNil
   var c = ps
   while !isNil(c) do
     val p = head(c)
     val t = kid(p, 0)
-    if isProto(ds, text(t)) then
-      val from = if rt_str_len(text2(t)) > 0 then text2(t) else text2(find(ds, DProto, text(t)))
-      env = NCons(Node(BVar, text(p), text(t), 2, lineOf(p), one(r, t)), env)
-      gam = NCons(Node(GState, text(p), from, 0, 0, NNil), gam)
+    if isProto(ds, text(t)) then env = NCons(Node(BVar, text(p), text(t), 2, lineOf(p), one(r, t)), env)
     else env = NCons(Node(BVar, text(p), "", 0, lineOf(p), one(r, sigTy(r, ds, ps, t))), env)
     c = tail(c)
-  val res = chk(r, ds, env, gam, kid(f, 2))
+  env
+def fnGam(r: Region, ds: Nodes, ps: Nodes): Nodes =
+  var gam = NNil
+  var c = ps
+  while !isNil(c) do
+    val t = kid(head(c), 0)
+    if isProto(ds, text(t)) then
+      val from = if rt_str_len(text2(t)) > 0 then text2(t) else text2(find(ds, DProto, text(t)))
+      gam = NCons(Node(GState, text(head(c)), from, 0, 0, NNil), gam)
+    else ()
+    c = tail(c)
+  gam
+
+def checkFn(r: Region, ds: Nodes, f: Node): Unit =
+  val ps = kids(kid(f, 0))
+  val res = chk(r, ds, fnEnv(r, ds, ps), fnGam(r, ds, ps), kid(f, 2))
   needAssign(tgTy(res), sigTy(r, ds, ps, kid(f, 1)), lineOf(f))
-  c = ps
+  var c = ps
   while !isNil(c) do
     val t = kid(head(c), 0)
     if isProto(ds, text(t)) then
