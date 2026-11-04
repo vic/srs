@@ -1,6 +1,6 @@
 // S1 checker: types + flow-typed effects (vic/c/effects.md, fx-rs#20).
-// Judgment Γ1 ⊢ e : T ⊣ Γ2. Γ = GState(s = cap, t = state) list, innermost first.
-// env = BVar(s = name, t = protocol or "", n = 0 val / 1 var / 2 cap, a = [Ty]).
+// Judgment Γ1 ⊢ e : T ⊣ Γ2. Γ = GState(s = cap, t = state) + GVar(s = var, a = caps) list, innermost first.
+// env = BVar(s = name, t = protocol or "", n = 0 val / 1 var / 2 cap, a = [Ty]); var Ty = bound, n 0 = none.
 // Ty a = [TyTo, TyCap...]: value caps = regions the value lives in.
 // "*" = the caller's capture variable ρ of a signature: never in Γ, always live.
 
@@ -47,23 +47,38 @@ def subset(a: Nodes, b: Nodes): Bool =
   ok
 
 def state(gam: Nodes, cap: Str): Str = text2(find(gam, GState, cap))
-def setState(r: Region, gam: Nodes, cap: Str, s: Str): Nodes =
+// replace the innermost Γ entry of x's kind and name by x
+def setG(r: Region, gam: Nodes, x: Node): Nodes =
   var out = NNil
   var c = gam
   var done = false
   while !isNil(c) do
-    if !done && eqs(text(head(c)), cap) then
-      out = NCons(Node(GState, cap, s, 0, 0, NNil), out)
+    if !done && kind(head(c)) == kind(x) && eqs(text(head(c)), text(x)) then
+      out = NCons(x, out)
       done = true
     else out = NCons(head(c), out)
     c = tail(c)
   rev(r, out)
-def sameGam(a: Nodes, b: Nodes): Bool =
-  var c = a
-  var ok = len(a) == len(b)
-  while ok && !isNil(c) do
-    ok = eqs(state(b, text(head(c))), text2(head(c)))
-    c = tail(c)
+// Γ of two paths from one Γ (same entries, same order): var caps join by union (C8), cap states must agree
+def joinGam(r: Region, a: Nodes, b: Nodes, what: Str, line: I64): Nodes =
+  var out = NNil
+  var x = a
+  var y = b
+  while !isNil(x) do
+    if !eqs(text2(head(x)), text2(head(y))) then err(what, text(head(x)), line) else ()
+    out = NCons(Node(kind(head(x)), text(head(x)), text2(head(x)), 0, 0, union(r, kids(head(x)), kids(head(y)))), out)
+    x = tail(x)
+    y = tail(y)
+  rev(r, out)
+// every var of a has caps within the same var of b
+def within(a: Nodes, b: Nodes): Bool =
+  var x = a
+  var y = b
+  var ok = true
+  while ok && !isNil(x) do
+    ok = subset(kids(head(x)), kids(head(y)))
+    x = tail(x)
+    y = tail(y)
   ok
 
 def protoEnds(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 1))
@@ -80,15 +95,9 @@ def needLive(ds: Nodes, env: Nodes, gam: Nodes, t: Node, line: I64): Unit =
     if !live(ds, env, gam, text(head(c))) then err("use of value after its region ended:", text(head(c)), line) else ()
     c = tail(c)
 
-// every Region capability in scope + ρ: the capture of an unannotated var
-def scopeCaps(r: Region, env: Nodes): Nodes =
-  var out = one(r, leaf(r, TyCap, "*", 0))
-  var c = env
-  while !isNil(c) do
-    val b = head(c)
-    if num(b) == 2 && eqs(text2(b), "Region") && !has(out, text(b)) then out = NCons(leaf(r, TyCap, text(b), 0), out) else ()
-    c = tail(c)
-  out
+// annotation w/o caps = no cap bound: caps stay inferred from t (R2 Q2)
+def bound(r: Region, ann: Node, t: Node): Node = if num(ann) == 0 then mkTy(r, text(ann), tyCaps(t)) else ann
+def uncapped(r: Region, name: Str): Node = Node(Ty, name, "", 0, 0, one(r, leaf(r, TyTo, "", 0)))
 
 def assignable(a: Node, b: Node): Bool = eqs(text(a), text(b)) && subset(tyCaps(a), tyCaps(b))
 def needAssign(a: Node, b: Node, line: I64): Unit =
@@ -223,8 +232,10 @@ def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
     val b = find(env, BVar, text(e))
     if found(b) then
       if num(b) == 2 then err("capability is second-class, only a call argument:", text(e), line) else ()
-      needLive(ds, env, gam, kid(b, 0), line)
-      TG(kid(b, 0), gam)
+      // a var's caps are flow state: what it holds now (C8)
+      val t = if num(b) == 1 then mkTy(r, text(kid(b, 0)), kids(find(gam, GVar, text(e)))) else kid(b, 0)
+      needLive(ds, env, gam, t, line)
+      TG(t, gam)
     else
       val c = find(allCases(r, ds), DCase, text(e))
       if !found(c) then err("unknown name", text(e), line) else ()
@@ -245,31 +256,40 @@ def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
     needAssign(tgTy(c), prim(r, "Bool"), line)
     val t = chk(r, ds, env, tgGam(c), kid(e, 1))
     val f = chk(r, ds, env, tgGam(c), kid(e, 2))
-    TG(join(r, tgTy(t), tgTy(f), line), joinGam(tgGam(t), tgGam(f), line))
+    TG(join(r, tgTy(t), tgTy(f), line), joinGam(r, tgGam(t), tgGam(f), branchErr(), line))
   else if k == XMatch then chkMatch(r, ds, env, gam, e)
   else if k == XBlock then chkBlock(r, ds, env, gam, kids(e), line)
-  else if k == XWhile then
-    val c = chk(r, ds, env, gam, kid(e, 0))
-    needAssign(tgTy(c), prim(r, "Bool"), line)
-    val b = chk(r, ds, env, tgGam(c), kid(e, 1))
-    if !sameGam(gam, tgGam(c)) || !sameGam(gam, tgGam(b)) then err("loop changes capability state, protocol needs a fixed count:", "while", line) else ()
-    TG(prim(r, "Unit"), gam)
+  else if k == XWhile then chkWhile(r, ds, env, gam, e)
   else if k == XAssign then
     val b = find(env, BVar, text(e))
     if !found(b) || num(b) != 1 then err("assignment to non-var", text(e), line) else ()
     val a = chk(r, ds, env, gam, kid(e, 0))
-    needAssign(tgTy(a), kid(b, 0), line)
-    TG(prim(r, "Unit"), tgGam(a))
+    needAssign(tgTy(a), bound(r, kid(b, 0), tgTy(a)), line)
+    // strong update: the var now holds the caps of the new value (C8)
+    TG(prim(r, "Unit"), setG(r, tgGam(a), Node(GVar, text(e), "", 0, 0, tyCaps(tgTy(a)))))
   else
     err("internal: expression", "?", line)
     TG(prim(r, "Unit"), gam)
 
+def branchErr(): Str = "branches leave capabilities in different states:"
+
+// Γ after a loop = fixpoint over any number of turns: var caps grow by union until stable, cap states fixed
+def chkWhile(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
+  val what = "loop changes capability state, protocol needs a fixed count:"
+  var g = gam
+  var done = false
+  while !done do
+    val c = chk(r, ds, env, g, kid(e, 0))
+    needAssign(tgTy(c), prim(r, "Bool"), lineOf(e))
+    val b = chk(r, ds, env, tgGam(c), kid(e, 1))
+    val w = joinGam(r, g, joinGam(r, tgGam(c), tgGam(b), what, lineOf(e)), what, lineOf(e))
+    done = within(w, g)
+    g = w
+  TG(prim(r, "Unit"), g)
+
 def join(r: Region, a: Node, b: Node, line: I64): Node =
   if !eqs(text(a), text(b)) then needAssign(a, b, line) else ()
   mkTy(r, text(a), union(r, tyCaps(a), tyCaps(b)))
-def joinGam(a: Nodes, b: Nodes, line: I64): Nodes =
-  if !sameGam(a, b) then err("branches leave capabilities in different states:", "if/match", line) else ()
-  a
 
 def chkBin(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
   val op = text(e)
@@ -328,7 +348,7 @@ def step(r: Region, ds: Nodes, gam: Nodes, cap: Str, proto: Str, opName: Str, li
     rt_eprint("'\n")
     rt_exit(1)
   else ()
-  setState(r, gam, cap, text2(tr))
+  setG(r, gam, Node(GState, cap, text2(tr), 0, 0, NNil))
 
 def chkCtor(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node): TG =
   val line = lineOf(e)
@@ -437,7 +457,7 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node): TG =
         rt_eprint("\n")
         rt_exit(1)
       else ()
-      gam = setState(r, gam, cap, to)
+      gam = setG(r, gam, Node(GState, cap, to, 0, 0, NNil))
     else ()
     p = tail(p)
   val rt = kid(f, 1)
@@ -484,7 +504,7 @@ def chkMatch(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
     val x = chk(r, ds, env2, tgGam(s), kid(arm, 0))
     if found(res) then
       res = join(r, res, tgTy(x), lineOf(arm))
-      out = joinGam(out, tgGam(x), lineOf(arm))
+      out = joinGam(r, out, tgGam(x), branchErr(), lineOf(arm))
     else
       res = tgTy(x)
       out = tgGam(x)
@@ -514,11 +534,11 @@ def chkBlock(r: Region, ds: Nodes, env0: Nodes, gam0: Nodes, ss: Nodes, line: I6
         val ann = kid(s, 1)
         needTy(ds, ann)
         if isProto(ds, text(ann)) then err("capability bound to a val:", text(s), lineOf(s)) else ()
-        val annT = if isEnum(ds, text(ann)) && num(ann) == 0 then mkTy(r, text(ann), scopeCaps(r, env)) else ann
-        needAssign(t, annT, lineOf(s))
-        t = annT
-      else if num(s) == 1 && isEnum(ds, text(t)) then t = mkTy(r, text(t), scopeCaps(r, env))
+        needAssign(t, bound(r, ann, t), lineOf(s))
+        t = if num(s) == 1 then ann else bound(r, ann, t)
+      else if num(s) == 1 then t = uncapped(r, text(t))
       else ()
+      if num(s) == 1 then gam = NCons(Node(GVar, text(s), "", 0, 0, tyCaps(tgTy(x))), gam) else ()
       env = NCons(Node(BVar, text(s), "", num(s), lineOf(s), one(r, t)), env)
       res = prim(r, "Unit")
     else if k == SHandle then
@@ -567,15 +587,6 @@ def chkBlock(r: Region, ds: Nodes, env0: Nodes, gam0: Nodes, ss: Nodes, line: I6
       else ()
     else ()
     if has(tyCaps(res), text(b)) then err("value escapes the scope of its region", text(b), lineOf(b)) else ()
-    gam = dropGam(r, gam, text(b))
     caps = tail(caps)
-  TG(res, gam)
-
-def dropGam(r: Region, gam: Nodes, cap: Str): Nodes =
-  var out = NNil
-  var c = gam
-  var done = false
-  while !isNil(c) do
-    if !done && eqs(text(head(c)), cap) then done = true else out = NCons(head(c), out)
-    c = tail(c)
-  rev(r, out)
+  // block entries (caps, vars) were prepended to Γ: cut them
+  TG(res, drop(gam, len(gam) - len(gam0)))
