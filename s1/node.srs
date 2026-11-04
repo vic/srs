@@ -110,10 +110,17 @@ def drop(xs: Nodes, i: I64): Nodes =
     c = tail(c)
     k = k - 1
   c
-def rev(r: Region, xs: Nodes): Nodes =
+spec def revOnto(xs: Nodes, acc: Nodes): Nodes = xs match
+  case NNil => acc
+  case NCons(h, t) => revOnto(t, NCons(h, acc))
+def rev(r: Region, xs: Nodes): Nodes
+  ensures result == revOnto(xs, NNil)
+=
   var out = NNil
   var c = xs
   while !isNil(c) do
+    invariant revOnto(c, out) == revOnto(xs, NNil)
+    decreases sizeS(c)
     out = NCons(head(c), out)
     c = tail(c)
   out
@@ -153,7 +160,14 @@ def has(xs: Nodes, s: Str): Bool
     found = eqs(text(head(c)), s)
     c = tail(c)
   found
-// first node of kind k with text s, or Node(TEof) if absent
+spec def kindS(x: Node): Kind = x match
+  case Node(k, _, _, _, _, _) => k
+  case NoNode => TEof
+spec def lookS(xs: Nodes, k: Kind, s: Str): Node = xs match
+  case NNil => NoNode
+  case NCons(h, t) => if kindS(h) == k && rt_str_eq(textS(h), s) then h else lookS(t, k, s)
+
+// first node of kind k with text s, or NoNode if absent
 def find(xs: Nodes, k: Kind, s: Str): Node =
   var c = xs
   var res = NoNode

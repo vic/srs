@@ -14,10 +14,12 @@ macro_rules
         Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at,
         Srs.Rt.P.rt_str_slice] at *)
       first
+        | done
         | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]; done)
         | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> omega)
         | ((repeat' split) <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> (first | done | omega))
-        | (refine ⟨_, rfl, ?_⟩ <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice])))
+        | (refine ⟨_, rfl, ?_⟩ <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice])
+        | ((try simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]) <;> grind)))
 
 namespace Srs
 

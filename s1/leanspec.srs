@@ -375,14 +375,14 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   say(").toNat) ?_ _ _ _ ?_ ?_\n  · rintro ")
   rpat(mu)
   say(" hI\n    ")
-  casesEnums(ds, mu)
+  casesEnums(ds, condVars(r, mu, kid(w, 0)))
   autoCall(r, ds, p, hints)
   say("\n  · ")
   autoCall(r, ds, p, hints)
   say("\n  · rintro ")
   rpat(mu)
   say(" hI hc\n    ")
-  casesEnums(ds, mu)
+  casesEnums(ds, condVars(r, mu, kid(w, 0)))
   autoCall(r, ds, p, hints)
 
 // case split on each enum- or Bool-typed loop var, and one level into its enum fields: conditions and bodies
@@ -523,3 +523,12 @@ def largs(ds: Nodes, ps: Nodes): Unit =
       lid(true, text(head(c)))
     else ()
     c = tail(c)
+
+// the loop vars the condition reads: the case splits the condition needs
+def condVars(r: Region, mu: Nodes, cond: Node): Nodes =
+  var out = NNil
+  var c = mu
+  while !isNil(c) do
+    if reads(cond, text(head(c))) then out = NCons(head(c), out) else ()
+    c = tail(c)
+  rev(r, out)

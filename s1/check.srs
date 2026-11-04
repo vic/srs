@@ -149,7 +149,8 @@ def check(r: Region, ds: Nodes): Unit =
   while !isNil(c) do
     val d = head(c)
     if kind(d) == DFn then checkSig(r, ds, d) else ()
-    if kind(d) == DFn && num(d) != 1 then checkFn(r, ds, d) else ()
+    // spec defs: pure, no regions; Lean type-checks them
+    if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else ()
     if kind(d) == DEnum then checkEnum(ds, d) else ()
     if kind(d) == DProto then checkProto(ds, d) else ()
     if kind(d) == DHandler then checkHandler(r, ds, d) else ()

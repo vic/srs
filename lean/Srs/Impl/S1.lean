@@ -65,6 +65,9 @@ inductive «TG» where
   | «TG» («ty» : «Node») («gam» : «Nodes»)
 end
 
+def «revOnto» («xs» : «Nodes») («acc» : «Nodes») : «Nodes» :=
+  (match «xs» with | «Nodes».«NNil» => «acc» | «Nodes».«NCons» «h» «t» => («revOnto» «t» («Nodes».«NCons» «h» «acc»)))
+
 def «textS» («x» : «Node») : ByteArray :=
   (match «x» with | «Node».«Node» _ «s» _ _ _ _ => «s» | «Node».«NoNode» => "".toUTF8)
 
@@ -73,6 +76,12 @@ def «memS» («s» : ByteArray) («xs» : «Nodes») : Bool :=
 
 def «sizeS» («xs» : «Nodes») : Int :=
   (match «xs» with | «Nodes».«NNil» => (0 : Int) | «Nodes».«NCons» _ «t» => ((1 : Int) + («sizeS» «t»)))
+
+def «kindS» («x» : «Node») : «Kind» :=
+  (match «x» with | «Node».«Node» «k» _ _ _ _ _ => «k» | «Node».«NoNode» => «Kind».«TEof»)
+
+def «lookS» («xs» : «Nodes») («k» : «Kind») («s» : ByteArray) : «Node» :=
+  (match «xs» with | «Nodes».«NNil» => «Node».«NoNode» | «Nodes».«NCons» «h» «t» => (if (((«kindS» «h») == «k») && (Srs.Rt.P.rt_str_eq («textS» «h») «s»)) then «h» else («lookS» «t» «k» «s»)))
 
 def «allIn» («a» : «Nodes») («b» : «Nodes») : Bool :=
   (match «a» with | «Nodes».«NNil» => true | «Nodes».«NCons» «h» «t» => ((«memS» («textS» «h») «b») && («allIn» «t» «b»)))
@@ -4669,6 +4678,32 @@ let t_ ← «largs_loop0» «ps» «ds» «c»;
 pure ()
 }
 
+def «condVars_loop0» («cond» : «Node») («mu» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «condVars_loop0» «cond» «mu» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+if (← «reads» «cond» (← «text» (← «head» «c»))) then {
+«out» := («Nodes».«NCons» (← «head» «c») «out»);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «condVars» («mu» : «Nodes») («cond» : «Node») : Option «Nodes» := do {
+let mut «out» := «Nodes».«NNil»;
+let mut «c» := «mu»;
+let t_ ← «condVars_loop0» «cond» «mu» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure (← «rev» «out»);
+}
+
 def «clauses_loop0» («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isK» «ts» «Kind».«TDedent»))
@@ -6938,14 +6973,14 @@ let _ := (← «lp» «ds» (← «head» «dec»));
 let _ := (← «say» ").toNat) ?_ _ _ _ ?_ ?_\n  · rintro ".toUTF8);
 let _ := (← «rpat» «mu»);
 let _ := (← «say» " hI\n    ".toUTF8);
-let _ := (← «casesEnums» «ds» «mu»);
+let _ := (← «casesEnums» «ds» (← «condVars» «mu» (← «kid» «w» (0 : Int))));
 let _ := (← «autoCall» «ds» «p» «hints»);
 let _ := (← «say» "\n  · ".toUTF8);
 let _ := (← «autoCall» «ds» «p» «hints»);
 let _ := (← «say» "\n  · rintro ".toUTF8);
 let _ := (← «rpat» «mu»);
 let _ := (← «say» " hI hc\n    ".toUTF8);
-let _ := (← «casesEnums» «ds» «mu»);
+let _ := (← «casesEnums» «ds» (← «condVars» «mu» (← «kid» «w» (0 : Int))));
 pure (← «autoCall» «ds» «p» «hints»);
 }
 
@@ -7379,7 +7414,7 @@ let _ := ();
 };
 if (← (do {
 if ((← «kind» «d») == «Kind».«DFn») then {
-pure ((← «num» «d») != (1 : Int))
+pure ((← «num» «d») == (0 : Int))
 } else {
 pure false
 }
@@ -7635,6 +7670,22 @@ let t_ ← «parseFile_loop0» «toks» («out», «ts»);
 «ts» := t_.2;
 pure (← «rev» «out»);
 }
+
+theorem «rev_spec» («xs» : «Nodes») :
+    ∃ «result», «rev» «xs» = some «result» ∧ ((«result» = («revOnto» «xs» «Nodes».«NNil»))) := by
+  rw [«rev»]
+  dsimp only
+  refine Srs.loop_bind («rev_loop0» _) _ _ (fun _ => by rw [«rev_loop0»]) (fun ((«c», «out») : («Nodes» × «Nodes»)) => (((«revOnto» «c» «out») = («revOnto» «xs» «Nodes».«NNil»)))) (fun ((«c», «out») : («Nodes» × «Nodes»)) => ((«sizeS» «c»)).toNat) ?_ _ _ _ ?_ ?_
+  · rintro ⟨«c», «out»⟩ hI
+    rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «head», «tail», «sizeS», «sizeS_spec», «revOnto»]
+  · srs_auto [«isNil», «head», «tail», «sizeS», «sizeS_spec», «revOnto»]
+  · rintro ⟨«c», «out»⟩ hI hc
+    rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«isNil», «head», «tail», «sizeS», «sizeS_spec», «revOnto»]
+
+theorem «rev_eq» («xs» : «Nodes») :
+    «rev» «xs» = some («revOnto» «xs» «Nodes».«NNil») := by
+  obtain ⟨_, h1, h2⟩ := «rev_spec» «xs»
+  rw [h1, h2]
 
 theorem «has_spec» («xs» : «Nodes») («s» : ByteArray) :
     ∃ «result», «has» «xs» «s» = some «result» ∧ ((«result» = («memS» «s» «xs»))) := by
