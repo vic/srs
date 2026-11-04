@@ -73,10 +73,16 @@ def text(x: Node): Str
 = x match
   case Node(_, s, _, _, _, _) => s
   case NoNode => ""
-def text2(x: Node): Str = x match
+def text2(x: Node): Str
+  ensures result == text2S(x)
+  proof by induction x
+= x match
   case Node(_, _, t, _, _, _) => t
   case NoNode => ""
-def num(x: Node): I64 = x match
+def num(x: Node): I64
+  ensures result == numS(x)
+  proof by induction x
+= x match
   case Node(_, _, _, n, _, _) => n
   case NoNode => 0
 def lineOf(x: Node): I64 = x match
@@ -111,14 +117,20 @@ def len(xs: Nodes): I64 =
     n = n + 1
     c = tail(c)
   n
-def nth(xs: Nodes, i: I64): Node =
+def nth(xs: Nodes, i: I64): Node
+  ensures result == nthS(xs, i)
+=
   var c = xs
   var k = i
   while k > 0 do
+    invariant nthS(c, k) == nthS(xs, i)
+    decreases k
     c = tail(c)
     k = k - 1
   head(c)
-def kid(x: Node, i: I64): Node = nth(kids(x), i)
+def kid(x: Node, i: I64): Node
+  ensures result == nthS(kidsS(x), i)
+= nth(kids(x), i)
 def drop(xs: Nodes, i: I64): Nodes =
   var c = xs
   var k = i
@@ -176,6 +188,18 @@ def has(xs: Nodes, s: Str): Bool
     found = eqs(text(head(c)), s)
     c = tail(c)
   found
+spec def text2S(x: Node): Str = x match
+  case Node(_, _, t, _, _, _) => t
+  case NoNode => ""
+spec def numS(x: Node): I64 = x match
+  case Node(_, _, _, n, _, _) => n
+  case NoNode => 0
+spec def foundS(x: Node): Bool = x match
+  case NoNode => false
+  case _ => true
+spec def nthS(xs: Nodes, i: I64): Node = xs match
+  case NNil => NoNode
+  case NCons(h, t) => if i <= 0 then h else nthS(t, i - 1)
 spec def kidsS(x: Node): Nodes = x match
   case Node(_, _, _, _, _, a) => a
   case NoNode => NNil
@@ -209,7 +233,10 @@ def find(xs: Nodes, k: Kind, s: Str): Node
     else ()
     c = tail(c)
   res
-def found(x: Node): Bool = x match
+def found(x: Node): Bool
+  ensures result == foundS(x)
+  proof by induction x
+= x match
   case NoNode => false
   case _ => true
 def index(xs: Nodes, s: Str): I64 =

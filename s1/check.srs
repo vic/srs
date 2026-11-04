@@ -59,7 +59,9 @@ def subset(a: Nodes, b: Nodes): Bool
     c = tail(c)
   ok
 
-def state(gam: Nodes, cap: Str): Str = text2(find(gam, GState, cap))
+def state(gam: Nodes, cap: Str): Str
+  ensures result == text2S(lookS(gam, GState, cap))
+= text2(find(gam, GState, cap))
 // replace the innermost Γ entry of x's kind and name by x
 spec def replS(xs: Nodes, x: Node): Nodes = xs match
   case NNil => NNil
@@ -108,11 +110,18 @@ def within(a: Nodes, b: Nodes): Bool
     y = tail(y)
   ok
 
-def protoEnds(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 1))
+def protoEnds(ds: Nodes, p: Str): Nodes
+  ensures result == kidsS(nthS(kidsS(lookS(ds, DProto, p)), 1))
+= kids(kid(find(ds, DProto, p), 1))
 def protoStates(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 0))
 
 // capture c is live: not a tracked cap (ρ), or its state is not an end state
-def live(ds: Nodes, env: Nodes, gam: Nodes, c: Str): Bool =
+spec def liveS(ds: Nodes, env: Nodes, gam: Nodes, c: Str): Bool =
+  if !foundS(lookS(env, BVar, c)) || numS(lookS(env, BVar, c)) != 2 then true
+  else !memS(text2S(lookS(gam, GState, c)), kidsS(nthS(kidsS(lookS(ds, DProto, text2S(lookS(env, BVar, c)))), 1)))
+def live(ds: Nodes, env: Nodes, gam: Nodes, c: Str): Bool
+  ensures result == liveS(ds, env, gam, c)
+=
   val b = find(env, BVar, c)
   if !found(b) || num(b) != 2 then true
   else !has(protoEnds(ds, text2(b)), state(gam, c))

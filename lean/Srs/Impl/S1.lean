@@ -78,6 +78,18 @@ def «memS» («s» : ByteArray) («xs» : «Nodes») : Bool :=
 def «sizeS» («xs» : «Nodes») : Int :=
   (match «xs» with | «Nodes».«NNil» => (0 : Int) | «Nodes».«NCons» _ «t» => ((1 : Int) + («sizeS» «t»)))
 
+def «text2S» («x» : «Node») : ByteArray :=
+  (match «x» with | «Node».«Node» _ _ «t» _ _ _ => «t» | «Node».«NoNode» => "".toUTF8)
+
+def «numS» («x» : «Node») : Int :=
+  (match «x» with | «Node».«Node» _ _ _ «n» _ _ => «n» | «Node».«NoNode» => (0 : Int))
+
+def «foundS» («x» : «Node») : Bool :=
+  (match «x» with | «Node».«NoNode» => false | _ => true)
+
+def «nthS» («xs» : «Nodes») («i» : Int) : «Node» :=
+  (match «xs» with | «Nodes».«NNil» => «Node».«NoNode» | «Nodes».«NCons» «h» «t» => (if (decide («i» <= (0 : Int))) then «h» else («nthS» «t» («i» - (1 : Int)))))
+
 def «kidsS» («x» : «Node») : «Nodes» :=
   (match «x» with | «Node».«Node» _ _ _ _ _ «a» => «a» | «Node».«NoNode» => «Nodes».«NNil»)
 
@@ -101,6 +113,9 @@ def «replS» («xs» : «Nodes») («x» : «Node») : «Nodes» :=
 
 def «withinS» («a» : «Nodes») («b» : «Nodes») : Bool :=
   (match «a» with | «Nodes».«NNil» => true | «Nodes».«NCons» «h» «t» => ((«allIn» («kidsS» «h») («kidsS» («headS» «b»))) && («withinS» «t» («tailS» «b»))))
+
+def «liveS» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («c» : ByteArray) : Bool :=
+  (if ((!(«foundS» («lookS» «env» «Kind».«BVar» «c»))) || ((«numS» («lookS» «env» «Kind».«BVar» «c»)) != (2 : Int))) then true else (!(«memS» («text2S» («lookS» «gam» «Kind».«GState» «c»)) («kidsS» («nthS» («kidsS» («lookS» «ds» «Kind».«DProto» («text2S» («lookS» «env» «Kind».«BVar» «c»)))) (1 : Int))))))
 
 theorem «sizeS_spec» :
     ∀ («xs» : «Nodes»), (((«sizeS» «xs») ≥ (0 : Int)))
@@ -4504,10 +4519,10 @@ pure (← «say» "⟩".toUTF8);
 };
 }
 
-def «loopCalls_loop0» («body» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «bodyCalls_loop0» («body» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «loopCalls_loop0» «body» «ds» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «bodyCalls_loop0» «body» «ds» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
 let mut «c» := «c»;
 let mut «out» := «out»;
 «out» := («Nodes».«NCons» (← «leaf» «Kind».«Name» (← «text» (← «head» «c»)) (0 : Int)) «out»);
@@ -4517,10 +4532,10 @@ pure («c», «out»)
 }
 partial_fixpoint
 
-def «loopCalls» («ds» : «Nodes») («body» : «Node») : Option «Nodes» := do {
+def «bodyCalls» («ds» : «Nodes») («body» : «Node») : Option «Nodes» := do {
 let mut «out» := «Nodes».«NNil»;
 let mut «c» := (← «callsOf» «ds» «body» «Nodes».«NNil»);
-let t_ ← «loopCalls_loop0» «body» «ds» («c», «out»);
+let t_ ← «bodyCalls_loop0» «body» «ds» («c», «out»);
 «c» := t_.1;
 «out» := t_.2;
 pure «out»;
@@ -6936,7 +6951,7 @@ let «mu» := (← «mutated» «sc» (← «kid» «w» (1 : Int)));
 let «cap» := (← «captured» «sc» «mu»);
 let «inv» := (← «clauseExprs» (← «kids» (← «kid» «w» (1 : Int))) "invariant".toUTF8);
 let «dec» := (← «clauseExprs» (← «kids» (← «kid» «w» (1 : Int))) "decreases".toUTF8);
-let «hints» := (← «append» (← «loopCalls» «ds» (← «kid» «f» (2 : Int))) (← «specClosure» «ds» (← «append» «inv» (← «append» «dec» (← «clauseExprs» (← «clausesOf» «f») "ensures".toUTF8))) «Nodes».«NNil»));
+let «hints» := (← «append» (← «bodyCalls» «ds» (← «kid» «f» (2 : Int))) (← «specClosure» «ds» (← «append» «inv» (← «append» «dec» (← «clauseExprs» (← «clausesOf» «f») "ensures".toUTF8))) «Nodes».«NNil»));
 let _ := (← «say» "rw [".toUTF8);
 let _ := (← «lid» true (← «text» «f»));
 let _ := (← «say» "]\n  dsimp only\n  refine Srs.loop_bind (".toUTF8);
@@ -6978,7 +6993,7 @@ pure (← «autoCall» «ds» «p» «hints»);
 
 def «selfFacts» («ds» : «Nodes») («f» : «Node») : Option «Nodes» := do {
 let «cs» := (← «clausesOf» «f»);
-pure («Nodes».«NCons» («Node».«Node» «Kind».«Name» (← «text» «f») "".toUTF8 (1 : Int) (0 : Int) «Nodes».«NNil») (← «specClosure» «ds» (← «append» (← «clauseExprs» «cs» "requires".toUTF8) (← «clauseExprs» «cs» "ensures".toUTF8)) «Nodes».«NNil»));
+pure («Nodes».«NCons» («Node».«Node» «Kind».«Name» (← «text» «f») "".toUTF8 (1 : Int) (0 : Int) «Nodes».«NNil») (← «append» (← «bodyCalls» «ds» (← «kid» «f» (2 : Int))) (← «specClosure» «ds» (← «append» (← «clauseExprs» «cs» "requires".toUTF8) (← «clauseExprs» «cs» "ensures".toUTF8)) «Nodes».«NNil»)));
 }
 
 def «protoDecl_loop0» («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) : Option («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes») := do {
@@ -7816,6 +7831,30 @@ theorem «text_eq» («x» : «Node») :
   obtain ⟨_, h1, h2⟩ := «text_spec» «x»
   rw [h1, h2]
 
+theorem «text2_spec» :
+    ∀ («x» : «Node»), ∃ «result», «text2» «x» = some «result» ∧ ((«result» = («text2S» «x»)))
+  | «Node».«NoNode» => by
+    srs_auto [«text2», «text2S»]
+  | «Node».«Node» a0 a1 a2 a3 a4 a5 => by
+    srs_auto [«text2», «text2S»]
+
+theorem «text2_eq» («x» : «Node») :
+    «text2» «x» = some («text2S» «x») := by
+  obtain ⟨_, h1, h2⟩ := «text2_spec» «x»
+  rw [h1, h2]
+
+theorem «num_spec» :
+    ∀ («x» : «Node»), ∃ «result», «num» «x» = some «result» ∧ ((«result» = («numS» «x»)))
+  | «Node».«NoNode» => by
+    srs_auto [«num», «numS»]
+  | «Node».«Node» a0 a1 a2 a3 a4 a5 => by
+    srs_auto [«num», «numS»]
+
+theorem «num_eq» («x» : «Node») :
+    «num» «x» = some («numS» «x») := by
+  obtain ⟨_, h1, h2⟩ := «num_spec» «x»
+  rw [h1, h2]
+
 theorem «kids_spec» :
     ∀ («x» : «Node»), ∃ «result», «kids» «x» = some «result» ∧ ((«result» = («kidsS» «x»)))
   | «Node».«NoNode» => by
@@ -7852,6 +7891,31 @@ theorem «tail_spec» :
 theorem «tail_eq» («xs» : «Nodes») :
     «tail» «xs» = some («tailS» «xs») := by
   obtain ⟨_, h1, h2⟩ := «tail_spec» «xs»
+  rw [h1, h2]
+
+theorem «nth_spec» («xs» : «Nodes») («i» : Int) :
+    ∃ «result», «nth» «xs» «i» = some «result» ∧ ((«result» = («nthS» «xs» «i»))) := by
+  rw [«nth»]
+  dsimp only
+  refine Srs.loop_bind («nth_loop0» _ _) _ _ (fun _ => by rw [«nth_loop0»]) (fun ((«k», «c») : (Int × «Nodes»)) => (((«nthS» «c» «k») = («nthS» «xs» «i»)))) (fun ((«k», «c») : (Int × «Nodes»)) => («k»).toNat) ?_ _ _ _ ?_ ?_
+  · rintro ⟨«k», «c»⟩ hI
+    srs_auto [«headS», «tailS», «tail_eq», «head_eq», «nthS»]
+  · srs_auto [«headS», «tailS», «tail_eq», «head_eq», «nthS»]
+  · rintro ⟨«k», «c»⟩ hI hc
+    srs_auto [«headS», «tailS», «tail_eq», «head_eq», «nthS»]
+
+theorem «nth_eq» («xs» : «Nodes») («i» : Int) :
+    «nth» «xs» «i» = some («nthS» «xs» «i») := by
+  obtain ⟨_, h1, h2⟩ := «nth_spec» «xs» «i»
+  rw [h1, h2]
+
+theorem «kid_spec» («x» : «Node») («i» : Int) :
+    ∃ «result», «kid» «x» «i» = some «result» ∧ ((«result» = («nthS» («kidsS» «x») «i»))) := by
+  srs_auto [«kid», «nth_eq», «kids_eq», «kidsS», «nthS»]
+
+theorem «kid_eq» («x» : «Node») («i» : Int) :
+    «kid» «x» «i» = some («nthS» («kidsS» «x») «i») := by
+  obtain ⟨_, h1, h2⟩ := «kid_spec» «x» «i»
   rw [h1, h2]
 
 theorem «rev_spec» («xs» : «Nodes») :
@@ -7902,6 +7966,18 @@ theorem «find_eq» («xs» : «Nodes») («k» : «Kind») («s» : ByteArray) 
   obtain ⟨_, h1, h2⟩ := «find_spec» «xs» «k» «s»
   rw [h1, h2]
 
+theorem «found_spec» :
+    ∀ («x» : «Node»), ∃ «result», «found» «x» = some «result» ∧ ((«result» = («foundS» «x»)))
+  | «Node».«NoNode» => by
+    srs_auto [«found», «foundS»]
+  | «Node».«Node» a0 a1 a2 a3 a4 a5 => by
+    srs_auto [«found», «foundS»]
+
+theorem «found_eq» («x» : «Node») :
+    «found» «x» = some («foundS» «x») := by
+  obtain ⟨_, h1, h2⟩ := «found_spec» «x»
+  rw [h1, h2]
+
 theorem «union_spec» («a» : «Nodes») («b» : «Nodes») :
     ∃ «result», «union» «a» «b» = some «result» ∧ ((∀ («s» : ByteArray), ((«memS» «s» «result») = ((«memS» «s» «a») || («memS» «s» «b»))))) := by
   rw [«union»]
@@ -7927,6 +8003,15 @@ theorem «subset_spec» («a» : «Nodes») («b» : «Nodes») :
 theorem «subset_eq» («a» : «Nodes») («b» : «Nodes») :
     «subset» «a» «b» = some («allIn» «a» «b») := by
   obtain ⟨_, h1, h2⟩ := «subset_spec» «a» «b»
+  rw [h1, h2]
+
+theorem «state_spec» («gam» : «Nodes») («cap» : ByteArray) :
+    ∃ «result», «state» «gam» «cap» = some «result» ∧ ((«result» = («text2S» («lookS» «gam» «Kind».«GState» «cap»)))) := by
+  srs_auto [«state», «text2_eq», «find_eq», «textS», «kindS», «lookS», «text2S»]
+
+theorem «state_eq» («gam» : «Nodes») («cap» : ByteArray) :
+    «state» «gam» «cap» = some («text2S» («lookS» «gam» «Kind».«GState» «cap»)) := by
+  obtain ⟨_, h1, h2⟩ := «state_spec» «gam» «cap»
   rw [h1, h2]
 
 theorem «setG_spec» («gam» : «Nodes») («x» : «Node») :
@@ -7959,6 +8044,24 @@ theorem «within_spec» («a» : «Nodes») («b» : «Nodes») :
 theorem «within_eq» («a» : «Nodes») («b» : «Nodes») :
     «within» «a» «b» = some («withinS» «a» «b») := by
   obtain ⟨_, h1, h2⟩ := «within_spec» «a» «b»
+  rw [h1, h2]
+
+theorem «protoEnds_spec» («ds» : «Nodes») («p» : ByteArray) :
+    ∃ «result», «protoEnds» «ds» «p» = some «result» ∧ ((«result» = («kidsS» («nthS» («kidsS» («lookS» «ds» «Kind».«DProto» «p»)) (1 : Int))))) := by
+  srs_auto [«protoEnds», «kids_eq», «kid_eq», «find_eq», «textS», «kindS», «lookS», «nthS», «kidsS»]
+
+theorem «protoEnds_eq» («ds» : «Nodes») («p» : ByteArray) :
+    «protoEnds» «ds» «p» = some («kidsS» («nthS» («kidsS» («lookS» «ds» «Kind».«DProto» «p»)) (1 : Int))) := by
+  obtain ⟨_, h1, h2⟩ := «protoEnds_spec» «ds» «p»
+  rw [h1, h2]
+
+theorem «live_spec» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («c» : ByteArray) :
+    ∃ «result», «live» «ds» «env» «gam» «c» = some «result» ∧ ((«result» = («liveS» «ds» «env» «gam» «c»))) := by
+  srs_auto [«live», «find_eq», «found_eq», «num_eq», «has_eq», «protoEnds_eq», «text2_eq», «state_eq», «nthS», «kidsS», «text2S», «memS», «numS», «textS», «kindS», «lookS», «foundS», «liveS»]
+
+theorem «live_eq» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («c» : ByteArray) :
+    «live» «ds» «env» «gam» «c» = some («liveS» «ds» «env» «gam» «c») := by
+  obtain ⟨_, h1, h2⟩ := «live_spec» «ds» «env» «gam» «c»
   rw [h1, h2]
 
 end Srs.Impl

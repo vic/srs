@@ -365,8 +365,8 @@ def rpat(mu: Nodes): Unit =
       c = tail(c)
     say("⟩")
 
-// the user fns a loop fn calls (loop and after it): unfolded by srs_auto
-def loopCalls(r: Region, ds: Nodes, body: Node): Nodes =
+// the user fns a fn body calls: unfolded by srs_auto, or rewritten by their _eq rule
+def bodyCalls(r: Region, ds: Nodes, body: Node): Nodes =
   var out = NNil
   var c = callsOf(r, ds, body, NNil)
   while !isNil(c) do
@@ -383,7 +383,7 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   val cap = captured(r, sc, mu)
   val inv = clauseExprs(r, kids(kid(w, 1)), "invariant")
   val dec = clauseExprs(r, kids(kid(w, 1)), "decreases")
-  val hints = append(r, loopCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
+  val hints = append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
   say("rw [")
   lid(true, text(f))
   say("]\n  dsimp only\n  refine Srs.loop_bind (")
@@ -506,10 +506,10 @@ def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
     autoCall(r, ds, p, selfFacts(r, ds, f))
     cs = tail(cs)
 
-// a proof without loop: f itself (n 1 = not yet a fact) + the spec defs its contract calls
+// a proof without loop: f itself (n 1 = not yet a fact), the fns its body calls, the spec defs its contract calls
 def selfFacts(r: Region, ds: Nodes, f: Node): Nodes =
   val cs = clausesOf(f)
-  NCons(Node(Name, text(f), "", 1, 0, NNil), specClosure(r, ds, append(r, clauseExprs(r, cs, "requires"), clauseExprs(r, cs, "ensures")), NNil))
+  NCons(Node(Name, text(f), "", 1, 0, NNil), append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, clauseExprs(r, cs, "requires"), clauseExprs(r, cs, "ensures")), NNil)))
 // the spec defs exprs es call, and the spec defs those call (unfolded by srs_auto)
 def specClosure(r: Region, ds: Nodes, es: Nodes, acc: Nodes): Nodes =
   var out = acc
