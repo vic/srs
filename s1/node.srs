@@ -128,10 +128,28 @@ def append(r: Region, xs: Nodes, ys: Nodes): Nodes =
 def leaf(r: Region, k: Kind, s: Str, line: I64): Node = Node(k, s, "", 0, line, NNil)
 
 def eqs(a: Str, b: Str): Bool = rt_str_eq(a, b)
-def has(xs: Nodes, s: Str): Bool =
+// specs (Lean only): the texts of a node list, its size
+spec def textS(x: Node): Str = x match
+  case Node(_, s, _, _, _, _) => s
+  case NoNode => ""
+spec def memS(s: Str, xs: Nodes): Bool = xs match
+  case NNil => false
+  case NCons(h, t) => rt_str_eq(textS(h), s) || memS(s, t)
+spec def sizeS(xs: Nodes): I64
+  ensures result >= 0
+  proof by induction xs
+= xs match
+  case NNil => 0
+  case NCons(_, t) => 1 + sizeS(t)
+
+def has(xs: Nodes, s: Str): Bool
+  ensures result == memS(s, xs)
+=
   var c = xs
   var found = false
   while !found && !isNil(c) do
+    invariant (found || memS(s, c)) == memS(s, xs)
+    decreases sizeS(c)
     found = eqs(text(head(c)), s)
     c = tail(c)
   found

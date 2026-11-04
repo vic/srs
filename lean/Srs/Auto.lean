@@ -2,16 +2,22 @@
 `srs_auto`: the default prover of srs contracts (C13 P4). A tactic: the Lean kernel checks every proof it
 builds, so it is not trusted. `proof using a, b` in srs adds a, b as simp facts.
 -/
+import Srs.Rt
+
+
 syntax "srs_auto" (" [" Lean.Parser.Tactic.simpLemma,* "]")? : tactic
 
 macro_rules
   | `(tactic| srs_auto) => `(tactic| srs_auto [])
   | `(tactic| srs_auto [$ls,*]) => `(tactic| (
-      (try simp only [bind, Option.bind, pure] at *)
+      (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at,
+        Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at,
+        Srs.Rt.P.rt_str_slice] at *)
       first
-        | (simp_all [$ls,*]; done)
-        | (simp_all [$ls,*, Int.max_eq_left] <;> omega)
-        | (refine ⟨_, rfl, ?_⟩ <;> simp_all [$ls,*])))
+        | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]; done)
+        | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> omega)
+        | ((repeat' split) <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> (first | done | omega))
+        | (refine ⟨_, rfl, ?_⟩ <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice])))
 
 namespace Srs
 

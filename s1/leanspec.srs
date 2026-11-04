@@ -253,11 +253,20 @@ def specTheorems(r: Region, ds: Nodes): Unit =
     val f = head(c)
     val ens = if kind(f) == DFn && num(f) == 2 then clauseExprs(r, clausesOf(f), "ensures") else NNil
     if !isNil(ens) then
+      val p = proofOf(clausesOf(f))
+      val ind = if found(p) && eqs(text2(p), "by") then text(kid(p, 0)) else ""
       say("theorem «")
       say(text(f))
       say("_spec»")
-      lparams(ds, kids(kid(f, 0)))
+      lparams(ds, without(r, kids(kid(f, 0)), ind))
       say(" :\n    ")
+      if rt_str_len(ind) > 0 then
+        say("∀ (")
+        lid(true, ind)
+        say(" : ")
+        lty(kid(find(kids(kid(f, 0)), Param, ind), 0))
+        say("), ")
+      else ()
       // `result` = the call itself: a fact simp can use
       var args = NNil
       var a = kids(kid(f, 0))
@@ -265,8 +274,9 @@ def specTheorems(r: Region, ds: Nodes): Unit =
         args = NCons(leaf(r, XName, text(head(a)), 0), args)
         a = tail(a)
       lpAllR(r, ds, Node(XCall, text(f), "", 0, 0, rev(r, args)), ens)
-      say(" := ")
-      proofText(r, ds, f, proofOf(clausesOf(f)))
+      if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind) else
+        say(" := ")
+        proofText(r, ds, f, p)
       say("\n\n")
     else ()
     c = tail(c)
@@ -328,7 +338,7 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   val cap = captured(r, sc, mu)
   val inv = clauseExprs(r, kids(kid(w, 1)), "invariant")
   val dec = clauseExprs(r, kids(kid(w, 1)), "decreases")
-  val hints = loopCalls(r, ds, w)
+  val hints = append(r, loopCalls(r, ds, w), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
   say("rw [")
   lid(true, text(f))
   say("]\n  dsimp only\n  refine Srs.loop_bind (")
@@ -364,13 +374,112 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   casesEnums(ds, mu)
   autoCall(r, ds, p, hints)
 
-// case split on each enum-typed loop var: conditions and bodies match on them
+// case split on each enum- or Bool-typed loop var, and one level into its enum fields: conditions and bodies
+// match on them
 def casesEnums(ds: Nodes, mu: Nodes): Unit =
   var c = mu
   while !isNil(c) do
-    if isEnum(ds, text(kid(head(c), 0))) then
+    val t = text(kid(head(c), 0))
+    if isEnum(ds, t) then
+      say("rcases ")
+      lid(true, text(head(c)))
+      say(" with ")
+      enumPat(ds, t, 2)
+      say(" <;> ")
+    else if eqs(t, "Bool") then
       say("cases ")
       lid(true, text(head(c)))
       say(" <;> ")
     else ()
     c = tail(c)
+
+// rcases pattern of enum t, `depth` levels deep
+def enumPat(ds: Nodes, t: Str, depth: I64): Unit =
+  if depth == 0 || !isEnum(ds, t) then say("_")
+  else
+    say("(")
+    var cs = kids(find(ds, DEnum, t))
+    while !isNil(cs) do
+      var fs = kids(kid(head(cs), 0))
+      if isNil(fs) then say("⟨⟩")
+      else
+        say("⟨")
+        while !isNil(fs) do
+          enumPat(ds, text(kid(head(fs), 0)), depth - 1)
+          if !isNil(tail(fs)) then say(", ") else ()
+          fs = tail(fs)
+        say("⟩")
+      if !isNil(tail(cs)) then say(" | ") else ()
+      cs = tail(cs)
+    say(")")
+
+def without(r: Region, ps: Nodes, name: Str): Nodes =
+  var out = NNil
+  var c = ps
+  while !isNil(c) do
+    if !eqs(text(head(c)), name) then out = NCons(head(c), out) else ()
+    c = tail(c)
+  rev(r, out)
+
+// proof by induction x: one arm per case of x's enum, an induction hypothesis per field of that enum
+// (structural recursion: works for mutual enums too)
+def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
+  val ty = text(kid(find(kids(kid(f, 0)), Param, x), 0))
+  var cs = kids(find(ds, DEnum, ty))
+  while !isNil(cs) do
+    say("\n  | ")
+    ctorName(r, true, ds, text(head(cs)))
+    var fs = kids(kid(head(cs), 0))
+    var i = 0
+    while !isNil(fs) do
+      say(" a")
+      sayn(i)
+      i = i + 1
+      fs = tail(fs)
+    say(" => by\n    ")
+    fs = kids(kid(head(cs), 0))
+    i = 0
+    var ihs = NNil
+    while !isNil(fs) do
+      if eqs(text(kid(head(fs), 0)), ty) then
+        say("have ih")
+        sayn(i)
+        say(" := «")
+        say(text(f))
+        say("_spec»")
+        var a = without(r, kids(kid(f, 0)), x)
+        while !isNil(a) do
+          say(" ")
+          lid(true, text(head(a)))
+          a = tail(a)
+        say(" a")
+        sayn(i)
+        say("\n    ")
+      else ()
+      i = i + 1
+      fs = tail(fs)
+    autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
+    cs = tail(cs)
+
+// the spec defs exprs es call, and the spec defs those call (unfolded by srs_auto)
+def specClosure(r: Region, ds: Nodes, es: Nodes, acc: Nodes): Nodes =
+  var out = acc
+  var c = es
+  while !isNil(c) do
+    out = specCalls(r, ds, head(c), out)
+    c = tail(c)
+  out
+def specCalls(r: Region, ds: Nodes, e: Node, acc: Nodes): Nodes =
+  var out = acc
+  if kind(e) == XCall then
+    val f = find(ds, DFn, text(e))
+    if found(f) && num(f) == 2 && !has(out, text(e)) then
+      out = NCons(leaf(r, Name, text(e), 0), out)
+      out = specCalls(r, ds, kid(f, 2), out)
+    else ()
+  else ()
+  var c = kids(e)
+  while !isNil(c) do
+    out = specCalls(r, ds, head(c), out)
+    c = tail(c)
+  out

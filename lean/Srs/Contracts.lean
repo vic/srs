@@ -14,9 +14,13 @@ end
 def «size» («xs» : «List») : Int :=
   (match «xs» with | «List».«Nil» => (0 : Int) | «List».«Cons» _ «t» => ((1 : Int) + («size» «t»)))
 
-theorem «size_spec» («xs» : «List») :
-    (((«size» «xs») ≥ (0 : Int))) := by
-  induction «xs» <;> srs_auto [«size»]
+theorem «size_spec» :
+    ∀ («xs» : «List»), (((«size» «xs») ≥ (0 : Int)))
+  | «List».«Nil» => by
+    srs_auto [«size»]
+  | «List».«Cons» a0 a1 => by
+    have ih1 := «size_spec» a1
+    srs_auto [«size»]
 
 mutual
 def «build» («n» : Int) : Option «List» := do {
@@ -97,9 +101,9 @@ theorem «count_spec» («xs» : «List») (_h_req : (((«size» «xs») ≥ (0 
   dsimp only
   refine Srs.loop_bind («count_loop0» _) _ _ (fun _ => by rw [«count_loop0»]) (fun ((«n», «c») : (Int × «List»)) => (((«n» + («size» «c»)) = («size» «xs»)))) (fun ((«n», «c») : (Int × «List»)) => ((«size» «c»)).toNat) ?_ _ _ _ ?_ ?_
   · rintro ⟨«n», «c»⟩ hI
-    cases «c» <;> srs_auto [«size», «size_spec»]
-  · srs_auto [«size», «size_spec»]
+    rcases «c» with (⟨⟩ | ⟨_, (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«size», «size_spec», «size», «size_spec»]
+  · srs_auto [«size», «size_spec», «size», «size_spec»]
   · rintro ⟨«n», «c»⟩ hI hc
-    cases «c» <;> srs_auto [«size», «size_spec»]
+    rcases «c» with (⟨⟩ | ⟨_, (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«size», «size_spec», «size», «size_spec»]
 
 end Srs.Contracts
