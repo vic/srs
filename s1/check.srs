@@ -22,7 +22,9 @@ def err(what: Str, name: Str, line: I64): Unit =
   rt_eprint("'\n")
   rt_exit(1)
 
-def tyCaps(t: Node): Nodes = tail(kids(t))
+def tyCaps(t: Node): Nodes
+  ensures result == tailS(kidsS(t))
+= tail(kids(t))
 def tyTo(t: Node): Str = text(head(kids(t)))
 def mkTy(r: Region, name: Str, caps: Nodes): Node = Node(Ty, name, "", 1, 0, NCons(leaf(r, TyTo, "", 0), caps))
 def prim(r: Region, name: Str): Node = mkTy(r, name, NNil)
@@ -125,9 +127,17 @@ def live(ds: Nodes, env: Nodes, gam: Nodes, c: Str): Bool
   val b = find(env, BVar, c)
   if !found(b) || num(b) != 2 then true
   else !has(protoEnds(ds, text2(b)), state(gam, c))
-def needLive(ds: Nodes, env: Nodes, gam: Nodes, t: Node, line: I64): Unit =
+spec def allLiveS(ds: Nodes, env: Nodes, gam: Nodes, xs: Nodes): Bool = xs match
+  case NNil => true
+  case NCons(h, t) => liveS(ds, env, gam, textS(h)) && allLiveS(ds, env, gam, t)
+// accepts (returns) only when every capture of t is live, else the run stops
+def needLive(ds: Nodes, env: Nodes, gam: Nodes, t: Node, line: I64): Unit
+  returns allLiveS(ds, env, gam, tailS(kidsS(t)))
+=
   var c = tyCaps(t)
   while !isNil(c) do
+    invariant allLiveS(ds, env, gam, tailS(kidsS(t))) == allLiveS(ds, env, gam, c)
+    decreases sizeS(c)
     if !live(ds, env, gam, text(head(c))) then err("use of value after its region ended:", text(head(c)), line) else ()
     c = tail(c)
 

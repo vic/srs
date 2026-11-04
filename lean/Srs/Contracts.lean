@@ -106,6 +106,7 @@ theorem «count_spec» («xs» : «List») (_h_req : (((«size» «xs») ≥ (0 
     ∃ «result», «count» «xs» = some «result» ∧ ((«result» = («size» «xs»))) := by
   rw [«count»]
   dsimp only
+  (try simp only [Srs.some_bind, pure_bind, «size», «size_spec», «size», «size_spec»])
   refine Srs.loop_bind («count_loop0» _) _ _ (fun _ => by rw [«count_loop0»]) (fun ((«n», «c») : (Int × «List»)) => (((«n» + («size» «c»)) = («size» «xs»)))) (fun ((«n», «c») : (Int × «List»)) => ((«size» «c»)).toNat) ?_ _ _ _ ?_ ?_
   · rintro ⟨«n», «c»⟩ hI
     rcases «c» with (⟨⟩ | ⟨_, (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«size», «size_spec», «size», «size_spec»]

@@ -141,8 +141,8 @@ def lpp(r: Region, ds: Nodes, res: Node, e: Node): Unit =
     else ()
     lpr(r, ds, res, kid(e, 1))
     say(")")
-  else if kind(e) == XForall then
-    say("(∀ (")
+  else if kind(e) == XForall || kind(e) == XExists then
+    say(if kind(e) == XForall then "(∀ (" else "(∃ (")
     lid(true, text(e))
     say(" : ")
     lty(kid(e, 0))
@@ -192,7 +192,7 @@ def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
   else
     say("by\n  ")
     val lp0 = invLoop(r, kid(f, 2))
-    if found(lp0) then loopSkeleton(r, ds, f, lp0, p)
+    if found(lp0) then loopSkeleton(r, ds, f, lp0, p, false)
     else if found(p) && eqs(text2(p), "by") then
       say("induction ")
       lid(true, text(kid(p, 0)))
@@ -203,8 +203,13 @@ def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
 // srs_auto with the `proof using` facts + `extra` (the fns a loop calls): each fn and its contract theorem
 def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
   say("srs_auto [")
+  factList(r, ds, p, extra, true)
+  say("]")
+
+// the facts of a proof, comma separated (first: no leading comma): fns, their _eq/_spec/_ret theorems
+def factList(r: Region, ds: Nodes, p: Node, extra: Nodes, first0: Bool): Unit =
   var c = eqSpecs(r, ds, if found(p) && eqs(text2(p), "using") then append(r, kids(p), extra) else extra)
-  var first = true
+  var first = first0
   while !isNil(c) do
     val f = find(ds, DFn, text(head(c)))
     // n 1 = the fn being proven: its own contract is not a fact yet
@@ -223,20 +228,32 @@ def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
       say(if eqn then "_eq»" else "_spec»")
       first = false
     else ()
+    if found(f) && num(head(c)) == 0 && !isNil(clauseExprs(r, clausesOf(f), "returns")) then
+      if !first then say(", ") else ()
+      say("«")
+      say(text(head(c)))
+      say("_ret»")
+      first = false
+    else ()
     c = tail(c)
-  say("]")
 
 // f has an _eq rule: one `ensures result == E`, no requires
 def isEqFn(r: Region, ds: Nodes, f: Node): Bool =
   val ce = clausesOf(f)
   num(f) == 0 && isNil(clauseExprs(r, ce, "requires")) && !isNil(clauseExprs(r, ce, "ensures")) && isNil(tail(clauseExprs(r, ce, "ensures"))) && resultEq(head(clauseExprs(r, ce, "ensures")))
-// facts xs + the spec defs of each fn used through its _eq rule (its E must unfold)
+// facts xs + the match-defined spec defs in the E of each fn used through its _eq rule: they unfold only on
+// constructors. other spec defs there (if bodies) stay opaque: the proof reasons about them as atoms
 def eqSpecs(r: Region, ds: Nodes, xs: Nodes): Nodes =
   var out = xs
   var c = xs
   while !isNil(c) do
     val f = find(ds, DFn, text(head(c)))
-    if found(f) && num(head(c)) == 0 && isEqFn(r, ds, f) then out = specCalls(r, ds, kid(head(clauseExprs(r, clausesOf(f), "ensures")), 1), out) else ()
+    if found(f) && num(head(c)) == 0 && isEqFn(r, ds, f) then
+      var s = specCalls(r, ds, kid(head(clauseExprs(r, clausesOf(f), "ensures")), 1), NNil)
+      while !isNil(s) do
+        if kind(kid(find(ds, DFn, text(head(s))), 2)) == XMatch && !has(out, text(head(s))) then out = NCons(head(s), out) else ()
+        s = tail(s)
+    else ()
     c = tail(c)
   out
 
@@ -284,6 +301,32 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
     say("\n\n")
     if isNil(req) && isNil(tail(ens)) && resultEq(head(ens)) then eqTheorem(r, ds, f, kid(head(ens), 1)) else ()
   else ()
+  val rets = clauseExprs(r, cs, "returns")
+  if !isNil(rets) then retTheorem(r, ds, f, rets) else ()
+
+// returns (C15): theorem f_ret (params) (h : requires) : ∀ result, f params = some result → returns. exit = no claim
+def retTheorem(r: Region, ds: Nodes, f: Node, rets: Nodes): Unit =
+  val cs = clausesOf(f)
+  val req = clauseExprs(r, cs, "requires")
+  val p = proofOf(cs)
+  say("theorem «")
+  say(text(f))
+  say("_ret»")
+  lparams(ds, kids(kid(f, 0)))
+  if !isNil(req) then
+    say(" (_h_req : ")
+    lpAll(r, ds, req)
+    say(")")
+  else ()
+  say(" :\n    ∀ «result», ")
+  lid(true, text(f))
+  largs(ds, kids(kid(f, 0)))
+  say(" = some «result» → ")
+  lpAll(r, ds, rets)
+  say(" := by\n  refine Srs.ok_intro ?_\n  ")
+  val lp0 = invLoop(r, kid(f, 2))
+  if found(lp0) then loopSkeleton(r, ds, f, lp0, p, true) else autoCall(r, ds, p, selfFacts(r, ds, f))
+  say("\n\n")
 
 def verification(r: Region, ds: Nodes): Unit =
   var c = ds
@@ -374,19 +417,22 @@ def bodyCalls(r: Region, ds: Nodes, body: Node): Nodes =
     c = tail(c)
   out
 
-// the proof of a fn whose body loop has an invariant: Srs.loop_bind with the loop's invariant and measure;
-// left: one turn keeps it (step), it holds on entry, the contract holds at exit
-def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
+// the proof of a fn whose body loop has an invariant: Srs.loop_bind (ret: Srs.loop_ret_bind, partial) with the
+// loop's invariant and measure; left: one turn keeps it (step), it holds on entry, the contract holds at exit
+def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node, ret: Bool): Unit =
   val env = loopEnv(r, ds, f, w)
   val sc = scope(r, env)
   val mu = mutated(r, sc, kid(w, 1))
   val cap = captured(r, sc, mu)
   val inv = clauseExprs(r, kids(kid(w, 1)), "invariant")
   val dec = clauseExprs(r, kids(kid(w, 1)), "decreases")
-  val hints = append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
+  val hints = append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), if ret then "returns" else "ensures"))), NNil))
   say("rw [")
   lid(true, text(f))
-  say("]\n  dsimp only\n  refine Srs.loop_bind (")
+  say("]\n  dsimp only\n  (try simp only [Srs.some_bind, pure_bind")
+  factList(r, ds, p, hints, false)
+  say("])\n  refine Srs.")
+  say(if ret then "loop_ret_bind (" else "loop_bind (")
   auxName(ds, true, text(f), w)
   var c = cap
   while !isNil(c) do
@@ -408,7 +454,7 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   if isNil(dec) then say("srs_loop_needs_decreases") else lp(r, ds, head(dec))
   say(").toNat) ?_ _ _ _ ?_ ?_\n  · rintro ")
   rpat(mu)
-  say(" hI\n    ")
+  say(if ret then " hI b hc hb\n    " else " hI\n    ")
   casesEnums(ds, condVars(r, mu, kid(w, 0)))
   autoCall(r, ds, p, hints)
   say("\n  · ")
@@ -509,8 +555,8 @@ def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
 // a proof without loop: f itself (n 1 = not yet a fact), the fns its body calls, the spec defs its contract calls
 def selfFacts(r: Region, ds: Nodes, f: Node): Nodes =
   val cs = clausesOf(f)
-  NCons(Node(Name, text(f), "", 1, 0, NNil), append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, clauseExprs(r, cs, "requires"), clauseExprs(r, cs, "ensures")), NNil)))
-// the spec defs exprs es call, and the spec defs those call (unfolded by srs_auto)
+  NCons(Node(Name, text(f), "", 1, 0, NNil), append(r, bodyCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, clauseExprs(r, cs, "requires"), append(r, clauseExprs(r, cs, "ensures"), clauseExprs(r, cs, "returns"))), NNil)))
+// the spec defs exprs es call (unfolded by srs_auto); not the ones those call: they stay opaque
 def specClosure(r: Region, ds: Nodes, es: Nodes, acc: Nodes): Nodes =
   var out = acc
   var c = es
@@ -524,7 +570,6 @@ def specCalls(r: Region, ds: Nodes, e: Node, acc: Nodes): Nodes =
     val f = find(ds, DFn, text(e))
     if found(f) && num(f) == 2 && !has(out, text(e)) then
       out = NCons(leaf(r, Name, text(e), 0), out)
-      out = specCalls(r, ds, kid(f, 2), out)
     else ()
   else ()
   var c = kids(e)

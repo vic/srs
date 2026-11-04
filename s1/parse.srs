@@ -88,13 +88,13 @@ def clauses(r: Region, ts0: Nodes): PR =
   PR(list(r, Names, at(ts0), rev(r, cs)), tail(ts))
 
 def isClause(ts: Nodes): Bool =
-  isT(ts, "requires") || isT(ts, "ensures") || isT(ts, "decreases") || isT(ts, "invariant") || isT(ts, "proof")
+  isT(ts, "requires") || isT(ts, "ensures") || isT(ts, "returns") || isT(ts, "decreases") || isT(ts, "invariant") || isT(ts, "proof")
 
-// requires e | ensures e | decreases e | invariant e | proof using a, b | proof by induction x | proof lean "tactics"
+// requires e | ensures e | returns e | decreases e | invariant e | proof using a, b | proof by induction x | proof lean "tactics"
 def clause(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
   val kw = text(head(ts0))
-  if !isClause(ts0) then perr(ts0, "requires, ensures, decreases, invariant or proof") else ()
+  if !isClause(ts0) then perr(ts0, "requires, ensures, returns, decreases, invariant or proof") else ()
   if eqs(kw, "proof") then
     val ts = tail(ts0)
     if isT(ts, "using") then
@@ -306,11 +306,11 @@ def expr(r: Region, ts0: Nodes): PR =
     if isK(ts, TNl) && isT(tail(ts), "else") then ts = tail(ts) else ()
     val e = rhs(r, expect(ts, "else"))
     PR(Node(XIf, "", "", 0, line, NCons(pn(c), NCons(pn(t), one(r, pn(e))))), pr(e))
-  else if isT(ts0, "forall") then
+  else if isT(ts0, "forall") || isT(ts0, "exists") then
     val x = needIdent(tail(ts0))
     val t = ty(r, expect(drop(ts0, 2), ":"))
     val b = expr(r, expect(pr(t), "=>"))
-    PR(Node(XForall, x, "", 0, line, NCons(pn(t), one(r, pn(b)))), pr(b))
+    PR(Node(if isT(ts0, "forall") then XForall else XExists, x, "", 0, line, NCons(pn(t), one(r, pn(b)))), pr(b))
   else if isT(ts0, "while") then
     val c = expr(r, tail(ts0))
     val b = rhs(r, expect(pr(c), "do"))

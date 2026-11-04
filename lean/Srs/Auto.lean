@@ -12,6 +12,23 @@ theorem Srs.ite_bind {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (
 /-- a bind on a known value (an `f_eq` rewrite gives `some E`) -/
 theorem Srs.some_bind {α β : Type} (a : α) (f : α → Option β) : (some a >>= f) = f a := rfl
 
+namespace Srs
+
+/-- `returns` (C15): P holds of the value, if `o` returns one (`none` = the run stopped: no claim) -/
+def ok {α : Type} (o : Option α) (P : α → Prop) : Prop := ∀ x, o = some x → P x
+
+theorem ok_intro {α : Type} {o : Option α} {P : α → Prop} (h : ok o P) : ∀ x, o = some x → P x := h
+theorem ok_none {α : Type} (P : α → Prop) : ok none P = True := by simp [ok]
+theorem ok_some {α : Type} (a : α) (P : α → Prop) : ok (some a) P = P a := by simp [ok]
+theorem ok_pure {α : Type} (a : α) (P : α → Prop) : ok (pure a) P = P a := by simp [ok, pure]
+theorem ok_bind {α β : Type} (x : Option α) (f : α → Option β) (P : β → Prop) :
+    ok (x >>= f) P = ok x (fun a => ok (f a) P) := by
+  cases x <;> simp [ok, bind, Option.bind]
+theorem ok_ite {α : Type} (c : Prop) [Decidable c] (a b : Option α) (P : α → Prop) :
+    ok (ite c a b) P = ite c (ok a P) (ok b P) := by split <;> rfl
+
+end Srs
+
 -- facts = idents: each goes to simp and to grind
 syntax "srs_auto" (" [" ident,* "]")? : tactic
 
@@ -23,16 +40,18 @@ macro_rules
     let ss ← ls.mapM fun i => `(Lean.Parser.Tactic.simpLemma| $i:ident)
     let gs ← ls.mapM fun i => `(Lean.Parser.Tactic.grindParam| $i:ident)
     `(tactic| (
-      (try simp only [$ss,*, pure_bind, Srs.some_bind, Srs.ite_bind, Srs.Rt.rt_str_eq] at *)
-      (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice] at *)
+      (try simp only [$ss,*, pure_bind, Srs.some_bind, Srs.ite_bind, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.Rt.rt_str_eq, Srs.Rt.rt_eprint, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit] at *)
+      (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit] at *)
       first
         | done
-        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]; done)
-        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> omega)
-        | ((repeat' split) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> (first | done | omega))
-        | ((refine ⟨_, rfl, ?_⟩ <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]); done)
-        | ((repeat' split) <;> (try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left]) <;> grind [$gs,*])
-        | ((try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]) <;> grind [$gs,*])))
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]; done)
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> omega)
+        | ((repeat' split) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
+        | ((repeat' split) <;> (repeat' apply And.intro) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
+        | ((refine ⟨_, rfl, ?_⟩ <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]); done)
+        | ((repeat' split) <;> (try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg]) <;> grind [$gs,*])
+        | ((try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]) <;> grind [$gs,*])))
+
 
 namespace Srs
 
@@ -66,5 +85,46 @@ theorem loop_bind {σ β : Type} (f : σ → Option σ) (cond : σ → Option Bo
   obtain ⟨r, hr, hIr, hcr⟩ := loop_inv f cond body hf I D hstep s hI
   obtain ⟨v, hv, hP⟩ := hk r hIr hcr
   exact ⟨v, by simp [hr, hv, bind, Option.bind], hP⟩
+
+/-- the loop theorem when the run may stop. A turn that returns keeps the invariant and drops the measure ⟹
+a loop that returns ends with the invariant and the condition false. -/
+theorem loop_ret {σ : Type} (f : σ → Option σ) (cond : σ → Option Bool) (body : σ → Option σ)
+    (hf : ∀ s, f s = (do if (← cond s) then f (← body s) else pure s)) (I : σ → Prop) (D : σ → Nat)
+    (hstep : ∀ s, I s → ∀ b, cond s = some b → b = true → ok (body s) (fun s' => I s' ∧ D s' < D s)) :
+    ∀ s, I s → ok (f s) (fun r => I r ∧ cond r = some false) := by
+  intro s
+  induction h : D s using Nat.strongRecOn generalizing s with
+  | _ n ih =>
+    intro hI r hr
+    rw [hf] at hr
+    cases hc : cond s with
+    | none => simp [hc, bind, Option.bind] at hr
+    | some b =>
+      cases b with
+      | false =>
+        simp [hc, bind, Option.bind, pure] at hr
+        exact hr ▸ ⟨hI, hc⟩
+      | true =>
+        cases hb : body s with
+        | none => simp [hc, hb, bind, Option.bind] at hr
+        | some s' =>
+          simp [hc, hb, bind, Option.bind] at hr
+          obtain ⟨hI', hd⟩ := hstep s hI true hc rfl s' hb
+          exact ih (D s') (h ▸ hd) s' rfl hI' r hr
+
+/-- a loop followed by the rest `k` of its fn: the fn's `returns` fact from the loop invariant at exit -/
+theorem loop_ret_bind {σ β : Type} (f : σ → Option σ) (cond : σ → Option Bool) (body : σ → Option σ)
+    (hf : ∀ s, f s = (do if (← cond s) then f (← body s) else pure s)) (I : σ → Prop) (D : σ → Nat)
+    (hstep : ∀ s, I s → ∀ b, cond s = some b → b = true → ok (body s) (fun s' => I s' ∧ D s' < D s))
+    (s : σ) (k : σ → Option β) (P : β → Prop) (hI : I s)
+    (hk : ∀ r, I r → cond r = some false → ok (k r) P) :
+    ok (f s >>= k) P := by
+  intro v hv
+  cases hr : f s with
+  | none => simp [hr, bind, Option.bind] at hv
+  | some r =>
+    simp [hr, bind, Option.bind] at hv
+    obtain ⟨hIr, hcr⟩ := loop_ret f cond body hf I D hstep s hI r hr
+    exact hk r hIr hcr v hv
 
 end Srs
