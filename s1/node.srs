@@ -82,17 +82,26 @@ def num(x: Node): I64 = x match
 def lineOf(x: Node): I64 = x match
   case Node(_, _, _, _, l, _) => l
   case NoNode => 0
-def kids(x: Node): Nodes = x match
+def kids(x: Node): Nodes
+  ensures result == kidsS(x)
+  proof by induction x
+= x match
   case Node(_, _, _, _, _, a) => a
   case NoNode => NNil
 
 def isNil(xs: Nodes): Bool = xs match
   case NNil => true
   case _ => false
-def head(xs: Nodes): Node = xs match
+def head(xs: Nodes): Node
+  ensures result == headS(xs)
+  proof by induction xs
+= xs match
   case NCons(h, _) => h
   case NNil => NoNode
-def tail(xs: Nodes): Nodes = xs match
+def tail(xs: Nodes): Nodes
+  ensures result == tailS(xs)
+  proof by induction xs
+= xs match
   case NCons(_, t) => t
   case NNil => NNil
 def len(xs: Nodes): I64 =
@@ -167,6 +176,15 @@ def has(xs: Nodes, s: Str): Bool
     found = eqs(text(head(c)), s)
     c = tail(c)
   found
+spec def kidsS(x: Node): Nodes = x match
+  case Node(_, _, _, _, _, a) => a
+  case NoNode => NNil
+spec def headS(xs: Nodes): Node = xs match
+  case NCons(h, _) => h
+  case NNil => NoNode
+spec def tailS(xs: Nodes): Nodes = xs match
+  case NCons(_, t) => t
+  case NNil => NNil
 spec def kindS(x: Node): Kind = x match
   case Node(k, _, _, _, _, _) => k
   case NoNode => TEof

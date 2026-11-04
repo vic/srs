@@ -203,14 +203,13 @@ def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
 // srs_auto with the `proof using` facts + `extra` (the fns a loop calls): each fn and its contract theorem
 def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
   say("srs_auto [")
-  var c = if found(p) && eqs(text2(p), "using") then append(r, kids(p), extra) else extra
+  var c = eqSpecs(r, ds, if found(p) && eqs(text2(p), "using") then append(r, kids(p), extra) else extra)
   var first = true
   while !isNil(c) do
     val f = find(ds, DFn, text(head(c)))
     // n 1 = the fn being proven: its own contract is not a fact yet
     val spec = found(f) && num(head(c)) == 0 && num(f) != 1 && !isNil(clauseExprs(r, clausesOf(f), "ensures"))
-    val ce = clausesOf(f)
-    val eqn = spec && num(f) == 0 && isNil(clauseExprs(r, ce, "requires")) && isNil(tail(clauseExprs(r, ce, "ensures"))) && resultEq(head(clauseExprs(r, ce, "ensures")))
+    val eqn = spec && isEqFn(r, ds, f)
     // a fn with an _eq rule is used through it, not unfolded
     if !eqn then
       if !first then say(", ") else ()
@@ -226,6 +225,20 @@ def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
     else ()
     c = tail(c)
   say("]")
+
+// f has an _eq rule: one `ensures result == E`, no requires
+def isEqFn(r: Region, ds: Nodes, f: Node): Bool =
+  val ce = clausesOf(f)
+  num(f) == 0 && isNil(clauseExprs(r, ce, "requires")) && !isNil(clauseExprs(r, ce, "ensures")) && isNil(tail(clauseExprs(r, ce, "ensures"))) && resultEq(head(clauseExprs(r, ce, "ensures")))
+// facts xs + the spec defs of each fn used through its _eq rule (its E must unfold)
+def eqSpecs(r: Region, ds: Nodes, xs: Nodes): Nodes =
+  var out = xs
+  var c = xs
+  while !isNil(c) do
+    val f = find(ds, DFn, text(head(c)))
+    if found(f) && num(head(c)) == 0 && isEqFn(r, ds, f) then out = specCalls(r, ds, kid(head(clauseExprs(r, clausesOf(f), "ensures")), 1), out) else ()
+    c = tail(c)
+  out
 
 // theorem f_spec (params) (h : requires) : ∃ result, f params = some result ∧ ensures
 def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =

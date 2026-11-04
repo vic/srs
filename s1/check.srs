@@ -91,11 +91,18 @@ def joinGam(r: Region, a: Nodes, b: Nodes, what: Str, line: I64): Nodes =
     y = tail(y)
   rev(r, out)
 // every var of a has caps within the same var of b
-def within(a: Nodes, b: Nodes): Bool =
+spec def withinS(a: Nodes, b: Nodes): Bool = a match
+  case NNil => true
+  case NCons(h, t) => allIn(kidsS(h), kidsS(headS(b))) && withinS(t, tailS(b))
+def within(a: Nodes, b: Nodes): Bool
+  ensures result == withinS(a, b)
+=
   var x = a
   var y = b
   var ok = true
   while ok && !isNil(x) do
+    invariant (ok && withinS(x, y)) == withinS(a, b)
+    decreases sizeS(x)
     ok = subset(kids(head(x)), kids(head(y)))
     x = tail(x)
     y = tail(y)
