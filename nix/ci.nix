@@ -59,7 +59,7 @@ in
           run = "nix flake check -L";
         }
       ];
-      s0-test = job 20 [ (dev "S0 zig unit tests" "s0-test") ];
+      lean-check = job 30 [ (dev "Lean soundness proofs of the effect checker" "lean-check") ];
       srs-test = job 20 [ (dev "srs gate: fixpoint, seed, programs" "srs-test") ];
     };
   };

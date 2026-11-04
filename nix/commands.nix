@@ -37,10 +37,27 @@ in
         "after an S1 change: bootstrap/seed.c = the S1 self-compile of the last srs-test"
         ''${build}; cp "$B/s2.c" bootstrap/seed.c''
       )
-      (cmd "test" "srs-test" "the gate: S0 -> S1 -> fixpoint, seed, pass and neg programs"
+      (cmd "test" "srs-test" "the gate, self-hosted: seed -> S1 -> fixpoint, pass and neg programs"
         "./tests/run.sh"
       )
-      (cmd "test" "s0-test" "the S0 zig unit tests" "timeout 120 zig test s0/main.zig")
+      (cmd "test" "lean-check"
+        "the Lean model of the effect checker: soundness proof + agreement with tests/ (no sorry)"
+        ''
+          ! grep -rn --include='*.lean' -w -e sorry -e admit -e axiom lean/Srs || { echo "unproven step" >&2; exit 1; }
+          cd lean && timeout 600 lake build
+        ''
+      )
+      # bootstrap only when absolutely necessary (C10): the seed cannot build the S1 src
+      (cmd "bootstrap" "s0-bootstrap" "S0 (zig) -> S1 -> bootstrap/seed.c, then srs-test" ''
+        ${build}
+        timeout 120 zig test s0/main.zig
+        timeout 120 zig build-exe s0/main.zig -femit-bin="$B/s0"
+        S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/emit.srs s1/main.srs"
+        "$B/s0" $S1SRC > "$B/s1.c"
+        ${cc} -o "$B/s1" "$B/s1.c" rt/srs_rt.c
+        "$B/s1" $S1SRC > bootstrap/seed.c
+        ./tests/run.sh
+      '')
       (cmd "fmt" "fmt" "format every tracked nix file (nixfmt)"
         "git ls-files -z '*.nix' | xargs -0 nixfmt"
       )
@@ -54,7 +71,7 @@ in
         "nix run .#write-files"
       )
       (cmd "ci" "ci" "run the CI jobs locally, in order"
-        ''for c in fmt-check lint s0-test srs-test; do echo "== $c"; $c; done''
+        ''for c in fmt-check lint srs-test lean-check; do echo "== $c"; $c; done''
       )
     ];
   };
