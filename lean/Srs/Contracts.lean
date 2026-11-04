@@ -115,6 +115,6 @@ theorem «count_spec» («xs» : «List») (_h_req : (((«size» «xs») ≥ (0 
 
 theorem «push_spec» («h» : Int) («xs» : «List») :
     ∃ «result», «push» «h» «xs» = some «result» ∧ ((∀ («v» : Int), ((«memL» «v» «result») = ((«h» == «v») || («memL» «v» «xs»))))) := by
-  srs_auto [«memL», «push»]
+  srs_auto [«memL», «push», «memL»]
 
 end Srs.Contracts

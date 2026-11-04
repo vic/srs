@@ -197,8 +197,8 @@ def proofText(r: Region, ds: Nodes, f: Node, p: Node): Unit =
       say("induction ")
       lid(true, text(kid(p, 0)))
       say(" <;> ")
-      autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
-    else autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
+      autoCall(r, ds, p, selfFacts(r, ds, f))
+    else autoCall(r, ds, p, selfFacts(r, ds, f))
 
 // srs_auto with the `proof using` facts + `extra` (the fns a loop calls): each fn and its contract theorem
 def autoCall(r: Region, ds: Nodes, p: Node, extra: Nodes): Unit =
@@ -236,13 +236,25 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
     say("theorem «")
     say(text(f))
     say("_spec»")
-    lparams(ds, kids(kid(f, 0)))
+    // proof by induction x (no requires): ∀ x, one arm per case (Lean `induction` rejects mutual enums)
+    // shortcut: x must be the last param (f_eq applies f_spec positionally), until args are named
+    val p = proofOf(cs)
+    val ind = if isNil(req) && found(p) && eqs(text2(p), "by") then text(kid(p, 0)) else ""
+    lparams(ds, without(r, kids(kid(f, 0)), ind))
     if !isNil(req) then
       say(" (_h_req : ")
       lpAll(r, ds, req)
       say(")")
     else ()
-    say(" :\n    ∃ «result», ")
+    say(" :\n    ")
+    if rt_str_len(ind) > 0 then
+      say("∀ (")
+      lid(true, ind)
+      say(" : ")
+      lty(kid(find(kids(kid(f, 0)), Param, ind), 0))
+      say("), ")
+    else ()
+    say("∃ «result», ")
     lid(true, text(f))
     var c = kids(kid(f, 0))
     while !isNil(c) do
@@ -253,8 +265,9 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
       c = tail(c)
     say(" = some «result» ∧ ")
     lpAll(r, ds, ens)
-    say(" := ")
-    proofText(r, ds, f, proofOf(cs))
+    if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind) else
+      say(" := ")
+      proofText(r, ds, f, p)
     say("\n\n")
     if isNil(req) && isNil(tail(ens)) && resultEq(head(ens)) then eqTheorem(r, ds, f, kid(head(ens), 1)) else ()
   else ()
@@ -339,10 +352,10 @@ def rpat(mu: Nodes): Unit =
       c = tail(c)
     say("⟩")
 
-// the user fns a loop calls: unfolded by srs_auto
-def loopCalls(r: Region, ds: Nodes, w: Node): Nodes =
+// the user fns a loop fn calls (loop and after it): unfolded by srs_auto
+def loopCalls(r: Region, ds: Nodes, body: Node): Nodes =
   var out = NNil
-  var c = callsOf(r, ds, w, NNil)
+  var c = callsOf(r, ds, body, NNil)
   while !isNil(c) do
     out = NCons(leaf(r, Name, text(head(c)), 0), out)
     c = tail(c)
@@ -357,7 +370,7 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node): Unit =
   val cap = captured(r, sc, mu)
   val inv = clauseExprs(r, kids(kid(w, 1)), "invariant")
   val dec = clauseExprs(r, kids(kid(w, 1)), "decreases")
-  val hints = append(r, loopCalls(r, ds, w), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
+  val hints = append(r, loopCalls(r, ds, kid(f, 2)), specClosure(r, ds, append(r, inv, append(r, dec, clauseExprs(r, clausesOf(f), "ensures"))), NNil))
   say("rw [")
   lid(true, text(f))
   say("]\n  dsimp only\n  refine Srs.loop_bind (")
@@ -477,9 +490,13 @@ def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
       else ()
       i = i + 1
       fs = tail(fs)
-    autoCall(r, ds, p, one(r, Node(Name, text(f), "", 1, 0, NNil)))
+    autoCall(r, ds, p, selfFacts(r, ds, f))
     cs = tail(cs)
 
+// a proof without loop: f itself (n 1 = not yet a fact) + the spec defs its contract calls
+def selfFacts(r: Region, ds: Nodes, f: Node): Nodes =
+  val cs = clausesOf(f)
+  NCons(Node(Name, text(f), "", 1, 0, NNil), specClosure(r, ds, append(r, clauseExprs(r, cs, "requires"), clauseExprs(r, cs, "ensures")), NNil))
 // the spec defs exprs es call, and the spec defs those call (unfolded by srs_auto)
 def specClosure(r: Region, ds: Nodes, es: Nodes, acc: Nodes): Nodes =
   var out = acc

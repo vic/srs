@@ -15,14 +15,19 @@ def rt_exit (_ : Int) : Option Unit := none
 def rt_str_len (s : ByteArray) : Option Int := pure s.size
 def rt_str_at (s : ByteArray) (i : Int) : Option Int := pure (s.get! i.toNat).toNat
 def rt_str_slice (s : ByteArray) (b e : Int) : Option ByteArray := pure (s.extract b.toNat e.toNat)
-def rt_str_eq (a b : ByteArray) : Option Bool := pure (a.data == b.data)
+def rt_str_eq (a b : ByteArray) : Option Bool := pure (decide (a = b))
 
 -- pure versions, for specs and contracts (`spec def`, requires, ensures, invariant)
 namespace P
 def rt_str_len (s : ByteArray) : Int := s.size
 def rt_str_at (s : ByteArray) (i : Int) : Int := (s.get! i.toNat).toNat
 def rt_str_slice (s : ByteArray) (b e : Int) : ByteArray := s.extract b.toNat e.toNat
-def rt_str_eq (a b : ByteArray) : Bool := a.data == b.data
+def rt_str_eq (a b : ByteArray) : Bool := decide (a = b)
 end P
+
+/-- rt_str_eq = the C byte compare (same length, same bytes): ByteArray is one field, `data` -/
+theorem rt_str_eq_bytes (a b : ByteArray) : P.rt_str_eq a b = (a.data == b.data) := by
+  by_cases h : a = b <;> simp [P.rt_str_eq, h]
+  intro h2; apply h; cases a; cases b; simp_all
 
 end Srs.Rt

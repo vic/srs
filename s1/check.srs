@@ -31,10 +31,14 @@ def isBuiltin(n: Str): Bool = eqs(n, "I64") || eqs(n, "Bool") || eqs(n, "Unit") 
 def isEnum(ds: Nodes, n: Str): Bool = found(find(ds, DEnum, n))
 def isProto(ds: Nodes, n: Str): Bool = found(find(ds, DProto, n))
 
-def union(r: Region, a: Nodes, b: Nodes): Nodes =
+def union(r: Region, a: Nodes, b: Nodes): Nodes
+  ensures forall s: Str => memS(s, result) == (memS(s, a) || memS(s, b))
+=
   var out = a
   var c = b
   while !isNil(c) do
+    invariant forall s: Str => (memS(s, out) || memS(s, c)) == (memS(s, a) || memS(s, b))
+    decreases sizeS(c)
     if !has(out, text(head(c))) then out = NCons(head(c), out) else ()
     c = tail(c)
   out
@@ -57,11 +61,18 @@ def subset(a: Nodes, b: Nodes): Bool
 
 def state(gam: Nodes, cap: Str): Str = text2(find(gam, GState, cap))
 // replace the innermost Γ entry of x's kind and name by x
-def setG(r: Region, gam: Nodes, x: Node): Nodes =
+spec def replS(xs: Nodes, x: Node): Nodes = xs match
+  case NNil => NNil
+  case NCons(h, t) => if kindS(h) == kindS(x) && rt_str_eq(textS(h), textS(x)) then NCons(x, t) else NCons(h, replS(t, x))
+def setG(r: Region, gam: Nodes, x: Node): Nodes
+  ensures result == replS(gam, x)
+=
   var out = NNil
   var c = gam
   var done = false
   while !isNil(c) do
+    invariant revOnto(out, if done then c else replS(c, x)) == replS(gam, x)
+    decreases sizeS(c)
     if !done && kind(head(c)) == kind(x) && eqs(text(head(c)), text(x)) then
       out = NCons(x, out)
       done = true

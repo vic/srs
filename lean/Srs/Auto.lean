@@ -9,22 +9,30 @@ import Srs.Rt
 theorem Srs.ite_bind {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → Option β) :
     (ite c a b >>= f) = ite c (a >>= f) (b >>= f) := by split <;> rfl
 
-syntax "srs_auto" (" [" Lean.Parser.Tactic.simpLemma,* "]")? : tactic
+/-- a bind on a known value (an `f_eq` rewrite gives `some E`) -/
+theorem Srs.some_bind {α β : Type} (a : α) (f : α → Option β) : (some a >>= f) = f a := rfl
 
+-- facts = idents: each goes to simp and to grind
+syntax "srs_auto" (" [" ident,* "]")? : tactic
+
+open Lean in
 macro_rules
   | `(tactic| srs_auto) => `(tactic| srs_auto [])
-  | `(tactic| srs_auto [$ls,*]) => `(tactic| (
-      (try simp only [$ls,*, pure_bind, Srs.ite_bind, Srs.Rt.rt_str_eq] at *)
-      (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at,
-        Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at,
-        Srs.Rt.P.rt_str_slice] at *)
+  | `(tactic| srs_auto [$ls,*]) => do
+    let ls := ls.getElems
+    let ss ← ls.mapM fun i => `(Lean.Parser.Tactic.simpLemma| $i:ident)
+    let gs ← ls.mapM fun i => `(Lean.Parser.Tactic.grindParam| $i:ident)
+    `(tactic| (
+      (try simp only [$ss,*, pure_bind, Srs.some_bind, Srs.ite_bind, Srs.Rt.rt_str_eq] at *)
+      (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice] at *)
       first
         | done
-        | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]; done)
-        | (simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> omega)
-        | ((repeat' split) <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> (first | done | omega))
-        | (refine ⟨_, rfl, ?_⟩ <;> simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice])
-        | ((try simp_all [$ls,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]) <;> grind)))
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]; done)
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> omega)
+        | ((repeat' split) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left] <;> (first | done | omega))
+        | ((refine ⟨_, rfl, ?_⟩ <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]); done)
+        | ((repeat' split) <;> (try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Int.max_eq_left]) <;> grind [$gs,*])
+        | ((try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice]) <;> grind [$gs,*])))
 
 namespace Srs
 

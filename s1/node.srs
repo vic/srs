@@ -61,10 +61,16 @@ enum Nodes:
   case NNil
   case NCons(h: Node, tl: Nodes)
 
-def kind(x: Node): Kind = x match
+def kind(x: Node): Kind
+  ensures result == kindS(x)
+  proof by induction x
+= x match
   case Node(k, _, _, _, _, _) => k
   case NoNode => TEof
-def text(x: Node): Str = x match
+def text(x: Node): Str
+  ensures result == textS(x)
+  proof by induction x
+= x match
   case Node(_, s, _, _, _, _) => s
   case NoNode => ""
 def text2(x: Node): Str = x match
