@@ -1,0 +1,19 @@
+// driver: token dump in s0 -t format.
+def tagName(k: Kind): Str =
+  if k == TIdent then "ident" else if k == TInt then "int" else if k == TStr then "str"
+  else if k == TChar then "char" else if k == TOp then "op" else if k == TNl then "nl"
+  else if k == TIndent then "indent" else if k == TDedent then "dedent" else "eof"
+
+def main(): I64 =
+  handle r = Arena()
+  var ts = lex(r, rt_read_file(rt_arg(1)))
+  while !isNil(ts) do
+    val t = head(ts)
+    sayn(lineOf(t))
+    say(" ")
+    say(tagName(kind(t)))
+    say(" ")
+    say(text(t))
+    say("\n")
+    ts = tail(ts)
+  0

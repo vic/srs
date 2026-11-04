@@ -1,0 +1,170 @@
+// S1 shared data: one node shape, closed Kind enum.
+
+enum Kind:
+  // tokens
+  case TIdent
+  case TInt
+  case TStr
+  case TChar
+  case TOp
+  case TNl
+  case TIndent
+  case TDedent
+  case TEof
+  // types: s = name, t = from state, a = [TyTo(s = to), TyCap(s)...], n = 1 if caps annotated
+  case Ty
+  case TyTo
+  case TyCap
+  // decls
+  case DFn       // s name, n 1 = extern, a = [Params, ret Ty, body?]
+  case DEnum     // s name, a = cases
+  case DCase     // s name, n tag, a = params
+  case DProto    // s name, t start, a = [Names states, Names ends, Name drop, Ops]
+  case DOp       // s name, a = [Params, ret Ty, Names trans]
+  case DTrans    // s from, t to
+  case DHandler  // s name, t protocol, a = fns
+  case Params
+  case Param     // s name, a = [Ty]
+  case Names
+  case Name      // s
+  // exprs
+  case XInt      // n
+  case XBool     // n
+  case XStr      // s raw
+  case XUnit
+  case XName     // s
+  case XCall     // s callee, a = args
+  case XMethod   // s receiver, t op, a = args
+  case XBin      // s op, a = [l, r]
+  case XUn       // s op, a = [e]
+  case XIf       // a = [c, t, e]
+  case XMatch    // a = [scrutinee, arms...]
+  case XArm      // s ctor or "_", a = [body, binds...]
+  case XBlock    // a = stmts; value = last when expression
+  case XWhile    // a = [c, body]
+  case XAssign   // s name, a = [e]
+  case SVal      // s name, n 1 = var, a = [e, Ty?]
+  case SHandle   // s name, t handler, a = args
+  // checker
+  case BVar      // s name, t C name, a = [Ty]
+  case BCap      // s name, t C name, a = [Ty protocol]
+  case GState    // s cap, t state
+
+enum Node:
+  case NoNode
+  case Node(k: Kind, s: Str, t: Str, n: I64, line: I64, a: Nodes)
+
+enum Nodes:
+  case NNil
+  case NCons(h: Node, tl: Nodes)
+
+def kind(x: Node): Kind = x match
+  case Node(k, _, _, _, _, _) => k
+  case NoNode => TEof
+def text(x: Node): Str = x match
+  case Node(_, s, _, _, _, _) => s
+  case NoNode => ""
+def text2(x: Node): Str = x match
+  case Node(_, _, t, _, _, _) => t
+  case NoNode => ""
+def num(x: Node): I64 = x match
+  case Node(_, _, _, n, _, _) => n
+  case NoNode => 0
+def lineOf(x: Node): I64 = x match
+  case Node(_, _, _, _, l, _) => l
+  case NoNode => 0
+def kids(x: Node): Nodes = x match
+  case Node(_, _, _, _, _, a) => a
+  case NoNode => NNil
+
+def isNil(xs: Nodes): Bool = xs match
+  case NNil => true
+  case _ => false
+def head(xs: Nodes): Node = xs match
+  case NCons(h, _) => h
+  case NNil => NoNode
+def tail(xs: Nodes): Nodes = xs match
+  case NCons(_, t) => t
+  case NNil => NNil
+def len(xs: Nodes): I64 =
+  var n = 0
+  var c = xs
+  while !isNil(c) do
+    n = n + 1
+    c = tail(c)
+  n
+def nth(xs: Nodes, i: I64): Node =
+  var c = xs
+  var k = i
+  while k > 0 do
+    c = tail(c)
+    k = k - 1
+  head(c)
+def kid(x: Node, i: I64): Node = nth(kids(x), i)
+def drop(xs: Nodes, i: I64): Nodes =
+  var c = xs
+  var k = i
+  while k > 0 do
+    c = tail(c)
+    k = k - 1
+  c
+def rev(r: Region, xs: Nodes): Nodes =
+  var out = NNil
+  var c = xs
+  while !isNil(c) do
+    out = NCons(head(c), out)
+    c = tail(c)
+  out
+def one(r: Region, x: Node): Nodes = NCons(x, NNil)
+def append(r: Region, xs: Nodes, ys: Nodes): Nodes =
+  var out = ys
+  var c = rev(r, xs)
+  while !isNil(c) do
+    out = NCons(head(c), out)
+    c = tail(c)
+  out
+def leaf(r: Region, k: Kind, s: Str, line: I64): Node = Node(k, s, "", 0, line, NNil)
+
+def eqs(a: Str, b: Str): Bool = rt_str_eq(a, b)
+def has(xs: Nodes, s: Str): Bool =
+  var c = xs
+  var found = false
+  while !found && !isNil(c) do
+    found = eqs(text(head(c)), s)
+    c = tail(c)
+  found
+// first node of kind k with text s, or Node(TEof) if absent
+def find(xs: Nodes, k: Kind, s: Str): Node =
+  var c = xs
+  var res = NoNode
+  var found = false
+  while !found && !isNil(c) do
+    val x = head(c)
+    if kind(x) == k && eqs(text(x), s) then
+      res = x
+      found = true
+    else ()
+    c = tail(c)
+  res
+def found(x: Node): Bool = x match
+  case NoNode => false
+  case _ => true
+def index(xs: Nodes, s: Str): I64 =
+  var c = xs
+  var i = 0
+  var res = -1
+  while res < 0 && !isNil(c) do
+    if eqs(text(head(c)), s) then res = i else ()
+    i = i + 1
+    c = tail(c)
+  res
+
+def say(s: Str): Unit = rt_print(s)
+def sayn(n: I64): Unit = rt_print_i64(n)
+def fatal(msg: Str, line: I64): Unit =
+  rt_eprint("srs:")
+  rt_eprint_i64(line)
+  rt_eprint(": error: ")
+  rt_eprint(msg)
+  rt_eprint("\n")
+  rt_exit(1)
