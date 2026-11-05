@@ -17,7 +17,7 @@ def implAccepts (srcs : List String) : IO Bool := do
   return (check ds).isSome
 
 def checkVerdicts : IO Unit := do
-  let libs := ["../lib/prelude.srs", "../tests/list.lib", "../tests/file.lib"]
+  let libs := ["../lib/prelude.srs", "../lib/kanren.srs", "../tests/list.lib", "../tests/file.lib"]
   let dir (d : String) : IO (List String) := do
     let es ← System.FilePath.readDir d
     return (es.toList.map (·.path.toString)).filter (·.endsWith ".srs") |>.mergeSort

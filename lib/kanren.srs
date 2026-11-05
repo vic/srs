@@ -1,0 +1,92 @@
+// µKanren core (Hemann, Friedman 2013) for the srs comptime evaluator (vic-9l7, vic/c/binders.md K1).
+// Terms are first-order: no λ (§18). The substitution is triangular and only grows (append-only, monotone).
+
+enum Term:
+  case TVar(n: I64)
+  case TCon(f: Str, args: Terms)
+
+enum Terms:
+  case TNil
+  case TCons(h: Term, t: Terms)
+
+enum Subst:
+  case SNil
+  case SBind(v: I64, t: Term, rest: Subst)
+
+enum Unified:
+  case Fail
+  case Ok(s: Subst)
+
+// the term t stands for in s: a variable follows its binding chain, a constructor is itself
+def walk(s: Subst, t: Term): Term = t match
+  case TVar(n) => lookup(s, s, n, t)
+  case TCon(_, _) => t
+
+def lookup(all: Subst, s: Subst, n: I64, t: Term): Term = s match
+  case SNil => t
+  case SBind(v, u, rest) => if v == n then walk(all, u) else lookup(all, rest, n, t)
+
+// variable n occurs in t under s: binding n to t would make an infinite term
+def occurs(s: Subst, n: I64, t: Term): Bool = walk(s, t) match
+  case TVar(m) => m == n
+  case TCon(_, args) => occursIn(s, n, args)
+
+def occursIn(s: Subst, n: I64, ts: Terms): Bool = ts match
+  case TNil => false
+  case TCons(h, t) => occurs(s, n, h) || occursIn(s, n, t)
+
+// s extended so a and b are equal, or Fail
+def unify(r: Region, s: Subst, a: Term, b: Term): Unified =
+  val x = walk(s, a)
+  val y = walk(s, b)
+  x match
+    case TVar(n) => bind(r, s, n, y)
+    case TCon(f, xs) => y match
+      case TVar(m) => bind(r, s, m, x)
+      case TCon(g, ys) => if rt_str_eq(f, g) then unifyAll(r, s, xs, ys) else Fail
+
+def bind(r: Region, s: Subst, n: I64, t: Term): Unified = t match
+  case TVar(m) => if m == n then Ok(s) else Ok(SBind(n, t, s))
+  case TCon(_, _) => if occurs(s, n, t) then Fail else Ok(SBind(n, t, s))
+
+def unifyAll(r: Region, s: Subst, xs: Terms, ys: Terms): Unified = xs match
+  case TNil => ys match
+    case TNil => Ok(s)
+    case TCons(_, _) => Fail
+  case TCons(x, xt) => ys match
+    case TNil => Fail
+    case TCons(y, yt) => unify(r, s, x, y) match
+      case Fail => Fail
+      case Ok(s2) => unifyAll(r, s2, xt, yt)
+
+// t with every bound variable replaced, deeply
+def walkAll(r: Region, s: Subst, t: Term): Term = walk(s, t) match
+  case TVar(n) => TVar(n)
+  case TCon(f, args) => TCon(f, walkEach(r, s, args))
+
+def walkEach(r: Region, s: Subst, ts: Terms): Terms = ts match
+  case TNil => TNil
+  case TCons(h, t) => TCons(walkAll(r, s, h), walkEach(r, s, t))
+
+def showTerm(t: Term): Unit = t match
+  case TVar(n) =>
+    rt_print("_")
+    rt_print_i64(n)
+  case TCon(f, args) =>
+    rt_print(f)
+    args match
+      case TNil => ()
+      case TCons(_, _) =>
+        rt_print("(")
+        showTerms(args)
+        rt_print(")")
+
+def showTerms(ts: Terms): Unit = ts match
+  case TNil => ()
+  case TCons(h, t) =>
+    showTerm(h)
+    t match
+      case TNil => ()
+      case TCons(_, _) =>
+        rt_print(", ")
+        showTerms(t)

@@ -221,8 +221,13 @@ def lsBlock(r: Region, ds: Nodes, fn: Str, env0: Nodes, gam0: Nodes, ss: Nodes, 
     else if kind(s) == SVal then
       put(on, if num(s) == 1 then "let mut " else "let ")
       lid(on, text(s))
-      put(on, " := ")
-      lx(r, ds, fn, env, gam, kid(s, 0), on)
+      // val = bind (a lambda binder): partial_fixpoint cannot split a match on a let-variable
+      if num(s) == 1 then
+        put(on, " := ")
+        lx(r, ds, fn, env, gam, kid(s, 0), on)
+      else
+        put(on, " ← ")
+        lxAct(r, ds, fn, env, gam, kid(s, 0), on)
       put(on, ";\n")
       // the checker's own type of the bound value: the Lean types of the loop aux params
       val x = chk(r, ds, env, gam, kid(s, 0))
@@ -477,6 +482,12 @@ def lx(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node, on: Bool)
     put(on, "(← (do {\n")
     ls(r, ds, fn, env, gam, e, on, 1)
     put(on, "}))")
+
+// e as a monadic action: lx without the outer `(← )` lift
+def lxAct(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node, on: Bool): Unit =
+  put(on, "(pure ")
+  lx(r, ds, fn, env, gam, e, on)
+  put(on, ")")
 
 // call args; an arg at a capability param is erased
 def lxArgs(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, xs: Nodes, ps0: Nodes, on: Bool): Unit =
