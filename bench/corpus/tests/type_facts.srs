@@ -1,0 +1,21 @@
+// pass: vic-jxk facts on a type: OpenFile is a Ptr valid only while its File is Opened; a read checks the fact in
+// Γ, a value carries the fact of its type
+type OpenFile {f: File} <at(f, Opened)> = Ptr
+
+extern def rt_handle {f: File} <at(f, Opened)> (): OpenFile
+
+// h: OpenFile needs f Opened at each read of h
+def use {f: File} <at(f, Opened)> (h: OpenFile): I64 = 1
+
+def peek {f: File} <at(f, Opened)> (): I64 =
+  val h: OpenFile = rt_handle()
+  use(h) + use(h)
+
+def main(): I64 =
+  handle f = CFile()
+  val n = peek()
+  val a = f.read()
+  f.close()
+  rt_print_i64(n + a)
+  rt_print("\n")
+  0

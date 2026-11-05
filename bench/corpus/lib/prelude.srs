@@ -1,0 +1,51 @@
+// srs prelude: C ABI bindings + Region effect + allocator handlers.
+
+extern def rt_argc(): I64
+extern def rt_arg(i: I64): Str
+extern def rt_read_file(path: Str): Str
+extern def rt_print(s: Str): Unit
+extern def rt_eprint(s: Str): Unit
+extern def rt_eprint_i64(v: I64): Unit
+extern def rt_print_i64(v: I64): Unit
+extern def rt_print_char(c: I64): Unit
+extern def rt_str_len(s: Str): I64
+extern def rt_str_at(s: Str, i: I64): I64
+extern def rt_str_slice(s: Str, b: I64, e: I64): Str
+extern def rt_str_eq(a: Str, b: Str): Bool
+extern def rt_exit(code: I64): Unit
+extern def rt_arena_new(): Ptr
+extern def rt_arena_alloc(self: Ptr, size: I64): Ptr
+extern def rt_arena_free(self: Ptr): Unit
+extern def rt_heap_new(): Ptr
+extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
+extern def rt_heap_free(self: Ptr): Unit
+
+// Memory region = effect. Open until free; values captured by a region die at free.
+protocol Region:
+  state Open, Freed
+  start Open
+  end Freed
+  op alloc(size: I64): Ptr : Open -> Open
+  op free(): Unit : Open -> Freed
+  drop free
+
+// Allocators = handlers of Region.
+handler Arena for Region:
+  def init(): Ptr = rt_arena_new()
+  def alloc(self: Ptr, size: I64): Ptr = rt_arena_alloc(self, size)
+  def free(self: Ptr): Unit = rt_arena_free(self)
+
+handler Heap for Region:
+  def init(): Ptr = rt_heap_new()
+  def alloc(self: Ptr, size: I64): Ptr = rt_heap_alloc(self, size)
+  def free(self: Ptr): Unit = rt_heap_free(self)
+
+// a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
+def strHash(s: Str): I64 =
+  var h = 2166136261
+  var i = 0
+  val n = rt_str_len(s)
+  while i < n do
+    h = ((h + rt_str_at(s, i)) * 16777619) % 4294967296
+    i = i + 1
+  h

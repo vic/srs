@@ -77,9 +77,13 @@ byte for byte after. Add an armed control: a mutant that must change the output.
   `timeout 900 systemd-run --user --scope -q -p MemoryMax=12G nix develop -c lean-check`.
   The first run after an S1 change regenerates `lean/Srs/Impl/S1.lean` and fails. Run it twice. A pass shows
   `proof lean (debt): 0`, `Impl verdicts = S1: N pass, M neg` and `Build completed successfully`.
-- `srs-bench` (`tests/bench.sh`, after `srs-test`): hyperfine times the S1 self-compile, the S1 Lean generation
-  and all pass tests. It compares wall time, instructions and peak memory with `bench/baseline.txt`. Slower means
-  above the baseline by more than 2 combined standard deviations, and the command fails. Find where the time goes
+- `srs-bench` (`tests/bench.sh`, after `srs-test`): hyperfine runs the current compiler on a frozen input,
+  `bench/corpus/` (lib/, s1/, tests/ at jj TML; vic 2026-11-06): its S1 self-compile, its S1 Lean generation and
+  all its pass tests. It compares wall time, instructions and peak memory with `bench/baseline.txt`. Slower means
+  above the baseline by more than 2 combined standard deviations, and the command fails. The `info-*` lines time
+  the current S1 source: they grow with every feature and are never a gate. Trust instructions when the load
+  average is high. To refreeze the corpus: copy the new sources into `bench/corpus/`, put the OLD compiler in
+  `$B/s2`, run `bench-update`, then put the new compiler back and run `srs-bench`. Find where the time goes
   with `perf record -e cpu-clock:u` on an `-O1 -g` build of `$B/s2.c` (add `-fno-inline` to see small fns).
 - Get the real exit code: `cmd > log 2>&1; echo EXIT=$?`. A pipe into `tail` hides it.
 - The build dir is `B=${XDG_RUNTIME_DIR}/srs-build` (set by `tests/run.sh`). To test a single file fast:

@@ -1,0 +1,159 @@
+// Mono (vic-9l7.4 BD2): the instances of generic defs. A generic def is copied once per distinct type args its calls
+// reach (C name f_<name>__<T1>_<T2>), [] binders replaced by the types; its kid 4 then holds the type args (Names).
+// A generic extern keeps one C symbol: its [] binders are void* (vic B-Q6), so only pointer types fill them.
+// BD2 type args are names the program declares, so the instances are finite and the loop ends.
+
+// a def with [] binders: only its instances are code
+def isGeneric {r: Region} (d: Node): Bool = kind(d) == DFn && num(d) == 0 && !isNil(tparams(d))
+
+// the checked program and the instances it reaches
+def mono {r: Region} (ds: Decls): Nodes =
+  var todo = NNil
+  var c = declList(ds)
+  while !isNil(c) do
+    // a given's defs are reached by its evidence calls, not as roots
+    if !isGeneric(head(c)) && kind(head(c)) != DGiven && kind(head(c)) != DType then todo = insts(head(c), todo) else ()
+    c = tail(c)
+  var made = NNil
+  while !isNil(todo) do
+    val x = head(todo)
+    todo = tail(todo)
+    val f = findDecl(ds, DFn, text(x))
+    if kind(x) == XEv then
+      if !isMadeEv(made, x) then
+        val g = evInst(ds, x)
+        made = NCons(g, made)
+        todo = insts(kid(g, 2), todo)
+      else ()
+    else if num(f) == 1 then needPointers(ds, x)
+    else if !isMade(made, x) then
+      val g = instantiate(f, kids(kid(x, 0)))
+      made = NCons(g, made)
+      todo = insts(kid(g, 2), todo)
+    else ()
+  val prog = append(declList(ds), rev(made))
+  append(prog, enumInsts(mkDecls(prog)))
+
+// the XInst nodes of e, onto acc
+def insts {r: Region} (e: Node, acc: Nodes): Nodes =
+  var out = if kind(e) == XInst || kind(e) == XEv then NCons(e, acc) else acc
+  var c = kids(e)
+  while !isNil(c) do
+    out = insts(head(c), out)
+    c = tail(c)
+  out
+
+// an instance of x's callee at x's type args is made already
+def isMade(made: Nodes, x: Node): Bool =
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(x)) && rt_str_len(text2(head(c))) == 0 && tysEq(kids(kid(head(c), 4)), kids(kid(x, 0)))
+    c = tail(c)
+  res
+
+// f with its [] binders replaced by targs; kid 4 = the type args
+def instantiate {r: Region} (f: Node, targs: Nodes): Node =
+  val g = substTy(f, tparams(f), targs)
+  withKids(g, NCons(kid(g, 0), NCons(kid(g, 1), NCons(kid(g, 2), NCons(kid(g, 3), one(list(Names, lineOf(f), targs)))))))
+
+def substTy {r: Region} (e: Node, tps: Nodes, targs: Nodes): Node =
+  val i = if kind(e) == Ty then index(tps, text(e)) else -1
+  if i >= 0 then nth(targs, i)
+  else
+    var out = NNil
+    var c = kids(e)
+    while !isNil(c) do
+      out = NCons(substTy(head(c), tps, targs), out)
+      c = tail(c)
+    withKids(e, rev(out))
+
+// an extern's [] binder is a void* slot
+def needPointers(ds: Decls, x: Node): Unit =
+  var c = kids(kid(x, 0))
+  while !isNil(c) do
+    if !isEnum(ds, text(head(c))) && !eqs(text(head(c)), "Ptr") then err("extern [] binder needs a pointer type (void*), not", text(head(c)), lineOf(x)) else ()
+    c = tail(c)
+
+// the instances of generic enums the program reaches: each enum T[args] its code names, closed over the fields
+def enumInsts {r: Region} (ds: Decls): Nodes =
+  val cs = allCases(ds)
+  var todo = NNil
+  var c = declList(ds)
+  while !isNil(c) do
+    val d = head(c)
+    // not roots: generic defs and enums, givens (reached by evidence calls), traits (signatures only)
+    val generic = isGeneric(d) || (kind(d) == DEnum && isGenericEnum(ds, d)) || kind(d) == DGiven || kind(d) == DTrait || kind(d) == DType
+    if !generic then todo = applied(ds, cs, d, todo) else ()
+    c = tail(c)
+  var made = NNil
+  while !isNil(todo) do
+    val t = head(todo)
+    todo = tail(todo)
+    if !isMadeEnum(made, t) then
+      val en = findDecl(ds, DEnum, text(t))
+      val inst = enumInst(substTy(en, enumTParams(ds, text(t)), tyArgs(t)), tyArgs(t))
+      made = NCons(inst, made)
+      todo = applied(ds, cs, inst, todo)
+    else ()
+  rev(made)
+
+// the generic enum types e names, onto acc: T[args] types, and the type of each case it builds (XNew)
+def applied {r: Region} (ds: Decls, cs: Nodes, e: Node, acc: Nodes): Nodes =
+  var out = acc
+  if kind(e) == Ty && !isNil(tyArgs(e)) && isEnum(ds, text(e)) then out = NCons(e, out) else ()
+  if kind(e) == XNew then out = NCons(Node(Ty, text2(find(cs, DCase, text(e))), "", 0, lineOf(e), one(Node(TyTo, "", "", 0, 0, kids(kid(e, 0))))), out) else ()
+  var c = kids(e)
+  while !isNil(c) do
+    out = applied(ds, cs, head(c), out)
+    c = tail(c)
+  out
+
+def isMadeEnum(made: Nodes, t: Node): Bool =
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(t)) && tysEq(enumArgs(head(c)), tyArgs(t))
+    c = tail(c)
+  res
+
+// enum d at type args targs: every case keeps them as its kid 1
+def enumInst {r: Region} (d: Node, targs: Nodes): Node =
+  var out = NNil
+  var c = kids(d)
+  while !isNil(c) do
+    out = NCons(withKids(head(c), NCons(kid(head(c), 0), one(list(Names, lineOf(d), targs)))), out)
+    c = tail(c)
+  withKids(d, rev(out))
+
+// the method of an evidence call at its concrete goal: the one given whose head matches (the checker proved one),
+// instantiated at its [] binders; t = the trait and kid 4 = the goal's args name it in C (g_Show__I64_show)
+def evInst {r: Region} (ds: Decls, x: Node): Node =
+  val et = head(kids(kid(x, 0)))
+  // the same pick as the checker's (s1/given.srs pickGiven)
+  pickGiven(ds, et) match
+    case NoGiven =>
+      errTy("internal: no given at mono for", et, lineOf(x))
+      x
+    case Ambiguous =>
+      errTy("internal: ambiguous given at mono for", et, lineOf(x))
+      x
+    case GivenAt(g, s) =>
+      val f = find(tail(tail(kids(g))), DFn, text(x))
+      val tps = groupBinders(kids(kid(g, 0)))
+      val h = substTy(f, tps, boundTypes(tps, s))
+      Node(DFn, text(f), text(et), 0, lineOf(f), NCons(kid(h, 0), NCons(kid(h, 1), NCons(kid(h, 2), NCons(kid(h, 3), one(list(Names, lineOf(f), tyArgs(et))))))))
+
+// the type each binder of tps is bound to in sub, in order
+def boundTypes {r: Region} (tps: Nodes, sub: Nodes): Nodes =
+  if isNil(tps) then NNil else NCons(kid(find(sub, Binder, text(head(tps))), 0), boundTypes(tail(tps), sub))
+
+// the method of x's goal is made already
+def isMadeEv(made: Nodes, x: Node): Bool =
+  val et = head(kids(kid(x, 0)))
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(x)) && eqs(text2(head(c)), text(et)) && tysEq(kids(kid(head(c), 4)), tyArgs(et))
+    c = tail(c)
+  res

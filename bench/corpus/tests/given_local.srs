@@ -1,0 +1,16 @@
+// pass: local {} evidence wins over a matching given, the nearer scope first, as Scala3 (vic-9l7.10)
+trait Show [A: Type]:
+  def show(x: A): I64
+
+given [B: Type] Show[B]:
+  def show(x: B): I64 = 5
+
+def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+
+// goal Show[A]: local s and the given [B] Show[B] both match; s is used
+def twice [A: Type] {s: Show[A]} (x: A): I64 = print(x) + print(x)
+
+def main(): I64 =
+  rt_print_i64(twice(true))
+  rt_print("\n")
+  0
