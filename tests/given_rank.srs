@@ -1,0 +1,36 @@
+// pass: vic-9l7.11 given tie-break as Scala3 (CompareScheme.New): the more specific head wins (Show[I64] over
+// [A] Show[A]; [A] Show[Box[A]] over [B] Show[B]); on a draw the given without {} evidence wins
+trait Show [A: Type]:
+  def show(x: A): I64
+
+enum Box [A: Type]:
+  case Box(v: A)
+
+given [B: Type] Show[B]:
+  def show(x: B): I64 = 1
+
+given Show[I64]:
+  def show(x: I64): I64 = 2
+
+given [A: Type] Show[Box[A]]:
+  def show(x: Box[A]): I64 = 3
+
+trait Eq [A: Type]:
+  def eq(a: A, b: A): I64
+
+given Eq[I64]:
+  def eq(a: I64, b: I64): I64 = 10
+
+given {s: Show[I64]} Eq[I64]:
+  def eq(a: I64, b: I64): I64 = 20
+
+def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+def eqSelf [A: Type] {e: Eq[A]} (x: A): I64 = e.eq(x, x)
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(print(true) * 100 + print(5) * 10 + print(Box(1)))
+  rt_print("\n")
+  rt_print_i64(eqSelf(1))
+  rt_print("\n")
+  0

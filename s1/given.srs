@@ -126,28 +126,77 @@ def unifiesAll {r: Region} (tps: Nodes, ps: Nodes, as: Nodes, sub: Nodes): Match
 
 enum GivenAt:
   case NoGiven
-  case GivenAt(g: Node, sub: Nodes, more: I64)
+  case Ambiguous
+  case GivenAt(g: Node, sub: Nodes)
 
-// the givens of ds whose head matches goal: the last one found, and how many
-def givensFor {r: Region} (ds: Nodes, goal: Node): GivenAt =
+// the givens of ds whose head matches goal
+def givenCands {r: Region} (ds: Nodes, goal: Node): Nodes =
   var c = ds
-  var res = NoGiven
-  var n = 0
+  var out = NNil
   while !isNil(c) do
     val g = head(c)
     if kind(g) == DGiven && eqs(text(g), text(goal)) then
-      unifies(groupBinders(kids(kid(g, 0))), kid(g, 1), goal, NNil) match
+      unifies(gBinders(g), kid(g, 1), goal, NNil) match
         case NoMatch => ()
-        case Matched(s) =>
-          n = n + 1
-          res = GivenAt(g, s, n)
+        case Matched(_) => out = NCons(g, out)
     else ()
+    c = tail(c)
+  rev(out)
+
+def gBinders {r: Region} (g: Node): Nodes = groupBinders(kids(kid(g, 0)))
+
+// the one given for goal: the only candidate, or the one that beats every other (as Scala3 CompareScheme.New,
+// vic-9l7.11); none = NoGiven, no such winner = Ambiguous
+def pickGiven {r: Region} (ds: Nodes, goal: Node): GivenAt =
+  val cs = givenCands(ds, goal)
+  var res = NoGiven
+  if !isNil(cs) then res = Ambiguous else ()
+  var c = cs
+  var i = 0
+  while !isNil(c) do
+    if beatsAll(i, cs) then
+      unifies(gBinders(head(c)), kid(head(c), 1), goal, NNil) match
+        case NoMatch => ()
+        case Matched(s) => res = GivenAt(head(c), s)
+    else ()
+    i = i + 1
     c = tail(c)
   res
 
-def givenCount(x: GivenAt): I64 = x match
-  case NoGiven => 0
-  case GivenAt(_, _, n) => n
+// candidate i of cs beats every other candidate
+def beatsAll {r: Region} (i: I64, cs: Nodes): Bool =
+  var ok = true
+  var j = 0
+  var c = cs
+  while ok && !isNil(c) do
+    if j != i then ok = compareGivens(nth(cs, i), head(c)) > 0 else ()
+    j = j + 1
+    c = tail(c)
+  ok
+
+// Scala3 Applications.compare for two givens of one scope (same owner, no subtyping): 1 = g1 wins, -1 = g2, 0 = draw.
+// a given is as good as another when the other's head instantiates to its own (its binders kept abstract): the
+// more specific head wins (rules 2, 3b, :2296-2332); on a draw the one without {} evidence wins (:2497-2500)
+def compareGivens {r: Region} (g1: Node, g2: Node): I64 =
+  val w1 = asGood(g1, g2)
+  val w2 = asGood(g2, g1)
+  if w1 && !w2 then 1
+  else if w2 && !w1 then -1
+  else if !hasEvidence(g1) && hasEvidence(g2) then 1
+  else if hasEvidence(g1) && !hasEvidence(g2) then -1
+  else 0
+
+def asGood {r: Region} (g1: Node, g2: Node): Bool = unifies(gBinders(g2), kid(g2, 1), kid(g1, 1), NNil) match
+  case NoMatch => false
+  case Matched(_) => true
+
+def hasEvidence(g: Node): Bool =
+  var res = false
+  var c = kids(kid(g, 0))
+  while !isNil(c) do
+    if kind(head(c)) == Group && eqs(text(head(c)), "{") && !isNil(kids(head(c))) then res = true else ()
+    c = tail(c)
+  res
 
 // the local evidence of env for goal
 def localCount(env: Nodes, goal: Node): I64 =
@@ -169,13 +218,14 @@ def resolve {r: Region} (ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64
   if loc > 1 then errTy("ambiguous evidence for", goal, line) else ()
   if loc == 1 then fuel - 1
   else
-    val gv = givensFor(ds, goal)
-    if givenCount(gv) > 1 then errTy("ambiguous givens for", goal, line) else ()
-    gv match
+    pickGiven(ds, goal) match
       case NoGiven =>
         errTy("no given for", goal, line)
         fuel
-      case GivenAt(g, s, _) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
+      case Ambiguous =>
+        errTy("ambiguous givens for", goal, line)
+        fuel
+      case GivenAt(g, s) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
 
 // each {} binder of the groups gs under sub, resolved in turn; ch = names chosen at the call (f{a}(x)), or NNil
 def goals {r: Region} (ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, ch: Nodes, fuel: I64, line: I64): I64 =

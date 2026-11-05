@@ -130,11 +130,15 @@ def enumInst {r: Region} (d: Node, targs: Nodes): Node =
 // instantiated at its [] binders; t = the trait and kid 4 = the goal's args name it in C (g_Show__I64_show)
 def evInst {r: Region} (ds: Nodes, x: Node): Node =
   val et = head(kids(kid(x, 0)))
-  givensFor(ds, et) match
+  // the same pick as the checker's (s1/given.srs pickGiven)
+  pickGiven(ds, et) match
     case NoGiven =>
       errTy("internal: no given at mono for", et, lineOf(x))
       x
-    case GivenAt(g, s, _) =>
+    case Ambiguous =>
+      errTy("internal: ambiguous given at mono for", et, lineOf(x))
+      x
+    case GivenAt(g, s) =>
       val f = find(tail(tail(kids(g))), DFn, text(x))
       val tps = groupBinders(kids(kid(g, 0)))
       val h = substTy(f, tps, boundTypes(tps, s))
