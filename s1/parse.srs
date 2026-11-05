@@ -392,6 +392,29 @@ def stmt {r: Region} (ts0: Nodes): PR =
     PR(Node(SHandle, name, needIdent(ts), 0, line, kids(pn(a))), pr(a))
   else expr(ts0)
 
+// f[T1, T2]{a, b}(args): explicit type args, chosen evidence or capabilities (vic 2026-11-05)
+def callGroups {r: Region} (ts0: Nodes): PR =
+  var ts = ts0
+  var gs = NNil
+  while isT(ts, "[") || isT(ts, "{") do
+    val open = text(head(ts))
+    val close = if eqs(open, "[") then "]" else "}"
+    val line = at(ts)
+    ts = tail(ts)
+    var xs = NNil
+    while !isT(ts, close) do
+      if eqs(open, "[") then
+        val t = ty(ts)
+        xs = NCons(pn(t), xs)
+        ts = pr(t)
+      else
+        xs = NCons(leaf(Name, needIdent(ts), at(ts)), xs)
+        ts = tail(ts)
+      if !isT(ts, close) then ts = expect(ts, ",") else ()
+    gs = NCons(Node(Group, open, "", 0, line, rev(xs)), gs)
+    ts = tail(ts)
+  PR(list(Groups, at(ts0), rev(gs)), ts)
+
 def args {r: Region} (ts0: Nodes): PR =
   var ts = expect(ts0, "(")
   var xs = NNil
@@ -510,6 +533,10 @@ def primary {r: Region} (ts: Nodes): PR =
     else if isT(tail(ts), "(") then
       val a = args(tail(ts))
       PR(Node(XCall, s, "", 0, line, kids(pn(a))), pr(a))
+    else if isT(tail(ts), "[") || isT(tail(ts), "{") then
+      val g = callGroups(tail(ts))
+      val a = args(pr(g))
+      PR(Node(XCallG, s, "", 0, line, NCons(pn(g), kids(pn(a)))), pr(a))
     else if isT(tail(ts), ".") then
       val a = args(drop(ts, 3))
       PR(Node(XMethod, s, needIdent(drop(ts, 2)), 0, line, kids(pn(a))), pr(a))

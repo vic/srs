@@ -350,7 +350,10 @@ def checkSig {r: Region} (ds0: Nodes, f: Node): Unit =
   val ds = withTParams(ds0, f)
   var ps = kids(kid(f, 0))
   while !isNil(ps) do
-    needTy(ds, kid(head(ps), 0))
+    val pt = kid(head(ps), 0)
+    needTy(ds, pt)
+    // a capability is evidence: a {} binder, never a value param (vic 2026-11-05); File[S1 ~> S2] until BD5 (vic-9l7.8)
+    if isProto(ds, text(pt)) && rt_str_len(text2(pt)) == 0 && num(f) != 1 then err("a capability is a {} binder, not a param:", text(head(ps)), lineOf(head(ps))) else ()
     ps = tail(ps)
   needTy(ds, kid(f, 1))
   if isProto(ds, text(kid(f, 1))) then err("capability returned from", text(f), lineOf(f)) else ()
@@ -438,7 +441,10 @@ def chk {r: Region} (ds: Nodes, env: Nodes, gam: Nodes, e: Node, want: Node): TG
       chkNullary(ds, gam, c, e, want)
   else if k == XCall then
     val c = find(allCases(ds), DCase, text(e))
-    if found(c) then chkCtor(ds, env, gam, c, e, want) else chkCall(ds, env, gam, e, want)
+    if found(c) then chkCtor(ds, env, gam, c, e, want) else chkCall(ds, env, gam, e, want, NNil)
+  else if k == XCallG then
+    if found(find(allCases(ds), DCase, text(e))) then err("not yet: [] or {} on a constructor", text(e), line) else ()
+    chkCall(ds, env, gam, Node(XCall, text(e), "", 0, line, tail(kids(e))), want, kids(head(kids(e))))
   else if k == XMethod then
     val ev = find(env, BVar, text(e))
     if found(ev) && num(ev) == 3 then chkEv(ds, env, gam, e, ev) else chkMethod(ds, env, gam, e)
@@ -529,6 +535,12 @@ def theCap(env: Nodes, p: Str, line: I64): Str =
   if n == 0 then err("no capability in scope for", p, line) else ()
   if n > 1 then err("ambiguous capability, more than one in scope for", p, line) else ()
   res
+
+// a chosen capability: a cap of protocol p in scope
+def chosenCap(env: Nodes, n: Str, p: Str, line: I64): Str =
+  val b = find(env, BVar, n)
+  if !found(b) || num(b) != 2 || !eqs(text2(b), p) then err("chosen name is not a capability of", p, line) else ()
+  n
 
 // unique Region capability in scope (effects.md)
 def theRegion(env: Nodes, line: I64): Str =
@@ -660,7 +672,8 @@ def mapCaps {r: Region} (caps: Nodes, m: Nodes): Nodes =
     c = tail(c)
   out
 
-def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node): TG =
+// gs: the call's groups (f[T]{a}(x), vic 2026-11-05): explicit type args, the {} binders chosen by name
+def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node, gs: Nodes): TG =
   val line = lineOf(e)
   val f = find(ds, DFn, text(e))
   if !found(f) then err("unknown function", text(e), line) else ()
@@ -684,10 +697,14 @@ def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node
     p = tail(p)
   // {} capabilities: the one cap of that protocol in scope (as a constructor finds its region); 0 or 2+ = reject
   val cps = capParams(ds, f)
+  // f{a, b}(x): one name per {} binder of f, in written order, else each found in scope
+  val ch = callGroup(gs, "{")
+  if !isNil(ch) && len(ch) != curlyCount(f) then err("wrong number of chosen evidence for", text(e), line) else ()
   var c = cps
   var capArgs = NNil
   while !isNil(c) do
-    val cap = theCap(env, text(kid(head(c), 0)), line)
+    val proto = text(kid(head(c), 0))
+    val cap = if isNil(ch) then theCap(env, proto, line) else chosenCap(env, text(nth(ch, curlyIndex(f, text(head(c))))), proto, line)
     if has(mapVals(m), cap) then err("capability passed twice:", cap, line) else ()
     m = NCons(Node(GState, text(head(c)), cap, 0, 0, NNil), m)
     capArgs = NCons(leaf(XName, cap, line), capArgs)
@@ -695,7 +712,14 @@ def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node
   val allPs = append(cps, ps)
   // pass 2: value args, left to right
   val tps = tparams(f)
-  var sub = NNil
+  // f[T1, T2](x): the [] binders given, else matched from the args
+  val ex = callGroup(gs, "[")
+  if !isNil(ex) && len(ex) != len(tps) then err("wrong number of type args for", text(e), line) else ()
+  var tx = ex
+  while !isNil(tx) do
+    needTy(ds, head(tx))
+    tx = tail(tx)
+  var sub = zipBind(tps, ex)
   var rho = NNil
   var a2 = NNil
   a = kids(e)
@@ -751,14 +775,14 @@ def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node
   val rt = kid(f, 1)
   if isNil(tps) then
     // the callee's {} evidence: each goal has one given (s1/given.srs)
-    goals(ds, env, kids(kid(f, 4)), NNil, givenFuel(), line)
+    goals(ds, env, kids(kid(f, 4)), NNil, ch, givenFuel(), line)
     val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(rho, mapCaps(regionParams(allPs), m)) else mapCaps(tyCaps(rt), m)
     TG(recap(rt, caps), gam, withKids(e, append(rev(capArgs), rev(a2))))
   else
     // a [] binder only the result names: the context's expected type solves it (check mode)
     if mentions(tps, applyTy(sub, rt)) && found(want) then sub = matchTy(tps, rt, want, sub, line) else ()
     val targs = instArgs(tps, sub, line)
-    goals(ds, env, kids(kid(f, 4)), sub, givenFuel(), line)
+    goals(ds, env, kids(kid(f, 4)), sub, ch, givenFuel(), line)
     // a value of a [] binder lives in the regions of the args given for it
     val rt2 = applyTy(sub, rt)
     // only data (an enum, or a [] binder still open) lives in regions; I64, Bool, ... carry none

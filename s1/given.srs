@@ -169,22 +169,57 @@ def resolve {r: Region} (ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64
   // local evidence: no given matches too (else ambiguous), so gv is NoGiven
   gv match
     case NoGiven => fuel - 1
-    case GivenAt(g, s, _) => goals(ds, env, kids(kid(g, 0)), s, fuel - 1, line)
+    case GivenAt(g, s, _) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
 
-// each {} binder of the groups gs under sub, resolved in turn
-def goals {r: Region} (ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, fuel: I64, line: I64): I64 =
+// each {} binder of the groups gs under sub, resolved in turn; ch = names chosen at the call (f{a}(x)), or NNil
+def goals {r: Region} (ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, ch: Nodes, fuel: I64, line: I64): I64 =
   var f = fuel
+  var i = 0
   var c = gs
   while !isNil(c) do
     if kind(head(c)) == Group && eqs(text(head(c)), "{") then
       var bs = kids(head(c))
       while !isNil(bs) do
-        // a protocol binder is a capability: chkCall takes it from scope (theCap)
-        if !isProto(ds, text(kid(head(bs), 0))) then f = resolve(ds, env, applyTy(sub, termTy(kid(head(bs), 0))), f, line) else ()
+        val goal = applyTy(sub, termTy(kid(head(bs), 0)))
+        // a protocol binder is a capability: chkCall takes it (theCap or the chosen one)
+        if isProto(ds, text(goal)) then ()
+        else if isNil(ch) then f = resolve(ds, env, goal, f, line)
+        else needChosenEv(env, text(nth(ch, i)), goal, line)
+        i = i + 1
         bs = tail(bs)
     else ()
     c = tail(c)
   f
+
+// a chosen evidence: local evidence of the goal's type
+def needChosenEv(env: Nodes, n: Str, goal: Node, line: I64): Unit =
+  val b = find(env, BVar, n)
+  if !found(b) || num(b) != 3 || !tyEq(kid(b, 0), goal) then errTy("chosen evidence does not prove", goal, line) else ()
+
+// the binders of f's {} groups in written order: what f{a, b}(x) chooses, one name each
+def curlyCount(f: Node): I64 =
+  var n = 0
+  var c = kids(kid(f, 4))
+  while !isNil(c) do
+    if kind(head(c)) == Group && eqs(text(head(c)), "{") then n = n + len(kids(head(c))) else ()
+    c = tail(c)
+  n
+
+// position of {} binder n of f among all its {} binders
+def curlyIndex(f: Node, n: Str): I64 =
+  var i = 0
+  var res = -1
+  var c = kids(kid(f, 4))
+  while res < 0 && !isNil(c) do
+    if kind(head(c)) == Group && eqs(text(head(c)), "{") then
+      val j = index(kids(head(c)), n)
+      if j >= 0 then res = i + j else i = i + len(kids(head(c)))
+    else ()
+    c = tail(c)
+  res
+
+// the group g ("[" or "{") of call groups gs: its kids, or NNil
+def callGroup(gs: Nodes, g: Str): Nodes = kids(find(gs, Group, g))
 
 // s.m(args), s a {} binder: m of s's trait, its types with the trait's binders = s's type args. e2 = XEv
 def chkEv {r: Region} (ds: Nodes, env: Nodes, gam: Nodes, e: Node, b: Node): TG =
