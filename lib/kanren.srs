@@ -90,3 +90,141 @@ def showTerms(ts: Terms): Unit = ts match
       case TCons(_, _) =>
         rt_print(", ")
         showTerms(t)
+
+// ── K2: goals and search as data (srs has no closures) ──
+// A rule is a clause `head :- body`; its variables are 0..nvars-1, renamed apart at each call.
+
+enum Goal:
+  case GTrue
+  case GEq(a: Term, b: Term)
+  case GEqAll(as: Terms, bs: Terms)
+  case GConj(g: Goal, h: Goal)
+  case GDisj(g: Goal, h: Goal)
+  case GCall(rel: Str, args: Terms)
+
+enum Goals:
+  case GNil
+  case GCons(h: Goal, t: Goals)
+
+enum Rule:
+  case Rule(rel: Str, head: Terms, body: Goal, nvars: I64)
+
+enum Rules:
+  case RNil
+  case RCons(h: Rule, t: Rules)
+
+// one search branch: substitution, next fresh variable, goals left to prove
+enum Branch:
+  case Branch(s: Subst, next: I64, gs: Goals)
+
+enum Queue:
+  case QNil
+  case QCons(h: Branch, t: Queue)
+
+// one step of a branch: an answer, a dead end, the same branch further on, or a choice that costs fuel
+enum Step:
+  case Done(s: Subst)
+  case Dead
+  case More(b: Branch)
+  case Split(bs: Queue, cost: I64)
+
+enum Answers:
+  case ANil
+  case ACons(s: Subst, t: Answers)
+
+// why a run stopped: every branch ended, `limit` answers found, or the next choice needed more fuel
+enum Status:
+  case Ended
+  case Limit
+  case NoFuel
+
+enum Run:
+  case Run(answers: Answers, status: Status)
+
+// rename apart: every variable moved by k
+def shift(r: Region, t: Term, k: I64): Term = t match
+  case TVar(n) => TVar(n + k)
+  case TCon(f, args) => TCon(f, shiftAll(r, args, k))
+
+def shiftAll(r: Region, ts: Terms, k: I64): Terms = ts match
+  case TNil => TNil
+  case TCons(h, t) => TCons(shift(r, h, k), shiftAll(r, t, k))
+
+def shiftGoal(r: Region, g: Goal, k: I64): Goal = g match
+  case GTrue => GTrue
+  case GEq(a, b) => GEq(shift(r, a, k), shift(r, b, k))
+  case GEqAll(as, bs) => GEqAll(shiftAll(r, as, k), shiftAll(r, bs, k))
+  case GConj(x, y) => GConj(shiftGoal(r, x, k), shiftGoal(r, y, k))
+  case GDisj(x, y) => GDisj(shiftGoal(r, x, k), shiftGoal(r, y, k))
+  case GCall(f, args) => GCall(f, shiftAll(r, args, k))
+
+// one branch per rule of rel, in rule order; each pick costs 1 fuel (vic B1)
+enum Picked:
+  case Picked(bs: Queue, cost: I64)
+
+def picks(r: Region, rules: Rules, rel: Str, args: Terms, s: Subst, nx: I64, rest: Goals): Picked = rules match
+  case RNil => Picked(QNil, 0)
+  case RCons(h, t) => picks(r, t, rel, args, s, nx, rest) match
+    case Picked(bs, cost) => h match
+      case Rule(f, head, body, nv) =>
+        if rt_str_eq(f, rel) then
+          val b = Branch(s, nx + nv, GCons(GEqAll(shiftAll(r, head, nx), args), GCons(shiftGoal(r, body, nx), rest)))
+          Picked(QCons(b, bs), cost + 1)
+        else Picked(bs, cost)
+
+def step(r: Region, rules: Rules, b: Branch): Step = b match
+  case Branch(s, nx, gs) => gs match
+    case GNil => Done(s)
+    case GCons(g, rest) => g match
+      case GTrue => More(Branch(s, nx, rest))
+      case GEq(a, c) => unify(r, s, a, c) match
+        case Fail => Dead
+        case Ok(s2) => More(Branch(s2, nx, rest))
+      case GEqAll(as, cs) => unifyAll(r, s, as, cs) match
+        case Fail => Dead
+        case Ok(s2) => More(Branch(s2, nx, rest))
+      case GConj(x, y) => More(Branch(s, nx, GCons(x, GCons(y, rest))))
+      case GDisj(x, y) => Split(QCons(Branch(s, nx, GCons(x, rest)), QCons(Branch(s, nx, GCons(y, rest)), QNil)), 1)
+      case GCall(f, args) => picks(r, rules, f, args, s, nx, rest) match
+        case Picked(bs, cost) => Split(bs, cost)
+
+def enqueue(r: Region, q: Queue, bs: Queue): Queue = q match
+  case QNil => bs
+  case QCons(h, t) => QCons(h, enqueue(r, t, bs))
+
+def revAnswers(r: Region, xs: Answers, acc: Answers): Answers = xs match
+  case ANil => acc
+  case ACons(h, t) => revAnswers(r, t, ACons(h, acc))
+
+// prove g (variables 0..nvars-1) over rules. Deterministic: a branch runs until a choice, the choice's branches
+// go to the back of the queue (fair, so complete). Every infinite path makes choices, so fuel bounds the run (§17).
+def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): Run =
+  var q = QCons(Branch(SNil, nvars, GCons(g, GNil)), QNil)
+  var left = fuel
+  var found = ANil
+  var n = 0
+  var status = Ended
+  var go = true
+  while go do
+    q match
+      case QNil => go = false
+      case QCons(b, t) =>
+        q = t
+        step(r, rules, b) match
+          case Done(s) =>
+            found = ACons(s, found)
+            n = n + 1
+          case Dead => ()
+          case More(b2) => q = QCons(b2, q)
+          case Split(bs, cost) =>
+            if cost > left then
+              status = NoFuel
+              go = false
+            else
+              left = left - cost
+              q = enqueue(r, q, bs)
+    if go && n >= limit then
+      status = Limit
+      go = false
+    else ()
+  Run(revAnswers(r, found, ANil), status)
