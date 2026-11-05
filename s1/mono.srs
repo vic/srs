@@ -24,7 +24,8 @@ def mono(r: Region, ds: Nodes): Nodes =
       made = NCons(g, made)
       todo = insts(r, kid(g, 2), todo)
     else ()
-  append(r, ds, rev(r, made))
+  val prog = append(r, ds, rev(r, made))
+  append(r, prog, enumInsts(r, prog))
 
 // the XInst nodes of e, onto acc
 def insts(r: Region, e: Node, acc: Nodes): Nodes =
@@ -40,13 +41,9 @@ def isMade(made: Nodes, x: Node): Bool =
   var c = made
   var res = false
   while !res && !isNil(c) do
-    res = eqs(text(head(c)), text(x)) && sameNames(kids(kid(head(c), 4)), kids(kid(x, 0)))
+    res = eqs(text(head(c)), text(x)) && tysEq(kids(kid(head(c), 4)), kids(kid(x, 0)))
     c = tail(c)
   res
-
-def sameNames(a: Nodes, b: Nodes): Bool =
-  if isNil(a) || isNil(b) then isNil(a) && isNil(b)
-  else eqs(text(head(a)), text(head(b))) && sameNames(tail(a), tail(b))
 
 // f with its type params replaced by targs; kid 4 = the type args
 def instantiate(r: Region, f: Node, targs: Nodes): Node =
@@ -70,3 +67,53 @@ def needPointers(ds: Nodes, x: Node): Unit =
   while !isNil(c) do
     if !isEnum(ds, text(head(c))) && !eqs(text(head(c)), "Ptr") then err("extern type param needs a pointer type (void*), not", text(head(c)), lineOf(x)) else ()
     c = tail(c)
+
+// the instances of generic enums the program reaches: each enum T(args) its code names, closed over the fields
+def enumInsts(r: Region, ds: Nodes): Nodes =
+  val cs = allCases(r, ds)
+  var todo = NNil
+  var c = ds
+  while !isNil(c) do
+    val d = head(c)
+    val generic = isGeneric(r, d) || (kind(d) == DEnum && isGenericEnum(ds, d))
+    if !generic then todo = applied(r, ds, cs, d, todo) else ()
+    c = tail(c)
+  var made = NNil
+  while !isNil(todo) do
+    val t = head(todo)
+    todo = tail(todo)
+    if !isMadeEnum(made, t) then
+      val en = find(ds, DEnum, text(t))
+      val inst = enumInst(r, substTy(r, en, enumTParams(r, ds, text(t)), tyArgs(t)), tyArgs(t))
+      made = NCons(inst, made)
+      todo = applied(r, ds, cs, inst, todo)
+    else ()
+  rev(r, made)
+
+// the generic enum types e names, onto acc: T(args) types, and the type of each case it builds (XNew)
+def applied(r: Region, ds: Nodes, cs: Nodes, e: Node, acc: Nodes): Nodes =
+  var out = acc
+  if kind(e) == Ty && !isNil(tyArgs(e)) && isEnum(ds, text(e)) then out = NCons(e, out) else ()
+  if kind(e) == XNew then out = NCons(Node(Ty, text2(find(cs, DCase, text(e))), "", 0, lineOf(e), one(r, Node(TyTo, "", "", 0, 0, kids(kid(e, 0))))), out) else ()
+  var c = kids(e)
+  while !isNil(c) do
+    out = applied(r, ds, cs, head(c), out)
+    c = tail(c)
+  out
+
+def isMadeEnum(made: Nodes, t: Node): Bool =
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(t)) && tysEq(enumArgs(head(c)), tyArgs(t))
+    c = tail(c)
+  res
+
+// enum d at type args targs: every case keeps them as its kid 1
+def enumInst(r: Region, d: Node, targs: Nodes): Node =
+  var out = NNil
+  var c = kids(d)
+  while !isNil(c) do
+    out = NCons(withKids(r, head(c), NCons(kid(head(c), 0), one(r, list(r, Names, lineOf(d), targs)))), out)
+    c = tail(c)
+  withKids(r, d, rev(r, out))

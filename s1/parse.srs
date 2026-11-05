@@ -182,7 +182,10 @@ def clause(r: Region, ts0: Nodes): PR =
 def enumDecl(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  var ts = layoutOpen(tail(ts0))
+  // `enum List {A: Type}:` type params; every case keeps them as its kid 1, so the case list stays the enum's kids
+  val g = groups(r, tail(ts0), NNil)
+  val gs = list(r, Groups, line, rev(r, kids(pn(g))))
+  var ts = layoutOpen(pr(g))
   var cs = NNil
   var tag = 0
   while !isK(ts, TDedent) do
@@ -196,7 +199,7 @@ def enumDecl(r: Region, ts0: Nodes): PR =
       fs = pn(p)
       ts = pr(p)
     else ()
-    cs = NCons(Node(DCase, cn, name, tag, cl, one(r, fs)), cs)
+    cs = NCons(Node(DCase, cn, name, tag, cl, NCons(fs, one(r, gs))), cs)
     tag = tag + 1
     ts = endLine(ts)
   PR(Node(DEnum, name, "", 0, line, rev(r, cs)), tail(ts))
@@ -291,6 +294,17 @@ def ty(r: Region, ts0: Nodes): PR =
   var ts = tail(ts0)
   var from = ""
   var to = ""
+  // type application T(args) (vic 2026-11-05): the args are the kids of TyTo, so tyCaps stays the tail
+  var args = NNil
+  if isT(ts, "(") then
+    ts = tail(ts)
+    while !isT(ts, ")") do
+      val a = ty(r, ts)
+      args = NCons(pn(a), args)
+      ts = pr(a)
+      if !isT(ts, ")") then ts = expect(ts, ",") else ()
+    ts = tail(ts)
+  else ()
   if isT(ts, "[") then
     from = needIdent(tail(ts))
     to = from
@@ -312,7 +326,7 @@ def ty(r: Region, ts0: Nodes): PR =
       if !isT(ts, "}") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
-  PR(Node(Ty, name, from, annotated, line, NCons(leaf(r, TyTo, to, line), rev(r, caps))), ts)
+  PR(Node(Ty, name, from, annotated, line, NCons(Node(TyTo, to, "", 0, line, rev(r, args)), rev(r, caps))), ts)
 
 def rhs(r: Region, ts: Nodes): PR =
   if isK(ts, TNl) && isK(tail(ts), TIndent) then block(r, tail(ts)) else expr(r, ts)

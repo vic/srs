@@ -18,6 +18,8 @@ def ctype(ds: Nodes, t: Node): Unit =
   else if found(find(ds, DEnum, n)) then
     say("struct E_")
     say(n)
+    // an enum instance (mono): its type args name it
+    if !isNil(tyArgs(t)) then typeSuffix(tyArgs(t)) else ()
     say("*")
   else if found(find(ds, DProto, n)) then say("srs_cap*")
   else
@@ -47,13 +49,33 @@ def fname(f: Node, tag: I64, h: Str): Unit =
   // an instance (mono): kid 4 = its type args
   if kind(kid(f, 4)) == Names then typeSuffix(kids(kid(f, 4))) else ()
 
+// the C name part of an instance: _ then _<type> per type arg; T(args) as T_<n>_<arg>... (n = arg count, unambiguous)
 def typeSuffix(ts: Nodes): Unit =
   say("_")
   var c = ts
   while !isNil(c) do
     say("_")
-    say(text(head(c)))
+    mangle(head(c))
     c = tail(c)
+
+def mangle(t: Node): Unit =
+  say(text(t))
+  if !isNil(tyArgs(t)) then
+    say("_")
+    sayn(len(tyArgs(t)))
+    var c = tyArgs(t)
+    while !isNil(c) do
+      say("_")
+      mangle(head(c))
+      c = tail(c)
+  else ()
+
+// an enum instance (mono): kid 1 of its cases holds its type args (Names); a generic enum holds its groups
+def enumArgs(d: Node): Nodes = if kind(kid(head(kids(d)), 1)) == Names then kids(kid(head(kids(d)), 1)) else NNil
+def isGenericEnum(ds: Nodes, d: Node): Bool = kind(kid(head(kids(d)), 1)) == Groups && enumArity(ds, text(d)) > 0
+def enumName(d: Node): Unit =
+  say(text(d))
+  if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
 
 // a type param of a generic extern is a void* slot (vic B-Q6)
 def slotType(ds: Nodes, f: Node, t: Node): Unit = if isTParamOf(f, text(t)) then say("void*") else ctype(ds, t)
@@ -101,15 +123,15 @@ def emitProgram(r: Region, ds: Nodes): Unit =
   say("void rt_init(int argc, char** argv);\n")
   var c = ds
   while !isNil(c) do
-    if kind(head(c)) == DEnum then
+    if kind(head(c)) == DEnum && !isGenericEnum(ds, head(c)) then
       say("struct E_")
-      say(text(head(c)))
+      enumName(head(c))
       say(";\n")
     else ()
     c = tail(c)
   c = ds
   while !isNil(c) do
-    if kind(head(c)) == DEnum then enumDef(ds, head(c)) else ()
+    if kind(head(c)) == DEnum && !isGenericEnum(ds, head(c)) then enumDef(ds, head(c)) else ()
     c = tail(c)
   c = ds
   while !isNil(c) do
@@ -160,7 +182,7 @@ def vtable(ds: Nodes, h: Node): Unit =
 
 def enumDef(ds: Nodes, d: Node): Unit =
   say("struct E_")
-  say(text(d))
+  enumName(d)
   say(" { int64_t tag; union {")
   var c = kids(d)
   while !isNil(c) do
@@ -184,9 +206,10 @@ def enumDef(ds: Nodes, d: Node): Unit =
   while !isNil(c) do
     if isNil(kids(kid(head(c), 0))) then
       say("static struct E_")
-      say(text(d))
+      enumName(d)
       say(" N_")
       say(text(head(c)))
+      if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
       say(" = { ")
       sayn(num(head(c)))
       say(", { 0 } };\n")
@@ -248,6 +271,21 @@ def exInst(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
   say(")")
   if cast then say(")") else ()
 
+// a case of an enum instance: its struct and statics carry the instance's type args
+def exNew(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
+  val c = find(cs, DCase, text(e))
+  val targs = kids(kid(e, 0))
+  if isNil(tail(kids(e))) then
+    say("(&N_")
+    say(text(e))
+    typeSuffix(targs)
+    say(")")
+  else exCtor(r, ds, cs, env, c, tail(kids(e)), targs)
+
+def ctorStruct(c: Node, targs: Nodes): Unit =
+  say(text2(c))
+  if !isNil(targs) then typeSuffix(targs) else ()
+
 // position of type param n among f's type params, in written order
 def tparamIndex(f: Node, n: Str): I64 =
   var gs = kids(kid(f, 4))
@@ -284,7 +322,7 @@ def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
       say(")")
   else if k == XCall then
     val c = find(cs, DCase, text(e))
-    if found(c) then exCtor(r, ds, cs, env, c, kids(e))
+    if found(c) then exCtor(r, ds, cs, env, c, kids(e), NNil)
     else
       val f = find(ds, DFn, text(e))
       if num(f) == 0 then say("f_") else ()
@@ -293,6 +331,7 @@ def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
       exArgs(r, ds, cs, env, kids(e), false)
       say(")")
   else if k == XInst then exInst(r, ds, cs, env, e)
+  else if k == XNew then exNew(r, ds, cs, env, e)
   else if k == XMethod then exMethod(r, ds, cs, env, e)
   else if k == XBin then
     say("(")
@@ -365,15 +404,15 @@ def exMethod(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
   else ()
   say("r_; })")
 
-def exCtor(r: Region, ds: Nodes, cs: Nodes, env: Nodes, c: Node, xs: Nodes): Unit =
+def exCtor(r: Region, ds: Nodes, cs: Nodes, env: Nodes, c: Node, xs: Nodes, targs: Nodes): Unit =
   val reg = regionOf(env)
   val u = len(env)
   say("({ struct E_")
-  say(text2(c))
+  ctorStruct(c, targs)
   say("* o")
   sayn(u)
   say(" = (struct E_")
-  say(text2(c))
+  ctorStruct(c, targs)
   say("*)((void*(*)(void*, int64_t))(")
   cname(reg)
   say("->vt[")
@@ -381,7 +420,7 @@ def exCtor(r: Region, ds: Nodes, cs: Nodes, env: Nodes, c: Node, xs: Nodes): Uni
   say("]))(")
   cname(reg)
   say("->self, (int64_t)sizeof(struct E_")
-  say(text2(c))
+  ctorStruct(c, targs)
   say(")); o")
   sayn(u)
   say("->tag = ")

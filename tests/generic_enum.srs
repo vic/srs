@@ -1,0 +1,27 @@
+// pass: BD3a generic enums (vic-9l7.4): `enum Box {A: Type}`, T(args) types, a case's args or the expected type
+// give its type args, match fills field types, one C struct per instance (E_Opt__I64), nested T(T(args))
+enum Opt {A: Type}:
+  case None
+  case Some(v: A)
+
+enum Pair {A: Type} {B: Type}:
+  case Pair(a: A, b: B)
+
+def get {A: Type} (o: Opt(A), d: A): A = o match
+  case None => d
+  case Some(v) => v
+
+def first {A: Type} {B: Type} (p: Pair(A, B)): A = p match
+  case Pair(a, _) => a
+
+def main(): I64 =
+  handle r = Arena()
+  val n: Opt(I64) = None
+  rt_print_i64(get(Some(41), 0) + get(n, 1))
+  rt_print("\n")
+  rt_print_i64(if get(Some(true), false) then 1 else 0)
+  rt_print("\n")
+  val p = Pair(Some(7), false)
+  rt_print_i64(get(first(p), 0))
+  rt_print("\n")
+  0
