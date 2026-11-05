@@ -1,0 +1,108 @@
+// pass: T0 Turnstile on Kanren: `G |- e >> e2 => t` as the relation tc(G, e, e2, t), one clause per form.
+// Expansion (>>) and type (=>) are both answers. Type lambdas = norm clauses. Rejects: no answer, fuel out, 2 answers.
+def v(r: Region, i: I64): Term = TVar(i)
+def c0(r: Region, f: Str): Term = TCon(f, TNil)
+def c1(r: Region, f: Str, a: Term): Term = TCon(f, TCons(a, TNil))
+def c2(r: Region, f: Str, a: Term, b: Term): Term = TCon(f, TCons(a, TCons(b, TNil)))
+def c3(r: Region, f: Str, a: Term, b: Term, c: Term): Term = TCon(f, TCons(a, TCons(b, TCons(c, TNil))))
+def t2(r: Region, a: Term, b: Term): Terms = TCons(a, TCons(b, TNil))
+def t3(r: Region, a: Term, b: Term, c: Term): Terms = TCons(a, TCons(b, TCons(c, TNil)))
+def t4(r: Region, a: Term, b: Term, c: Term, d: Term): Terms = TCons(a, TCons(b, TCons(c, TCons(d, TNil))))
+def tc(r: Region, g: Term, e: Term, e2: Term, t: Term): Goal = GCall("tc", t4(r, g, e, e2, t))
+def look(r: Region, g: Term, x: Term, t: Term): Goal = GCall("lookup", t3(r, g, x, t))
+def norm(r: Region, a: Term, b: Term): Goal = GCall("norm", t2(r, a, b))
+def and(r: Region, g: Goal, h: Goal): Goal = GConj(g, h)
+def rl(r: Region, rel: Str, head: Terms, body: Goal, nv: I64, t: Rules): Rules = RCons(Rule(rel, head, body, nv), t)
+
+// tc(G, e, e2, t)
+def tcRules(r: Region, t: Rules): Rules =
+  val i64 = c0(r, "I64")
+  val bool = c0(r, "Bool")
+  val g = v(r, 0)
+  // int(N) >> cint(N) => I64
+  val ri = rl(r, "tc", t4(r, g, c1(r, "int", v(r, 1)), c1(r, "cint", v(r, 1)), i64), GTrue, 2, t)
+  // bool(B) >> cbool(B) => Bool
+  val rb = rl(r, "tc", t4(r, g, c1(r, "bool", v(r, 1)), c1(r, "cbool", v(r, 1)), bool), GTrue, 2, ri)
+  // var(X) >> cvar(X) => T  :-  lookup(G, X, T)
+  val rv = rl(r, "tc", t4(r, g, c1(r, "var", v(r, 1)), c1(r, "cvar", v(r, 1)), v(r, 2)), look(r, g, v(r, 1), v(r, 2)), 3, rb)
+  // add(A, B) >> cadd(A2, B2) => I64  :-  A >> A2 => I64, B >> B2 => I64
+  val radd = rl(r, "tc", t4(r, g, c2(r, "add", v(r, 1), v(r, 2)), c2(r, "cadd", v(r, 3), v(r, 4)), i64), and(r, tc(r, g, v(r, 1), v(r, 3), i64), tc(r, g, v(r, 2), v(r, 4), i64)), 5, rv)
+  // if(C, A, B) >> cif(C2, A2, B2) => T  :-  C => Bool, A => T, B => T (one type: vic §18)
+  val body = and(r, tc(r, g, v(r, 1), v(r, 4), bool), and(r, tc(r, g, v(r, 2), v(r, 5), v(r, 7)), tc(r, g, v(r, 3), v(r, 6), v(r, 7))))
+  val rif = rl(r, "tc", t4(r, g, c3(r, "if", v(r, 1), v(r, 2), v(r, 3)), c3(r, "cif", v(r, 4), v(r, 5), v(r, 6)), v(r, 7)), body, 8, radd)
+  // call(F, A) >> ccall(F, A2) => R  :-  lookup(G, F, fn(P, R)), A >> A2 => P
+  val rc = rl(r, "tc", t4(r, g, c2(r, "call", v(r, 1), v(r, 2)), c2(r, "ccall", v(r, 1), v(r, 3)), v(r, 5)), and(r, look(r, g, v(r, 1), c2(r, "fn", v(r, 4), v(r, 5))), tc(r, g, v(r, 2), v(r, 3), v(r, 4))), 6, rif)
+  // ann(E, Ty) >> E2 => T  :-  norm(Ty, T), E >> E2 => T  (the annotation is gone after expansion)
+  rl(r, "tc", t4(r, g, c2(r, "ann", v(r, 1), v(r, 2)), v(r, 3), v(r, 4)), and(r, norm(r, v(r, 2), v(r, 4)), tc(r, g, v(r, 1), v(r, 3), v(r, 4))), 5, rc)
+
+// lookup(G, X, T): the innermost binding of X; X =/= Y skips an outer one, so a shadowed name has one type
+def lookRules(r: Region, t: Rules): Rules =
+  val l1 = rl(r, "lookup", t3(r, c2(r, "cons", c2(r, "bind", v(r, 0), v(r, 1)), v(r, 2)), v(r, 0), v(r, 1)), GTrue, 3, t)
+  rl(r, "lookup", t3(r, c2(r, "cons", c2(r, "bind", v(r, 0), v(r, 1)), v(r, 2)), v(r, 3), v(r, 4)), and(r, GNeq(v(r, 3), v(r, 0)), look(r, v(r, 2), v(r, 3), v(r, 4))), 5, l1)
+
+// norm(Ty, T): base types are normal; Id = [A] =>> A; Wide = [A] =>> A match I8 => I64, I64 => I64; Loop = [A] =>> Loop[A]
+def normRules(r: Region, t: Rules): Rules =
+  val n1 = rl(r, "norm", t2(r, c0(r, "I64"), c0(r, "I64")), GTrue, 0, t)
+  val n2 = rl(r, "norm", t2(r, c0(r, "Bool"), c0(r, "Bool")), GTrue, 0, n1)
+  val n3 = rl(r, "norm", t2(r, c0(r, "I8"), c0(r, "I8")), GTrue, 0, n2)
+  val n4 = rl(r, "norm", t2(r, c2(r, "app", c0(r, "Id"), v(r, 0)), v(r, 1)), norm(r, v(r, 0), v(r, 1)), 2, n3)
+  val n5 = rl(r, "norm", t2(r, c2(r, "app", c0(r, "Wide"), c0(r, "I8")), c0(r, "I64")), GTrue, 0, n4)
+  val n6 = rl(r, "norm", t2(r, c2(r, "app", c0(r, "Wide"), c0(r, "I64")), c0(r, "I64")), GTrue, 0, n5)
+  rl(r, "norm", t2(r, c2(r, "app", c0(r, "Loop"), v(r, 0)), v(r, 1)), norm(r, c2(r, "app", c0(r, "Loop"), v(r, 0)), v(r, 1)), 2, n6)
+
+def count(a: Answers): I64 = a match
+  case ANil => 0
+  case ACons(_, t) => 1 + count(t)
+
+// one verdict (vic §17 complete): 1 answer = the result; none = reject; fuel out = reject; 2 = ambiguous (vic B2)
+def verdict(r: Region, run: Run): Unit =
+  run match
+    case Run(ans, st) => st match
+      case NoFuel => rt_print("reject: fuel")
+      case Limit => rt_print("reject: ambiguous")
+      case Ended => if count(ans) == 0 then rt_print("reject") else ans match
+        case ANil => rt_print("reject")
+        case ACons(s, _) =>
+          showTerm(walkAll(r, substOf(s), TVar(0)))
+          rt_print(" : ")
+          showTerm(walkAll(r, substOf(s), TVar(1)))
+  rt_print("\n")
+
+// e >> ? => ? under G; limit 2 so a second answer shows ambiguity
+def check(r: Region, rules: Rules, g: Term, e: Term): Unit = verdict(r, solve(r, rules, tc(r, g, e, v(r, 0), v(r, 1)), 2, 2000, 2))
+
+def main(): I64 =
+  handle r = Arena()
+  val rules = tcRules(r, lookRules(r, normRules(r, RNil)))
+  val i64 = c0(r, "I64")
+  val bool = c0(r, "Bool")
+  val nil = c0(r, "nil")
+  val g = c2(r, "cons", c2(r, "bind", c0(r, "f"), c2(r, "fn", i64, bool)), c2(r, "cons", c2(r, "bind", c0(r, "x"), i64), c2(r, "cons", c2(r, "bind", c0(r, "b"), bool), nil)))
+  val one = c1(r, "int", TInt(1))
+  val two = c1(r, "int", TInt(2))
+  val vb = c1(r, "var", c0(r, "b"))
+  val vx = c1(r, "var", c0(r, "x"))
+  check(r, rules, g, one)
+  check(r, rules, g, c3(r, "if", vb, one, two))
+  check(r, rules, g, c2(r, "call", c0(r, "f"), c2(r, "add", vx, one)))
+  check(r, rules, g, c2(r, "ann", one, c2(r, "app", c0(r, "Id"), i64)))
+  check(r, rules, g, c2(r, "ann", one, c2(r, "app", c0(r, "Wide"), c0(r, "I8"))))
+  // rejects: if on I64, Bool arg to f, unbound name, Id[Bool] on 1, Wide[Bool] (no arm), Loop[I64] (fuel)
+  check(r, rules, g, c3(r, "if", one, one, two))
+  check(r, rules, g, c2(r, "call", c0(r, "f"), vb))
+  check(r, rules, g, c1(r, "var", c0(r, "z")))
+  check(r, rules, g, c2(r, "ann", one, c2(r, "app", c0(r, "Id"), bool)))
+  check(r, rules, g, c2(r, "ann", one, c2(r, "app", c0(r, "Wide"), bool)))
+  check(r, rules, g, c2(r, "ann", one, c2(r, "app", c0(r, "Loop"), i64)))
+  // add on a Bool
+  check(r, rules, g, c2(r, "add", vb, one))
+  // if branches of 2 types: one type per if
+  check(r, rules, g, c3(r, "if", vb, one, c1(r, "bool", c0(r, "true"))))
+  // shadowing: inner x : Bool hides outer x : I64
+  val g2 = c2(r, "cons", c2(r, "bind", c0(r, "x"), bool), c2(r, "cons", c2(r, "bind", c0(r, "x"), i64), nil))
+  check(r, rules, g2, vx)
+  // a second Wide[I8] arm => 2 answers for norm => ambiguous
+  val amb = rl(r, "norm", t2(r, c2(r, "app", c0(r, "Wide"), c0(r, "I8")), bool), GTrue, 0, rules)
+  verdict(r, solve(r, amb, norm(r, c2(r, "app", c0(r, "Wide"), c0(r, "I8")), v(r, 0)), 2, 2000, 2))
+  r.free()
+  0
