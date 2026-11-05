@@ -5,7 +5,7 @@
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"
 CC="zig cc -std=gnu11 -O1 -w"
-S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/given.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/main.srs"
+S1SRC="lib/prelude.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/given.srs s1/facts.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/main.srs"
 LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
 fail=0
 timeout 120 $CC -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1

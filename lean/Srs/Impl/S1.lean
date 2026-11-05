@@ -1357,10 +1357,10 @@ pure («PR».«PR» (← «list» «Kind».«Names» (← «at» «ts0») (← �
 }
 
 mutual
-def «ty_loop0» («to» : ByteArray) («from» : ByteArray) («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «ty_loop0» («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isT» «ts» "]".toUTF8))
-} : Option Bool)) st') then «ty_loop0» «to» «from» «name» «line» «ts0» (← (fun ((«args», «ts») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «ty_loop0» «name» «line» «ts0» (← (fun ((«args», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «args» := «args»;
 let mut «ts» := «ts»;
 let «a» ← (pure (← «ty» «ts»));
@@ -1376,10 +1376,10 @@ pure («args», «ts»)
 }
 partial_fixpoint
 
-def «ty_loop1» («annotated» : Int) («args» : «Nodes») («to» : ByteArray) («from» : ByteArray) («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «ty_loop1» («annotated» : Int) («args» : «Nodes») («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isT» «ts» ">".toUTF8))
-} : Option Bool)) st') then «ty_loop1» «annotated» «args» «to» «from» «name» «line» «ts0» (← (fun ((«caps», «ts») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «ty_loop1» «annotated» «args» «name» «line» «ts0» (← (fun ((«caps», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «caps» := «caps»;
 let mut «ts» := «ts»;
 «caps» := («Nodes».«NCons» (← «leaf» «Kind».«TyCap» (← «needIdent» «ts») «line») «caps»);
@@ -1398,43 +1398,29 @@ def «ty» («ts0» : «Nodes») : Option «PR» := do {
 let «line» ← (pure (← «at» «ts0»));
 let «name» ← (pure (← «needIdent» «ts0»));
 let mut «ts» := (← «tail» «ts0»);
-let mut «from» := "".toUTF8;
-let mut «to» := "".toUTF8;
 let mut «args» := «Nodes».«NNil»;
-if (← (do {
-if (← «isT» «ts» "[".toUTF8) then {
-pure (← «isT» (← «drop» «ts» (2 : Int)) "~>".toUTF8)
-} else {
-pure false
-}
-})) then {
-«from» := (← «needIdent» (← «tail» «ts»));
-«to» := (← «needIdent» (← «drop» «ts» (3 : Int)));
-«ts» := (← «expect» (← «drop» «ts» (4 : Int)) "]".toUTF8);
-} else {
 if (← «isT» «ts» "[".toUTF8) then {
 «ts» := (← «tail» «ts»);
-let t_ ← «ty_loop0» «to» «from» «name» «line» «ts0» («args», «ts»);
+let t_ ← «ty_loop0» «name» «line» «ts0» («args», «ts»);
 «args» := t_.1;
 «ts» := t_.2;
 «ts» := (← «tail» «ts»);
 } else {
 let _ := ();
 };
-};
 let mut «caps» := «Nodes».«NNil»;
 let mut «annotated» := (0 : Int);
 if (← «isT» «ts» "^".toUTF8) then {
 «annotated» := (1 : Int);
 «ts» := (← «expect» (← «tail» «ts») "<".toUTF8);
-let t_ ← «ty_loop1» «annotated» «args» «to» «from» «name» «line» «ts0» («caps», «ts»);
+let t_ ← «ty_loop1» «annotated» «args» «name» «line» «ts0» («caps», «ts»);
 «caps» := t_.1;
 «ts» := t_.2;
 «ts» := (← «tail» «ts»);
 } else {
 let _ := ();
 };
-pure («PR».«PR» («Node».«Node» «Kind».«Ty» «name» «from» «annotated» «line» («Nodes».«NCons» («Node».«Node» «Kind».«TyTo» «to» "".toUTF8 (0 : Int) «line» (← «rev» «args»)) (← «rev» «caps»))) «ts»);
+pure («PR».«PR» («Node».«Node» «Kind».«Ty» «name» "".toUTF8 «annotated» «line» («Nodes».«NCons» («Node».«Node» «Kind».«TyTo» "".toUTF8 "".toUTF8 (0 : Int) «line» (← «rev» «args»)) (← «rev» «caps»))) «ts»);
 }
 partial_fixpoint
 
@@ -3666,6 +3652,165 @@ def «callGroup» («gs» : «Nodes») («g» : ByteArray) : Option «Nodes» :=
 pure (← «kids» (← «find» «gs» «Kind».«Group» «g»));
 }
 
+def «capState_loop1» («g» : «Node») («gs» : «Nodes») («out» : ByteArray) («cap» : ByteArray) («f» : «Node») (st' : («Nodes» × ByteArray)) : Option («Nodes» × ByteArray) := do {
+if (← (fun ((«c», _) : («Nodes» × ByteArray)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «capState_loop1» «g» «gs» «out» «cap» «f» (← (fun ((«c», «res») : («Nodes» × ByteArray)) => (do {
+let mut «c» := «c»;
+let mut «res» := «res»;
+if (← (do {
+if (← «eqs» (← «text» (← «head» «c»)) "at".toUTF8) then {
+pure (← «eqs» (← «text» (← «kid» (← «head» «c») (0 : Int))) «cap»)
+} else {
+pure false
+}
+})) then {
+«res» := (← «text» (← «kid» (← «head» «c») (1 : Int)));
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «res»)
+} : Option («Nodes» × ByteArray))) st') else pure st'
+}
+partial_fixpoint
+
+def «capState_loop0» («out» : ByteArray) («cap» : ByteArray) («f» : «Node») (st' : («Nodes» × ByteArray)) : Option («Nodes» × ByteArray) := do {
+if (← (fun ((«gs», _) : («Nodes» × ByteArray)) => (do {
+pure (!(← «isNil» «gs»))
+} : Option Bool)) st') then «capState_loop0» «out» «cap» «f» (← (fun ((«gs», «res») : («Nodes» × ByteArray)) => (do {
+let mut «gs» := «gs»;
+let mut «res» := «res»;
+let «g» ← (pure (← «head» «gs»));
+if (← (do {
+if (← (do {
+if ((← «kind» «g») == «Kind».«Group») then {
+pure (← «eqs» (← «text» «g») "<".toUTF8)
+} else {
+pure false
+}
+})) then {
+pure (← «eqs» (← «text2» «g») «out»)
+} else {
+pure false
+}
+})) then {
+let mut «c» := (← «kids» «g»);
+let t_ ← «capState_loop1» «g» «gs» «out» «cap» «f» («c», «res»);
+«c» := t_.1;
+«res» := t_.2;
+} else {
+let _ := ();
+};
+«gs» := (← «tail» «gs»);
+pure («gs», «res»)
+} : Option («Nodes» × ByteArray))) st') else pure st'
+}
+partial_fixpoint
+
+def «capState» («f» : «Node») («cap» : ByteArray) («out» : ByteArray) : Option ByteArray := do {
+let mut «res» := "".toUTF8;
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let t_ ← «capState_loop0» «out» «cap» «f» («gs», «res»);
+«gs» := t_.1;
+«res» := t_.2;
+pure «res»;
+}
+
+def «binderProto_loop0» («n» : ByteArray) («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × ByteArray)) : Option («Nodes» × ByteArray) := do {
+if (← (fun ((«gs», _) : («Nodes» × ByteArray)) => (do {
+pure (!(← «isNil» «gs»))
+} : Option Bool)) st') then «binderProto_loop0» «n» «f» «ds» (← (fun ((«gs», «res») : («Nodes» × ByteArray)) => (do {
+let mut «gs» := «gs»;
+let mut «res» := «res»;
+if (← (do {
+if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
+pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+} else {
+pure false
+}
+})) then {
+let «b» ← (pure (← «find» (← «kids» (← «head» «gs»)) «Kind».«Binder» «n»));
+if (← (do {
+if (← «found» «b») then {
+pure (← «isProto» «ds» (← «text» (← «kid» «b» (0 : Int))))
+} else {
+pure false
+}
+})) then {
+«res» := (← «text» (← «kid» «b» (0 : Int)));
+} else {
+let _ := ();
+};
+} else {
+let _ := ();
+};
+«gs» := (← «tail» «gs»);
+pure («gs», «res»)
+} : Option («Nodes» × ByteArray))) st') else pure st'
+}
+partial_fixpoint
+
+def «binderProto» («ds» : «Nodes») («f» : «Node») («n» : ByteArray) : Option ByteArray := do {
+let mut «res» := "".toUTF8;
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let t_ ← «binderProto_loop0» «n» «f» «ds» («gs», «res»);
+«gs» := t_.1;
+«res» := t_.2;
+pure «res»;
+}
+
+def «needFacts_loop0» («g» : «Node») («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((_, «c») : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «needFacts_loop0» «g» «f» «ds» (← (fun ((«seen», «c») : («Nodes» × «Nodes»)) => (do {
+let mut «seen» := «seen»;
+let mut «c» := «c»;
+let «a» ← (pure (← «head» «c»));
+if (← (do {
+if (!(← «eqs» (← «text» «a») "at".toUTF8)) then {
+pure true
+} else {
+pure ((← «len» (← «kids» «a»)) != (2 : Int))
+}
+})) then {
+let _ := (← «err» "not yet: fact".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+let «cap» ← (pure (← «text» (← «kid» «a» (0 : Int))));
+let «p» ← (pure (← «binderProto» «ds» «f» «cap»));
+if ((← «rt_str_len» «p») == (0 : Int)) then {
+let _ := (← «err» "at: not a {} capability of this def:".toUTF8 «cap» (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+if (!(← «has» (← «protoStates» «ds» «p») (← «text» (← «kid» «a» (1 : Int))))) then {
+let _ := (← «err» "unknown protocol state in".toUTF8 «p» (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+if (← «has» «seen» «cap») then {
+let _ := (← «err» "two states of one capability in a fact group:".toUTF8 «cap» (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+«seen» := («Nodes».«NCons» (← «kid» «a» (0 : Int)) «seen»);
+«c» := (← «tail» «c»);
+pure («seen», «c»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «needFacts» («ds» : «Nodes») («f» : «Node») («g» : «Node») : Option Unit := do {
+let mut «c» := (← «kids» «g»);
+let mut «seen» := «Nodes».«NNil»;
+let t_ ← «needFacts_loop0» «g» «f» «ds» («seen», «c»);
+«seen» := t_.1;
+«c» := t_.2;
+pure ()
+}
+
 def «isGeneric» («d» : «Node») : Option Bool := do {
 pure (← (do {
 if (← (do {
@@ -5793,7 +5938,13 @@ let _ := (← «err» "[] binder hides a type:".toUTF8 (← «text» (← «head
 let _ := ();
 };
 } else {
-if (!(← «isProto» «ds0» (← «text» «k»))) then {
+if (← (do {
+if (← «eqs» (← «text» «g») "{".toUTF8) then {
+pure (!(← «isProto» «ds0» (← «text» «k»)))
+} else {
+pure false
+}
+})) then {
 let _ := (← «needTrait» (← «withTParams» «ds0» «f») (← «termTy» «k»));
 } else {
 let _ := ();
@@ -5812,13 +5963,24 @@ pure (!(← «isNil» «gs»))
 let mut «gs» := «gs»;
 let «g» ← (pure (← «head» «gs»));
 if (← (do {
+if (← (do {
 if (!(← «eqs» (← «text» «g») "[".toUTF8)) then {
 pure (!(← «eqs» (← «text» «g») "{".toUTF8))
 } else {
 pure false
 }
 })) then {
+pure (!(← «eqs» (← «text» «g») "<".toUTF8))
+} else {
+pure false
+}
+})) then {
 let _ := (← «err» "not yet: binder group".toUTF8 (← «text» «g») (← «lineOf» «g»));
+} else {
+let _ := ();
+};
+if (← «eqs» (← «text» «g») "<".toUTF8) then {
+let _ := (← «needFacts» «ds0» «f» «g»);
 } else {
 let _ := ();
 };
@@ -5839,13 +6001,7 @@ let mut «ps» := «ps»;
 let «pt» ← (pure (← «kid» (← «head» «ps») (0 : Int)));
 let _ := (← «needTy» «ds» «pt»);
 if (← (do {
-if (← (do {
 if (← «isProto» «ds» (← «text» «pt»)) then {
-pure ((← «rt_str_len» (← «text2» «pt»)) == (0 : Int))
-} else {
-pure false
-}
-})) then {
 pure ((← «num» «f») != (1 : Int))
 } else {
 pure false
@@ -5884,8 +6040,17 @@ pure (!(← «isNil» «bs»))
 let mut «bs» := «bs»;
 let mut «out» := «out»;
 let «k» ← (pure (← «kid» (← «head» «bs») (0 : Int)));
+let «from» ← (pure (← «capState» «f» (← «text» (← «head» «bs»)) "".toUTF8));
+let «out2» ← (pure (← «capState» «f» (← «text» (← «head» «bs»)) "out".toUTF8));
+let «to» ← (pure (← (do {
+if (decide ((← «rt_str_len» «out2») > (0 : Int))) then {
+pure «out2»;
+} else {
+pure «from»;
+};
+})));
 if (← «isProto» «ds» (← «text» «k»)) then {
-«out» := («Nodes».«NCons» («Node».«Node» «Kind».«Param» (← «text» (← «head» «bs»)) "".toUTF8 (0 : Int) (← «lineOf» (← «head» «bs»)) (← «one» (← «termTy» «k»))) «out»);
+«out» := («Nodes».«NCons» («Node».«Node» «Kind».«Param» (← «text» (← «head» «bs»)) "".toUTF8 (0 : Int) (← «lineOf» (← «head» «bs»)) (← «one» («Node».«Node» «Kind».«Ty» (← «text» «k») «from» (0 : Int) (← «lineOf» «k») (← «one» («Node».«Node» «Kind».«TyTo» «to» "".toUTF8 (0 : Int) (0 : Int) «Nodes».«NNil»))))) «out»);
 } else {
 let _ := ();
 };

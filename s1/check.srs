@@ -336,14 +336,15 @@ def checkSig {r: Region} (ds0: Nodes, f: Node): Unit =
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
     val g = head(gs)
-    if !eqs(text(g), "[") && !eqs(text(g), "{") then err("not yet: binder group", text(g), lineOf(g)) else ()
+    if !eqs(text(g), "[") && !eqs(text(g), "{") && !eqs(text(g), "<") then err("not yet: binder group", text(g), lineOf(g)) else ()
+    if eqs(text(g), "<") then needFacts(ds0, f, g) else ()
     var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
       if eqs(text(g), "[") then
         if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
         if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("[] binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
-      else if !isProto(ds0, text(k)) then needTrait(withTParams(ds0, f), termTy(k))
+      else if eqs(text(g), "{") && !isProto(ds0, text(k)) then needTrait(withTParams(ds0, f), termTy(k))
       else ()
       bs = tail(bs)
     gs = tail(gs)
@@ -352,8 +353,8 @@ def checkSig {r: Region} (ds0: Nodes, f: Node): Unit =
   while !isNil(ps) do
     val pt = kid(head(ps), 0)
     needTy(ds, pt)
-    // a capability is evidence: a {} binder, never a value param (vic 2026-11-05); File[S1 ~> S2] until BD5 (vic-9l7.8)
-    if isProto(ds, text(pt)) && rt_str_len(text2(pt)) == 0 && num(f) != 1 then err("a capability is a {} binder, not a param:", text(head(ps)), lineOf(head(ps))) else ()
+    // a capability is evidence: a {} binder, never a value param (vic 2026-11-05)
+    if isProto(ds, text(pt)) && num(f) != 1 then err("a capability is a {} binder, not a param:", text(head(ps)), lineOf(head(ps))) else ()
     ps = tail(ps)
   needTy(ds, kid(f, 1))
   if isProto(ds, text(kid(f, 1))) then err("capability returned from", text(f), lineOf(f)) else ()
@@ -369,7 +370,11 @@ def capParams {r: Region} (ds: Nodes, f: Node): Nodes =
       var bs = kids(head(gs))
       while !isNil(bs) do
         val k = kid(head(bs), 0)
-        if isProto(ds, text(k)) then out = NCons(Node(Param, text(head(bs)), "", 0, lineOf(head(bs)), one(termTy(k))), out) else ()
+        // its states: <at(f, S1)> before the params = entry, <at(f, S2)> after the result = exit (unchanged if absent)
+        val from = capState(f, text(head(bs)), "")
+        val out2 = capState(f, text(head(bs)), "out")
+        val to = if rt_str_len(out2) > 0 then out2 else from
+        if isProto(ds, text(k)) then out = NCons(Node(Param, text(head(bs)), "", 0, lineOf(head(bs)), one(Node(Ty, text(k), from, 0, lineOf(k), one(Node(TyTo, to, "", 0, 0, NNil))))), out) else ()
         bs = tail(bs)
     else ()
     gs = tail(gs)

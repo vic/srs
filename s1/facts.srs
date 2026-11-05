@@ -1,0 +1,45 @@
+// <> Datalog facts of a signature (vic-9l7.8 BD5). before the params: what holds on entry; after the result: on exit
+// (vic B-Q3: a call is a protocol step). BD5a: the atom at(cap, State) gives a {} capability its entry and exit
+// state; other atoms, variables and rules: BD5b (lib/datalog.srs).
+
+// the state S of at(cap, S) in f's fact group out ("" entry, "out" exit), or ""
+def capState(f: Node, cap: Str, out: Str): Str =
+  var res = ""
+  var gs = kids(kid(f, 4))
+  while !isNil(gs) do
+    val g = head(gs)
+    if kind(g) == Group && eqs(text(g), "<") && eqs(text2(g), out) then
+      var c = kids(g)
+      while !isNil(c) do
+        if eqs(text(head(c)), "at") && eqs(text(kid(head(c), 0)), cap) then res = text(kid(head(c), 1)) else ()
+        c = tail(c)
+    else ()
+    gs = tail(gs)
+  res
+
+// the protocol of f's {} binder n, or ""
+def binderProto(ds: Nodes, f: Node, n: Str): Str =
+  var res = ""
+  var gs = kids(kid(f, 4))
+  while !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+      val b = find(kids(head(gs)), Binder, n)
+      if found(b) && isProto(ds, text(kid(b, 0))) then res = text(kid(b, 0)) else ()
+    else ()
+    gs = tail(gs)
+  res
+
+// each atom of the fact group g: at(cap, State), cap a {} capability of f, State a state of its protocol, once per cap
+def needFacts {r: Region} (ds: Nodes, f: Node, g: Node): Unit =
+  var c = kids(g)
+  var seen = NNil
+  while !isNil(c) do
+    val a = head(c)
+    if !eqs(text(a), "at") || len(kids(a)) != 2 then err("not yet: fact", text(a), lineOf(a)) else ()
+    val cap = text(kid(a, 0))
+    val p = binderProto(ds, f, cap)
+    if rt_str_len(p) == 0 then err("at: not a {} capability of this def:", cap, lineOf(a)) else ()
+    if !has(protoStates(ds, p), text(kid(a, 1))) then err("unknown protocol state in", p, lineOf(a)) else ()
+    if has(seen, cap) then err("two states of one capability in a fact group:", cap, lineOf(a)) else ()
+    seen = NCons(kid(a, 0), seen)
+    c = tail(c)

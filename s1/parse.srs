@@ -325,16 +325,9 @@ def ty {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   var ts = tail(ts0)
-  var from = ""
-  var to = ""
   // type application T[args] (vic 2026-11-05: [] = types, the Scala3 surface): the args are the kids of TyTo, so tyCaps stays the tail
   var args = NNil
-  // protocol state File[S1 ~> S2], told apart by the ~> after one name; dropped in BD5 for <> facts (vic-9l7.8)
-  if isT(ts, "[") && isT(drop(ts, 2), "~>") then
-    from = needIdent(tail(ts))
-    to = needIdent(drop(ts, 3))
-    ts = expect(drop(ts, 4), "]")
-  else if isT(ts, "[") then
+  if isT(ts, "[") then
     ts = tail(ts)
     while !isT(ts, "]") do
       val a = ty(ts)
@@ -355,7 +348,7 @@ def ty {r: Region} (ts0: Nodes): PR =
       if !isT(ts, ">") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
-  PR(Node(Ty, name, from, annotated, line, NCons(Node(TyTo, to, "", 0, line, rev(args)), rev(caps))), ts)
+  PR(Node(Ty, name, "", annotated, line, NCons(Node(TyTo, "", "", 0, line, rev(args)), rev(caps))), ts)
 
 def rhs {r: Region} (ts: Nodes): PR =
   if isK(ts, TNl) && isK(tail(ts), TIndent) then block(tail(ts)) else expr(ts)
