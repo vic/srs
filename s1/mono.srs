@@ -19,7 +19,13 @@ def mono(r: Region, ds: Nodes): Nodes =
     val x = head(todo)
     todo = tail(todo)
     val f = find(ds, DFn, text(x))
-    if num(f) == 1 then needPointers(ds, x)
+    if kind(x) == XEv then
+      if !isMadeEv(made, x) then
+        val g = evInst(r, ds, x)
+        made = NCons(g, made)
+        todo = insts(r, kid(g, 2), todo)
+      else ()
+    else if num(f) == 1 then needPointers(ds, x)
     else if !isMade(made, x) then
       val g = instantiate(r, f, kids(kid(x, 0)))
       made = NCons(g, made)
@@ -30,7 +36,7 @@ def mono(r: Region, ds: Nodes): Nodes =
 
 // the XInst nodes of e, onto acc
 def insts(r: Region, e: Node, acc: Nodes): Nodes =
-  var out = if kind(e) == XInst then NCons(e, acc) else acc
+  var out = if kind(e) == XInst || kind(e) == XEv then NCons(e, acc) else acc
   var c = kids(e)
   while !isNil(c) do
     out = insts(r, head(c), out)
@@ -42,7 +48,7 @@ def isMade(made: Nodes, x: Node): Bool =
   var c = made
   var res = false
   while !res && !isNil(c) do
-    res = eqs(text(head(c)), text(x)) && tysEq(kids(kid(head(c), 4)), kids(kid(x, 0)))
+    res = eqs(text(head(c)), text(x)) && rt_str_len(text2(head(c))) == 0 && tysEq(kids(kid(head(c), 4)), kids(kid(x, 0)))
     c = tail(c)
   res
 
@@ -119,3 +125,31 @@ def enumInst(r: Region, d: Node, targs: Nodes): Node =
     out = NCons(withKids(r, head(c), NCons(kid(head(c), 0), one(r, list(r, Names, lineOf(d), targs)))), out)
     c = tail(c)
   withKids(r, d, rev(r, out))
+
+// the method of an evidence call at its concrete goal: the one given whose head matches (the checker proved one),
+// instantiated at its [] binders; t = the trait and kid 4 = the goal's args name it in C (g_Show__I64_show)
+def evInst(r: Region, ds: Nodes, x: Node): Node =
+  val et = head(kids(kid(x, 0)))
+  givensFor(r, ds, et) match
+    case NoGiven =>
+      errTy("internal: no given at mono for", et, lineOf(x))
+      x
+    case GivenAt(g, s, _) =>
+      val f = find(tail(tail(kids(g))), DFn, text(x))
+      val tps = groupBinders(r, kids(kid(g, 0)))
+      val h = substTy(r, f, tps, boundTypes(r, tps, s))
+      Node(DFn, text(f), text(et), 0, lineOf(f), NCons(kid(h, 0), NCons(kid(h, 1), NCons(kid(h, 2), NCons(kid(h, 3), one(r, list(r, Names, lineOf(f), tyArgs(et))))))))
+
+// the type each binder of tps is bound to in sub, in order
+def boundTypes(r: Region, tps: Nodes, sub: Nodes): Nodes =
+  if isNil(tps) then NNil else NCons(kid(find(sub, Binder, text(head(tps))), 0), boundTypes(r, tail(tps), sub))
+
+// the method of x's goal is made already
+def isMadeEv(made: Nodes, x: Node): Bool =
+  val et = head(kids(kid(x, 0)))
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(x)) && eqs(text2(head(c)), text(et)) && tysEq(kids(kid(head(c), 4)), tyArgs(et))
+    c = tail(c)
+  res

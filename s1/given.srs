@@ -1,0 +1,212 @@
+// Traits, givens and {} evidence (vic-9l7.6 BD4a). A given is a clause: its head holds when its {} evidence does.
+// A call needs each {} goal of its callee: exactly one candidate (local evidence, or a given whose head matches),
+// 1 fuel per pick (vic B1), 0 or 2+ candidates = reject (vic B2). Mono rebuilds the chosen method at the concrete goal.
+
+// t names trait T[args]: the trait exists, one arg per [] binder, each arg a type
+def needTrait(r: Region, ds: Nodes, t: Node): Unit =
+  val tr = find(ds, DTrait, text(t))
+  if !found(tr) then err("unknown trait", text(t), lineOf(t)) else ()
+  if len(tyArgs(t)) != len(groupBinders(r, kids(kid(tr, 0)))) then err("wrong number of type args for", text(t), lineOf(t)) else ()
+  var c = tyArgs(t)
+  while !isNil(c) do
+    needTy(ds, head(c))
+    c = tail(c)
+
+// trait Show [A: Type]: [] binders only; method signatures over them (vic-9l7.6 BD4a)
+def checkTrait(r: Region, ds0: Nodes, d: Node): Unit =
+  val gs = kids(kid(d, 0))
+  var g = gs
+  while !isNil(g) do
+    if !eqs(text(head(g)), "[") then err("not yet: binder group on a trait", text(head(g)), lineOf(head(g))) else ()
+    g = tail(g)
+  val ds = append(r, groupBinders(r, gs), ds0)
+  var ms = tail(kids(d))
+  while !isNil(ms) do
+    if !isNil(kids(kid(head(ms), 4))) then err("not yet: binder groups on a trait method", text(head(ms)), lineOf(head(ms))) else ()
+    checkSig(r, ds, head(ms))
+    ms = tail(ms)
+
+// given ... T[args]: each trait method, with the trait's binders = the head's args, is a def of the given w/ that sig
+def checkGiven(r: Region, ds: Nodes, d: Node): Node =
+  val tr = find(ds, DTrait, text(d))
+  if !found(tr) then err("unknown trait", text(d), lineOf(d)) else ()
+  val hd = kid(d, 1)
+  needTrait(r, append(r, groupBinders(r, kids(kid(d, 0))), ds), hd)
+  // every [] binder is fixed by the head, so a goal fixes all of them
+  var bs = groupBinders(r, kids(kid(d, 0)))
+  while !isNil(bs) do
+    if !mentions(one(r, head(bs)), hd) then err("given [] binder not in its head:", text(head(bs)), lineOf(d)) else ()
+    bs = tail(bs)
+  val sub = zipBind(r, groupBinders(r, kids(kid(tr, 0))), tyArgs(hd))
+  val fs = tail(tail(kids(d)))
+  var ms = tail(kids(tr))
+  while !isNil(ms) do
+    val m = head(ms)
+    val f = find(fs, DFn, text(m))
+    if !found(f) then err("given misses trait method", text(m), lineOf(d)) else ()
+    if !sameSig(r, sub, m, f) then err("given method signature differs from its trait:", text(m), lineOf(f)) else ()
+    ms = tail(ms)
+  var c = fs
+  var fs2 = NNil
+  while !isNil(c) do
+    if !found(find(tail(kids(tr)), DFn, text(head(c)))) then err("not a method of the trait:", text(head(c)), lineOf(head(c))) else ()
+    checkSig(r, ds, head(c))
+    fs2 = NCons(checkFn(r, ds, head(c)), fs2)
+    c = tail(c)
+  withKids(r, d, NCons(kid(d, 0), NCons(hd, rev(r, fs2))))
+
+// f's params and result are m's with sub applied
+def sameSig(r: Region, sub: Nodes, m: Node, f: Node): Bool =
+  var a = kids(kid(m, 0))
+  var b = kids(kid(f, 0))
+  var ok = len(a) == len(b) && tyEq(applyTy(r, sub, kid(m, 1)), kid(f, 1))
+  while ok && !isNil(a) do
+    ok = tyEq(applyTy(r, sub, kid(head(a), 0)), kid(head(b), 0))
+    a = tail(a)
+    b = tail(b)
+  ok
+
+
+// a group binder's type (TTerm, from the parser) as a Ty
+def termTy(r: Region, k: Node): Node =
+  var out = NNil
+  var c = kids(k)
+  while !isNil(c) do
+    out = NCons(termTy(r, head(c)), out)
+    c = tail(c)
+  Node(Ty, text(k), "", 0, lineOf(k), one(r, Node(TyTo, "", "", 0, 0, rev(r, out))))
+
+// f's {} evidence binders as env entries (n 3): only a method-call receiver
+def evEnv(r: Region, f: Node): Nodes =
+  var out = NNil
+  var gs = kids(kid(f, 4))
+  while !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+      var bs = kids(head(gs))
+      while !isNil(bs) do
+        out = NCons(Node(BVar, text(head(bs)), "", 3, lineOf(head(bs)), one(r, termTy(r, kid(head(bs), 0)))), out)
+        bs = tail(bs)
+    else ()
+    gs = tail(gs)
+  out
+
+def errTy(what: Str, t: Node, line: I64): Unit =
+  rt_eprint("srs:")
+  rt_eprint_i64(line)
+  rt_eprint(": error: ")
+  rt_eprint(what)
+  rt_eprint(" ")
+  eprintTy(t)
+  rt_eprint("\n")
+  rt_exit(1)
+
+enum MatchR:
+  case NoMatch
+  case Matched(sub: Nodes)
+
+// sub extended so the pattern p (it names binders tps) is a, or NoMatch: matchTy without the error
+def unifies(r: Region, tps: Nodes, p: Node, a: Node, sub: Nodes): MatchR =
+  if isTP(tps, p) then
+    val b = find(sub, Binder, text(p))
+    if !found(b) then Matched(NCons(Node(Binder, text(p), "", 0, 0, one(r, recap(r, a, NNil))), sub))
+    else if tyEq(a, kid(b, 0)) then Matched(sub)
+    else NoMatch
+  else if !eqs(text(p), text(a)) || len(tyArgs(p)) != len(tyArgs(a)) then NoMatch
+  else unifiesAll(r, tps, tyArgs(p), tyArgs(a), sub)
+
+def unifiesAll(r: Region, tps: Nodes, ps: Nodes, as: Nodes, sub: Nodes): MatchR =
+  if isNil(ps) then Matched(sub)
+  else unifies(r, tps, head(ps), head(as), sub) match
+    case NoMatch => NoMatch
+    case Matched(s2) => unifiesAll(r, tps, tail(ps), tail(as), s2)
+
+enum GivenAt:
+  case NoGiven
+  case GivenAt(g: Node, sub: Nodes, more: I64)
+
+// the givens of ds whose head matches goal: the last one found, and how many
+def givensFor(r: Region, ds: Nodes, goal: Node): GivenAt =
+  var c = ds
+  var res = NoGiven
+  var n = 0
+  while !isNil(c) do
+    val g = head(c)
+    if kind(g) == DGiven && eqs(text(g), text(goal)) then
+      unifies(r, groupBinders(r, kids(kid(g, 0))), kid(g, 1), goal, NNil) match
+        case NoMatch => ()
+        case Matched(s) =>
+          n = n + 1
+          res = GivenAt(g, s, n)
+    else ()
+    c = tail(c)
+  res
+
+def givenCount(x: GivenAt): I64 = x match
+  case NoGiven => 0
+  case GivenAt(_, _, n) => n
+
+// the local evidence of env for goal
+def localCount(env: Nodes, goal: Node): I64 =
+  var c = env
+  var n = 0
+  while !isNil(c) do
+    if kind(head(c)) == BVar && num(head(c)) == 3 && tyEq(kid(head(c), 0), goal) then n = n + 1 else ()
+    c = tail(c)
+  n
+
+// the default fuel of a given search, as a default stack limit (vic Q-R4b); 1 per pick (vic B1)
+def givenFuel(): I64 = 1000
+
+// goal has exactly one candidate, and so has each {} goal of the given picked; the fuel left
+def resolve(r: Region, ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64): I64 =
+  if fuel <= 0 then errTy("given search ran out of fuel at", goal, line) else ()
+  val loc = localCount(env, goal)
+  val gv = givensFor(r, ds, goal)
+  val n = loc + givenCount(gv)
+  if n == 0 then errTy("no given for", goal, line) else ()
+  if n > 1 then errTy("ambiguous givens for", goal, line) else ()
+  // local evidence: no given matches too (else ambiguous), so gv is NoGiven
+  gv match
+    case NoGiven => fuel - 1
+    case GivenAt(g, s, _) => goals(r, ds, env, kids(kid(g, 0)), s, fuel - 1, line)
+
+// each {} binder of the groups gs under sub, resolved in turn
+def goals(r: Region, ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, fuel: I64, line: I64): I64 =
+  var f = fuel
+  var c = gs
+  while !isNil(c) do
+    if kind(head(c)) == Group && eqs(text(head(c)), "{") then
+      var bs = kids(head(c))
+      while !isNil(bs) do
+        f = resolve(r, ds, env, applyTy(r, sub, termTy(r, kid(head(bs), 0))), f, line)
+        bs = tail(bs)
+    else ()
+    c = tail(c)
+  f
+
+// s.m(args), s a {} binder: m of s's trait, its types with the trait's binders = s's type args. e2 = XEv
+def chkEv(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node, b: Node): TG =
+  val line = lineOf(e)
+  val et = kid(b, 0)
+  val tr = find(ds, DTrait, text(et))
+  val m = find(tail(kids(tr)), DFn, text2(e))
+  if !found(m) then err("not a method of the trait:", text2(e), line) else ()
+  val sub = zipBind(r, groupBinders(r, kids(kid(tr, 0))), tyArgs(et))
+  var ps = kids(kid(m, 0))
+  if len(ps) != len(kids(e)) then err("arity of", text2(e), line) else ()
+  var g = gam
+  var a = kids(e)
+  var a2 = NNil
+  var rho = NNil
+  while !isNil(a) do
+    val pt = applyTy(r, sub, kid(head(ps), 0))
+    val x = chk(r, ds, env, g, head(a), pt)
+    if !tyEq(tgTy(x), pt) then needAssign(tgTy(x), pt, line) else ()
+    g = tgGam(x)
+    rho = union(r, rho, tyCaps(tgTy(x)))
+    a2 = NCons(tgE(x), a2)
+    a = tail(a)
+    ps = tail(ps)
+  val rt = applyTy(r, sub, kid(m, 1))
+  val caps = if isEnum(ds, text(rt)) || isTParam(ds, text(rt)) then rho else NNil
+  TG(recap(r, rt, caps), g, Node(XEv, text2(e), text(e), 0, line, NCons(list(r, Names, line, one(r, et)), rev(r, a2))))

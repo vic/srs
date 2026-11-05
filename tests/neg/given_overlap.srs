@@ -1,0 +1,9 @@
+// expect: ambiguous givens for Show[I64]
+trait Show [A: Type]:
+  def show(x: A): I64
+def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+given Show[I64]:
+  def show(x: I64): I64 = x
+given [A: Type] Show[A]:
+  def show(x: A): I64 = 0
+def main(): I64 = print(1)

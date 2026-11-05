@@ -1,0 +1,35 @@
+// pass: BD4a {} evidence (vic-9l7.6): a call needs one given per {} goal (local evidence or a given clause),
+// s.show(x) on evidence, mono emits the chosen method at the concrete goal (g_Show__I64_show)
+trait Show [A: Type]:
+  def show(x: A): I64
+
+enum Box [A: Type]:
+  case Box(v: A)
+
+given Show[I64]:
+  def show(x: I64): I64 = x + 1
+
+given Show[Bool]:
+  def show(x: Bool): I64 = if x then 10 else 20
+
+// a clause: Show[Box[A]] holds when Show[A] does
+given [A: Type] {s: Show[A]} Show[Box[A]]:
+  def show(x: Box[A]): I64 = x match
+    case Box(v) => 100 + s.show(v)
+
+def print [A: Type] {s: Show[A]} (x: A): Unit =
+  rt_print_i64(s.show(x))
+  rt_print("\n")
+
+// local evidence passes on: twice needs Show[A], it has s
+def twice [A: Type] {s: Show[A]} (x: A): Unit =
+  print(x)
+  print(x)
+
+def main(): I64 =
+  handle r = Arena()
+  print(41)
+  print(true)
+  print(Box(Box(false)))
+  twice(1)
+  0

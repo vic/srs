@@ -273,65 +273,6 @@ def check(r: Region, ds: Nodes): Nodes =
     c = tail(c)
   rev(r, out)
 
-// t names trait T[args]: the trait exists, one arg per [] binder, each arg a type
-def needTrait(r: Region, ds: Nodes, t: Node): Unit =
-  val tr = find(ds, DTrait, text(t))
-  if !found(tr) then err("unknown trait", text(t), lineOf(t)) else ()
-  if len(tyArgs(t)) != len(groupBinders(r, kids(kid(tr, 0)))) then err("wrong number of type args for", text(t), lineOf(t)) else ()
-  var c = tyArgs(t)
-  while !isNil(c) do
-    needTy(ds, head(c))
-    c = tail(c)
-
-// trait Show [A: Type]: [] binders only; method signatures over them (vic-9l7.6 BD4a)
-def checkTrait(r: Region, ds0: Nodes, d: Node): Unit =
-  val gs = kids(kid(d, 0))
-  var g = gs
-  while !isNil(g) do
-    if !eqs(text(head(g)), "[") then err("not yet: binder group on a trait", text(head(g)), lineOf(head(g))) else ()
-    g = tail(g)
-  val ds = append(r, groupBinders(r, gs), ds0)
-  var ms = tail(kids(d))
-  while !isNil(ms) do
-    if !isNil(kids(kid(head(ms), 4))) then err("not yet: binder groups on a trait method", text(head(ms)), lineOf(head(ms))) else ()
-    checkSig(r, ds, head(ms))
-    ms = tail(ms)
-
-// given ... T[args]: each trait method, with the trait's binders = the head's args, is a def of the given w/ that sig
-def checkGiven(r: Region, ds: Nodes, d: Node): Node =
-  val tr = find(ds, DTrait, text(d))
-  if !found(tr) then err("unknown trait", text(d), lineOf(d)) else ()
-  val hd = kid(d, 1)
-  needTrait(r, append(r, groupBinders(r, kids(kid(d, 0))), ds), hd)
-  val sub = zipBind(r, groupBinders(r, kids(kid(tr, 0))), tyArgs(hd))
-  val fs = tail(tail(kids(d)))
-  var ms = tail(kids(tr))
-  while !isNil(ms) do
-    val m = head(ms)
-    val f = find(fs, DFn, text(m))
-    if !found(f) then err("given misses trait method", text(m), lineOf(d)) else ()
-    if !sameSig(r, sub, m, f) then err("given method signature differs from its trait:", text(m), lineOf(f)) else ()
-    ms = tail(ms)
-  var c = fs
-  var fs2 = NNil
-  while !isNil(c) do
-    if !found(find(tail(kids(tr)), DFn, text(head(c)))) then err("not a method of the trait:", text(head(c)), lineOf(head(c))) else ()
-    checkSig(r, ds, head(c))
-    fs2 = NCons(checkFn(r, ds, head(c)), fs2)
-    c = tail(c)
-  withKids(r, d, NCons(kid(d, 0), NCons(hd, rev(r, fs2))))
-
-// f's params and result are m's with sub applied
-def sameSig(r: Region, sub: Nodes, m: Node, f: Node): Bool =
-  var a = kids(kid(m, 0))
-  var b = kids(kid(f, 0))
-  var ok = len(a) == len(b) && tyEq(applyTy(r, sub, kid(m, 1)), kid(f, 1))
-  while ok && !isNil(a) do
-    ok = tyEq(applyTy(r, sub, kid(head(a), 0)), kid(head(b), 0))
-    a = tail(a)
-    b = tail(b)
-  ok
-
 def checkEnum(r: Region, ds0: Nodes, d: Node): Unit =
   // its [] binders are types in its field types; [] and <> on an enum: not yet
   val gs = kids(kid(head(kids(d)), 1))
@@ -391,16 +332,18 @@ def tparams(r: Region, f: Node): Nodes = groupBinders(r, kids(kid(f, 4)))
 def withTParams(r: Region, ds: Nodes, f: Node): Nodes = append(r, tparams(r, f), ds)
 
 def checkSig(r: Region, ds0: Nodes, f: Node): Unit =
-  // [] evidence and <> facts: BD4 BD5
+  // [] type ascriptions, {} evidence (a trait application); <> facts: BD5
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
     val g = head(gs)
-    if !eqs(text(g), "[") then err("not yet: binder group", text(g), lineOf(g)) else ()
+    if !eqs(text(g), "[") && !eqs(text(g), "{") then err("not yet: binder group", text(g), lineOf(g)) else ()
     var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
-      if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
-      if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("[] binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
+      if eqs(text(g), "[") then
+        if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
+        if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("[] binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
+      else needTrait(r, withTParams(r, ds0, f), termTy(r, k))
       bs = tail(bs)
     gs = tail(gs)
   val ds = withTParams(r, ds0, f)
@@ -438,7 +381,7 @@ def fnGam(r: Region, ds: Nodes, ps: Nodes): Nodes =
 def checkFn(r: Region, ds0: Nodes, f: Node): Node =
   val ds = withTParams(r, ds0, f)
   val ps = kids(kid(f, 0))
-  val res = chk(r, ds, fnEnv(r, ds, ps), fnGam(r, ds, ps), kid(f, 2), NoNode)
+  val res = chk(r, ds, append(r, evEnv(r, f), fnEnv(r, ds, ps)), fnGam(r, ds, ps), kid(f, 2), NoNode)
   needAssign(tgTy(res), sigTy(r, ds, ps, kid(f, 1)), lineOf(f))
   var c = ps
   while !isNil(c) do
@@ -462,6 +405,7 @@ def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node, want: Node): TG =
     val b = find(env, BVar, text(e))
     if found(b) then
       if num(b) == 2 then err("capability is second-class, only a call argument:", text(e), line) else ()
+      if num(b) == 3 then err("evidence is only a method receiver:", text(e), line) else ()
       // a var's caps are flow state: what it holds now (C8)
       val t = if num(b) == 1 then recap(r, kid(b, 0), kids(find(gam, GVar, text(e)))) else kid(b, 0)
       needLive(ds, env, gam, t, line)
@@ -474,7 +418,9 @@ def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node, want: Node): TG =
   else if k == XCall then
     val c = find(allCases(r, ds), DCase, text(e))
     if found(c) then chkCtor(r, ds, env, gam, c, e, want) else chkCall(r, ds, env, gam, e, want)
-  else if k == XMethod then chkMethod(r, ds, env, gam, e)
+  else if k == XMethod then
+    val ev = find(env, BVar, text(e))
+    if found(ev) && num(ev) == 3 then chkEv(r, ds, env, gam, e, ev) else chkMethod(r, ds, env, gam, e)
   else if k == XBin then chkBin(r, ds, env, gam, e)
   else if k == XUn then
     val a = chk(r, ds, env, gam, kid(e, 0), NoNode)
@@ -756,12 +702,15 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     p = tail(p)
   val rt = kid(f, 1)
   if isNil(tps) then
+    // the callee's {} evidence: each goal has one given (s1/given.srs)
+    goals(r, ds, env, kids(kid(f, 4)), NNil, givenFuel(), line)
     val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(r, rho, mapCaps(r, regionParams(r, ps), m)) else mapCaps(r, tyCaps(rt), m)
     TG(recap(r, rt, caps), gam, withKids(r, e, rev(r, a2)))
   else
     // a [] binder only the result names: the context's expected type solves it (check mode)
     if mentions(tps, applyTy(r, sub, rt)) && found(want) then sub = matchTy(r, tps, rt, want, sub, line) else ()
     val targs = instArgs(r, tps, sub, line)
+    goals(r, ds, env, kids(kid(f, 4)), sub, givenFuel(), line)
     // a value of a [] binder lives in the regions of the args given for it
     val rt2 = applyTy(r, sub, rt)
     // only data (an enum, or a [] binder still open) lives in regions; I64, Bool, ... carry none

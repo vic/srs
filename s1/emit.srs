@@ -39,6 +39,18 @@ def cname(b: Node): Unit =
 
 // fn naming: tag 0 = extern (C name), 1 = def (f_), 2 = handler fn (h_<H>_)
 def fname(f: Node, tag: I64, h: Str): Unit =
+  // a given's method at a goal (mono): t = the trait, kid 4 = the goal's args
+  if rt_str_len(text2(f)) > 0 then givenName(text2(f), kids(kid(f, 4)), text(f))
+  else fname2(f, tag, h)
+
+def givenName(trait: Str, args: Nodes, m: Str): Unit =
+  say("g_")
+  say(trait)
+  typeSuffix(args)
+  say("_")
+  say(m)
+
+def fname2(f: Node, tag: I64, h: Str): Unit =
   if tag == 1 then say("f_") else ()
   if tag == 2 then
     say("h_")
@@ -332,6 +344,12 @@ def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
       say(")")
   else if k == XInst then exInst(r, ds, cs, env, e)
   else if k == XNew then exNew(r, ds, cs, env, e)
+  else if k == XEv then
+    val et = head(kids(kid(e, 0)))
+    givenName(text(et), tyArgs(et), text(e))
+    say("(")
+    exArgs(r, ds, cs, env, tail(kids(e)), false)
+    say(")")
   else if k == XMethod then exMethod(r, ds, cs, env, e)
   else if k == XBin then
     say("(")
