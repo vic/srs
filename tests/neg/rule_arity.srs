@@ -1,0 +1,9 @@
+// expect: wrong number of args for relation 'can'
+protocol Door:
+  state Shut, Open1
+  start Shut
+  end Open1
+  op knock(): I64 : Shut -> Open1
+  rule def can(s) = next(s, knock, s2)
+def g {d: Door} <at(d, s), can(s, s)> (): I64 = 0
+def main(): I64 = 0

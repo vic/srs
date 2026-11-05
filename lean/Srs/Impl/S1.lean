@@ -22,6 +22,7 @@ inductive «Kind» where
   | «DEnum»
   | «DCase»
   | «DProto»
+  | «DRule»
   | «DOp»
   | «DTrans»
   | «DHandler»
@@ -2183,6 +2184,63 @@ pure (← «isT» «ts» "proof".toUTF8)
 }));
 }
 
+def «ruleDecl_loop0» («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isT» «ts» ")".toUTF8))
+} : Option Bool)) st') then «ruleDecl_loop0» «name» «line» «ts0» (← (fun ((«ps», «ts») : («Nodes» × «Nodes»)) => (do {
+let mut «ps» := «ps»;
+let mut «ts» := «ts»;
+«ps» := («Nodes».«NCons» (← «leaf» «Kind».«Name» (← «needIdent» «ts») (← «at» «ts»)) «ps»);
+«ts» := (← «tail» «ts»);
+if (!(← «isT» «ts» ")".toUTF8)) then {
+«ts» := (← «expect» «ts» ",".toUTF8);
+} else {
+let _ := ();
+};
+pure («ps», «ts»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleDecl_loop1» («ps» : «Nodes») («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : (Bool × «Nodes» × «Nodes»)) : Option (Bool × «Nodes» × «Nodes») := do {
+if (← (fun ((«more», _, _) : (Bool × «Nodes» × «Nodes»)) => (do {
+pure «more»
+} : Option Bool)) st') then «ruleDecl_loop1» «ps» «name» «line» «ts0» (← (fun ((«more», «body», «ts») : (Bool × «Nodes» × «Nodes»)) => (do {
+let mut «more» := «more»;
+let mut «body» := «body»;
+let mut «ts» := «ts»;
+let «a» ← (pure (← «tterm» «ts» "(".toUTF8));
+«body» := («Nodes».«NCons» (← «pn» «a») «body»);
+«ts» := (← «pr» «a»);
+«more» := (← «isT» «ts» ",".toUTF8);
+if «more» then {
+«ts» := (← «tail» «ts»);
+} else {
+let _ := ();
+};
+pure («more», «body», «ts»)
+} : Option (Bool × «Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleDecl» («ts0» : «Nodes») : Option «PR» := do {
+let «line» ← (pure (← «at» «ts0»));
+let «name» ← (pure (← «needIdent» «ts0»));
+let mut «ts» := (← «expect» (← «tail» «ts0») "(".toUTF8);
+let mut «ps» := «Nodes».«NNil»;
+let t_ ← «ruleDecl_loop0» «name» «line» «ts0» («ps», «ts»);
+«ps» := t_.1;
+«ts» := t_.2;
+«ts» := (← «expect» (← «tail» «ts») "=".toUTF8);
+let mut «body» := «Nodes».«NNil»;
+let mut «more» := true;
+let t_ ← «ruleDecl_loop1» «ps» «name» «line» «ts0» («more», «body», «ts»);
+«more» := t_.1;
+«body» := t_.2.1;
+«ts» := t_.2.2;
+pure («PR».«PR» («Node».«Node» «Kind».«DRule» «name» "".toUTF8 (0 : Int) «line» («Nodes».«NCons» (← «list» «Kind».«Names» «line» (← «rev» «ps»)) (← «rev» «body»))) «ts»);
+}
+
 def «names_loop0» («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
 pure (← «isT» «ts» ",".toUTF8)
@@ -3684,66 +3742,6 @@ let t_ ← «checkEnum_loop1» «ds» «g» «gs» «d» «ds0» «cs»;
 pure ()
 }
 
-def «checkProto_loop1» («ops» : «Nodes») («st» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
-if (← (fun («tr» : («Nodes»)) => (do {
-pure (!(← «isNil» «tr»))
-} : Option Bool)) st') then «checkProto_loop1» «ops» «st» «d» «ds» (← (fun («tr» : («Nodes»)) => (do {
-let mut «tr» := «tr»;
-if (← (do {
-if (!(← «has» «st» (← «text» (← «head» «tr»)))) then {
-pure true
-} else {
-pure (!(← «has» «st» (← «text2» (← «head» «tr»))))
-}
-})) then {
-let _ := (← «err» "unknown state in op".toUTF8 (← «text» (← «head» «ops»)) (← «lineOf» (← «head» «ops»)));
-} else {
-let _ := ();
-};
-«tr» := (← «tail» «tr»);
-pure «tr»
-} : Option («Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «checkProto_loop0» («st» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
-if (← (fun («ops» : («Nodes»)) => (do {
-pure (!(← «isNil» «ops»))
-} : Option Bool)) st') then «checkProto_loop0» «st» «d» «ds» (← (fun («ops» : («Nodes»)) => (do {
-let mut «ops» := «ops»;
-let mut «tr» := (← «kids» (← «kid» (← «head» «ops») (2 : Int)));
-let t_ ← «checkProto_loop1» «ops» «st» «d» «ds» «tr»;
-«tr» := t_;
-«ops» := (← «tail» «ops»);
-pure «ops»
-} : Option («Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «checkProto» («ds» : «Nodes») («d» : «Node») : Option Unit := do {
-let «st» ← (pure (← «protoStates» «ds» (← «text» «d»)));
-if (!(← «has» «st» (← «text2» «d»))) then {
-let _ := (← «err» "unknown start state in protocol".toUTF8 (← «text» «d») (← «lineOf» «d»));
-} else {
-let _ := ();
-};
-let mut «ops» := (← «kids» (← «kid» «d» (3 : Int)));
-let t_ ← «checkProto_loop0» «st» «d» «ds» «ops»;
-«ops» := t_;
-let «dn» ← (pure (← «text» (← «kid» «d» (2 : Int))));
-if (← (do {
-if (decide ((← «rt_str_len» «dn») > (0 : Int))) then {
-pure (!(← «found» (← «find» (← «kids» (← «kid» «d» (3 : Int))) «Kind».«DOp» «dn»)))
-} else {
-pure false
-}
-})) then {
-pure (← «err» "unknown drop op".toUTF8 «dn» (← «lineOf» «d»));
-} else {
-pure ();
-};
-}
-
 def «tparams» («f» : «Node») : Option «Nodes» := do {
 pure (← «groupBinders» (← «kids» (← «kid» «f» (4 : Int))));
 }
@@ -4827,7 +4825,7 @@ pure (← «tail» (← «kids» «a»));
 if (← «eqs» (← «text» «a») "next".toUTF8) then {
 pure («Nodes».«NCons» (← «kid» «a» (0 : Int)) (← «one» (← «kid» «a» (2 : Int))));
 } else {
-pure «Nodes».«NNil»;
+pure (← «kids» «a»);
 };
 };
 }
@@ -5023,6 +5021,303 @@ pure («Nodes».«NCons» («Node».«Node» «Kind».«Name» (← «text» (�
 partial_fixpoint
 
 end
+
+def «protoRules» («ds» : «Nodes») («p» : ByteArray) : Option «Nodes» := do {
+pure (← «kids» (← «kid» (← «find» «ds» «Kind».«DProto» «p») (4 : Int)));
+}
+
+def «ruleProto_loop0» («line» : Int) («rel» : ByteArray) («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × Int × ByteArray)) : Option («Nodes» × Int × ByteArray) := do {
+if (← (fun ((«ps», _, _) : («Nodes» × Int × ByteArray)) => (do {
+pure (!(← «isNil» «ps»))
+} : Option Bool)) st') then «ruleProto_loop0» «line» «rel» «f» «ds» (← (fun ((«ps», «n», «res») : («Nodes» × Int × ByteArray)) => (do {
+let mut «ps» := «ps»;
+let mut «n» := «n»;
+let mut «res» := «res»;
+if (← «found» (← «find» (← «protoRules» «ds» (← «text» (← «head» «ps»))) «Kind».«DRule» «rel»)) then {
+«res» := (← «text» (← «head» «ps»));
+«n» := («n» + (1 : Int));
+} else {
+let _ := ();
+};
+«ps» := (← «tail» «ps»);
+pure («ps», «n», «res»)
+} : Option («Nodes» × Int × ByteArray))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleProto» («ds» : «Nodes») («f» : «Node») («rel» : ByteArray) («line» : Int) : Option ByteArray := do {
+let mut «res» := "".toUTF8;
+let mut «n» := (0 : Int);
+let mut «ps» := (← «capProtos» «ds» «f»);
+let t_ ← «ruleProto_loop0» «line» «rel» «f» «ds» («ps», «n», «res»);
+«ps» := t_.1;
+«n» := t_.2.1;
+«res» := t_.2.2;
+if («n» == (0 : Int)) then {
+let _ := (← «err» "unknown relation in facts:".toUTF8 «rel» «line»);
+} else {
+let _ := ();
+};
+if (decide («n» > (1 : Int))) then {
+let _ := (← «err» "relation defined in two protocols of this def:".toUTF8 «rel» «line»);
+} else {
+let _ := ();
+};
+pure «res»;
+}
+
+def «needAtomOf_loop0» («a» : «Node») («p» : ByteArray) («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («xs» : («Nodes»)) => (do {
+pure (!(← «isNil» «xs»))
+} : Option Bool)) st') then «needAtomOf_loop0» «a» «p» «ds» (← (fun («xs» : («Nodes»)) => (do {
+let mut «xs» := «xs»;
+let _ := (← «needState» «ds» «p» (← «head» «xs»));
+«xs» := (← «tail» «xs»);
+pure «xs»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «needAtomOf» («ds» : «Nodes») («p» : ByteArray) («a» : «Node») : Option Unit := do {
+if (← «eqs» (← «text» «a») "next".toUTF8) then {
+if ((← «len» (← «kids» «a»)) != (3 : Int)) then {
+let _ := (← «err» "next takes 3 args:".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+if (!(← «found» (← «find» (← «kids» (← «kid» (← «find» «ds» «Kind».«DProto» «p») (3 : Int))) «Kind».«DOp» (← «text» (← «kid» «a» (1 : Int)))))) then {
+let _ := (← «err» "next: not an op of protocol".toUTF8 «p» (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+} else {
+let «rl» ← (pure (← «find» (← «protoRules» «ds» «p») «Kind».«DRule» (← «text» «a»)));
+if (!(← «found» «rl»)) then {
+let _ := (← «err» "unknown relation in rule:".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+if ((← «len» (← «kids» «a»)) != (← «len» (← «kids» (← «kid» «rl» (0 : Int))))) then {
+let _ := (← «err» "wrong number of args for relation".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+let _ := ();
+};
+};
+let mut «xs» := (← «statePos» «a»);
+let t_ ← «needAtomOf_loop0» «a» «p» «ds» «xs»;
+«xs» := t_;
+pure ()
+}
+
+def «checkRules_loop1» («prev» : «Node») («rl» : «Node») («rs» : «Nodes») («seen» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«as», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «as»))
+} : Option Bool)) st') then «checkRules_loop1» «prev» «rl» «rs» «seen» «d» «ds» (← (fun ((«as», «bvars») : («Nodes» × «Nodes»)) => (do {
+let mut «as» := «as»;
+let mut «bvars» := «bvars»;
+let _ := (← «needAtomOf» «ds» (← «text» «d») (← «head» «as»));
+«bvars» := (← «append» (← «statePos» (← «head» «as»)) «bvars»);
+«as» := (← «tail» «as»);
+pure («as», «bvars»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkRules_loop2» («as» : «Nodes») («bvars» : «Nodes») («prev» : «Node») («rl» : «Node») («rs» : «Nodes») («seen» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («ps» : («Nodes»)) => (do {
+pure (!(← «isNil» «ps»))
+} : Option Bool)) st') then «checkRules_loop2» «as» «bvars» «prev» «rl» «rs» «seen» «d» «ds» (← (fun («ps» : («Nodes»)) => (do {
+let mut «ps» := «ps»;
+if (!(← «isVarName» (← «text» (← «head» «ps»)))) then {
+let _ := (← «err» "rule def param must be a variable:".toUTF8 (← «text» (← «head» «ps»)) (← «lineOf» «rl»));
+} else {
+let _ := ();
+};
+if (!(← «has» «bvars» (← «text» (← «head» «ps»)))) then {
+let _ := (← «err» "rule def param not in its body:".toUTF8 (← «text» (← «head» «ps»)) (← «lineOf» «rl»));
+} else {
+let _ := ();
+};
+«ps» := (← «tail» «ps»);
+pure «ps»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkRules_loop0» («d» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«rs», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «rs»))
+} : Option Bool)) st') then «checkRules_loop0» «d» «ds» (← (fun ((«rs», «seen») : («Nodes» × «Nodes»)) => (do {
+let mut «rs» := «rs»;
+let mut «seen» := «seen»;
+let «rl» ← (pure (← «head» «rs»));
+if (← (do {
+if (← (do {
+if (← «eqs» (← «text» «rl») "at".toUTF8) then {
+pure true
+} else {
+pure (← «eqs» (← «text» «rl») "next".toUTF8)
+}
+})) then {
+pure true
+} else {
+pure (← «eqs» (← «text» «rl») "q".toUTF8)
+}
+})) then {
+let _ := (← «err» "reserved relation name:".toUTF8 (← «text» «rl») (← «lineOf» «rl»));
+} else {
+let _ := ();
+};
+let «prev» ← (pure (← «find» «seen» «Kind».«DRule» (← «text» «rl»)));
+if (← (do {
+if (← «found» «prev») then {
+pure ((← «len» (← «kids» (← «kid» «prev» (0 : Int)))) != (← «len» (← «kids» (← «kid» «rl» (0 : Int)))))
+} else {
+pure false
+}
+})) then {
+let _ := (← «err» "rule defs of one relation differ in arity:".toUTF8 (← «text» «rl») (← «lineOf» «rl»));
+} else {
+let _ := ();
+};
+«seen» := («Nodes».«NCons» «rl» «seen»);
+let mut «bvars» := «Nodes».«NNil»;
+let mut «as» := (← «tail» (← «kids» «rl»));
+let t_ ← «checkRules_loop1» «prev» «rl» «rs» «seen» «d» «ds» («as», «bvars»);
+«as» := t_.1;
+«bvars» := t_.2;
+let mut «ps» := (← «kids» (← «kid» «rl» (0 : Int)));
+let t_ ← «checkRules_loop2» «as» «bvars» «prev» «rl» «rs» «seen» «d» «ds» «ps»;
+«ps» := t_;
+«rs» := (← «tail» «rs»);
+pure («rs», «seen»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkRules» («ds» : «Nodes») («d» : «Node») : Option Unit := do {
+let mut «seen» := «Nodes».«NNil»;
+let mut «rs» := (← «kids» (← «kid» «d» (4 : Int)));
+let t_ ← «checkRules_loop0» «d» «ds» («rs», «seen»);
+«rs» := t_.1;
+«seen» := t_.2;
+pure ()
+}
+
+def «ruleClause_loop1» («as» : «Nodes») («rl» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«xs», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «xs»))
+} : Option Bool)) st') then «ruleClause_loop1» «as» «rl» (← (fun ((«xs», «vars») : («Nodes» × «Nodes»)) => (do {
+let mut «xs» := «xs»;
+let mut «vars» := «vars»;
+if (← (do {
+if (← «isVarName» (← «text» (← «head» «xs»))) then {
+pure (!(← «has» «vars» (← «text» (← «head» «xs»))))
+} else {
+pure false
+}
+})) then {
+«vars» := («Nodes».«NCons» (← «head» «xs») «vars»);
+} else {
+let _ := ();
+};
+«xs» := (← «tail» «xs»);
+pure («xs», «vars»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleClause_loop0» («rl» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«as», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «as»))
+} : Option Bool)) st') then «ruleClause_loop0» «rl» (← (fun ((«as», «vars») : («Nodes» × «Nodes»)) => (do {
+let mut «as» := «as»;
+let mut «vars» := «vars»;
+let mut «xs» := (← «statePos» (← «head» «as»));
+let t_ ← «ruleClause_loop1» «as» «rl» («xs», «vars»);
+«xs» := t_.1;
+«vars» := t_.2;
+«as» := (← «tail» «as»);
+pure («as», «vars»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleClause_loop2» («vs» : «Nodes») («vars» : «Nodes») («rl» : «Node») (st' : («Lits» × «Nodes»)) : Option («Lits» × «Nodes») := do {
+if (← (fun ((_, «as») : («Lits» × «Nodes»)) => (do {
+pure (!(← «isNil» «as»))
+} : Option Bool)) st') then «ruleClause_loop2» «vs» «vars» «rl» (← (fun ((«body», «as») : («Lits» × «Nodes»)) => (do {
+let mut «body» := «body»;
+let mut «as» := «as»;
+«body» := («Lits».«LitCons» («Lit».«Pos» («Atom».«Atom» (← «text» (← «head» «as»)) (← «toArgs» «vs» (← «kids» (← «head» «as»))))) «body»);
+«as» := (← «tail» «as»);
+pure («body», «as»)
+} : Option («Lits» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleClause» («rl» : «Node») : Option «Clause» := do {
+let mut «vars» := (← «rev» (← «kids» (← «kid» «rl» (0 : Int))));
+let mut «as» := (← «tail» (← «kids» «rl»));
+let t_ ← «ruleClause_loop0» «rl» («as», «vars»);
+«as» := t_.1;
+«vars» := t_.2;
+let «vs» ← (pure (← «rev» «vars»));
+let mut «body» := «Lits».«LitNil»;
+«as» := (← «tail» (← «kids» «rl»));
+let t_ ← «ruleClause_loop2» «vs» «vars» «rl» («body», «as»);
+«body» := t_.1;
+«as» := t_.2;
+pure («Clause».«Clause» («Atom».«Atom» (← «text» «rl») (← «toArgs» «vs» (← «kids» (← «kid» «rl» (0 : Int))))) «body»);
+}
+
+def «ruleClauses_loop1» («rs0» : «Nodes») («ps» : «Nodes») («other» : «Nodes») («cs» : «Clauses») («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Clauses»)) : Option («Nodes» × «Clauses») := do {
+if (← (fun ((«rs», _) : («Nodes» × «Clauses»)) => (do {
+pure (!(← «isNil» «rs»))
+} : Option Bool)) st') then «ruleClauses_loop1» «rs0» «ps» «other» «cs» «f» «ds» (← (fun ((«rs», «out») : («Nodes» × «Clauses»)) => (do {
+let mut «rs» := «rs»;
+let mut «out» := «out»;
+if (← «has» «other» (← «text» (← «head» «rs»))) then {
+let _ := (← «err» "relation defined in two protocols of this def:".toUTF8 (← «text» (← «head» «rs»)) (← «lineOf» «f»));
+} else {
+let _ := ();
+};
+«out» := («Clauses».«ClCons» (← «ruleClause» (← «head» «rs»)) «out»);
+«rs» := (← «tail» «rs»);
+pure («rs», «out»)
+} : Option («Nodes» × «Clauses»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleClauses_loop0» («cs» : «Clauses») («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Clauses»)) : Option («Nodes» × «Nodes» × «Clauses») := do {
+if (← (fun ((«ps», _, _) : («Nodes» × «Nodes» × «Clauses»)) => (do {
+pure (!(← «isNil» «ps»))
+} : Option Bool)) st') then «ruleClauses_loop0» «cs» «f» «ds» (← (fun ((«ps», «other», «out») : («Nodes» × «Nodes» × «Clauses»)) => (do {
+let mut «ps» := «ps»;
+let mut «other» := «other»;
+let mut «out» := «out»;
+let «rs0» ← (pure (← «protoRules» «ds» (← «text» (← «head» «ps»))));
+let mut «rs» := «rs0»;
+let t_ ← «ruleClauses_loop1» «rs0» «ps» «other» «cs» «f» «ds» («rs», «out»);
+«rs» := t_.1;
+«out» := t_.2;
+«other» := (← «append» «rs0» «other»);
+«ps» := (← «tail» «ps»);
+pure («ps», «other», «out»)
+} : Option («Nodes» × «Nodes» × «Clauses»))) st') else pure st'
+}
+partial_fixpoint
+
+def «ruleClauses» («ds» : «Nodes») («f» : «Node») («cs» : «Clauses») : Option «Clauses» := do {
+let mut «out» := «cs»;
+let mut «other» := «Nodes».«NNil»;
+let mut «ps» := (← «capProtos» «ds» «f»);
+let t_ ← «ruleClauses_loop0» «cs» «f» «ds» («ps», «other», «out»);
+«ps» := t_.1;
+«other» := t_.2.1;
+«out» := t_.2.2;
+pure «out»;
+}
 
 def «isGeneric» («d» : «Node») : Option Bool := do {
 pure (← (do {
@@ -7260,6 +7555,67 @@ let t_ ← «params_loop0» «ts0» («ps», «ts»);
 pure («PR».«PR» (← «list» «Kind».«Params» (← «at» «ts0») (← «rev» «ps»)) (← «tail» «ts»));
 }
 
+def «checkProto_loop1» («ops» : «Nodes») («st» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («tr» : («Nodes»)) => (do {
+pure (!(← «isNil» «tr»))
+} : Option Bool)) st') then «checkProto_loop1» «ops» «st» «d» «ds» (← (fun («tr» : («Nodes»)) => (do {
+let mut «tr» := «tr»;
+if (← (do {
+if (!(← «has» «st» (← «text» (← «head» «tr»)))) then {
+pure true
+} else {
+pure (!(← «has» «st» (← «text2» (← «head» «tr»))))
+}
+})) then {
+let _ := (← «err» "unknown state in op".toUTF8 (← «text» (← «head» «ops»)) (← «lineOf» (← «head» «ops»)));
+} else {
+let _ := ();
+};
+«tr» := (← «tail» «tr»);
+pure «tr»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkProto_loop0» («st» : «Nodes») («d» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («ops» : («Nodes»)) => (do {
+pure (!(← «isNil» «ops»))
+} : Option Bool)) st') then «checkProto_loop0» «st» «d» «ds» (← (fun («ops» : («Nodes»)) => (do {
+let mut «ops» := «ops»;
+let mut «tr» := (← «kids» (← «kid» (← «head» «ops») (2 : Int)));
+let t_ ← «checkProto_loop1» «ops» «st» «d» «ds» «tr»;
+«tr» := t_;
+«ops» := (← «tail» «ops»);
+pure «ops»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkProto» («ds» : «Nodes») («d» : «Node») : Option Unit := do {
+let «st» ← (pure (← «protoStates» «ds» (← «text» «d»)));
+if (!(← «has» «st» (← «text2» «d»))) then {
+let _ := (← «err» "unknown start state in protocol".toUTF8 (← «text» «d») (← «lineOf» «d»));
+} else {
+let _ := ();
+};
+let _ := (← «checkRules» «ds» «d»);
+let mut «ops» := (← «kids» (← «kid» «d» (3 : Int)));
+let t_ ← «checkProto_loop0» «st» «d» «ds» «ops»;
+«ops» := t_;
+let «dn» ← (pure (← «text» (← «kid» «d» (2 : Int))));
+if (← (do {
+if (decide ((← «rt_str_len» «dn») > (0 : Int))) then {
+pure (!(← «found» (← «find» (← «kids» (← «kid» «d» (3 : Int))) «Kind».«DOp» «dn»)))
+} else {
+pure false
+}
+})) then {
+pure (← «err» "unknown drop op".toUTF8 «dn» (← «lineOf» «d»));
+} else {
+pure ();
+};
+}
+
 def «capParams_loop1» («gs» : «Nodes») («sol» : «Nodes») («f» : «Node») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«bs», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «bs»))
@@ -8477,7 +8833,21 @@ let _ := ();
 let _ := (← «needState» «ds» «p» (← «kid» «a» (0 : Int)));
 let _ := (← «needState» «ds» «p» (← «kid» «a» (2 : Int)));
 } else {
-let _ := (← «err» "not yet: fact".toUTF8 (← «text» «a») (← «lineOf» «a»));
+if (decide ((← «rt_str_len» (← «text2» «g»)) > (0 : Int))) then {
+let _ := (← «err» "not yet: fact after the result".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+if (← (do {
+if (← «eqs» (← «text» «a») "at".toUTF8) then {
+pure true
+} else {
+pure (← «eqs» (← «text» «a») "next".toUTF8)
+}
+})) then {
+let _ := (← «err» "wrong number of args for relation".toUTF8 (← «text» «a») (← «lineOf» «a»));
+} else {
+let _ := (← «needAtomOf» «ds» (← «ruleProto» «ds» «f» (← «text» «a») (← «lineOf» «a»)) «a»);
+};
+};
 };
 };
 if (decide ((← «rt_str_len» (← «text2» «g»)) > (0 : Int))) then {
@@ -9590,10 +9960,11 @@ pure («PR».«PR» («Node».«Node» «Kind».«DFn» «name» "".toUTF8 «ext
 };
 }
 
-def «protoDecl_loop0» («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) : Option («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes») := do {
-if (← (fun ((_, _, _, _, _, «ts») : («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) => (do {
+def «protoDecl_loop0» («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes») := do {
+if (← (fun ((_, _, _, _, _, _, «ts») : («Nodes» × «Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isK» «ts» «Kind».«TDedent»))
-} : Option Bool)) st') then «protoDecl_loop0» «name» «line» «ts0» (← (fun ((«ops», «dropOp», «ends», «start», «states», «ts») : («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «protoDecl_loop0» «name» «line» «ts0» (← (fun ((«rules», «ops», «dropOp», «ends», «start», «states», «ts») : («Nodes» × «Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»)) => (do {
+let mut «rules» := «rules»;
 let mut «ops» := «ops»;
 let mut «dropOp» := «dropOp»;
 let mut «ends» := «ends»;
@@ -9618,6 +9989,11 @@ if (← «isT» «ts» "drop".toUTF8) then {
 «dropOp» := (← «needIdent» (← «tail» «ts»));
 «ts» := (← «drop» «ts» (2 : Int));
 } else {
+if (← «isT» «ts» "rule".toUTF8) then {
+let «p» ← (pure (← «ruleDecl» (← «expect» (← «tail» «ts») "def".toUTF8)));
+«rules» := («Nodes».«NCons» (← «pn» «p») «rules»);
+«ts» := (← «pr» «p»);
+} else {
 if (← «isT» «ts» "op".toUTF8) then {
 let «p» ← (pure (← «opDecl» (← «tail» «ts»)));
 «ops» := («Nodes».«NCons» (← «pn» «p») «ops»);
@@ -9629,9 +10005,10 @@ let _ := (← «perr» «ts» "protocol item".toUTF8);
 };
 };
 };
+};
 «ts» := (← «endLine» «ts»);
-pure («ops», «dropOp», «ends», «start», «states», «ts»)
-} : Option («Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»))) st') else pure st'
+pure («rules», «ops», «dropOp», «ends», «start», «states», «ts»)
+} : Option («Nodes» × «Nodes» × ByteArray × «Nodes» × ByteArray × «Nodes» × «Nodes»))) st') else pure st'
 }
 partial_fixpoint
 
@@ -9644,14 +10021,16 @@ let mut «start» := "".toUTF8;
 let mut «ends» := «Nodes».«NNil»;
 let mut «dropOp» := "".toUTF8;
 let mut «ops» := «Nodes».«NNil»;
-let t_ ← «protoDecl_loop0» «name» «line» «ts0» («ops», «dropOp», «ends», «start», «states», «ts»);
-«ops» := t_.1;
-«dropOp» := t_.2.1;
-«ends» := t_.2.2.1;
-«start» := t_.2.2.2.1;
-«states» := t_.2.2.2.2.1;
-«ts» := t_.2.2.2.2.2;
-let «parts» ← (pure («Nodes».«NCons» (← «list» «Kind».«Names» «line» «states») («Nodes».«NCons» (← «list» «Kind».«Names» «line» «ends») («Nodes».«NCons» (← «leaf» «Kind».«Name» «dropOp» «line») (← «one» (← «list» «Kind».«Names» «line» (← «rev» «ops»)))))));
+let mut «rules» := «Nodes».«NNil»;
+let t_ ← «protoDecl_loop0» «name» «line» «ts0» («rules», «ops», «dropOp», «ends», «start», «states», «ts»);
+«rules» := t_.1;
+«ops» := t_.2.1;
+«dropOp» := t_.2.2.1;
+«ends» := t_.2.2.2.1;
+«start» := t_.2.2.2.2.1;
+«states» := t_.2.2.2.2.2.1;
+«ts» := t_.2.2.2.2.2.2;
+let «parts» ← (pure («Nodes».«NCons» (← «list» «Kind».«Names» «line» «states») («Nodes».«NCons» (← «list» «Kind».«Names» «line» «ends») («Nodes».«NCons» (← «leaf» «Kind».«Name» «dropOp» «line») («Nodes».«NCons» (← «list» «Kind».«Names» «line» (← «rev» «ops»)) (← «one» (← «list» «Kind».«Names» «line» (← «rev» «rules»))))))));
 pure («PR».«PR» («Node».«Node» «Kind».«DProto» «name» «start» (0 : Int) «line» «parts») (← «tail» «ts»));
 }
 
@@ -9924,7 +10303,7 @@ pure ()
 
 def «solutions» («ds» : «Nodes») («f» : «Node») («entry» : «Nodes») : Option «Nodes» := do {
 let «vars» ← (pure (← «entryVars» «f»));
-match (← «evalDatalog» («Clauses».«ClCons» (← «query» «f» «vars») «Clauses».«ClNil») (← «atFacts» «ds» «f» «entry» (← «nextFacts» «ds» «f» «Edb».«EdbNil»))) with
+match (← «evalDatalog» («Clauses».«ClCons» (← «query» «f» «vars») (← «ruleClauses» «ds» «f» «Clauses».«ClNil»)) (← «atFacts» «ds» «f» «entry» (← «nextFacts» «ds» «f» «Edb».«EdbNil»))) with
 | «Model».«Unsafe» _ => {
 let _ := (← «err» "internal: unsafe facts of".toUTF8 (← «text» «f») (← «lineOf» «f»));
 pure «Nodes».«NNil»;

@@ -1,0 +1,10 @@
+// expect: capability must end in its declared state
+protocol Door:
+  state Shut, Open1, Open2
+  start Shut
+  end Open2
+  op knock(): I64 : Shut -> Open1, Open1 -> Open2
+  rule def reach(s, t) = next(s, knock, t)
+  rule def reach(s, t) = next(s, knock, u), reach(u, t)
+def once {d: Door} <at(d, Shut), reach(Shut, t)> (): I64 <at(d, t)> = d.knock()
+def main(): I64 = 0

@@ -91,7 +91,7 @@ def entryVars {r: Region} (f: Node): Nodes =
 def statePos {r: Region} (a: Node): Nodes =
   if eqs(text(a), "at") then tail(kids(a))
   else if eqs(text(a), "next") then NCons(kid(a, 0), one(kid(a, 2)))
-  else NNil
+  else kids(a)
 
 def hasVars {r: Region} (f: Node): Bool = !isNil(entryVars(f))
 
@@ -113,7 +113,10 @@ def needFacts {r: Region} (ds: Nodes, f: Node, g: Node): Unit =
       if rt_str_len(p) == 0 then err("next: not an op of a capability of this def:", text(kid(a, 1)), lineOf(a)) else ()
       needState(ds, p, kid(a, 0))
       needState(ds, p, kid(a, 2))
-    else err("not yet: fact", text(a), lineOf(a))
+    else if rt_str_len(text2(g)) > 0 then err("not yet: fact after the result", text(a), lineOf(a))
+    else if eqs(text(a), "at") || eqs(text(a), "next") then err("wrong number of args for relation", text(a), lineOf(a))
+    // a rule def of the protocol of one of f's caps
+    else needAtomOf(ds, ruleProto(ds, f, text(a), lineOf(a)), a)
     if rt_str_len(text2(g)) > 0 then needBound(f, a) else ()
     c = tail(c)
 
@@ -188,7 +191,7 @@ def atFacts {r: Region} (ds: Nodes, f: Node, entry: Nodes, edb: Edb): Edb =
 // the solutions of f's entry facts: each a list of Name(var, state); entry = Name(cap, state) of a call, or NNil
 def solutions {r: Region} (ds: Nodes, f: Node, entry: Nodes): Nodes =
   val vars = entryVars(f)
-  evalDatalog(ClCons(query(f, vars), ClNil), atFacts(ds, f, entry, nextFacts(ds, f, EdbNil))) match
+  evalDatalog(ClCons(query(f, vars), ruleClauses(ds, f, ClNil)), atFacts(ds, f, entry, nextFacts(ds, f, EdbNil))) match
     case Unsafe(_) =>
       err("internal: unsafe facts of", text(f), lineOf(f))
       NNil
@@ -227,3 +230,93 @@ def defSol {r: Region} (ds: Nodes, f: Node): Nodes = if hasVars(f) then kids(hea
 // the entry of a call: each callee capability (m: GState s = callee binder, t = caller cap) at its state in Γ
 def capEntry {r: Region} (m: Nodes, gam: Nodes): Nodes =
   if isNil(m) then NNil else NCons(Node(Name, text(head(m)), state(gam, text2(head(m))), 0, 0, NNil), capEntry(tail(m), gam))
+
+// ── rule defs of protocols (vic 2026-11-05: a protocol is its own Datalog program) ──
+def protoRules(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 4))
+
+// the protocols of f's caps that define relation rel; err when none or two
+def ruleProto {r: Region} (ds: Nodes, f: Node, rel: Str, line: I64): Str =
+  var res = ""
+  var n = 0
+  var ps = capProtos(ds, f)
+  while !isNil(ps) do
+    if found(find(protoRules(ds, text(head(ps))), DRule, rel)) then
+      res = text(head(ps))
+      n = n + 1
+    else ()
+    ps = tail(ps)
+  if n == 0 then err("unknown relation in facts:", rel, line) else ()
+  if n > 1 then err("relation defined in two protocols of this def:", rel, line) else ()
+  res
+
+// atom a uses a relation of protocol p (next or a rule def of p) w/ its arity; states are p's or variables
+def needAtomOf {r: Region} (ds: Nodes, p: Str, a: Node): Unit =
+  if eqs(text(a), "next") then
+    if len(kids(a)) != 3 then err("next takes 3 args:", text(a), lineOf(a)) else ()
+    if !found(find(kids(kid(find(ds, DProto, p), 3)), DOp, text(kid(a, 1)))) then err("next: not an op of protocol", p, lineOf(a)) else ()
+  else
+    val rl = find(protoRules(ds, p), DRule, text(a))
+    if !found(rl) then err("unknown relation in rule:", text(a), lineOf(a)) else ()
+    if len(kids(a)) != len(kids(kid(rl, 0))) then err("wrong number of args for relation", text(a), lineOf(a)) else ()
+  var xs = statePos(a)
+  while !isNil(xs) do
+    needState(ds, p, head(xs))
+    xs = tail(xs)
+
+// the rule defs of protocol d: names not at/next, unique; params variables, each in the body (Datalog safety)
+def checkRules {r: Region} (ds: Nodes, d: Node): Unit =
+  var seen = NNil
+  var rs = kids(kid(d, 4))
+  while !isNil(rs) do
+    val rl = head(rs)
+    if eqs(text(rl), "at") || eqs(text(rl), "next") || eqs(text(rl), "q") then err("reserved relation name:", text(rl), lineOf(rl)) else ()
+    // several rule defs of one name = its clauses (a disjunction, as Prolog); one arity
+    val prev = find(seen, DRule, text(rl))
+    if found(prev) && len(kids(kid(prev, 0))) != len(kids(kid(rl, 0))) then err("rule defs of one relation differ in arity:", text(rl), lineOf(rl)) else ()
+    seen = NCons(rl, seen)
+    var bvars = NNil
+    var as = tail(kids(rl))
+    while !isNil(as) do
+      needAtomOf(ds, text(d), head(as))
+      bvars = append(statePos(head(as)), bvars)
+      as = tail(as)
+    var ps = kids(kid(rl, 0))
+    while !isNil(ps) do
+      if !isVarName(text(head(ps))) then err("rule def param must be a variable:", text(head(ps)), lineOf(rl)) else ()
+      if !has(bvars, text(head(ps))) then err("rule def param not in its body:", text(head(ps)), lineOf(rl)) else ()
+      ps = tail(ps)
+    rs = tail(rs)
+
+// rule def rl as a Datalog clause: params first, then the body's other variables
+def ruleClause {r: Region} (rl: Node): Clause =
+  var vars = rev(kids(kid(rl, 0)))
+  var as = tail(kids(rl))
+  while !isNil(as) do
+    var xs = statePos(head(as))
+    while !isNil(xs) do
+      if isVarName(text(head(xs))) && !has(vars, text(head(xs))) then vars = NCons(head(xs), vars) else ()
+      xs = tail(xs)
+    as = tail(as)
+  val vs = rev(vars)
+  var body = LitNil
+  as = tail(kids(rl))
+  while !isNil(as) do
+    body = LitCons(Pos(Atom(text(head(as)), toArgs(vs, kids(head(as))))), body)
+    as = tail(as)
+  Clause(Atom(text(rl), toArgs(vs, kids(kid(rl, 0)))), body)
+
+// the rule clauses of f's cap protocols onto cs; a name in two of them = reject (their clauses would merge)
+def ruleClauses {r: Region} (ds: Nodes, f: Node, cs: Clauses): Clauses =
+  var out = cs
+  var other = NNil
+  var ps = capProtos(ds, f)
+  while !isNil(ps) do
+    val rs0 = protoRules(ds, text(head(ps)))
+    var rs = rs0
+    while !isNil(rs) do
+      if has(other, text(head(rs))) then err("relation defined in two protocols of this def:", text(head(rs)), lineOf(f)) else ()
+      out = ClCons(ruleClause(head(rs)), out)
+      rs = tail(rs)
+    other = append(rs0, other)
+    ps = tail(ps)
+  out

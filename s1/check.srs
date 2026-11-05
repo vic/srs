@@ -318,9 +318,10 @@ def checkEnum {r: Region} (ds0: Nodes, d: Node): Unit =
       fs = tail(fs)
     cs = tail(cs)
 
-def checkProto(ds: Nodes, d: Node): Unit =
+def checkProto {r: Region} (ds: Nodes, d: Node): Unit =
   val st = protoStates(ds, text(d))
   if !has(st, text2(d)) then err("unknown start state in protocol", text(d), lineOf(d)) else ()
+  checkRules(ds, d)
   var ops = kids(kid(d, 3))
   while !isNil(ops) do
     var tr = kids(kid(head(ops), 2))

@@ -216,6 +216,7 @@ def protoDecl {r: Region} (ts0: Nodes): PR =
   var ends = NNil
   var dropOp = ""
   var ops = NNil
+  var rules = NNil
   while !isK(ts, TDedent) do
     if isT(ts, "state") then
       val p = names(tail(ts))
@@ -231,14 +232,39 @@ def protoDecl {r: Region} (ts0: Nodes): PR =
     else if isT(ts, "drop") then
       dropOp = needIdent(tail(ts))
       ts = drop(ts, 2)
+    else if isT(ts, "rule") then
+      val p = ruleDecl(expect(tail(ts), "def"))
+      rules = NCons(pn(p), rules)
+      ts = pr(p)
     else if isT(ts, "op") then
       val p = opDecl(tail(ts))
       ops = NCons(pn(p), ops)
       ts = pr(p)
     else perr(ts, "protocol item")
     ts = endLine(ts)
-  val parts = NCons(list(Names, line, states), NCons(list(Names, line, ends), NCons(leaf(Name, dropOp, line), one(list(Names, line, rev(ops))))))
+  val parts = NCons(list(Names, line, states), NCons(list(Names, line, ends), NCons(leaf(Name, dropOp, line), NCons(list(Names, line, rev(ops)), one(list(Names, line, rev(rules)))))))
   PR(Node(DProto, name, start, 0, line, parts), tail(ts))
+
+// rule def name(v1, v2) = atom, atom (in a protocol, vic 2026-11-05): a Datalog rule; DRule s = name, a = [Names params, atoms...]
+def ruleDecl {r: Region} (ts0: Nodes): PR =
+  val line = at(ts0)
+  val name = needIdent(ts0)
+  var ts = expect(tail(ts0), "(")
+  var ps = NNil
+  while !isT(ts, ")") do
+    ps = NCons(leaf(Name, needIdent(ts), at(ts)), ps)
+    ts = tail(ts)
+    if !isT(ts, ")") then ts = expect(ts, ",") else ()
+  ts = expect(tail(ts), "=")
+  var body = NNil
+  var more = true
+  while more do
+    val a = tterm(ts, "(")
+    body = NCons(pn(a), body)
+    ts = pr(a)
+    more = isT(ts, ",")
+    if more then ts = tail(ts) else ()
+  PR(Node(DRule, name, "", 0, line, NCons(list(Names, line, rev(ps)), rev(body))), ts)
 
 def opDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
