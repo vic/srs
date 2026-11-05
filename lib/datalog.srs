@@ -1,0 +1,299 @@
+// Datalog for the srs comptime evaluator (vic-9l7.3, vic/c/binders.md D1-D2). Stratified negation only (vic K1).
+// No function symbols: an argument is a variable or a value, so the facts a program can derive are finite and every
+// run ends (§17). A rule is range restricted (safe), and no relation depends on itself through negation.
+
+enum Val:
+  case VSym(s: Str)
+  case VInt(v: I64)
+
+enum Vals:
+  case ValNil
+  case ValCons(h: Val, t: Vals)
+
+enum Arg:
+  case AVar(n: I64)
+  case AVal(v: Val)
+
+enum Args:
+  case ArgNil
+  case ArgCons(h: Arg, t: Args)
+
+enum Atom:
+  case Atom(rel: Str, args: Args)
+
+enum Lit:
+  case Pos(a: Atom)
+  case Neg(a: Atom)
+
+enum Lits:
+  case LitNil
+  case LitCons(h: Lit, t: Lits)
+
+// head :- body. A fact is a clause with an empty body and no variables.
+enum Clause:
+  case Clause(head: Atom, body: Lits)
+
+enum Clauses:
+  case ClNil
+  case ClCons(h: Clause, t: Clauses)
+
+enum Fact:
+  case Fact(rel: Str, vals: Vals)
+
+enum Facts:
+  case FactNil
+  case FactCons(h: Fact, t: Facts)
+
+enum Env:
+  case EnvNil
+  case EnvBind(n: I64, v: Val, t: Env)
+
+enum Envs:
+  case EnvsNil
+  case EnvsCons(h: Env, t: Envs)
+
+// relation -> stratum
+enum Strata:
+  case StNil
+  case StCons(rel: Str, k: I64, t: Strata)
+
+// the result of a program: its model, or why it is not a program
+enum Model:
+  case Unsafe(rel: Str)
+  case NegCycle(rel: Str)
+  case Model(facts: Facts)
+
+// ── values and facts ──
+def valEq(a: Val, b: Val): Bool = a match
+  case VSym(x) => b match
+    case VSym(y) => rt_str_eq(x, y)
+    case VInt(_) => false
+  case VInt(x) => b match
+    case VSym(_) => false
+    case VInt(y) => x == y
+
+def valsEq(a: Vals, b: Vals): Bool = a match
+  case ValNil => b match
+    case ValNil => true
+    case ValCons(_, _) => false
+  case ValCons(x, xt) => b match
+    case ValNil => false
+    case ValCons(y, yt) => valEq(x, y) && valsEq(xt, yt)
+
+def factEq(a: Fact, b: Fact): Bool = a match
+  case Fact(p, xs) => b match
+    case Fact(q, ys) => rt_str_eq(p, q) && valsEq(xs, ys)
+
+def hasFact(db: Facts, f: Fact): Bool = db match
+  case FactNil => false
+  case FactCons(h, t) => factEq(h, f) || hasFact(t, f)
+
+// ── matching ──
+def envGet(r: Region, e: Env, n: I64): Arg = e match
+  case EnvNil => AVar(n)
+  case EnvBind(m, v, t) => if m == n then AVal(v) else envGet(r, t, n)
+
+// e extended so args match vals, or none
+def matchArgs(r: Region, e: Env, args: Args, vals: Vals): Envs = args match
+  case ArgNil => vals match
+    case ValNil => EnvsCons(e, EnvsNil)
+    case ValCons(_, _) => EnvsNil
+  case ArgCons(a, at) => vals match
+    case ValNil => EnvsNil
+    case ValCons(v, vt) => matchArg(r, e, a, v) match
+      case EnvsNil => EnvsNil
+      case EnvsCons(e2, _) => matchArgs(r, e2, at, vt)
+
+def matchArg(r: Region, e: Env, a: Arg, v: Val): Envs = a match
+  case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
+  case AVar(n) => envGet(r, e, n) match
+    case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
+    case AVar(_) => EnvsCons(EnvBind(n, v, e), EnvsNil)
+
+// every extension of e that matches atom a against a fact of db, in db order
+def matchFacts(r: Region, e: Env, a: Atom, db: Facts): Envs = db match
+  case FactNil => EnvsNil
+  case FactCons(f, t) => a match
+    case Atom(p, args) => f match
+      case Fact(q, vals) =>
+        val rest = matchFacts(r, e, a, t)
+        if rt_str_eq(p, q) then envsAppend(r, matchArgs(r, e, args, vals), rest) else rest
+
+def envsAppend(r: Region, a: Envs, b: Envs): Envs = a match
+  case EnvsNil => b
+  case EnvsCons(h, t) => EnvsCons(h, envsAppend(r, t, b))
+
+def matchEach(r: Region, es: Envs, a: Atom, db: Facts): Envs = es match
+  case EnvsNil => EnvsNil
+  case EnvsCons(e, t) => envsAppend(r, matchFacts(r, e, a, db), matchEach(r, t, a, db))
+
+// the values of args under e. evalDatalog runs only safe rules, so every variable is bound here
+// shortcut: an unbound variable is skipped, not an error; a typed safe clause (vars proven bound) would remove it
+def ground(r: Region, e: Env, args: Args): Vals = args match
+  case ArgNil => ValNil
+  case ArgCons(a, t) => a match
+    case AVal(v) => ValCons(v, ground(r, e, t))
+    case AVar(n) => envGet(r, e, n) match
+      case AVal(v) => ValCons(v, ground(r, e, t))
+      case AVar(_) => ground(r, e, t)
+
+def factOf(r: Region, e: Env, a: Atom): Fact = a match
+  case Atom(p, args) => Fact(p, ground(r, e, args))
+
+// the environments of the positive literals, then the ones no negative literal matches
+def joinPos(r: Region, es: Envs, body: Lits, db: Facts): Envs = body match
+  case LitNil => es
+  case LitCons(l, t) => l match
+    case Pos(a) => joinPos(r, matchEach(r, es, a, db), t, db)
+    case Neg(_) => joinPos(r, es, t, db)
+
+def dropNeg(r: Region, es: Envs, body: Lits, db: Facts): Envs = body match
+  case LitNil => es
+  case LitCons(l, t) => l match
+    case Pos(_) => dropNeg(r, es, t, db)
+    case Neg(a) => dropNeg(r, keepAbsent(r, es, a, db), t, db)
+
+def keepAbsent(r: Region, es: Envs, a: Atom, db: Facts): Envs = es match
+  case EnvsNil => EnvsNil
+  case EnvsCons(e, t) =>
+    if hasFact(db, factOf(r, e, a)) then keepAbsent(r, t, a, db) else EnvsCons(e, keepAbsent(r, t, a, db))
+
+// ── safety ──
+def argsHave(args: Args, n: I64): Bool = args match
+  case ArgNil => false
+  case ArgCons(a, t) => a match
+    case AVar(m) => m == n || argsHave(t, n)
+    case AVal(_) => argsHave(t, n)
+
+def posHas(body: Lits, n: I64): Bool = body match
+  case LitNil => false
+  case LitCons(l, t) => l match
+    case Pos(a) => a match
+      case Atom(_, args) => argsHave(args, n) || posHas(t, n)
+    case Neg(_) => posHas(t, n)
+
+// every variable of args is in a positive literal of body
+def bound(args: Args, body: Lits): Bool = args match
+  case ArgNil => true
+  case ArgCons(a, t) => a match
+    case AVar(n) => posHas(body, n) && bound(t, body)
+    case AVal(_) => bound(t, body)
+
+def negsBound(ls: Lits, body: Lits): Bool = ls match
+  case LitNil => true
+  case LitCons(l, t) => l match
+    case Pos(_) => negsBound(t, body)
+    case Neg(a) => a match
+      case Atom(_, args) => bound(args, body) && negsBound(t, body)
+
+def safe(c: Clause): Bool = c match
+  case Clause(h, body) => h match
+    case Atom(_, args) => bound(args, body) && negsBound(body, body)
+
+// ── strata ──
+def stratum(st: Strata, p: Str): I64 = st match
+  case StNil => 0
+  case StCons(q, k, t) => if rt_str_eq(p, q) then k else stratum(t, p)
+
+def setStratum(r: Region, st: Strata, p: Str, k: I64): Strata = st match
+  case StNil => StCons(p, k, StNil)
+  case StCons(q, j, t) => if rt_str_eq(p, q) then StCons(q, k, t) else StCons(q, j, setStratum(r, t, p, k))
+
+def relOf(a: Atom): Str = a match
+  case Atom(p, _) => p
+
+// the stratum a clause's head needs: >= each positive body relation, > each negative one
+def needs(st: Strata, body: Lits, k: I64): I64 = body match
+  case LitNil => k
+  case LitCons(l, t) => l match
+    case Pos(a) => needs(st, t, if stratum(st, relOf(a)) > k then stratum(st, relOf(a)) else k)
+    case Neg(a) => needs(st, t, if stratum(st, relOf(a)) + 1 > k then stratum(st, relOf(a)) + 1 else k)
+
+def raise(r: Region, st: Strata, cs: Clauses): Strata = cs match
+  case ClNil => st
+  case ClCons(c, t) => c match
+    case Clause(h, body) =>
+      val p = relOf(h)
+      val k = needs(st, body, stratum(st, p))
+      raise(r, if k > stratum(st, p) then setStratum(r, st, p, k) else st, t)
+
+def strataSame(a: Strata, b: Strata): Bool = a match
+  case StNil => b match
+    case StNil => true
+    case StCons(_, _, _) => false
+  case StCons(p, k, t) => b match
+    case StNil => false
+    case StCons(q, j, u) => rt_str_eq(p, q) && k == j && strataSame(t, u)
+
+def clauseCount(cs: Clauses): I64 = cs match
+  case ClNil => 0
+  case ClCons(_, t) => 1 + clauseCount(t)
+
+def topStratum(st: Strata, k: I64): I64 = st match
+  case StNil => k
+  case StCons(_, j, t) => topStratum(t, if j > k then j else k)
+
+// the first relation whose stratum went past n: it depends on itself through negation
+def overRel(st: Strata, n: I64): Str = st match
+  case StNil => ""
+  case StCons(p, k, t) => if k > n then p else overRel(t, n)
+
+// ── evaluation ──
+// facts of db plus the new facts rule c derives from db
+def derive(r: Region, c: Clause, db: Facts, acc: Facts): Facts = c match
+  case Clause(h, body) => addAll(r, dropNeg(r, joinPos(r, EnvsCons(EnvNil, EnvsNil), body, db), body, db), h, acc)
+
+def addAll(r: Region, es: Envs, h: Atom, acc: Facts): Facts = es match
+  case EnvsNil => acc
+  case EnvsCons(e, t) =>
+    val f = factOf(r, e, h)
+    addAll(r, t, h, if hasFact(acc, f) then acc else factAppend(r, acc, f))
+
+def factAppend(r: Region, db: Facts, f: Fact): Facts = db match
+  case FactNil => FactCons(f, FactNil)
+  case FactCons(h, t) => FactCons(h, factAppend(r, t, f))
+
+def factCount(db: Facts): I64 = db match
+  case FactNil => 0
+  case FactCons(_, t) => 1 + factCount(t)
+
+// one pass of every clause of stratum k
+def pass(r: Region, st: Strata, cs: Clauses, k: I64, db: Facts): Facts = cs match
+  case ClNil => db
+  case ClCons(c, t) => c match
+    case Clause(h, _) => pass(r, st, t, k, if stratum(st, relOf(h)) == k then derive(r, c, db, db) else db)
+
+// stratum k to its fixpoint: facts only grow and are finite, so it ends
+def fix(r: Region, st: Strata, cs: Clauses, k: I64, db: Facts): Facts =
+  val db2 = pass(r, st, cs, k, db)
+  if factCount(db2) == factCount(db) then db else fix(r, st, cs, k, db2)
+
+enum Safety:
+  case AllSafe
+  case UnsafeIn(rel: Str)
+
+def safety(r: Region, cs: Clauses): Safety = cs match
+  case ClNil => AllSafe
+  case ClCons(c, t) => if safe(c) then safety(r, t) else c match
+    case Clause(h, _) => UnsafeIn(relOf(h))
+
+// the model of rules cs over facts db, strata in order
+def evalDatalog(r: Region, cs: Clauses, db: Facts): Model = safety(r, cs) match
+  case UnsafeIn(p) => Unsafe(p)
+  case AllSafe =>
+    // a stratum is at most the clause count unless a relation depends on itself through negation
+    val n = clauseCount(cs)
+    var st = StNil
+    var go = true
+    while go do
+      val st2 = raise(r, st, cs)
+      go = !strataSame(st, st2) && topStratum(st2, 0) <= n
+      st = st2
+    if topStratum(st, 0) > n then NegCycle(overRel(st, n))
+    else
+      var out = db
+      var k = 0
+      while k <= topStratum(st, 0) do
+        out = fix(r, st, cs, k, out)
+        k = k + 1
+      Model(out)

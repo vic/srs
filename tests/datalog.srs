@@ -1,0 +1,85 @@
+// pass: Datalog D1-D2 (lib/datalog.srs): transitive closure, stratified negation, negation cycle and unsafe rules rejected
+def sym(r: Region, s: Str): Arg = AVal(VSym(s))
+def a1(r: Region, a: Arg): Args = ArgCons(a, ArgNil)
+def a2(r: Region, a: Arg, b: Arg): Args = ArgCons(a, ArgCons(b, ArgNil))
+def f1(r: Region, p: Str, x: Val): Fact = Fact(p, ValCons(x, ValNil))
+def f2(r: Region, p: Str, x: Str, y: Str): Fact = Fact(p, ValCons(VSym(x), ValCons(VSym(y), ValNil)))
+def pos(r: Region, p: Str, args: Args): Lit = Pos(Atom(p, args))
+def neg(r: Region, p: Str, args: Args): Lit = Neg(Atom(p, args))
+def body1(r: Region, a: Lit): Lits = LitCons(a, LitNil)
+def body2(r: Region, a: Lit, b: Lit): Lits = LitCons(a, LitCons(b, LitNil))
+def rule(r: Region, p: Str, args: Args, body: Lits): Clause = Clause(Atom(p, args), body)
+def cl(r: Region, c: Clause, t: Clauses): Clauses = ClCons(c, t)
+def fc(r: Region, f: Fact, t: Facts): Facts = FactCons(f, t)
+
+def showVal(v: Val): Unit = v match
+  case VSym(s) => rt_print(s)
+  case VInt(n) => rt_print_i64(n)
+
+def showVals(vs: Vals): Unit = vs match
+  case ValNil => ()
+  case ValCons(h, t) =>
+    showVal(h)
+    t match
+      case ValNil => ()
+      case ValCons(_, _) =>
+        rt_print(", ")
+        showVals(t)
+
+// the facts of relation p, in model order
+def showRel(db: Facts, p: Str): Unit = db match
+  case FactNil => ()
+  case FactCons(f, t) =>
+    f match
+      case Fact(q, vs) =>
+        if rt_str_eq(p, q) then
+          rt_print(q)
+          rt_print("(")
+          showVals(vs)
+          rt_print(") ")
+        else ()
+    showRel(t, p)
+
+def show(m: Model, p: Str): Unit =
+  m match
+    case Unsafe(q) =>
+      rt_print("unsafe ")
+      rt_print(q)
+    case NegCycle(q) =>
+      rt_print("negcycle ")
+      rt_print(q)
+    case Model(db) => showRel(db, p)
+  rt_print("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  val x = AVar(0)
+  val y = AVar(1)
+  val z = AVar(2)
+  val edges = fc(r, f2(r, "edge", "a", "b"), fc(r, f2(r, "edge", "b", "c"), fc(r, f2(r, "edge", "c", "d"), FactNil)))
+  // path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).
+  val tc = cl(r, rule(r, "path", a2(r, x, y), body1(r, pos(r, "edge", a2(r, x, y)))), cl(r, rule(r, "path", a2(r, x, z), body2(r, pos(r, "edge", a2(r, x, y)), pos(r, "path", a2(r, y, z)))), ClNil))
+  show(evalDatalog(r, tc, edges), "path")
+  // unreach(X) :- node(X), not reach(X).  reach(Y) :- reach(X), edge(X, Y).  reach(a).  nodes a..e
+  val nodes = fc(r, f1(r, "node", VSym("a")), fc(r, f1(r, "node", VSym("b")), fc(r, f1(r, "node", VSym("c")), fc(r, f1(r, "node", VSym("d")), fc(r, f1(r, "node", VSym("e")), edges)))))
+  val db = fc(r, f1(r, "reach", VSym("a")), nodes)
+  val un = cl(r, rule(r, "unreach", a1(r, x), body2(r, pos(r, "node", a1(r, x)), neg(r, "reach", a1(r, x)))), cl(r, rule(r, "reach", a1(r, y), body2(r, pos(r, "reach", a1(r, x)), pos(r, "edge", a2(r, x, y)))), ClNil))
+  show(evalDatalog(r, un, db), "unreach")
+  // p(X) :- node(X), not q(X).  q(X) :- node(X), not p(X).  =>  negation cycle
+  val nc = cl(r, rule(r, "p", a1(r, x), body2(r, pos(r, "node", a1(r, x)), neg(r, "q", a1(r, x)))), cl(r, rule(r, "q", a1(r, x), body2(r, pos(r, "node", a1(r, x)), neg(r, "p", a1(r, x)))), ClNil))
+  show(evalDatalog(r, nc, nodes), "p")
+  // p(X) :- node(Y).  =>  unsafe head variable
+  show(evalDatalog(r, cl(r, rule(r, "p", a1(r, x), body1(r, pos(r, "node", a1(r, y)))), ClNil), nodes), "p")
+  // p(X) :- node(Y), not q(X).  =>  unsafe negative variable
+  show(evalDatalog(r, cl(r, rule(r, "p", a1(r, y), body2(r, pos(r, "node", a1(r, y)), neg(r, "q", a1(r, x)))), ClNil), nodes), "p")
+  // self(X) :- edge(X, X).  from_a(X) :- edge(a, X).  with edge(e, e)
+  val loops = fc(r, f2(r, "edge", "e", "e"), edges)
+  val sc = cl(r, rule(r, "self", a1(r, x), body1(r, pos(r, "edge", a2(r, x, x)))), cl(r, rule(r, "from_a", a1(r, x), body1(r, pos(r, "edge", a2(r, sym(r, "a"), x)))), ClNil))
+  val m = evalDatalog(r, sc, loops)
+  show(m, "self")
+  show(m, "from_a")
+  // big(X) :- num(X), not small(X).  num(1) num(2) small(1)  =>  big(2)
+  val nums = fc(r, f1(r, "num", VInt(1)), fc(r, f1(r, "num", VInt(2)), fc(r, f1(r, "small", VInt(1)), FactNil)))
+  show(evalDatalog(r, cl(r, rule(r, "big", a1(r, x), body2(r, pos(r, "num", a1(r, x)), neg(r, "small", a1(r, x)))), ClNil), nums), "big")
+  r.free()
+  0

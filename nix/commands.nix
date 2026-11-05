@@ -54,6 +54,7 @@ in
           gen Impl lean/Srs/Impl/S1.lean $S1SRC
           gen Contracts lean/Srs/Contracts.lean lib/prelude.srs tests/list.lib tests/contracts.srs
           gen Kanren lean/Srs/Kanren.lean lib/prelude.srs lib/kanren.srs
+          gen Datalog lean/Srs/Datalog.lean lib/prelude.srs lib/datalog.srs
           echo "proof lean (debt): $(grep -cE '^ +proof lean' s1/*.srs lib/*.srs tests/*.srs | awk -F: '{s+=$2} END{print s}')"
           ! grep -rn --include='*.lean' -w -e sorry -e admit -e axiom lean/Srs || { echo "unproven step" >&2; exit 1; }
           # ImplRun reads tests/ by IO, which lake does not track: drop its outputs so the verdicts always run again
