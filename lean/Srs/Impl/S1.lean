@@ -5530,6 +5530,284 @@ let t_ ← «ruleClauses_loop0» «cs» «f» «ds» («ps», «other», «out»
 pure «out»;
 }
 
+def «purAtom1» («rel» : ByteArray) («a» : Int) : Option «Atom» := do {
+pure («Atom».«Atom» «rel» («Args».«ArgCons» («Arg».«AVar» «a») «Args».«ArgNil»));
+}
+
+def «purAtom2» («rel» : ByteArray) («a» : Int) («b» : Int) : Option «Atom» := do {
+pure («Atom».«Atom» «rel» («Args».«ArgCons» («Arg».«AVar» «a») («Args».«ArgCons» («Arg».«AVar» «b») «Args».«ArgNil»)));
+}
+
+def «purRule1» («h» : «Atom») («b» : «Atom») : Option «Clause» := do {
+pure («Clause».«Clause» «h» («Lits».«LitCons» («Lit».«Pos» «b») «Lits».«LitNil»));
+}
+
+def «purRule2» («h» : «Atom») («b1» : «Atom») («b2» : «Atom») : Option «Clause» := do {
+pure («Clause».«Clause» «h» («Lits».«LitCons» («Lit».«Pos» «b1») («Lits».«LitCons» («Lit».«Pos» «b2») «Lits».«LitNil»)));
+}
+
+def «purityRules» : Option «Clauses» := do {
+let mut «cs» := («Clauses».«ClCons» (← «purRule1» (← «purAtom1» "impure".toUTF8 (0 : Int)) (← «purAtom1» "direct".toUTF8 (0 : Int))) «Clauses».«ClNil»);
+«cs» := («Clauses».«ClCons» (← «purRule2» (← «purAtom1» "impure".toUTF8 (0 : Int)) (← «purAtom1» "impure".toUTF8 (1 : Int)) (← «purAtom2» "calls".toUTF8 (0 : Int) (1 : Int))) «cs»);
+«cs» := («Clauses».«ClCons» (← «purRule2» (← «purAtom1» "impure".toUTF8 (0 : Int)) (← «purAtom1» "effectful".toUTF8 (1 : Int)) (← «purAtom2» "uses".toUTF8 (0 : Int) (1 : Int))) «cs»);
+«cs» := («Clauses».«ClCons» (← «purRule2» (← «purAtom1» "effectful".toUTF8 (0 : Int)) (← «purAtom1» "impureH".toUTF8 (1 : Int)) (← «purAtom2» "handles".toUTF8 (1 : Int) (0 : Int))) «cs»);
+«cs» := («Clauses».«ClCons» (← «purRule1» (← «purAtom1» "impureH".toUTF8 (0 : Int)) (← «purAtom1» "hdirect".toUTF8 (0 : Int))) «cs»);
+«cs» := («Clauses».«ClCons» (← «purRule2» (← «purAtom1» "impureH".toUTF8 (0 : Int)) (← «purAtom1» "impure".toUTF8 (1 : Int)) (← «purAtom2» "hcalls".toUTF8 (0 : Int) (1 : Int))) «cs»);
+pure («Clauses».«ClCons» (← «purRule2» (← «purAtom1» "impureH".toUTF8 (0 : Int)) (← «purAtom1» "effectful".toUTF8 (1 : Int)) (← «purAtom2» "huses".toUTF8 (0 : Int) (1 : Int))) «cs»);
+}
+
+def «purFact1» («rel» : ByteArray) («a» : ByteArray) («edb» : «Edb») : Option «Edb» := do {
+pure («Edb».«EdbCons» («Fact».«Fact» «rel» («Vals».«ValCons» («Val».«VSym» «a») «Vals».«ValNil»)) «edb»);
+}
+
+def «purFact2» («rel» : ByteArray) («a» : ByteArray) («b» : ByteArray) («edb» : «Edb») : Option «Edb» := do {
+pure («Edb».«EdbCons» («Fact».«Fact» «rel» («Vals».«ValCons» («Val».«VSym» «a») («Vals».«ValCons» («Val».«VSym» «b») «Vals».«ValNil»))) «edb»);
+}
+
+def «curlyBinders_loop0» («f» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«gs», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «gs»))
+} : Option Bool)) st') then «curlyBinders_loop0» «f» (← (fun ((«gs», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «gs» := «gs»;
+let mut «out» := «out»;
+if (← (do {
+if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
+pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+} else {
+pure false
+}
+})) then {
+«out» := (← «append» (← «kids» (← «head» «gs»)) «out»);
+} else {
+let _ := ();
+};
+«gs» := (← «tail» «gs»);
+pure («gs», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «curlyBinders» («f» : «Node») : Option «Nodes» := do {
+let mut «out» := «Nodes».«NNil»;
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let t_ ← «curlyBinders_loop0» «f» («gs», «out»);
+«gs» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+
+mutual
+def «bodyFacts_loop0» («k» : «Kind») («edb0» : «Edb») («x» : «Node») («ev» : «Nodes») («who» : ByteArray) («hd» : Bool) («ds» : «Nodes») (st' : («Nodes» × «Edb»)) : Option («Nodes» × «Edb») := do {
+if (← (fun ((«c», _) : («Nodes» × «Edb»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «bodyFacts_loop0» «k» «edb0» «x» «ev» «who» «hd» «ds» (← (fun ((«c», «edb») : («Nodes» × «Edb»)) => (do {
+let mut «c» := «c»;
+let mut «edb» := «edb»;
+«edb» := (← «bodyFacts» «ds» «hd» «who» «ev» (← «head» «c») «edb»);
+«c» := (← «tail» «c»);
+pure («c», «edb»)
+} : Option («Nodes» × «Edb»))) st') else pure st'
+}
+partial_fixpoint
+
+def «bodyFacts» («ds» : «Nodes») («hd» : Bool) («who» : ByteArray) («ev» : «Nodes») («x» : «Node») («edb0» : «Edb») : Option «Edb» := do {
+let «k» ← (pure (← «kind» «x»));
+let mut «edb» := «edb0»;
+if (← (do {
+if («k» == «Kind».«XCall») then {
+pure true
+} else {
+pure («k» == «Kind».«XCallG»)
+}
+})) then {
+«edb» := (← «purFact2» (← (do {
+if «hd» then {
+pure "hcalls".toUTF8;
+} else {
+pure "calls".toUTF8;
+};
+})) «who» (← «text» «x») «edb»);
+} else {
+let _ := ();
+};
+if («k» == «Kind».«SHandle») then {
+«edb» := (← «purFact2» (← (do {
+if «hd» then {
+pure "huses".toUTF8;
+} else {
+pure "uses".toUTF8;
+};
+})) «who» (← «text2» (← «find» «ds» «Kind».«DHandler» (← «text2» «x»))) «edb»);
+} else {
+let _ := ();
+};
+if (← (do {
+if («k» == «Kind».«XMethod») then {
+pure (← «has» «ev» (← «text» «x»))
+} else {
+pure false
+}
+})) then {
+«edb» := (← «purFact1» (← (do {
+if «hd» then {
+pure "hdirect".toUTF8;
+} else {
+pure "direct".toUTF8;
+};
+})) «who» «edb»);
+} else {
+let _ := ();
+};
+let mut «c» := (← «kids» «x»);
+let t_ ← «bodyFacts_loop0» «k» «edb0» «x» «ev» «who» «hd» «ds» («c», «edb»);
+«c» := t_.1;
+«edb» := t_.2;
+pure «edb»;
+}
+partial_fixpoint
+
+end
+
+def «fnFacts_loop0» («edb0» : «Edb») («f» : «Node») («who» : ByteArray) («hd» : Bool) («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Edb»)) : Option («Nodes» × «Nodes» × «Edb») := do {
+if (← (fun ((«c», _, _) : («Nodes» × «Nodes» × «Edb»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «fnFacts_loop0» «edb0» «f» «who» «hd» «ds» (← (fun ((«c», «ev», «edb») : («Nodes» × «Nodes» × «Edb»)) => (do {
+let mut «c» := «c»;
+let mut «ev» := «ev»;
+let mut «edb» := «edb»;
+let «p» ← (pure (← «text» (← «kid» (← «head» «c») (0 : Int))));
+if (← «isProto» «ds» «p») then {
+«edb» := (← «purFact2» (← (do {
+if «hd» then {
+pure "huses".toUTF8;
+} else {
+pure "uses".toUTF8;
+};
+})) «who» «p» «edb»);
+} else {
+«ev» := («Nodes».«NCons» (← «head» «c») «ev»);
+};
+«c» := (← «tail» «c»);
+pure («c», «ev», «edb»)
+} : Option («Nodes» × «Nodes» × «Edb»))) st') else pure st'
+}
+partial_fixpoint
+
+def «fnFacts» («ds» : «Nodes») («hd» : Bool) («who» : ByteArray) («f» : «Node») («edb0» : «Edb») : Option «Edb» := do {
+let mut «edb» := «edb0»;
+if (← (do {
+if ((← «num» «f») == (1 : Int)) then {
+pure (!(← «isPureExtern» (← «text» «f»)))
+} else {
+pure false
+}
+})) then {
+«edb» := (← «purFact1» "direct".toUTF8 «who» «edb»);
+} else {
+let _ := ();
+};
+let mut «ev» := «Nodes».«NNil»;
+let mut «c» := (← «curlyBinders» «f»);
+let t_ ← «fnFacts_loop0» «edb0» «f» «who» «hd» «ds» («c», «ev», «edb»);
+«c» := t_.1;
+«ev» := t_.2.1;
+«edb» := t_.2.2;
+if ((← «num» «f») == (1 : Int)) then {
+pure «edb»;
+} else {
+pure (← «bodyFacts» «ds» «hd» «who» «ev» (← «kid» «f» (2 : Int)) «edb»);
+};
+}
+
+def «purityFacts_loop1» («d» : «Node») («c» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Edb»)) : Option («Nodes» × «Edb») := do {
+if (← (fun ((«fs», _) : («Nodes» × «Edb»)) => (do {
+pure (!(← «isNil» «fs»))
+} : Option Bool)) st') then «purityFacts_loop1» «d» «c» «ds» (← (fun ((«fs», «edb») : («Nodes» × «Edb»)) => (do {
+let mut «fs» := «fs»;
+let mut «edb» := «edb»;
+«edb» := (← «fnFacts» «ds» true (← «text» «d») (← «head» «fs») «edb»);
+«fs» := (← «tail» «fs»);
+pure («fs», «edb»)
+} : Option («Nodes» × «Edb»))) st') else pure st'
+}
+partial_fixpoint
+
+def «purityFacts_loop0» («ds» : «Nodes») (st' : («Nodes» × «Edb»)) : Option («Nodes» × «Edb») := do {
+if (← (fun ((«c», _) : («Nodes» × «Edb»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «purityFacts_loop0» «ds» (← (fun ((«c», «edb») : («Nodes» × «Edb»)) => (do {
+let mut «c» := «c»;
+let mut «edb» := «edb»;
+let «d» ← (pure (← «head» «c»));
+if ((← «kind» «d») == «Kind».«DFn») then {
+«edb» := (← «fnFacts» «ds» false (← «text» «d») «d» «edb»);
+} else {
+let _ := ();
+};
+if ((← «kind» «d») == «Kind».«DHandler») then {
+«edb» := (← «purFact2» "handles".toUTF8 (← «text» «d») (← «text2» «d») «edb»);
+let mut «fs» := (← «kids» «d»);
+let t_ ← «purityFacts_loop1» «d» «c» «ds» («fs», «edb»);
+«fs» := t_.1;
+«edb» := t_.2;
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «edb»)
+} : Option («Nodes» × «Edb»))) st') else pure st'
+}
+partial_fixpoint
+
+def «purityFacts» («ds» : «Nodes») : Option «Edb» := do {
+let mut «edb» := «Edb».«EdbNil»;
+let mut «c» := «ds»;
+let t_ ← «purityFacts_loop0» «ds» («c», «edb»);
+«c» := t_.1;
+«edb» := t_.2;
+pure «edb»;
+}
+
+mutual
+def «impureOf» («db» : «Facts») : Option «Nodes» := do {
+match «db» with
+| «Facts».«FactNil» => {
+pure «Nodes».«NNil»;
+}
+| «Facts».«FactCons» «h» _ «t» => {
+match «h» with
+| «Fact».«Fact» «rel» «vs» => {
+match «vs» with
+| «Vals».«ValCons» «v» _ => {
+if (← «eqs» «rel» "impure".toUTF8) then {
+pure («Nodes».«NCons» («Node».«Node» «Kind».«Name» (← «symOf» «v») "".toUTF8 (0 : Int) (0 : Int) «Nodes».«NNil») (← «impureOf» «t»));
+} else {
+pure (← «impureOf» «t»);
+};
+}
+| «Vals».«ValNil» => {
+pure (← «impureOf» «t»);
+}
+;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «isImpure» («ds» : «Nodes») («n» : ByteArray) : Option Bool := do {
+let «m» ← (pure (← «find» «ds» «Kind».«Names» "%impure".toUTF8));
+if (!(← «found» «m»)) then {
+let _ := (← «err» "internal: no purity facts for".toUTF8 «n» (0 : Int));
+} else {
+let _ := ();
+};
+pure (← «has» (← «kids» «m») «n»);
+}
+
 def «isGeneric» («d» : «Node») : Option Bool := do {
 pure (← (do {
 if (← (do {
@@ -9367,6 +9645,22 @@ partial_fixpoint
 
 end
 
+def «impureDecl» («ds» : «Nodes») : Option «Node» := do {
+match (← «evalDatalog» (← «purityRules») (← «purityFacts» «ds»)) with
+| «Model».«Model» «db» => {
+pure («Node».«Node» «Kind».«Names» "%impure".toUTF8 "".toUTF8 (0 : Int) (0 : Int) (← «impureOf» «db»));
+}
+| «Model».«Unsafe» «p» => {
+let _ := (← «err» "internal: unsafe purity rule".toUTF8 «p» (0 : Int));
+pure «Node».«NoNode»;
+}
+| «Model».«NegCycle» «p» => {
+let _ := (← «err» "internal: negation in purity rules".toUTF8 «p» (0 : Int));
+pure «Node».«NoNode»;
+}
+;
+}
+
 def «enumInsts_loop0» («cs» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
@@ -11890,19 +12184,13 @@ let _ := (← «err» "unknown function".toUTF8 (← «text» «e») «line»);
 let _ := ();
 };
 if (← (do {
-if (← (do {
 if (← «isPure» «env») then {
-pure ((← «num» «f») != (2 : Int))
+pure (← «isImpure» «ds» (← «text» «f»))
 } else {
 pure false
 }
 })) then {
-pure (!(← «isPureExtern» (← «text» «f»)))
-} else {
-pure false
-}
-})) then {
-let _ := (← «err» "a spec def calls only spec defs and pure externs, not".toUTF8 (← «text» «e») «line»);
+let _ := (← «err» "a spec def calls only pure defs and pure externs, not".toUTF8 (← «text» «e») «line»);
 } else {
 let _ := ();
 };
@@ -14275,10 +14563,10 @@ let _ := (← «say» «ns»);
 pure (← «say» "\n".toUTF8);
 }
 
-def «check_loop0» («ds» : «Nodes») («ds0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «check_loop0» («ds» : «Nodes») («ds1» : «Nodes») («ds0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «c») : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «check_loop0» «ds» «ds0» (← (fun ((«out», «c») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «check_loop0» «ds» «ds1» «ds0» (← (fun ((«out», «c») : («Nodes» × «Nodes»)) => (do {
 let mut «out» := «out»;
 let mut «c» := «c»;
 let «d» ← (pure (← «head» «c»));
@@ -14347,11 +14635,12 @@ pure («out», «c»)
 partial_fixpoint
 
 def «check» («ds0» : «Nodes») : Option «Nodes» := do {
-let «ds» ← (pure (← «expandTypes» «ds0»));
-let _ := (← «uniqueNames» «ds»);
-let mut «c» := «ds»;
+let «ds1» ← (pure (← «expandTypes» «ds0»));
+let _ := (← «uniqueNames» «ds1»);
+let «ds» ← (pure («Nodes».«NCons» (← «impureDecl» «ds1») «ds1»));
+let mut «c» := «ds1»;
 let mut «out» := «Nodes».«NNil»;
-let t_ ← «check_loop0» «ds» «ds0» («out», «c»);
+let t_ ← «check_loop0» «ds» «ds1» «ds0» («out», «c»);
 «out» := t_.1;
 «c» := t_.2;
 pure (← «rev» «out»);

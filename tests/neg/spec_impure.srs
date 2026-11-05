@@ -1,4 +1,8 @@
-// expect: a spec def calls only spec defs and pure externs, not 'f'
-def f(x: I64): I64 = x
+// expect: a spec def calls only pure defs and pure externs, not 'f'
+// f is impure through say: rt_print is an impure extern
+def say(x: I64): Unit = rt_print("a")
+def f(x: I64): I64 =
+  say(x)
+  x
 spec def g(x: I64): I64 = f(x)
 def main(): I64 = 0
