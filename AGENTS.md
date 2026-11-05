@@ -43,7 +43,7 @@ If a decision is not ruled, it is not yours to make. Write the question to the d
 - Order: Kanren with constraints, then Datalog, then binders and telescopes. Δ-Nets are deferred
   (bead vic-z95).
 - Binder groups: `()` values, `[A: Type]` type ascription (A is ascribed the type Type), `{s: Show[A]}` evidence (always named; a capability = handler presence `{r: Region}`),
-  `<at(f, s)>` Datalog facts. Type application is `T[args]` ([] = types, the Scala3 surface). Caps on a type are facts: `List[I64]^<r>`. Facts after the return type are the exit facts.
+  `<at(f, s)>` Datalog facts. Type application is `T[args]` ([] = types, the Scala3 surface). At a call: `f[T](x)` gives type args, `f{a}(x)` chooses evidence/caps; otherwise they are found (local evidence first, as Scala3). Caps on a type are facts: `List[I64]^<r>`. Facts after the return type are the exit facts.
 - `<>` holds Datalog atoms and rules only. There is no regex protocol syntax.
 - `spec def` takes no groups. `extern def` takes all groups as a trusted contract. A slot of an extern typed by a `{}` binder
   is `void*`.
