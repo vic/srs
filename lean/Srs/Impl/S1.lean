@@ -2763,7 +2763,7 @@ pure true
 pure (← «isProto» «ds0» (← «text» (← «head» «bs»)))
 }
 })) then {
-let _ := (← «err» "type param hides a type:".toUTF8 (← «text» (← «head» «bs»)) (← «lineOf» (← «head» «bs»)));
+let _ := (← «err» "{} binder hides a type:".toUTF8 (← «text» (← «head» «bs»)) (← «lineOf» (← «head» «bs»)));
 } else {
 let _ := ();
 };
@@ -3136,7 +3136,7 @@ let mut «c» := «c»;
 let mut «out» := «out»;
 let «b» ← (pure (← «find» «sub» «Kind».«Binder» (← «text» (← «head» «c»))));
 if (!(← «found» «b»)) then {
-let _ := (← «err» "cannot infer type param".toUTF8 (← «text» (← «head» «c»)) «line»);
+let _ := (← «err» "cannot infer".toUTF8 (← «text» (← «head» «c»)) «line»);
 } else {
 let _ := ();
 };
@@ -3309,7 +3309,7 @@ pure (!(← «eqs» (← «text» (← «head» «c»)) "Ptr".toUTF8))
 pure false
 }
 })) then {
-let _ := (← «err» "extern type param needs a pointer type (void*), not".toUTF8 (← «text» (← «head» «c»)) (← «lineOf» «x»));
+let _ := (← «err» "extern {} binder needs a pointer type (void*), not".toUTF8 (← «text» (← «head» «c»)) (← «lineOf» «x»));
 } else {
 let _ := ();
 };

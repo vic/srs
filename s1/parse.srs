@@ -86,7 +86,7 @@ def fn(r: Region, ts0: Nodes, ext: I64): PR =
     val b = rhs(r, expect(pr(cl), "="))
     PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), NCons(pn(cl), one(r, gs)))))), pr(b))
 
-// groups in written order, reversed onto acc: `{A: Type}` type params, `[s: Show(A)]` evidence, `<at(f, s)>` facts
+// groups in written order, reversed onto acc: `{A: Type}` {} binders, `[s: Show(A)]` evidence, `<at(f, s)>` facts
 def groups(r: Region, ts0: Nodes, acc: Nodes): PR =
   var ts = ts0
   var gs = acc
@@ -182,7 +182,7 @@ def clause(r: Region, ts0: Nodes): PR =
 def enumDecl(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  // `enum List {A: Type}:` type params; every case keeps them as its kid 1, so the case list stays the enum's kids
+  // `enum List {A: Type}:` {} binders; every case keeps them as its kid 1, so the case list stays the enum's kids
   val g = groups(r, tail(ts0), NNil)
   val gs = list(r, Groups, line, rev(r, kids(pn(g))))
   var ts = layoutOpen(pr(g))

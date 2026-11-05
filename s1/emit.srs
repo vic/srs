@@ -77,10 +77,10 @@ def enumName(d: Node): Unit =
   say(text(d))
   if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
 
-// a type param of a generic extern is a void* slot (vic B-Q6)
+// a {} binder of a generic extern is a void* slot (vic B-Q6)
 def slotType(ds: Nodes, f: Node, t: Node): Unit = if isTParamOf(f, text(t)) then say("void*") else ctype(ds, t)
 
-// n names a type param of f ({} groups of kid 4; an instance's kid 4 is Names, no groups)
+// n names a {} binder of f ({} groups of kid 4; an instance's kid 4 is Names, no groups)
 def isTParamOf(f: Node, n: Str): Bool =
   var gs = kids(kid(f, 4))
   var res = false
@@ -286,7 +286,7 @@ def ctorStruct(c: Node, targs: Nodes): Unit =
   say(text2(c))
   if !isNil(targs) then typeSuffix(targs) else ()
 
-// position of type param n among f's type params, in written order
+// position of {} binder n among f's {} binders, in written order
 def tparamIndex(f: Node, n: Str): I64 =
   var gs = kids(kid(f, 4))
   var i = 0

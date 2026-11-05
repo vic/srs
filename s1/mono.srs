@@ -1,9 +1,9 @@
 // Mono (vic-9l7.4 BD2): the instances of generic defs. A generic def is copied once per distinct type args its calls
-// reach (C name f_<name>__<T1>_<T2>), type params replaced by the types; its kid 4 then holds the type args (Names).
-// A generic extern keeps one C symbol: its type params are void* (vic B-Q6), so only pointer types fill them.
+// reach (C name f_<name>__<T1>_<T2>), {} binders replaced by the types; its kid 4 then holds the type args (Names).
+// A generic extern keeps one C symbol: its {} binders are void* (vic B-Q6), so only pointer types fill them.
 // BD2 type args are names the program declares, so the instances are finite and the loop ends.
 
-// a def with type params: only its instances are code
+// a def with {} binders: only its instances are code
 def isGeneric(r: Region, d: Node): Bool = kind(d) == DFn && num(d) == 0 && !isNil(tparams(r, d))
 
 // the checked program and the instances it reaches
@@ -45,7 +45,7 @@ def isMade(made: Nodes, x: Node): Bool =
     c = tail(c)
   res
 
-// f with its type params replaced by targs; kid 4 = the type args
+// f with its {} binders replaced by targs; kid 4 = the type args
 def instantiate(r: Region, f: Node, targs: Nodes): Node =
   val g = substTy(r, f, tparams(r, f), targs)
   withKids(r, g, NCons(kid(g, 0), NCons(kid(g, 1), NCons(kid(g, 2), NCons(kid(g, 3), one(r, list(r, Names, lineOf(f), targs)))))))
@@ -61,11 +61,11 @@ def substTy(r: Region, e: Node, tps: Nodes, targs: Nodes): Node =
       c = tail(c)
     withKids(r, e, rev(r, out))
 
-// an extern's type param is a void* slot
+// an extern's {} binder is a void* slot
 def needPointers(ds: Nodes, x: Node): Unit =
   var c = kids(kid(x, 0))
   while !isNil(c) do
-    if !isEnum(ds, text(head(c))) && !eqs(text(head(c)), "Ptr") then err("extern type param needs a pointer type (void*), not", text(head(c)), lineOf(x)) else ()
+    if !isEnum(ds, text(head(c))) && !eqs(text(head(c)), "Ptr") then err("extern {} binder needs a pointer type (void*), not", text(head(c)), lineOf(x)) else ()
     c = tail(c)
 
 // the instances of generic enums the program reaches: each enum T(args) its code names, closed over the fields
