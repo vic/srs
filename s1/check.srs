@@ -386,8 +386,15 @@ def theRegion(env: Nodes, line: I64): Str =
   if n > 1 then err("constructor region is ambiguous, more than one Region in scope", "", line) else ()
   res
 
+// op opName of protocol proto; its transition from the state of cap in gam
+spec def opS(ds: Nodes, proto: Str, opName: Str): Node = lookS(kidsS(nthS(kidsS(lookS(ds, DProto, proto)), 3)), DOp, opName)
+spec def trS(ds: Nodes, gam: Nodes, cap: Str, proto: Str, opName: Str): Node =
+  lookS(kidsS(nthS(kidsS(opS(ds, proto, opName)), 2)), DTrans, text2S(lookS(gam, GState, cap)))
 // one protocol step on cap: Γ(cap) must have a transition in op
-def step(r: Region, ds: Nodes, gam: Nodes, cap: Str, proto: Str, opName: Str, line: I64): Nodes =
+// accepts only when op and its transition exist; Γ after = cap moved to the transition target
+def step(r: Region, ds: Nodes, gam: Nodes, cap: Str, proto: Str, opName: Str, line: I64): Nodes
+  returns foundS(opS(ds, proto, opName)) && foundS(trS(ds, gam, cap, proto, opName)) && result == replS(gam, Node(GState, cap, text2S(trS(ds, gam, cap, proto, opName)), 0, 0, NNil))
+=
   val op = find(kids(kid(find(ds, DProto, proto), 3)), DOp, opName)
   if !found(op) then err("unknown op", opName, line) else ()
   val s = state(gam, cap)

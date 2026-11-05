@@ -121,6 +121,12 @@ def «liveS» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») (
 def «allLiveS» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («xs» : «Nodes») : Bool :=
   (match «xs» with | «Nodes».«NNil» => true | «Nodes».«NCons» «h» «t» => ((«liveS» «ds» «env» «gam» («textS» «h»)) && («allLiveS» «ds» «env» «gam» «t»)))
 
+def «opS» («ds» : «Nodes») («proto» : ByteArray) («opName» : ByteArray) : «Node» :=
+  («lookS» («kidsS» («nthS» («kidsS» («lookS» «ds» «Kind».«DProto» «proto»)) (3 : Int))) «Kind».«DOp» «opName»)
+
+def «trS» («ds» : «Nodes») («gam» : «Nodes») («cap» : ByteArray) («proto» : ByteArray) («opName» : ByteArray) : «Node» :=
+  («lookS» («kidsS» («nthS» («kidsS» («opS» «ds» «proto» «opName»)) (2 : Int))) «Kind».«DTrans» («text2S» («lookS» «gam» «Kind».«GState» «cap»)))
+
 theorem «sizeS_spec» :
     ∀ («xs» : «Nodes»), (((«sizeS» «xs») ≥ (0 : Int)))
   | «Nodes».«NNil» => by
@@ -8239,5 +8245,10 @@ theorem «needLive_ret» («ds» : «Nodes») («env» : «Nodes») («gam» : �
   · srs_auto [«headS», «textS», «tyCaps_eq», «isNil», «live_eq», «text_eq», «head_eq», «err», «tail_eq», «sizeS», «sizeS_spec», «kidsS», «tailS», «allLiveS»]
   · rintro «c» hI hc
     rcases «c» with (⟨⟩ | ⟨(⟨⟩ | ⟨_, _, _, _, _, _⟩), (⟨⟩ | ⟨_, _⟩)⟩) <;> srs_auto [«headS», «textS», «tyCaps_eq», «isNil», «live_eq», «text_eq», «head_eq», «err», «tail_eq», «sizeS», «sizeS_spec», «kidsS», «tailS», «allLiveS»]
+
+theorem «step_ret» («ds» : «Nodes») («gam» : «Nodes») («cap» : ByteArray) («proto» : ByteArray) («opName» : ByteArray) («line» : Int) :
+    ∀ «result», «step» «ds» «gam» «cap» «proto» «opName» «line» = some «result» → (((((«foundS» («opS» «ds» «proto» «opName»)) = true) ∧ ((«foundS» («trS» «ds» «gam» «cap» «proto» «opName»)) = true)) ∧ («result» = («replS» «gam» («Node».«Node» «Kind».«GState» «cap» («text2S» («trS» «ds» «gam» «cap» «proto» «opName»)) (0 : Int) (0 : Int) «Nodes».«NNil»))))) := by
+  refine Srs.ok_intro ?_
+  srs_auto [«nthS», «kidsS», «lookS», «step», «find_eq», «kids_eq», «kid_eq», «found_eq», «err», «state_eq», «setG_eq», «text2_eq», «text2S», «replS», «trS», «opS», «foundS»]
 
 end Srs.Impl
