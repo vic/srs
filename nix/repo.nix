@@ -38,7 +38,11 @@ in
         pkgs.nixfmt
         pkgs.actionlint
         pkgs.shellcheck
-      ];
+        pkgs.hyperfine # srs-bench: the speed oracle (vic 2026-11-05)
+        pkgs.jq # srs-bench: reads the hyperfine json
+      ]
+      # perf record: where the time goes
+      ++ pkgs.lib.optional pkgs.stdenv.isLinux pkgs.perf;
     };
   };
   yen.repo.srs = { };

@@ -56,7 +56,8 @@ Each rung is small, at most about one hour:
 
 1. Write the oracle first: a pass test with `.out`, and a negative test in `tests/neg/` with `// expect: <error>`.
 2. Implement the smallest change.
-3. Run the gates (section 5).
+3. Run the gates (section 5), then the speed oracle `srs-bench`. A delivery is never slower than
+   `bench/baseline.txt` (vic 2026-11-05). When it is faster, save the new numbers with `bench-update` and commit them.
 4. Run mutants. Each mutant breaks one rule in the code, and at least one test must fail. If a mutant
    survives, the tests have a gap: add a test, then run the mutant again.
 5. Commit with jj. Record the evidence in quipu (`ledger:srs/evidence/<slug>`): the commands, the output, the
@@ -76,6 +77,10 @@ byte for byte after. Add an armed control: a mutant that must change the output.
   `timeout 900 systemd-run --user --scope -q -p MemoryMax=12G nix develop -c lean-check`.
   The first run after an S1 change regenerates `lean/Srs/Impl/S1.lean` and fails. Run it twice. A pass shows
   `proof lean (debt): 0`, `Impl verdicts = S1: N pass, M neg` and `Build completed successfully`.
+- `srs-bench` (`tests/bench.sh`, after `srs-test`): hyperfine times the S1 self-compile, the S1 Lean generation
+  and all pass tests. It compares wall time, instructions and peak memory with `bench/baseline.txt`. Slower means
+  above the baseline by more than 2 combined standard deviations, and the command fails. Find where the time goes
+  with `perf record -e cpu-clock:u` on an `-O1 -g` build of `$B/s2.c` (add `-fno-inline` to see small fns).
 - Get the real exit code: `cmd > log 2>&1; echo EXIT=$?`. A pipe into `tail` hides it.
 - The build dir is `B=${XDG_RUNTIME_DIR}/srs-build` (set by `tests/run.sh`). To test a single file fast:
   `$B/s2 lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib tests/x.srs > $B/x.c`,
