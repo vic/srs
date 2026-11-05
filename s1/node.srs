@@ -282,15 +282,6 @@ enum DMap:
 enum Decls:
   case Decls(all: Nodes, idx: DMap, rec: DMap)
 
-// a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
-def strHash(s: Str): I64 =
-  var h = 2166136261
-  var i = 0
-  val n = rt_str_len(s)
-  while i < n do
-    h = ((h + rt_str_at(s, i)) * 16777619) % 4294967296
-    i = i + 1
-  h
 
 def dmGet(m: DMap, h: I64): Nodes = m match
   case DTip => NNil

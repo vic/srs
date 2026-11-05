@@ -99,6 +99,29 @@ inductive «Picked» where
   | «Picked» («bs» : «Queue») («cost» : Int)
 end
 
+def «strHash_loop0» («n» : Int) («s» : ByteArray) (st' : (Int × Int)) : Option (Int × Int) := do {
+if (← (fun ((«i», _) : (Int × Int)) => (do {
+pure (decide («i» < «n»))
+} : Option Bool)) st') then «strHash_loop0» «n» «s» (← (fun ((«i», «h») : (Int × Int)) => (do {
+let mut «i» := «i»;
+let mut «h» := «h»;
+«h» := (Int.tmod ((«h» + (← «rt_str_at» «s» «i»)) * (16777619 : Int)) (4294967296 : Int));
+«i» := («i» + (1 : Int));
+pure («i», «h»)
+} : Option (Int × Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «strHash» («s» : ByteArray) : Option Int := do {
+let mut «h» := (2166136261 : Int);
+let mut «i» := (0 : Int);
+let «n» ← (pure (← «rt_str_len» «s»));
+let t_ ← «strHash_loop0» «n» «s» («i», «h»);
+«i» := t_.1;
+«h» := t_.2;
+pure «h»;
+}
+
 mutual
 def «walk» («s» : «Subst») («t» : «Term») : Option «Term» := do {
 match «t» with

@@ -269,29 +269,78 @@ def factCount(db: Facts): I64 = db match
   case FactCons(_, _, t) => 1 + factCount(t)
 
 // ── semi-naive evaluation over one store per relation ──
-// a relation's facts: all of them, and delta = the ones the last round added (order-free: vic 2026-11-05)
+// a relation's facts: all of them, delta = the ones the last round added (order-free: vic 2026-11-05), and one
+// index per column: value hash -> the facts with that value there, in the order of all (a bucket is a subsequence)
+enum FMap:
+  case FmTip
+  case FmBin(h: I64, bucket: Facts, l: FMap, rt: FMap)
+
+enum Cols:
+  case ColNil
+  case Col(m: FMap, t: Cols)
+
 enum Rels:
   case RelNil
-  case Rel(name: Str, all: Facts, delta: Facts, t: Rels)
+  case Rel(name: Str, all: Facts, delta: Facts, cols: Cols, t: Rels)
+
+def valHash(v: Val): I64 = v match
+  case VSym(s) => strHash(s)
+  case VInt(n) => ((n % 4294967296) + 4294967296) % 4294967296
+
+def fmGet(m: FMap, h: I64): Facts = m match
+  case FmTip => FactNil
+  case FmBin(k, b, l, rt) => if h == k then b else if h < k then fmGet(l, h) else fmGet(rt, h)
+
+def fmAdd {r: Region} (m: FMap, h: I64, f: Fact, src: Source): FMap = m match
+  case FmTip => FmBin(h, FactCons(f, src, FactNil), FmTip, FmTip)
+  case FmBin(k, b, l, rt) =>
+    if h == k then FmBin(k, FactCons(f, src, b), l, rt) else if h < k then FmBin(k, b, fmAdd(l, h, f, src), rt) else FmBin(k, b, l, fmAdd(rt, h, f, src))
+
+def colsAdd {r: Region} (cs: Cols, vs: Vals, f: Fact, src: Source): Cols = vs match
+  case ValNil => cs
+  case ValCons(v, vt) => cs match
+    case ColNil => Col(fmAdd(FmTip, valHash(v), f, src), colsAdd(ColNil, vt, f, src))
+    case Col(m, ct) => Col(fmAdd(m, valHash(v), f, src), colsAdd(ct, vt, f, src))
 
 def factsOf(rs: Rels, p: Str, delta: Bool): Facts = rs match
   case RelNil => FactNil
-  case Rel(q, all, d, t) => if rt_str_eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
+  case Rel(q, all, d, _, t) => if rt_str_eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
 
 def addFact {r: Region} (rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
-  case Fact(p, _) => rs match
-    case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, RelNil)
-    case Rel(q, all, d, t) =>
-      if rt_str_eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, t)
-      else Rel(q, all, d, addFact(t, f, src, delta))
+  case Fact(p, vs) => rs match
+    case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, colsAdd(ColNil, vs, f, src), RelNil)
+    case Rel(q, all, d, cs, t) =>
+      if rt_str_eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
+      else Rel(q, all, d, cs, addFact(t, f, src, delta))
 
 def resetDelta {r: Region} (rs: Rels): Rels = rs match
   case RelNil => RelNil
-  case Rel(q, all, _, t) => Rel(q, all, FactNil, resetDelta(t))
+  case Rel(q, all, _, cs, t) => Rel(q, all, FactNil, cs, resetDelta(t))
 
 def addFacts {r: Region} (rs: Rels, fs: Facts, delta: Bool): Rels = fs match
   case FactNil => rs
   case FactCons(f, src, t) => addFacts(addFact(rs, f, src, delta), t, delta)
+
+// the facts of p that can match args under e: the bucket of the first bound column, else all
+def candidates {r: Region} (rs: Rels, p: Str, args: Args, e: Env): Facts = rs match
+  case RelNil => FactNil
+  case Rel(q, all, _, cs, t) => if rt_str_eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
+
+def boundCol {r: Region} (all: Facts, cs: Cols, args: Args, e: Env): Facts = args match
+  case ArgNil => all
+  case ArgCons(a, at) => cs match
+    case ColNil => all
+    case Col(m, ct) => a match
+      case AVal(v) => fmGet(m, valHash(v))
+      case AVar(n) => envGet(e, n) match
+        case AVal(v) => fmGet(m, valHash(v))
+        case AVar(_) => boundCol(all, ct, at, e)
+
+// f is a fact of rs: look in the bucket of its first column
+def knownFact {r: Region} (rs: Rels, f: Fact): Bool = f match
+  case Fact(p, vs) => vs match
+    case ValNil => hasFact(factsOf(rs, p, false), f)
+    case ValCons(v, _) => hasFact(candidates(rs, p, ArgCons(AVal(v), ArgNil), EnvNil), f)
 
 // every extension of e that matches args against a fact of fs (one relation)
 def matchRel {r: Region} (e: Env, args: Args, fs: Facts): Envs = fs match
@@ -299,16 +348,19 @@ def matchRel {r: Region} (e: Env, args: Args, fs: Facts): Envs = fs match
   case FactCons(f, _, t) => f match
     case Fact(_, vals) => envsAppend(matchArgs(e, args, vals), matchRel(e, args, t))
 
-def matchAll {r: Region} (es: Envs, args: Args, fs: Facts): Envs = es match
+// each env joined with relation p: on its delta, or on the facts its bound columns select
+def matchAll {r: Region} (es: Envs, args: Args, rs: Rels, p: Str, delta: Bool): Envs = es match
   case EnvsNil => EnvsNil
-  case EnvsCons(e, t) => envsAppend(matchRel(e, args, fs), matchAll(t, args, fs))
+  case EnvsCons(e, t) =>
+    val fs = if delta then factsOf(rs, p, true) else candidates(rs, p, args, e)
+    envsAppend(matchRel(e, args, fs), matchAll(t, args, rs, p, delta))
 
 // the positive literals joined: literal number at on the delta of its relation, the others on all facts
 def joinRels {r: Region} (es: Envs, body: Lits, rs: Rels, at: I64, i: I64): Envs = body match
   case LitNil => es
   case LitCons(l, t) => l match
     case Pos(a) => a match
-      case Atom(p, args) => joinRels(matchAll(es, args, factsOf(rs, p, i == at)), t, rs, at, i + 1)
+      case Atom(p, args) => joinRels(matchAll(es, args, rs, p, i == at), t, rs, at, i + 1)
     case Neg(_) => joinRels(es, t, rs, at, i + 1)
 
 // negative literals: stratified, so their relations are complete
@@ -321,7 +373,7 @@ def dropNegRels {r: Region} (es: Envs, body: Lits, rs: Rels): Envs = body match
 def absentIn {r: Region} (es: Envs, a: Atom, rs: Rels): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) =>
-    if hasFact(factsOf(rs, relOf(a), false), factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
+    if knownFact(rs, factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
 
 // the new facts of clause i (at = its delta literal, -1 = none) added to acc, the new facts of this round
 def fireRule {r: Region} (c: Clause, i: I64, at: I64, rs: Rels, acc: Facts): Facts = c match
@@ -331,7 +383,7 @@ def addNew {r: Region} (es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts 
   case EnvsNil => acc
   case EnvsCons(e, t) =>
     val f = factOf(e, h)
-    val known = hasFact(factsOf(rs, relOf(h), false), f) || hasFact(acc, f)
+    val known = knownFact(rs, f) || hasFact(acc, f)
     addNew(t, h, i, rs, if known then acc else FactCons(f, ByRule(i, e), acc))
 
 // after the first round, a new fact needs a fact of the last round: fire once per literal whose relation grew

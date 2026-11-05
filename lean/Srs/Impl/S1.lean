@@ -117,9 +117,15 @@ inductive «Model» where
   | «Unsafe» («rel» : ByteArray)
   | «NegCycle» («rel» : ByteArray)
   | «Model» («facts» : «Facts»)
+inductive «FMap» where
+  | «FmTip»
+  | «FmBin» («h» : Int) («bucket» : «Facts») («l» : «FMap») («rt» : «FMap»)
+inductive «Cols» where
+  | «ColNil»
+  | «Col» («m» : «FMap») («t» : «Cols»)
 inductive «Rels» where
   | «RelNil»
-  | «Rel» («name» : ByteArray) («all» : «Facts») («delta» : «Facts») («t» : «Rels»)
+  | «Rel» («name» : ByteArray) («all» : «Facts») («delta» : «Facts») («cols» : «Cols») («t» : «Rels»)
 inductive «Safety» where
   | «AllSafe»
   | «UnsafeIn» («rel» : ByteArray)
@@ -139,7 +145,7 @@ inductive «DMap» where
   | «DTip»
   | «DBin» («h» : Int) («bucket» : «Nodes») («l» : «DMap») («rt» : «DMap»)
 inductive «Decls» where
-  | «Decls» («all» : «Nodes») («idx» : «DMap»)
+  | «Decls» («all» : «Nodes») («idx» : «DMap») («rec» : «DMap»)
 inductive «PR» where
   | «PR» («n» : «Node») («rest» : «Nodes»)
 inductive «TG» where
@@ -151,6 +157,8 @@ inductive «GivenAt» where
   | «NoGiven»
   | «Ambiguous»
   | «GivenAt» («g» : «Node») («sub» : «Nodes»)
+inductive «Tarjan» where
+  | «Tarjan» («next» : Int) («info» : «DMap») («stack» : «Nodes») («comps» : «Nodes»)
 end
 
 def «revOnto» («xs» : «Nodes») («acc» : «Nodes») : «Nodes» :=
@@ -193,7 +201,7 @@ def «lookS» («xs» : «Nodes») («k» : «Kind») («s» : ByteArray) : «No
   (match «xs» with | «Nodes».«NNil» => «Node».«NoNode» | «Nodes».«NCons» «h» «t» => (if (((«kindS» «h») == «k») && (Srs.Rt.P.rt_str_eq («textS» «h») «s»)) then «h» else («lookS» «t» «k» «s»)))
 
 def «declsS» («ds» : «Decls») : «Nodes» :=
-  (match «ds» with | «Decls».«Decls» «all» _ => «all»)
+  (match «ds» with | «Decls».«Decls» «all» _ _ => «all»)
 
 def «unionS» («a» : «Nodes») («b» : «Nodes») : «Nodes» :=
   (match «b» with | «Nodes».«NNil» => «a» | «Nodes».«NCons» «h» «t» => («unionS» (if («memS» («textS» «h») «a») then «a» else («Nodes».«NCons» «h» «a»)) «t»))
@@ -243,6 +251,29 @@ theorem «unionS_spec» («a» : «Nodes») :
   | «Nodes».«NCons» a0 a1 => by
     have ih1 := fun «a» => «unionS_spec» «a» a1
     srs_auto [«unionS», «memS»]
+
+def «strHash_loop0» («n» : Int) («s» : ByteArray) (st' : (Int × Int)) : Option (Int × Int) := do {
+if (← (fun ((«i», _) : (Int × Int)) => (do {
+pure (decide («i» < «n»))
+} : Option Bool)) st') then «strHash_loop0» «n» «s» (← (fun ((«i», «h») : (Int × Int)) => (do {
+let mut «i» := «i»;
+let mut «h» := «h»;
+«h» := (Int.tmod ((«h» + (← «rt_str_at» «s» «i»)) * (16777619 : Int)) (4294967296 : Int));
+«i» := («i» + (1 : Int));
+pure («i», «h»)
+} : Option (Int × Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «strHash» («s» : ByteArray) : Option Int := do {
+let mut «h» := (2166136261 : Int);
+let mut «i» := (0 : Int);
+let «n» ← (pure (← «rt_str_len» «s»));
+let t_ ← «strHash_loop0» «n» «s» («i», «h»);
+«i» := t_.1;
+«h» := t_.2;
+pure «h»;
+}
 
 def «valEq» («a» : «Val») («b» : «Val») : Option Bool := do {
 match «a» with
@@ -830,13 +861,92 @@ partial_fixpoint
 
 end
 
+def «valHash» («v» : «Val») : Option Int := do {
+match «v» with
+| «Val».«VSym» «s» => {
+pure (← «strHash» «s»);
+}
+| «Val».«VInt» «n» => {
+pure (Int.tmod ((Int.tmod «n» (4294967296 : Int)) + (4294967296 : Int)) (4294967296 : Int));
+}
+;
+}
+
+mutual
+def «fmGet» («m» : «FMap») («h» : Int) : Option «Facts» := do {
+match «m» with
+| «FMap».«FmTip» => {
+pure «Facts».«FactNil»;
+}
+| «FMap».«FmBin» «k» «b» «l» «rt» => {
+if («h» == «k») then {
+pure «b»;
+} else {
+if (decide («h» < «k»)) then {
+pure (← «fmGet» «l» «h»);
+} else {
+pure (← «fmGet» «rt» «h»);
+};
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «fmAdd» («m» : «FMap») («h» : Int) («f» : «Fact») («src» : «Source») : Option «FMap» := do {
+match «m» with
+| «FMap».«FmTip» => {
+pure («FMap».«FmBin» «h» («Facts».«FactCons» «f» «src» «Facts».«FactNil») «FMap».«FmTip» «FMap».«FmTip»);
+}
+| «FMap».«FmBin» «k» «b» «l» «rt» => {
+if («h» == «k») then {
+pure («FMap».«FmBin» «k» («Facts».«FactCons» «f» «src» «b») «l» «rt»);
+} else {
+if (decide («h» < «k»)) then {
+pure («FMap».«FmBin» «k» «b» (← «fmAdd» «l» «h» «f» «src») «rt»);
+} else {
+pure («FMap».«FmBin» «k» «b» «l» (← «fmAdd» «rt» «h» «f» «src»));
+};
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «colsAdd» («cs» : «Cols») («vs» : «Vals») («f» : «Fact») («src» : «Source») : Option «Cols» := do {
+match «vs» with
+| «Vals».«ValNil» => {
+pure «cs»;
+}
+| «Vals».«ValCons» «v» «vt» => {
+match «cs» with
+| «Cols».«ColNil» => {
+pure («Cols».«Col» (← «fmAdd» «FMap».«FmTip» (← «valHash» «v») «f» «src») (← «colsAdd» «Cols».«ColNil» «vt» «f» «src»));
+}
+| «Cols».«Col» «m» «ct» => {
+pure («Cols».«Col» (← «fmAdd» «m» (← «valHash» «v») «f» «src») (← «colsAdd» «ct» «vt» «f» «src»));
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
 mutual
 def «factsOf» («rs» : «Rels») («p» : ByteArray) («delta» : Bool) : Option «Facts» := do {
 match «rs» with
 | «Rels».«RelNil» => {
 pure «Facts».«FactNil»;
 }
-| «Rels».«Rel» «q» «all» «d» «t» => {
+| «Rels».«Rel» «q» «all» «d» _ «t» => {
 if (← «rt_str_eq» «p» «q») then {
 if «delta» then {
 pure «d»;
@@ -856,7 +966,7 @@ end
 mutual
 def «addFact» («rs» : «Rels») («f» : «Fact») («src» : «Source») («delta» : Bool) : Option «Rels» := do {
 match «f» with
-| «Fact».«Fact» «p» _ => {
+| «Fact».«Fact» «p» «vs» => {
 match «rs» with
 | «Rels».«RelNil» => {
 pure («Rels».«Rel» «p» («Facts».«FactCons» «f» «src» «Facts».«FactNil») (← (do {
@@ -865,9 +975,9 @@ pure («Facts».«FactCons» «f» «src» «Facts».«FactNil»);
 } else {
 pure «Facts».«FactNil»;
 };
-})) «Rels».«RelNil»);
+})) (← «colsAdd» «Cols».«ColNil» «vs» «f» «src») «Rels».«RelNil»);
 }
-| «Rels».«Rel» «q» «all» «d» «t» => {
+| «Rels».«Rel» «q» «all» «d» «cs» «t» => {
 if (← «rt_str_eq» «p» «q») then {
 pure («Rels».«Rel» «q» («Facts».«FactCons» «f» «src» «all») (← (do {
 if «delta» then {
@@ -875,9 +985,9 @@ pure («Facts».«FactCons» «f» «src» «d»);
 } else {
 pure «d»;
 };
-})) «t»);
+})) (← «colsAdd» «cs» «vs» «f» «src») «t»);
 } else {
-pure («Rels».«Rel» «q» «all» «d» (← «addFact» «t» «f» «src» «delta»));
+pure («Rels».«Rel» «q» «all» «d» «cs» (← «addFact» «t» «f» «src» «delta»));
 };
 }
 ;
@@ -894,8 +1004,8 @@ match «rs» with
 | «Rels».«RelNil» => {
 pure «Rels».«RelNil»;
 }
-| «Rels».«Rel» «q» «all» _ «t» => {
-pure («Rels».«Rel» «q» «all» «Facts».«FactNil» (← «resetDelta» «t»));
+| «Rels».«Rel» «q» «all» _ «cs» «t» => {
+pure («Rels».«Rel» «q» «all» «Facts».«FactNil» «cs» (← «resetDelta» «t»));
 }
 ;
 }
@@ -919,46 +1029,34 @@ partial_fixpoint
 end
 
 mutual
-def «absentIn» («es» : «Envs») («a» : «Atom») («rs» : «Rels») : Option «Envs» := do {
-match «es» with
-| «Envs».«EnvsNil» => {
-pure «Envs».«EnvsNil»;
+def «boundCol» («all» : «Facts») («cs» : «Cols») («args» : «Args») («e» : «Env») : Option «Facts» := do {
+match «args» with
+| «Args».«ArgNil» => {
+pure «all»;
 }
-| «Envs».«EnvsCons» «e» «t» => {
-if (← «hasFact» (← «factsOf» «rs» (← «relOf» «a») false) (← «factOf» «e» «a»)) then {
-pure (← «absentIn» «t» «a» «rs»);
-} else {
-pure («Envs».«EnvsCons» «e» (← «absentIn» «t» «a» «rs»));
-};
+| «Args».«ArgCons» «a» «at» => {
+match «cs» with
+| «Cols».«ColNil» => {
+pure «all»;
+}
+| «Cols».«Col» «m» «ct» => {
+match «a» with
+| «Arg».«AVal» «v» => {
+pure (← «fmGet» «m» (← «valHash» «v»));
+}
+| «Arg».«AVar» «n» => {
+match (← «envGet» «e» «n») with
+| «Arg».«AVal» «v» => {
+pure (← «fmGet» «m» (← «valHash» «v»));
+}
+| «Arg».«AVar» _ => {
+pure (← «boundCol» «all» «ct» «at» «e»);
 }
 ;
 }
-partial_fixpoint
-
-end
-
-mutual
-def «addNew» («es» : «Envs») («h» : «Atom») («i» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
-match «es» with
-| «Envs».«EnvsNil» => {
-pure «acc»;
+;
 }
-| «Envs».«EnvsCons» «e» «t» => {
-let «f» ← (pure (← «factOf» «e» «h»));
-let «known» ← (pure (← (do {
-if (← «hasFact» (← «factsOf» «rs» (← «relOf» «h») false) «f») then {
-pure true
-} else {
-pure (← «hasFact» «acc» «f»)
-}
-})));
-pure (← «addNew» «t» «h» «i» «rs» (← (do {
-if «known» then {
-pure «acc»;
-} else {
-pure («Facts».«FactCons» «f» («Source».«ByRule» «i» «e») «acc»);
-};
-})));
+;
 }
 ;
 }
@@ -1573,29 +1671,6 @@ let _ := (← «rt_eprint» "\n".toUTF8);
 pure (← «rt_exit» (1 : Int));
 }
 
-def «strHash_loop0» («n» : Int) («s» : ByteArray) (st' : (Int × Int)) : Option (Int × Int) := do {
-if (← (fun ((«i», _) : (Int × Int)) => (do {
-pure (decide («i» < «n»))
-} : Option Bool)) st') then «strHash_loop0» «n» «s» (← (fun ((«i», «h») : (Int × Int)) => (do {
-let mut «i» := «i»;
-let mut «h» := «h»;
-«h» := (Int.tmod ((«h» + (← «rt_str_at» «s» «i»)) * (16777619 : Int)) (4294967296 : Int));
-«i» := («i» + (1 : Int));
-pure («i», «h»)
-} : Option (Int × Int))) st') else pure st'
-}
-partial_fixpoint
-
-def «strHash» («s» : ByteArray) : Option Int := do {
-let mut «h» := (2166136261 : Int);
-let mut «i» := (0 : Int);
-let «n» ← (pure (← «rt_str_len» «s»));
-let t_ ← «strHash_loop0» «n» «s» («i», «h»);
-«i» := t_.1;
-«h» := t_.2;
-pure «h»;
-}
-
 mutual
 def «dmGet» («m» : «DMap») («h» : Int) : Option «Nodes» := do {
 match «m» with
@@ -1644,7 +1719,7 @@ end
 
 def «declList» («ds» : «Decls») : Option «Nodes» := do {
 match «ds» with
-| «Decls».«Decls» «all» _ => {
+| «Decls».«Decls» «all» _ _ => {
 pure «all»;
 }
 ;
@@ -1652,7 +1727,7 @@ pure «all»;
 
 def «findDecl» («ds» : «Decls») («k» : «Kind») («s» : ByteArray) : Option «Node» := do {
 match «ds» with
-| «Decls».«Decls» _ «m» => {
+| «Decls».«Decls» _ «m» _ => {
 pure (← «find» (← «dmGet» «m» (← «strHash» «s»)) «k» «s»);
 }
 ;
@@ -1678,6 +1753,22 @@ let t_ ← «dmAddAll_loop0» «xs» «m» («c», «out»);
 «c» := t_.1;
 «out» := t_.2;
 pure «out»;
+}
+
+def «withRec» («ds» : «Decls») («rs» : «DMap») : Option «Decls» := do {
+match «ds» with
+| «Decls».«Decls» «all» «m» _ => {
+pure («Decls».«Decls» «all» «m» «rs»);
+}
+;
+}
+
+def «isRec» («ds» : «Decls») («name» : ByteArray) : Option Bool := do {
+match «ds» with
+| «Decls».«Decls» _ _ «rs» => {
+pure (← «found» (← «find» (← «dmGet» «rs» (← «strHash» «name»)) «Kind».«Name» «name»));
+}
+;
 }
 
 def «isAlpha» («c» : Int) : Option Bool := do {
@@ -6668,88 +6759,6 @@ let _ := (← «put» «on» ".".toUTF8);
 pure (← «lid» «on» «name»);
 }
 
-def «reach_loop0» («f» : ByteArray) («g» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
-if (← (fun ((«todo», _) : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isNil» «todo»))
-} : Option Bool)) st') then «reach_loop0» «f» «g» (← (fun ((«todo», «seen») : («Nodes» × «Nodes»)) => (do {
-let mut «todo» := «todo»;
-let mut «seen» := «seen»;
-let «n» ← (pure (← «text» (← «head» «todo»)));
-«todo» := (← «tail» «todo»);
-if (!(← «has» «seen» «n»)) then {
-«seen» := («Nodes».«NCons» (← «leaf» «Kind».«Name» «n» (0 : Int)) «seen»);
-«todo» := (← «append» (← «kids» (← «find» «g» «Kind».«Name» «n»)) «todo»);
-} else {
-let _ := ();
-};
-pure («todo», «seen»)
-} : Option («Nodes» × «Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «reach» («g» : «Nodes») («f» : ByteArray) : Option «Nodes» := do {
-let mut «seen» := «Nodes».«NNil»;
-let mut «todo» := (← «kids» (← «find» «g» «Kind».«Name» «f»));
-let t_ ← «reach_loop0» «f» «g» («todo», «seen»);
-«todo» := t_.1;
-«seen» := t_.2;
-pure «seen»;
-}
-
-def «scc_loop0» («f» : ByteArray) («g» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
-if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «scc_loop0» «f» «g» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
-let mut «c» := «c»;
-let mut «out» := «out»;
-if (← (do {
-if (!(← «eqs» (← «text» (← «head» «c»)) «f»)) then {
-pure (← «has» (← «reach» «g» (← «text» (← «head» «c»))) «f»)
-} else {
-pure false
-}
-})) then {
-«out» := («Nodes».«NCons» (← «head» «c») «out»);
-} else {
-let _ := ();
-};
-«c» := (← «tail» «c»);
-pure («c», «out»)
-} : Option («Nodes» × «Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «scc» («g» : «Nodes») («f» : ByteArray) : Option «Nodes» := do {
-let mut «out» := (← «one» (← «leaf» «Kind».«Name» «f» (0 : Int)));
-let mut «c» := (← «reach» «g» «f»);
-let t_ ← «scc_loop0» «f» «g» («c», «out»);
-«c» := t_.1;
-«out» := t_.2;
-pure «out»;
-}
-
-def «deps_loop0» («sc» : «Nodes») («g» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
-if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «deps_loop0» «sc» «g» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
-let mut «c» := «c»;
-let mut «out» := «out»;
-«out» := (← «append» (← «kids» (← «find» «g» «Kind».«Name» (← «text» (← «head» «c»)))) «out»);
-«c» := (← «tail» «c»);
-pure («c», «out»)
-} : Option («Nodes» × «Nodes»))) st') else pure st'
-}
-partial_fixpoint
-
-def «deps» («g» : «Nodes») («sc» : «Nodes») : Option «Nodes» := do {
-let mut «out» := «Nodes».«NNil»;
-let mut «c» := «sc»;
-let t_ ← «deps_loop0» «sc» «g» («c», «out»);
-«c» := t_.1;
-«out» := t_.2;
-pure «out»;
-}
-
 mutual
 def «callsOf_loop0» («acc» : «Nodes») («e» : «Node») («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
@@ -7171,6 +7180,185 @@ let t_ ← «captured_loop0» «mu» «sc» («c», «out»);
 «c» := t_.1;
 «out» := t_.2;
 pure (← «rev» «out»);
+}
+
+def «gGet» («gm» : «DMap») («f» : ByteArray) : Option «Node» := do {
+pure (← «find» (← «dmGet» «gm» (← «strHash» «f»)) «Kind».«Name» «f»);
+}
+
+def «inSet» («m» : «DMap») («x» : ByteArray) : Option Bool := do {
+pure (← «found» (← «find» (← «dmGet» «m» (← «strHash» «x»)) «Kind».«Name» «x»));
+}
+
+def «tInfo» («st» : «Tarjan») («f» : ByteArray) : Option «Node» := do {
+match «st» with
+| «Tarjan».«Tarjan» _ «info» _ _ => {
+pure (← «find» (← «dmGet» «info» (← «strHash» «f»)) «Kind».«Name» «f»);
+}
+;
+}
+
+def «tSet» («st» : «Tarjan») («x» : «Node») : Option «Tarjan» := do {
+match «st» with
+| «Tarjan».«Tarjan» «n» «info» «stack» «comps» => {
+pure («Tarjan».«Tarjan» «n» (← «dmAdd» «info» (← «strHash» (← «text» «x»)) «x») «stack» «comps»);
+}
+;
+}
+
+def «tLow» («st» : «Tarjan») («v» : ByteArray) («x» : Int) : Option «Tarjan» := do {
+let «iv» ← (pure (← «tInfo» «st» «v»));
+if (decide («x» < (← «lineOf» «iv»))) then {
+pure (← «tSet» «st» («Node».«Node» «Kind».«Name» «v» (← «text2» «iv») (← «num» «iv») «x» «Nodes».«NNil»));
+} else {
+pure «st»;
+};
+}
+
+def «tPop_loop0» («comps» : «Nodes») («stack0» : «Nodes») («info0» : «DMap») («n» : Int) («v» : ByteArray) («st0» : «Tarjan») (st' : (Bool × «Nodes» × «Nodes» × «DMap»)) : Option (Bool × «Nodes» × «Nodes» × «DMap») := do {
+if (← (fun ((«go», _, «stack», _) : (Bool × «Nodes» × «Nodes» × «DMap»)) => (do {
+pure (← (do {
+if «go» then {
+pure (!(← «isNil» «stack»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «tPop_loop0» «comps» «stack0» «info0» «n» «v» «st0» (← (fun ((«go», «members», «stack», «info») : (Bool × «Nodes» × «Nodes» × «DMap»)) => (do {
+let mut «go» := «go»;
+let mut «members» := «members»;
+let mut «stack» := «stack»;
+let mut «info» := «info»;
+let «w» ← (pure (← «text» (← «head» «stack»)));
+let «iw» ← (pure (← «find» (← «dmGet» «info» (← «strHash» «w»)) «Kind».«Name» «w»));
+«info» := (← «dmAdd» «info» (← «strHash» «w») («Node».«Node» «Kind».«Name» «w» "".toUTF8 (← «num» «iw») (← «lineOf» «iw») «Nodes».«NNil»));
+«members» := («Nodes».«NCons» (← «leaf» «Kind».«Name» «w» (0 : Int)) «members»);
+«stack» := (← «tail» «stack»);
+«go» := (!(← «eqs» «w» «v»));
+pure («go», «members», «stack», «info»)
+} : Option (Bool × «Nodes» × «Nodes» × «DMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «tPop» («st0» : «Tarjan») («v» : ByteArray) : Option «Tarjan» := do {
+match «st0» with
+| «Tarjan».«Tarjan» «n» «info0» «stack0» «comps» => {
+let mut «info» := «info0»;
+let mut «stack» := «stack0»;
+let mut «members» := «Nodes».«NNil»;
+let mut «go» := true;
+let t_ ← «tPop_loop0» «comps» «stack0» «info0» «n» «v» «st0» («go», «members», «stack», «info»);
+«go» := t_.1;
+«members» := t_.2.1;
+«stack» := t_.2.2.1;
+«info» := t_.2.2.2;
+pure («Tarjan».«Tarjan» «n» «info» «stack» («Nodes».«NCons» («Node».«Node» «Kind».«Names» "".toUTF8 "".toUTF8 (0 : Int) (0 : Int) «members») «comps»));
+}
+;
+}
+
+def «tComps» («st» : «Tarjan») : Option «Nodes» := do {
+match «st» with
+| «Tarjan».«Tarjan» _ _ _ «comps» => {
+pure «comps»;
+}
+;
+}
+
+def «sccOf» («sm» : «DMap») («f» : ByteArray) : Option «Nodes» := do {
+pure (← «kids» (← «find» (← «dmGet» «sm» (← «strHash» «f»)) «Kind».«Name» «f»));
+}
+
+def «recIn» («gm» : «DMap») («sm» : «DMap») («f» : ByteArray) : Option Bool := do {
+pure (← (do {
+if (decide ((← «len» (← «sccOf» «sm» «f»)) > (1 : Int))) then {
+pure true
+} else {
+pure (← «has» (← «kids» (← «gGet» «gm» «f»)) «f»)
+}
+}));
+}
+
+def «depsDone_loop1» («c» : «Nodes») («done» : «DMap») («sc» : «Nodes») («gm» : «DMap») (st' : («Nodes» × Bool)) : Option («Nodes» × Bool) := do {
+if (← (fun ((«w», «ok») : («Nodes» × Bool)) => (do {
+pure (← (do {
+if «ok» then {
+pure (!(← «isNil» «w»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «depsDone_loop1» «c» «done» «sc» «gm» (← (fun ((«w», «ok») : («Nodes» × Bool)) => (do {
+let mut «w» := «w»;
+let mut «ok» := «ok»;
+«ok» := (← (do {
+if (← «inSet» «done» (← «text» (← «head» «w»))) then {
+pure true
+} else {
+pure (← «has» «sc» (← «text» (← «head» «w»)))
+}
+}));
+«w» := (← «tail» «w»);
+pure («w», «ok»)
+} : Option («Nodes» × Bool))) st') else pure st'
+}
+partial_fixpoint
+
+def «depsDone_loop0» («done» : «DMap») («sc» : «Nodes») («gm» : «DMap») (st' : («Nodes» × Bool)) : Option («Nodes» × Bool) := do {
+if (← (fun ((«c», «ok») : («Nodes» × Bool)) => (do {
+pure (← (do {
+if «ok» then {
+pure (!(← «isNil» «c»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «depsDone_loop0» «done» «sc» «gm» (← (fun ((«c», «ok») : («Nodes» × Bool)) => (do {
+let mut «c» := «c»;
+let mut «ok» := «ok»;
+let mut «w» := (← «kids» (← «gGet» «gm» (← «text» (← «head» «c»))));
+let t_ ← «depsDone_loop1» «c» «done» «sc» «gm» («w», «ok»);
+«w» := t_.1;
+«ok» := t_.2;
+«c» := (← «tail» «c»);
+pure («c», «ok»)
+} : Option («Nodes» × Bool))) st') else pure st'
+}
+partial_fixpoint
+
+def «depsDone» («gm» : «DMap») («sc» : «Nodes») («done» : «DMap») : Option Bool := do {
+let mut «ok» := true;
+let mut «c» := «sc»;
+let t_ ← «depsDone_loop0» «done» «sc» «gm» («c», «ok»);
+«c» := t_.1;
+«ok» := t_.2;
+pure «ok»;
+}
+
+def «recSet_loop0» («g» : «Nodes») («sm» : «DMap») («gm» : «DMap») (st' : («Nodes» × «DMap»)) : Option («Nodes» × «DMap») := do {
+if (← (fun ((«c», _) : («Nodes» × «DMap»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «recSet_loop0» «g» «sm» «gm» (← (fun ((«c», «out») : («Nodes» × «DMap»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+if (← «recIn» «gm» «sm» (← «text» (← «head» «c»))) then {
+«out» := (← «dmAdd» «out» (← «strHash» (← «text» (← «head» «c»))) (← «leaf» «Kind».«Name» (← «text» (← «head» «c»)) (0 : Int)));
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «DMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «recSet» («gm» : «DMap») («sm» : «DMap») («g» : «Nodes») : Option «DMap» := do {
+let mut «out» := «DMap».«DTip»;
+let mut «c» := «g»;
+let t_ ← «recSet_loop0» «g» «sm» «gm» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure «out»;
 }
 
 def «clausesOf» («f» : «Node») : Option «Nodes» := do {
@@ -8174,6 +8362,40 @@ partial_fixpoint
 end
 
 mutual
+def «candidates» («rs» : «Rels») («p» : ByteArray) («args» : «Args») («e» : «Env») : Option «Facts» := do {
+match «rs» with
+| «Rels».«RelNil» => {
+pure «Facts».«FactNil»;
+}
+| «Rels».«Rel» «q» «all» _ «cs» «t» => {
+if (← «rt_str_eq» «p» «q») then {
+pure (← «boundCol» «all» «cs» «args» «e»);
+} else {
+pure (← «candidates» «t» «p» «args» «e»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «knownFact» («rs» : «Rels») («f» : «Fact») : Option Bool := do {
+match «f» with
+| «Fact».«Fact» «p» «vs» => {
+match «vs» with
+| «Vals».«ValNil» => {
+pure (← «hasFact» (← «factsOf» «rs» «p» false) «f»);
+}
+| «Vals».«ValCons» «v» _ => {
+pure (← «hasFact» (← «candidates» «rs» «p» («Args».«ArgCons» («Arg».«AVal» «v») «Args».«ArgNil») «Env».«EnvNil») «f»);
+}
+;
+}
+;
+}
+
+mutual
 def «matchRel» («e» : «Env») («args» : «Args») («fs» : «Facts») : Option «Envs» := do {
 match «fs» with
 | «Facts».«FactNil» => {
@@ -8193,13 +8415,20 @@ partial_fixpoint
 end
 
 mutual
-def «matchAll» («es» : «Envs») («args» : «Args») («fs» : «Facts») : Option «Envs» := do {
+def «matchAll» («es» : «Envs») («args» : «Args») («rs» : «Rels») («p» : ByteArray) («delta» : Bool) : Option «Envs» := do {
 match «es» with
 | «Envs».«EnvsNil» => {
 pure «Envs».«EnvsNil»;
 }
 | «Envs».«EnvsCons» «e» «t» => {
-pure (← «envsAppend» (← «matchRel» «e» «args» «fs») (← «matchAll» «t» «args» «fs»));
+let «fs» ← (pure (← (do {
+if «delta» then {
+pure (← «factsOf» «rs» «p» true);
+} else {
+pure (← «candidates» «rs» «p» «args» «e»);
+};
+})));
+pure (← «envsAppend» (← «matchRel» «e» «args» «fs») (← «matchAll» «t» «args» «rs» «p» «delta»));
 }
 ;
 }
@@ -8218,7 +8447,7 @@ match «l» with
 | «Lit».«Pos» «a» => {
 match «a» with
 | «Atom».«Atom» «p» «args» => {
-pure (← «joinRels» (← «matchAll» «es» «args» (← «factsOf» «rs» «p» («i» == «at»))) «t» «rs» «at» («i» + (1 : Int)));
+pure (← «joinRels» (← «matchAll» «es» «args» «rs» «p» («i» == «at»)) «t» «rs» «at» («i» + (1 : Int)));
 }
 ;
 }
@@ -8234,56 +8463,17 @@ partial_fixpoint
 end
 
 mutual
-def «dropNegRels» («es» : «Envs») («body» : «Lits») («rs» : «Rels») : Option «Envs» := do {
-match «body» with
-| «Lits».«LitNil» => {
-pure «es»;
+def «absentIn» («es» : «Envs») («a» : «Atom») («rs» : «Rels») : Option «Envs» := do {
+match «es» with
+| «Envs».«EnvsNil» => {
+pure «Envs».«EnvsNil»;
 }
-| «Lits».«LitCons» «l» «t» => {
-match «l» with
-| «Lit».«Pos» _ => {
-pure (← «dropNegRels» «es» «t» «rs»);
-}
-| «Lit».«Neg» «a» => {
-pure (← «dropNegRels» (← «absentIn» «es» «a» «rs») «t» «rs»);
-}
-;
-}
-;
-}
-partial_fixpoint
-
-end
-
-def «fireRule» («c» : «Clause») («i» : Int) («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
-match «c» with
-| «Clause».«Clause» «h» «body» => {
-pure (← «addNew» (← «dropNegRels» (← «joinRels» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «rs» «at» (0 : Int)) «body» «rs») «h» «i» «rs» «acc»);
-}
-;
-}
-
-mutual
-def «fireDeltas» («c» : «Clause») («i» : Int) («body» : «Lits») («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
-match «body» with
-| «Lits».«LitNil» => {
-pure «acc»;
-}
-| «Lits».«LitCons» «l» «t» => {
-match «l» with
-| «Lit».«Pos» «a» => {
-pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» (← (do {
-if (← «noFacts» (← «factsOf» «rs» (← «relOf» «a») true)) then {
-pure «acc»;
+| «Envs».«EnvsCons» «e» «t» => {
+if (← «knownFact» «rs» (← «factOf» «e» «a»)) then {
+pure (← «absentIn» «t» «a» «rs»);
 } else {
-pure (← «fireRule» «c» «i» «at» «rs» «acc»);
+pure («Envs».«EnvsCons» «e» (← «absentIn» «t» «a» «rs»));
 };
-})));
-}
-| «Lit».«Neg» _ => {
-pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» «acc»);
-}
-;
 }
 ;
 }
@@ -8292,128 +8482,44 @@ partial_fixpoint
 end
 
 mutual
-def «dlRound» («st» : «Strata») («cs» : «Clauses») («i» : Int) («k» : Int) («first» : Bool) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
-match «cs» with
-| «Clauses».«ClNil» => {
+def «addNew» («es» : «Envs») («h» : «Atom») («i» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «es» with
+| «Envs».«EnvsNil» => {
 pure «acc»;
 }
-| «Clauses».«ClCons» «c» «t» => {
-match «c» with
-| «Clause».«Clause» «h» «body» => {
-let «acc2» ← (pure (← (do {
-if ((← «stratum» «st» (← «relOf» «h»)) != «k») then {
+| «Envs».«EnvsCons» «e» «t» => {
+let «f» ← (pure (← «factOf» «e» «h»));
+let «known» ← (pure (← (do {
+if (← «knownFact» «rs» «f») then {
+pure true
+} else {
+pure (← «hasFact» «acc» «f»)
+}
+})));
+pure (← «addNew» «t» «h» «i» «rs» (← (do {
+if «known» then {
 pure «acc»;
 } else {
-if «first» then {
-pure (← «fireRule» «c» «i» (0 - (1 : Int)) «rs» «acc»);
-} else {
-pure (← «fireDeltas» «c» «i» «body» (0 : Int) «rs» «acc»);
-};
+pure («Facts».«FactCons» «f» («Source».«ByRule» «i» «e») «acc»);
 };
 })));
-pure (← «dlRound» «st» «t» («i» + (1 : Int)) «k» «first» «rs» «acc2»);
-}
-;
 }
 ;
 }
 partial_fixpoint
 
 end
-
-def «evalDatalog_loop0» («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Bool × «Strata»)) : Option (Bool × «Strata») := do {
-if (← (fun ((«go», _) : (Bool × «Strata»)) => (do {
-pure «go»
-} : Option Bool)) st') then «evalDatalog_loop0» «n» «edb» «cs» (← (fun ((«go», «st») : (Bool × «Strata»)) => (do {
-let mut «go» := «go»;
-let mut «st» := «st»;
-let «st2» ← (pure (← «raise» «st» «cs»));
-«go» := (← (do {
-if (!(← «strataSame» «st» «st2»)) then {
-pure (decide ((← «topStratum» «st2» (0 : Int)) <= «n»))
-} else {
-pure false
-}
-}));
-«st» := «st2»;
-pure («go», «st»)
-} : Option (Bool × «Strata»))) st') else pure st'
-}
-partial_fixpoint
-
-def «evalDatalog_loop2» («k» : Int) («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : («Facts» × «Facts» × «Rels»)) : Option («Facts» × «Facts» × «Rels») := do {
-if (← (fun ((«acc», _, _) : («Facts» × «Facts» × «Rels»)) => (do {
-pure (!(← «noFacts» «acc»))
-} : Option Bool)) st') then «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«acc», «log», «rs») : («Facts» × «Facts» × «Rels»)) => (do {
-let mut «acc» := «acc»;
-let mut «log» := «log»;
-let mut «rs» := «rs»;
-«rs» := (← «addFacts» (← «resetDelta» «rs») «acc» true);
-«log» := (← «factsCat» «acc» «log»);
-«acc» := (← «dlRound» «st» «cs» (0 : Int) «k» false «rs» «Facts».«FactNil»);
-pure («acc», «log», «rs»)
-} : Option («Facts» × «Facts» × «Rels»))) st') else pure st'
-}
-partial_fixpoint
-
-def «evalDatalog_loop1» («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Int × «Facts» × «Rels»)) : Option (Int × «Facts» × «Rels») := do {
-if (← (fun ((«k», _, _) : (Int × «Facts» × «Rels»)) => (do {
-pure (decide («k» <= (← «topStratum» «st» (0 : Int))))
-} : Option Bool)) st') then «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«k», «log», «rs») : (Int × «Facts» × «Rels»)) => (do {
-let mut «k» := «k»;
-let mut «log» := «log»;
-let mut «rs» := «rs»;
-let mut «acc» := (← «dlRound» «st» «cs» (0 : Int) «k» true «rs» «Facts».«FactNil»);
-let t_ ← «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» («acc», «log», «rs»);
-«acc» := t_.1;
-«log» := t_.2.1;
-«rs» := t_.2.2;
-«rs» := (← «resetDelta» «rs»);
-«k» := («k» + (1 : Int));
-pure («k», «log», «rs»)
-} : Option (Int × «Facts» × «Rels»))) st') else pure st'
-}
-partial_fixpoint
-
-def «evalDatalog» («cs» : «Clauses») («edb» : «Edb») : Option «Model» := do {
-match (← «safety» «cs») with
-| «Safety».«UnsafeIn» «p» => {
-pure («Model».«Unsafe» «p»);
-}
-| «Safety».«AllSafe» => {
-let «n» ← (pure (← «clauseCount» «cs»));
-let mut «st» := «Strata».«StNil»;
-let mut «go» := true;
-let t_ ← «evalDatalog_loop0» «n» «edb» «cs» («go», «st»);
-«go» := t_.1;
-«st» := t_.2;
-if (decide ((← «topStratum» «st» (0 : Int)) > «n»)) then {
-pure («Model».«NegCycle» (← «overRel» «st» «n»));
-} else {
-let «gs» ← (pure (← «given» «edb»));
-let mut «rs» := (← «addFacts» «Rels».«RelNil» (← «factsRev» «gs» «Facts».«FactNil») false);
-let mut «log» := «Facts».«FactNil»;
-let mut «k» := (0 : Int);
-let t_ ← «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» («k», «log», «rs»);
-«k» := t_.1;
-«log» := t_.2.1;
-«rs» := t_.2.2;
-pure («Model».«Model» (← «factsCat» «gs» (← «factsRev» «log» «Facts».«FactNil»)));
-};
-}
-;
-}
 
 def «declsCons» («x» : «Node») («ds» : «Decls») : Option «Decls» := do {
 match «ds» with
-| «Decls».«Decls» «all» «m» => {
+| «Decls».«Decls» «all» «m» «rs» => {
 pure («Decls».«Decls» («Nodes».«NCons» «x» «all») (← (do {
 if ((← «kind» «x») == «Kind».«DEnum») then {
 pure (← «dmAddAll» (← «dmAdd» «m» (← «strHash» (← «text» «x»)) «x») (← «kids» «x»));
 } else {
 pure (← «dmAdd» «m» (← «strHash» (← «text» «x»)) «x»);
 };
-})));
+})) «rs»);
 }
 ;
 }
@@ -8441,7 +8547,7 @@ pure «out»;
 }
 
 def «mkDecls» («xs» : «Nodes») : Option «Decls» := do {
-pure (← «declsPrepend» «xs» («Decls».«Decls» «Nodes».«NNil» «DMap».«DTip»));
+pure (← «declsPrepend» «xs» («Decls».«Decls» «Nodes».«NNil» «DMap».«DTip» «DMap».«DTip»));
 }
 
 def «group_loop0» («close» : ByteArray) («open» : ByteArray) («line» : Int) («out» : ByteArray) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
@@ -9239,22 +9345,6 @@ partial_fixpoint
 
 end
 
-def «impureDecl» («ds» : «Decls») : Option «Node» := do {
-match (← «evalDatalog» (← «purityRules») (← «purityFacts» «ds»)) with
-| «Model».«Model» «db» => {
-pure («Node».«Node» «Kind».«Names» "%impure".toUTF8 "".toUTF8 (0 : Int) (0 : Int) (← «impureOf» «db»));
-}
-| «Model».«Unsafe» «p» => {
-let _ := (← «err» "internal: unsafe purity rule".toUTF8 «p» (0 : Int));
-pure «Node».«NoNode»;
-}
-| «Model».«NegCycle» «p» => {
-let _ := (← «err» "internal: negation in purity rules".toUTF8 «p» (0 : Int));
-pure «Node».«NoNode»;
-}
-;
-}
-
 def «instantiate» («f» : «Node») («targs» : «Nodes») : Option «Node» := do {
 let «g» ← (pure (← «substTy» «f» (← «tparams» «f») «targs»));
 pure (← «withKids» «g» («Nodes».«NCons» (← «kid» «g» (0 : Int)) («Nodes».«NCons» (← «kid» «g» (1 : Int)) («Nodes».«NCons» (← «kid» «g» (2 : Int)) («Nodes».«NCons» (← «kid» «g» (3 : Int)) (← «one» (← «list» «Kind».«Names» (← «lineOf» «f») «targs»)))))));
@@ -9424,6 +9514,112 @@ pure (← «say» "_".toUTF8);
 };
 }
 
+mutual
+def «tVisit_loop0» («comps» : «Nodes») («stack» : «Nodes») («info» : «DMap») («n» : Int) («st0» : «Tarjan») («v» : ByteArray) («gm» : «DMap») (st' : («Nodes» × «Tarjan»)) : Option («Nodes» × «Tarjan») := do {
+if (← (fun ((«c», _) : («Nodes» × «Tarjan»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «tVisit_loop0» «comps» «stack» «info» «n» «st0» «v» «gm» (← (fun ((«c», «st») : («Nodes» × «Tarjan»)) => (do {
+let mut «c» := «c»;
+let mut «st» := «st»;
+let «w» ← (pure (← «text» (← «head» «c»)));
+let «iw» ← (pure (← «tInfo» «st» «w»));
+if (!(← «found» «iw»)) then {
+«st» := (← «tVisit» «gm» «w» «st»);
+«st» := (← «tLow» «st» «v» (← «lineOf» (← «tInfo» «st» «w»)));
+} else {
+if (← «eqs» (← «text2» «iw») "1".toUTF8) then {
+«st» := (← «tLow» «st» «v» (← «num» «iw»));
+} else {
+let _ := ();
+};
+};
+«c» := (← «tail» «c»);
+pure («c», «st»)
+} : Option («Nodes» × «Tarjan»))) st') else pure st'
+}
+partial_fixpoint
+
+def «tVisit» («gm» : «DMap») («v» : ByteArray) («st0» : «Tarjan») : Option «Tarjan» := do {
+match «st0» with
+| «Tarjan».«Tarjan» «n» «info» «stack» «comps» => {
+let mut «st» := («Tarjan».«Tarjan» («n» + (1 : Int)) (← «dmAdd» «info» (← «strHash» «v») («Node».«Node» «Kind».«Name» «v» "1".toUTF8 «n» «n» «Nodes».«NNil»)) («Nodes».«NCons» (← «leaf» «Kind».«Name» «v» (0 : Int)) «stack») «comps»);
+let mut «c» := (← «kids» (← «gGet» «gm» «v»));
+let t_ ← «tVisit_loop0» «comps» «stack» «info» «n» «st0» «v» «gm» («c», «st»);
+«c» := t_.1;
+«st» := t_.2;
+let «iv» ← (pure (← «tInfo» «st» «v»));
+if ((← «lineOf» «iv») == (← «num» «iv»)) then {
+pure (← «tPop» «st» «v»);
+} else {
+pure «st»;
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «sccMap_loop0» («g» : «Nodes») («gm» : «DMap») (st' : («Nodes» × «Tarjan»)) : Option («Nodes» × «Tarjan») := do {
+if (← (fun ((«c», _) : («Nodes» × «Tarjan»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «sccMap_loop0» «g» «gm» (← (fun ((«c», «st») : («Nodes» × «Tarjan»)) => (do {
+let mut «c» := «c»;
+let mut «st» := «st»;
+if (!(← «found» (← «tInfo» «st» (← «text» (← «head» «c»))))) then {
+«st» := (← «tVisit» «gm» (← «text» (← «head» «c»)) «st»);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «st»)
+} : Option («Nodes» × «Tarjan»))) st') else pure st'
+}
+partial_fixpoint
+
+def «sccMap_loop2» («cs» : «Nodes») («c» : «Nodes») («st» : «Tarjan») («g» : «Nodes») («gm» : «DMap») (st' : («Nodes» × «DMap»)) : Option («Nodes» × «DMap») := do {
+if (← (fun ((«m», _) : («Nodes» × «DMap»)) => (do {
+pure (!(← «isNil» «m»))
+} : Option Bool)) st') then «sccMap_loop2» «cs» «c» «st» «g» «gm» (← (fun ((«m», «out») : («Nodes» × «DMap»)) => (do {
+let mut «m» := «m»;
+let mut «out» := «out»;
+«out» := (← «dmAdd» «out» (← «strHash» (← «text» (← «head» «m»))) («Node».«Node» «Kind».«Name» (← «text» (← «head» «m»)) "".toUTF8 (0 : Int) (0 : Int) (← «kids» (← «head» «cs»))));
+«m» := (← «tail» «m»);
+pure («m», «out»)
+} : Option («Nodes» × «DMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «sccMap_loop1» («c» : «Nodes») («st» : «Tarjan») («g» : «Nodes») («gm» : «DMap») (st' : («Nodes» × «DMap»)) : Option («Nodes» × «DMap») := do {
+if (← (fun ((«cs», _) : («Nodes» × «DMap»)) => (do {
+pure (!(← «isNil» «cs»))
+} : Option Bool)) st') then «sccMap_loop1» «c» «st» «g» «gm» (← (fun ((«cs», «out») : («Nodes» × «DMap»)) => (do {
+let mut «cs» := «cs»;
+let mut «out» := «out»;
+let mut «m» := (← «kids» (← «head» «cs»));
+let t_ ← «sccMap_loop2» «cs» «c» «st» «g» «gm» («m», «out»);
+«m» := t_.1;
+«out» := t_.2;
+«cs» := (← «tail» «cs»);
+pure («cs», «out»)
+} : Option («Nodes» × «DMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «sccMap» («gm» : «DMap») («g» : «Nodes») : Option «DMap» := do {
+let mut «st» := («Tarjan».«Tarjan» (0 : Int) «DMap».«DTip» «Nodes».«NNil» «Nodes».«NNil»);
+let mut «c» := «g»;
+let t_ ← «sccMap_loop0» «g» «gm» («c», «st»);
+«c» := t_.1;
+«st» := t_.2;
+let mut «out» := «DMap».«DTip»;
+let mut «cs» := (← «tComps» «st»);
+let t_ ← «sccMap_loop1» «c» «st» «g» «gm» («cs», «out»);
+«cs» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+
 def «lp» («ds» : «Decls») («e» : «Node») : Option Unit := do {
 pure (← «lpr» «ds» «Node».«NoNode» «e»);
 }
@@ -9521,10 +9717,6 @@ pure ()
 } else {
 pure (← «lid» true «name»);
 };
-}
-
-def «isRec» («ds» : «Decls») («name» : ByteArray) : Option Bool := do {
-pure (← «has» (← «reach» (← «callGraph» «ds») «name») «name»);
 }
 
 def «isEqFn» («ds» : «Decls») («f» : «Node») : Option Bool := do {
@@ -9728,6 +9920,177 @@ def «derive» («c» : «Clause») («i» : Int) («db» : «Facts») («acc» 
 match «c» with
 | «Clause».«Clause» «h» «body» => {
 pure (← «addAll» (← «dropNeg» (← «joinPos» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «db») «body» «db») «h» «i» «acc»);
+}
+;
+}
+
+mutual
+def «dropNegRels» («es» : «Envs») («body» : «Lits») («rs» : «Rels») : Option «Envs» := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure «es»;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» _ => {
+pure (← «dropNegRels» «es» «t» «rs»);
+}
+| «Lit».«Neg» «a» => {
+pure (← «dropNegRels» (← «absentIn» «es» «a» «rs») «t» «rs»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «fireRule» («c» : «Clause») («i» : Int) («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+pure (← «addNew» (← «dropNegRels» (← «joinRels» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «rs» «at» (0 : Int)) «body» «rs») «h» «i» «rs» «acc»);
+}
+;
+}
+
+mutual
+def «fireDeltas» («c» : «Clause») («i» : Int) («body» : «Lits») («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure «acc»;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» «a» => {
+pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» (← (do {
+if (← «noFacts» (← «factsOf» «rs» (← «relOf» «a») true)) then {
+pure «acc»;
+} else {
+pure (← «fireRule» «c» «i» «at» «rs» «acc»);
+};
+})));
+}
+| «Lit».«Neg» _ => {
+pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» «acc»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «dlRound» («st» : «Strata») («cs» : «Clauses») («i» : Int) («k» : Int) («first» : Bool) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «cs» with
+| «Clauses».«ClNil» => {
+pure «acc»;
+}
+| «Clauses».«ClCons» «c» «t» => {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+let «acc2» ← (pure (← (do {
+if ((← «stratum» «st» (← «relOf» «h»)) != «k») then {
+pure «acc»;
+} else {
+if «first» then {
+pure (← «fireRule» «c» «i» (0 - (1 : Int)) «rs» «acc»);
+} else {
+pure (← «fireDeltas» «c» «i» «body» (0 : Int) «rs» «acc»);
+};
+};
+})));
+pure (← «dlRound» «st» «t» («i» + (1 : Int)) «k» «first» «rs» «acc2»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «evalDatalog_loop0» («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Bool × «Strata»)) : Option (Bool × «Strata») := do {
+if (← (fun ((«go», _) : (Bool × «Strata»)) => (do {
+pure «go»
+} : Option Bool)) st') then «evalDatalog_loop0» «n» «edb» «cs» (← (fun ((«go», «st») : (Bool × «Strata»)) => (do {
+let mut «go» := «go»;
+let mut «st» := «st»;
+let «st2» ← (pure (← «raise» «st» «cs»));
+«go» := (← (do {
+if (!(← «strataSame» «st» «st2»)) then {
+pure (decide ((← «topStratum» «st2» (0 : Int)) <= «n»))
+} else {
+pure false
+}
+}));
+«st» := «st2»;
+pure («go», «st»)
+} : Option (Bool × «Strata»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evalDatalog_loop2» («k» : Int) («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : («Facts» × «Facts» × «Rels»)) : Option («Facts» × «Facts» × «Rels») := do {
+if (← (fun ((«acc», _, _) : («Facts» × «Facts» × «Rels»)) => (do {
+pure (!(← «noFacts» «acc»))
+} : Option Bool)) st') then «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«acc», «log», «rs») : («Facts» × «Facts» × «Rels»)) => (do {
+let mut «acc» := «acc»;
+let mut «log» := «log»;
+let mut «rs» := «rs»;
+«rs» := (← «addFacts» (← «resetDelta» «rs») «acc» true);
+«log» := (← «factsCat» «acc» «log»);
+«acc» := (← «dlRound» «st» «cs» (0 : Int) «k» false «rs» «Facts».«FactNil»);
+pure («acc», «log», «rs»)
+} : Option («Facts» × «Facts» × «Rels»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evalDatalog_loop1» («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Int × «Facts» × «Rels»)) : Option (Int × «Facts» × «Rels») := do {
+if (← (fun ((«k», _, _) : (Int × «Facts» × «Rels»)) => (do {
+pure (decide («k» <= (← «topStratum» «st» (0 : Int))))
+} : Option Bool)) st') then «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«k», «log», «rs») : (Int × «Facts» × «Rels»)) => (do {
+let mut «k» := «k»;
+let mut «log» := «log»;
+let mut «rs» := «rs»;
+let mut «acc» := (← «dlRound» «st» «cs» (0 : Int) «k» true «rs» «Facts».«FactNil»);
+let t_ ← «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» («acc», «log», «rs»);
+«acc» := t_.1;
+«log» := t_.2.1;
+«rs» := t_.2.2;
+«rs» := (← «resetDelta» «rs»);
+«k» := («k» + (1 : Int));
+pure («k», «log», «rs»)
+} : Option (Int × «Facts» × «Rels»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evalDatalog» («cs» : «Clauses») («edb» : «Edb») : Option «Model» := do {
+match (← «safety» «cs») with
+| «Safety».«UnsafeIn» «p» => {
+pure («Model».«Unsafe» «p»);
+}
+| «Safety».«AllSafe» => {
+let «n» ← (pure (← «clauseCount» «cs»));
+let mut «st» := «Strata».«StNil»;
+let mut «go» := true;
+let t_ ← «evalDatalog_loop0» «n» «edb» «cs» («go», «st»);
+«go» := t_.1;
+«st» := t_.2;
+if (decide ((← «topStratum» «st» (0 : Int)) > «n»)) then {
+pure («Model».«NegCycle» (← «overRel» «st» «n»));
+} else {
+let «gs» ← (pure (← «given» «edb»));
+let mut «rs» := (← «addFacts» «Rels».«RelNil» (← «factsRev» «gs» «Facts».«FactNil») false);
+let mut «log» := «Facts».«FactNil»;
+let mut «k» := (0 : Int);
+let t_ ← «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» («k», «log», «rs»);
+«k» := t_.1;
+«log» := t_.2.1;
+«rs» := t_.2.2;
+pure («Model».«Model» (← «factsCat» «gs» (← «factsRev» «log» «Facts».«FactNil»)));
+};
 }
 ;
 }
@@ -10129,6 +10492,22 @@ pure (← «qSols» «vars» «t» «line»);
 partial_fixpoint
 
 end
+
+def «impureDecl» («ds» : «Decls») : Option «Node» := do {
+match (← «evalDatalog» (← «purityRules») (← «purityFacts» «ds»)) with
+| «Model».«Model» «db» => {
+pure («Node».«Node» «Kind».«Names» "%impure".toUTF8 "".toUTF8 (0 : Int) (0 : Int) (← «impureOf» «db»));
+}
+| «Model».«Unsafe» «p» => {
+let _ := (← «err» "internal: unsafe purity rule".toUTF8 «p» (0 : Int));
+pure «Node».«NoNode»;
+}
+| «Model».«NegCycle» «p» => {
+let _ := (← «err» "internal: negation in purity rules".toUTF8 «p» (0 : Int));
+pure «Node».«NoNode»;
+}
+;
+}
 
 def «enumInsts_loop0» («cs» : «Nodes») («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
@@ -14839,10 +15218,10 @@ let t_ ← «checkHandler_loop1» «ops» «p» «h» «ds» («fs2», «fs»);
 pure (← «withKids» «h» (← «rev» «fs2»));
 }
 
-def «emitLean_loop0» («ns» : ByteArray) («ds» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
+def «emitLean_loop0» («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («c» : («Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «emitLean_loop0» «ns» «ds» (← (fun («c» : («Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop0» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun («c» : («Nodes»)) => (do {
 let mut «c» := «c»;
 if (← (do {
 if ((← «kind» (← «head» «c»)) == «Kind».«DEnum») then {
@@ -14862,10 +15241,10 @@ pure «c»
 }
 partial_fixpoint
 
-def «emitLean_loop1» («ns» : ByteArray) («ds» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
+def «emitLean_loop1» («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («c» : («Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «emitLean_loop1» «ns» «ds» (← (fun («c» : («Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop1» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun («c» : («Nodes»)) => (do {
 let mut «c» := «c»;
 if (← (do {
 if ((← «kind» (← «head» «c»)) == «Kind».«DEnum») then {
@@ -14884,10 +15263,10 @@ pure «c»
 }
 partial_fixpoint
 
-def «emitLean_loop2» («ns» : ByteArray) («ds» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
+def «emitLean_loop2» («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («c» : («Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «emitLean_loop2» «ns» «ds» (← (fun («c» : («Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop2» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun («c» : («Nodes»)) => (do {
 let mut «c» := «c»;
 if (← (do {
 if ((← «kind» (← «head» «c»)) == «Kind».«DFn») then {
@@ -14906,10 +15285,10 @@ pure «c»
 }
 partial_fixpoint
 
-def «emitLean_loop5» («rec» : Bool) («sc» : «Nodes») («d» : «Node») («more» : Bool) («done» : «Nodes») («g» : «Nodes») («c» : «Nodes») («ns» : ByteArray) («ds» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
+def «emitLean_loop5» («rec» : Bool) («sc» : «Nodes») («d» : «Node») («more» : Bool) («done» : «DMap») («c» : «Nodes») («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («m» : («Nodes»)) => (do {
 pure (!(← «isNil» «m»))
-} : Option Bool)) st') then «emitLean_loop5» «rec» «sc» «d» «more» «done» «g» «c» «ns» «ds» (← (fun («m» : («Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop5» «rec» «sc» «d» «more» «done» «c» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun («m» : («Nodes»)) => (do {
 let mut «m» := «m»;
 if (← (do {
 if ((← «kind» (← «head» «m»)) == «Kind».«DFn») then {
@@ -14928,10 +15307,10 @@ pure «m»
 }
 partial_fixpoint
 
-def «emitLean_loop4» («g» : «Nodes») («ns» : ByteArray) («ds» : «Decls») (st' : (Bool × «Nodes» × «Nodes»)) : Option (Bool × «Nodes» × «Nodes») := do {
-if (← (fun ((_, _, «c») : (Bool × «Nodes» × «Nodes»)) => (do {
+def «emitLean_loop4» («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : (Bool × «DMap» × «Nodes»)) : Option (Bool × «DMap» × «Nodes») := do {
+if (← (fun ((_, _, «c») : (Bool × «DMap» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «emitLean_loop4» «g» «ns» «ds» (← (fun ((«more», «done», «c») : (Bool × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop4» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun ((«more», «done», «c») : (Bool × «DMap» × «Nodes»)) => (do {
 let mut «more» := «more»;
 let mut «done» := «done»;
 let mut «c» := «c»;
@@ -14944,34 +15323,28 @@ pure ((← «num» «d») == (0 : Int))
 pure false
 }
 })) then {
-pure (!(← «has» «done» (← «text» «d»)))
+pure (!(← «inSet» «done» (← «text» «d»)))
 } else {
 pure false
 }
 })) then {
-let «sc» ← (pure (← «scc» «g» (← «text» «d»)));
-if (← «subset» (← «deps» «g» «sc») (← «append» «sc» «done»)) then {
-let «rec» ← (pure (← (do {
-if (decide ((← «len» «sc») > (1 : Int))) then {
-pure true
-} else {
-pure (← «has» (← «reach» «g» (← «text» «d»)) (← «text» «d»))
-}
-})));
+let «sc» ← (pure (← «sccOf» «sm» (← «text» «d»)));
+if (← «depsDone» «gm» «sc» «done») then {
+let «rec» ← (pure (← «recIn» «gm» «sm» (← «text» «d»)));
 if «rec» then {
 let _ := (← «say» "mutual\n".toUTF8);
 } else {
 let _ := ();
 };
 let mut «m» := (← «declList» «ds»);
-let t_ ← «emitLean_loop5» «rec» «sc» «d» «more» «done» «g» «c» «ns» «ds» «m»;
+let t_ ← «emitLean_loop5» «rec» «sc» «d» «more» «done» «c» «ds» «sm» «gm» «g» «ns» «ds0» «m»;
 «m» := t_;
 if «rec» then {
 let _ := (← «say» "end\n\n".toUTF8);
 } else {
 let _ := ();
 };
-«done» := (← «append» «sc» «done»);
+«done» := (← «dmAddAll» «done» «sc»);
 «more» := true;
 } else {
 let _ := ();
@@ -14981,48 +15354,51 @@ let _ := ();
 };
 «c» := (← «tail» «c»);
 pure («more», «done», «c»)
-} : Option (Bool × «Nodes» × «Nodes»))) st') else pure st'
+} : Option (Bool × «DMap» × «Nodes»))) st') else pure st'
 }
 partial_fixpoint
 
-def «emitLean_loop3» («g» : «Nodes») («ns» : ByteArray) («ds» : «Decls») (st' : (Bool × «Nodes» × «Nodes»)) : Option (Bool × «Nodes» × «Nodes») := do {
-if (← (fun ((«more», _, _) : (Bool × «Nodes» × «Nodes»)) => (do {
+def «emitLean_loop3» («ds» : «Decls») («sm» : «DMap») («gm» : «DMap») («g» : «Nodes») («ns» : ByteArray) («ds0» : «Decls») (st' : (Bool × «DMap» × «Nodes»)) : Option (Bool × «DMap» × «Nodes») := do {
+if (← (fun ((«more», _, _) : (Bool × «DMap» × «Nodes»)) => (do {
 pure «more»
-} : Option Bool)) st') then «emitLean_loop3» «g» «ns» «ds» (← (fun ((«more», «done», «c») : (Bool × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «emitLean_loop3» «ds» «sm» «gm» «g» «ns» «ds0» (← (fun ((«more», «done», «c») : (Bool × «DMap» × «Nodes»)) => (do {
 let mut «more» := «more»;
 let mut «done» := «done»;
 let mut «c» := «c»;
 «more» := false;
 «c» := (← «declList» «ds»);
-let t_ ← «emitLean_loop4» «g» «ns» «ds» («more», «done», «c»);
+let t_ ← «emitLean_loop4» «ds» «sm» «gm» «g» «ns» «ds0» («more», «done», «c»);
 «more» := t_.1;
 «done» := t_.2.1;
 «c» := t_.2.2;
 pure («more», «done», «c»)
-} : Option (Bool × «Nodes» × «Nodes»))) st') else pure st'
+} : Option (Bool × «DMap» × «Nodes»))) st') else pure st'
 }
 partial_fixpoint
 
-def «emitLean» («ds» : «Decls») («ns» : ByteArray) : Option Unit := do {
+def «emitLean» («ds0» : «Decls») («ns» : ByteArray) : Option Unit := do {
+let «g» ← (pure (← «callGraph» «ds0»));
+let «gm» ← (pure (← «dmAddAll» «DMap».«DTip» «g»));
+let «sm» ← (pure (← «sccMap» «gm» «g»));
+let «ds» ← (pure (← «withRec» «ds0» (← «recSet» «gm» «sm» «g»)));
 let _ := (← «say» "-- DO-NOT-EDIT. Generated by s1 --lean (s1/lean.srs, s1/leanspec.srs).\nimport Srs.Rt\nimport Srs.Auto\nset_option autoImplicit false\nnamespace Srs.".toUTF8);
 let _ := (← «say» «ns»);
 let _ := (← «say» "\nopen Srs.Rt\n\n".toUTF8);
 let mut «c» := (← «declList» «ds»);
-let t_ ← «emitLean_loop0» «ns» «ds» «c»;
+let t_ ← «emitLean_loop0» «ds» «sm» «gm» «g» «ns» «ds0» «c»;
 «c» := t_;
 let _ := (← «say» "mutual\n".toUTF8);
 «c» := (← «declList» «ds»);
-let t_ ← «emitLean_loop1» «ns» «ds» «c»;
+let t_ ← «emitLean_loop1» «ds» «sm» «gm» «g» «ns» «ds0» «c»;
 «c» := t_;
 let _ := (← «say» "end\n\n".toUTF8);
 «c» := (← «declList» «ds»);
-let t_ ← «emitLean_loop2» «ns» «ds» «c»;
+let t_ ← «emitLean_loop2» «ds» «sm» «gm» «g» «ns» «ds0» «c»;
 «c» := t_;
 let _ := (← «specTheorems» «ds»);
-let «g» ← (pure (← «callGraph» «ds»));
-let mut «done» := «Nodes».«NNil»;
+let mut «done» := «DMap».«DTip»;
 let mut «more» := true;
-let t_ ← «emitLean_loop3» «g» «ns» «ds» («more», «done», «c»);
+let t_ ← «emitLean_loop3» «ds» «sm» «gm» «g» «ns» «ds0» («more», «done», «c»);
 «more» := t_.1;
 «done» := t_.2.1;
 «c» := t_.2.2;
@@ -15293,7 +15669,7 @@ theorem «found_eq» («x» : «Node») :
 
 theorem «declList_spec» :
     ∀ («ds» : «Decls»), ∃ «result», «declList» «ds» = some «result» ∧ ((«result» = («declsS» «ds»)))
-  | «Decls».«Decls» a0 a1 => by
+  | «Decls».«Decls» a0 a1 a2 => by
     srs_auto [«declList», «declsS».eq_1]
 
 theorem «declList_eq» («ds» : «Decls») :
