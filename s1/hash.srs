@@ -6,16 +6,20 @@
 enum Digest:
   case Digest(a: I64, b: I64, c: I64, d: I64)
 
-def dgLane(h: I64, x: I64, p: I64, m: I64): I64 = (h * p + ((x % m) + m) % m) % m
+// x in [0, 2^31): h * p + x < 2^63, one %; else x is first reduced into [0, m)
+def dgLane(h: I64, x: I64, p: I64, m: I64): I64 = if x >= 0 && x < 2147483648 then (h * p + x) % m else (h * p + ((x % m) + m) % m) % m
 
 def dgAdd {r: Region} (g: Digest, x: I64): Digest = g match
   case Digest(a, b, c, d) => Digest(dgLane(a, x, 1000000007, 4294967291), dgLane(b, x, 998244353, 4294967279), dgLane(c, x, 754974721, 4294967231), dgLane(d, x, 167772161, 4294967197))
 
-// a string: its length, then its bytes (prefix-free)
+// a string: its length, then its bytes, 3 per step (x < 2^24: below every lane prime; the length keeps it prefix-free)
 def dgStr {r: Region} (g0: Digest, s: Str): Digest =
   var g = dgAdd(g0, rt_str_len(s))
   var i = 0
   val n = rt_str_len(s)
+  while i + 2 < n do
+    g = dgAdd(g, rt_str_at(s, i) + 256 * rt_str_at(s, i + 1) + 65536 * rt_str_at(s, i + 2))
+    i = i + 3
   while i < n do
     g = dgAdd(g, rt_str_at(s, i))
     i = i + 1
@@ -30,24 +34,29 @@ def dgLess(x: Digest, y: Digest): Bool = x match
 
 def dgEq(x: Digest, y: Digest): Bool = !dgLess(x, y) && !dgLess(y, x)
 
-// ── the hashes made so far: name -> digest (BST on strHash; an equal strHash with another name goes right)
+// ── the hashes made so far: name -> digest (BST on strHash, kept in the node; an equal strHash with another name
+// goes right)
 enum HMap:
   case HTip
-  case HBin(k: Str, g: Digest, l: HMap, rt: HMap)
+  case HBin(k: Str, kh: I64, g: Digest, l: HMap, rt: HMap)
 
 enum HFound:
   case HNone
   case HSome(g: Digest)
 
-def hmGet {r: Region} (m: HMap, k: Str): HFound = m match
-  case HTip => HNone
-  case HBin(k2, g, l, rt) =>
-    if eqs(k, k2) then HSome(g) else if strHash(k) < strHash(k2) then hmGet(l, k) else hmGet(rt, k)
+def hmGet {r: Region} (m: HMap, k: Str): HFound = hmGetH(m, k, strHash(k))
 
-def hmPut {r: Region} (m: HMap, k: Str, g: Digest): HMap = m match
-  case HTip => HBin(k, g, HTip, HTip)
-  case HBin(k2, g2, l, rt) =>
-    if eqs(k, k2) then HBin(k2, g, l, rt) else if strHash(k) < strHash(k2) then HBin(k2, g2, hmPut(l, k, g), rt) else HBin(k2, g2, l, hmPut(rt, k, g))
+def hmGetH {r: Region} (m: HMap, k: Str, h: I64): HFound = m match
+  case HTip => HNone
+  case HBin(k2, h2, g, l, rt) =>
+    if h == h2 && eqs(k, k2) then HSome(g) else if h < h2 then hmGetH(l, k, h) else hmGetH(rt, k, h)
+
+def hmPut {r: Region} (m: HMap, k: Str, g: Digest): HMap = hmPutH(m, k, strHash(k), g)
+
+def hmPutH {r: Region} (m: HMap, k: Str, h: I64, g: Digest): HMap = m match
+  case HTip => HBin(k, h, g, HTip, HTip)
+  case HBin(k2, h2, g2, l, rt) =>
+    if h == h2 && eqs(k, k2) then HBin(k2, h2, g, l, rt) else if h < h2 then HBin(k2, h2, g2, hmPutH(l, k, h, g), rt) else HBin(k2, h2, g2, l, hmPutH(rt, k, h, g))
 
 // ── the walk. pass 1: a ref to a member of the SCC is one token; pass 2: the member's position in mem
 enum HCtx:
@@ -101,7 +110,8 @@ def hFnKids {r: Region} (xs: Nodes): Nodes = if len(xs) > 4 then NCons(nth(xs, 4
 
 def hNode {r: Region} (cx: HCtx, env: Nodes, g0: Digest, x: Node): HW =
   val k = kind(x)
-  val g = dgAdd(dgAdd(dgAdd(dgAdd(g0, 7), kindCode(k)), num(x)), len(kids(x)))
+  // the header in one token: kind code + (codes) * kid count; then num. the kind fixes the name tokens after it
+  val g = dgAdd(dgAdd(g0, kindCode(k) + (kindCode(GVar) + 1) * len(kids(x))), num(x))
   if k == SVal || k == SHandle || k == Param || k == Binder then
     // a binding: its kids (value, type, handler args) see the old scope; the name becomes the next position
     val g2 = if k == SHandle then hName(cx, env, g, text2(x), false) else g
@@ -131,7 +141,10 @@ def hArm {r: Region} (cx: HCtx, env0: Nodes, g: Digest, x: Node): Digest =
 // ── SCCs in dependency order (Tarjan, s1/lean.srs), hashed callees first
 // the decls d refers to among those of kind k (fns: user defs and spec defs; enums: by name in types and cases)
 def hRefs {r: Region} (ds: Decls, k: Kind, x: Node, acc: Nodes): Nodes =
-  var out = hRefName(ds, k, text2(x), hRefName(ds, k, text(x), acc))
+  // only these kinds name a decl of kind k: a call names a fn, a type names an enum
+  val kx = kind(x)
+  val isRef = if k == DFn then kx == XCall || kx == XCallG || kx == XInst else kx == Ty
+  var out = if isRef then hRefName(ds, k, text(x), acc) else acc
   var c = kids(x)
   while !isNil(c) do
     out = hRefs(ds, k, head(c), out)
