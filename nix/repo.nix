@@ -42,7 +42,7 @@ in
         pkgs.jq # srs-bench: reads the hyperfine json
       ]
       # perf record: where the time goes
-      ++ pkgs.lib.optional pkgs.stdenv.isLinux pkgs.perf;
+      ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.perf;
     };
   };
   yen.repo.srs = { };
