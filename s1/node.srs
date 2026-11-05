@@ -16,7 +16,7 @@ enum Kind:
   case TyTo
   case TyCap
   // decls
-  case DFn       // s name, n 0 def / 1 extern / 2 spec def (Lean only), a = [Params, ret Ty, body?, Names clauses?]
+  case DFn       // s name, n 0 def / 1 extern / 2 spec def (Lean only), a = [Params, ret Ty, body?, Names clauses?, Groups?]
   case DEnum     // s name, a = cases
   case DCase     // s name, t enum name, n tag, a = [Params]
   case DProto    // s name, t start, a = [Names states, Names ends, Name drop, Ops]
@@ -25,6 +25,10 @@ enum Kind:
   case DHandler  // s name, t protocol, a = fns
   case Params
   case Param     // s name, a = [Ty]
+  case Groups    // a = Group in written order (vic/c/binders-design.md)
+  case Group     // s "{" type params / "[" evidence / "<" facts, t "out" = facts after the return type, a = Binder or TTerm
+  case Binder    // s name, a = [TTerm]
+  case TTerm     // s name or digits, n 1 = int, a = args: a type (application) or a Datalog atom
   case Names
   case Name      // s
   // exprs

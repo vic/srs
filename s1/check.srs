@@ -256,6 +256,9 @@ def checkHandler(r: Region, ds: Nodes, h: Node): Unit =
     fs = tail(fs)
 
 def checkSig(r: Region, ds: Nodes, f: Node): Unit =
+  // binder groups parse (vic-9l7.4 BD1); the checker takes them from BD2 on
+  val gs = kids(kid(f, 4))
+  if !isNil(gs) then err("not yet: binder group", text(head(gs)), lineOf(head(gs))) else ()
   var ps = kids(kid(f, 0))
   while !isNil(ps) do
     needTy(ds, kid(head(ps), 0))

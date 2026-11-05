@@ -65,18 +65,79 @@ def decl(r: Region, ts: Nodes): PR =
     perr(ts, "declaration")
     PR(NoNode, ts)
 
+// signature = telescope: binder groups (vic/c/binders-design.md) around the one `()` group; facts after the return type
 def fn(r: Region, ts0: Nodes, ext: I64): PR =
   var ts = expect(ts0, "def")
   val line = at(ts)
   val name = needIdent(ts)
-  val ps = params(r, tail(ts))
-  val rt = ty(r, expect(pr(ps), ":"))
-  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), one(r, pn(rt)))), pr(rt))
+  val g1 = groups(r, tail(ts), NNil)
+  val ps = params(r, pr(g1))
+  val g2 = groups(r, pr(ps), kids(pn(g1)))
+  val rt = ty(r, expect(pr(g2), ":"))
+  val g3 = if isT(pr(rt), "<") then outFacts(r, pr(rt), kids(pn(g2))) else g2
+  val gs = list(r, Groups, line, rev(r, kids(pn(g3))))
+  val after = if isT(pr(rt), "<") then pr(g3) else pr(rt)
+  if ext != 0 && !isNil(kids(gs)) then fatal("binder groups on def only, not extern or spec def", line) else ()
+  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), one(r, pn(rt)))), after)
   else
     // contract clauses, indented between the signature and `=`
-    val cl = if isK(pr(rt), TNl) && isK(tail(pr(rt)), TIndent) then clauses(r, tail(pr(rt))) else PR(list(r, Names, line, NNil), pr(rt))
+    val cl = if isK(after, TNl) && isK(tail(after), TIndent) then clauses(r, tail(after)) else PR(list(r, Names, line, NNil), after)
     val b = rhs(r, expect(pr(cl), "="))
-    PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), one(r, pn(cl)))))), pr(b))
+    PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), NCons(pn(cl), one(r, gs)))))), pr(b))
+
+// groups in written order, reversed onto acc: `{A: Type}` type params, `[s: Show(A)]` evidence, `<at(f, s)>` facts
+def groups(r: Region, ts0: Nodes, acc: Nodes): PR =
+  var ts = ts0
+  var gs = acc
+  while isT(ts, "{") || isT(ts, "[") || isT(ts, "<") do
+    val g = group(r, ts, "")
+    gs = NCons(pn(g), gs)
+    ts = pr(g)
+  PR(list(r, Groups, at(ts0), gs), ts)
+
+// facts after the return type: what holds when the call returns
+def outFacts(r: Region, ts: Nodes, acc: Nodes): PR =
+  val g = group(r, ts, "out")
+  PR(list(r, Groups, at(ts), NCons(pn(g), acc)), pr(g))
+
+def group(r: Region, ts0: Nodes, out: Str): PR =
+  val line = at(ts0)
+  val open = text(head(ts0))
+  val close = if eqs(open, "{") then "}" else if eqs(open, "[") then "]" else ">"
+  var ts = tail(ts0)
+  var xs = NNil
+  while !isT(ts, close) do
+    if eqs(open, "<") then
+      val a = tterm(r, ts)
+      xs = NCons(pn(a), xs)
+      ts = pr(a)
+    else
+      val n = needIdent(ts)
+      val bl = at(ts)
+      val t = tterm(r, expect(tail(ts), ":"))
+      xs = NCons(Node(Binder, n, "", 0, bl, one(r, pn(t))), xs)
+      ts = pr(t)
+    if !isT(ts, close) then ts = expect(ts, ",") else ()
+  PR(Node(Group, open, out, 0, line, rev(r, xs)), tail(ts))
+
+// T | T(args) | 3: a type (application) or a Datalog atom
+def tterm(r: Region, ts0: Nodes): PR =
+  val line = at(ts0)
+  if isK(ts0, TInt) then PR(Node(TTerm, text(head(ts0)), "", 1, line, NNil), tail(ts0))
+  else
+    val f = needIdent(ts0)
+    var ts = tail(ts0)
+    var xs = NNil
+    if isT(ts, "(") then
+      ts = tail(ts)
+      while !isT(ts, ")") do
+        val a = tterm(r, ts)
+        xs = NCons(pn(a), xs)
+        ts = pr(a)
+        if !isT(ts, ")") then ts = expect(ts, ",") else ()
+      ts = tail(ts)
+    else ()
+    PR(Node(TTerm, f, "", 0, line, rev(r, xs)), ts)
 
 def clauses(r: Region, ts0: Nodes): PR =
   var ts = expectK(ts0, TIndent, "indent")
