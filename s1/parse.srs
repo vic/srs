@@ -41,69 +41,69 @@ def needIdent(ts: Nodes): Str =
     ""
 def layoutOpen(ts: Nodes): Nodes = expectK(expectK(expect(ts, ":"), TNl, "newline"), TIndent, "indent")
 def endLine(ts: Nodes): Nodes = if isK(ts, TDedent) then ts else expectK(ts, TNl, "newline")
-def list(r: Region, k: Kind, line: I64, xs: Nodes): Node = Node(k, "", "", 0, line, xs)
+def list {r: Region} (k: Kind, line: I64, xs: Nodes): Node = Node(k, "", "", 0, line, xs)
 
-def parseFile(r: Region, toks: Nodes): Nodes =
+def parseFile {r: Region} (toks: Nodes): Nodes =
   var ts = toks
   var out = NNil
   while !isK(ts, TEof) do
     if isK(ts, TNl) then ts = tail(ts)
     else
-      val p = decl(r, ts)
+      val p = decl(ts)
       out = NCons(pn(p), out)
       ts = pr(p)
-  rev(r, out)
+  rev(out)
 
-def decl(r: Region, ts: Nodes): PR =
-  if isT(ts, "extern") then fn(r, tail(ts), 1)
-  else if isT(ts, "def") then fn(r, ts, 0)
-  else if isT(ts, "spec") then fn(r, tail(ts), 2)
-  else if isT(ts, "enum") then enumDecl(r, tail(ts))
-  else if isT(ts, "protocol") then protoDecl(r, tail(ts))
-  else if isT(ts, "handler") then handlerDecl(r, tail(ts))
-  else if isT(ts, "trait") then traitDecl(r, tail(ts))
-  else if isT(ts, "given") then givenDecl(r, tail(ts))
+def decl {r: Region} (ts: Nodes): PR =
+  if isT(ts, "extern") then fn(tail(ts), 1)
+  else if isT(ts, "def") then fn(ts, 0)
+  else if isT(ts, "spec") then fn(tail(ts), 2)
+  else if isT(ts, "enum") then enumDecl(tail(ts))
+  else if isT(ts, "protocol") then protoDecl(tail(ts))
+  else if isT(ts, "handler") then handlerDecl(tail(ts))
+  else if isT(ts, "trait") then traitDecl(tail(ts))
+  else if isT(ts, "given") then givenDecl(tail(ts))
   else
     perr(ts, "declaration")
     PR(NoNode, ts)
 
 // signature = telescope: binder groups (vic/c/binders-design.md) around the one `()` group; facts after the return type
-def fn(r: Region, ts0: Nodes, ext: I64): PR =
+def fn {r: Region} (ts0: Nodes, ext: I64): PR =
   var ts = expect(ts0, "def")
   val line = at(ts)
   val name = needIdent(ts)
-  val g1 = groups(r, tail(ts), NNil)
-  val ps = params(r, pr(g1))
-  val g2 = groups(r, pr(ps), kids(pn(g1)))
-  val rt = ty(r, expect(pr(g2), ":"))
-  val g3 = if isT(pr(rt), "<") then outFacts(r, pr(rt), kids(pn(g2))) else g2
-  val gs = list(r, Groups, line, rev(r, kids(pn(g3))))
+  val g1 = groups(tail(ts), NNil)
+  val ps = params(pr(g1))
+  val g2 = groups(pr(ps), kids(pn(g1)))
+  val rt = ty(expect(pr(g2), ":"))
+  val g3 = if isT(pr(rt), "<") then outFacts(pr(rt), kids(pn(g2))) else g2
+  val gs = list(Groups, line, rev(kids(pn(g3))))
   val after = if isT(pr(rt), "<") then pr(g3) else pr(rt)
   // spec defs are Lean only (vic 2026-11-05); externs take groups: a trusted contract of the C body
   if ext == 2 && !isNil(kids(gs)) then fatal("binder groups on def and extern def only, not spec def", line) else ()
-  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), NCons(pn(rt), NCons(NoNode, NCons(list(r, Names, line, NNil), one(r, gs)))))), after)
+  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), NCons(pn(rt), NCons(NoNode, NCons(list(Names, line, NNil), one(gs)))))), after)
   else
     // contract clauses, indented between the signature and `=`
-    val cl = if isK(after, TNl) && isK(tail(after), TIndent) then clauses(r, tail(after)) else PR(list(r, Names, line, NNil), after)
-    val b = rhs(r, expect(pr(cl), "="))
-    PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), NCons(pn(cl), one(r, gs)))))), pr(b))
+    val cl = if isK(after, TNl) && isK(tail(after), TIndent) then clauses(tail(after)) else PR(list(Names, line, NNil), after)
+    val b = rhs(expect(pr(cl), "="))
+    PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), NCons(pn(cl), one(gs)))))), pr(b))
 
 // groups in written order, reversed onto acc: `[A: Type]` type ascriptions, `{s: Show[A]}` evidence, `<at(f, s)>` facts
-def groups(r: Region, ts0: Nodes, acc: Nodes): PR =
+def groups {r: Region} (ts0: Nodes, acc: Nodes): PR =
   var ts = ts0
   var gs = acc
   while isT(ts, "{") || isT(ts, "[") || isT(ts, "<") do
-    val g = group(r, ts, "")
+    val g = group(ts, "")
     gs = NCons(pn(g), gs)
     ts = pr(g)
-  PR(list(r, Groups, at(ts0), gs), ts)
+  PR(list(Groups, at(ts0), gs), ts)
 
 // facts after the return type: what holds when the call returns
-def outFacts(r: Region, ts: Nodes, acc: Nodes): PR =
-  val g = group(r, ts, "out")
-  PR(list(r, Groups, at(ts), NCons(pn(g), acc)), pr(g))
+def outFacts {r: Region} (ts: Nodes, acc: Nodes): PR =
+  val g = group(ts, "out")
+  PR(list(Groups, at(ts), NCons(pn(g), acc)), pr(g))
 
-def group(r: Region, ts0: Nodes, out: Str): PR =
+def group {r: Region} (ts0: Nodes, out: Str): PR =
   val line = at(ts0)
   val open = text(head(ts0))
   val close = if eqs(open, "{") then "}" else if eqs(open, "[") then "]" else ">"
@@ -111,20 +111,20 @@ def group(r: Region, ts0: Nodes, out: Str): PR =
   var xs = NNil
   while !isT(ts, close) do
     if eqs(open, "<") then
-      val a = tterm(r, ts, "(")
+      val a = tterm(ts, "(")
       xs = NCons(pn(a), xs)
       ts = pr(a)
     else
       val n = needIdent(ts)
       val bl = at(ts)
-      val t = tterm(r, expect(tail(ts), ":"), "[")
-      xs = NCons(Node(Binder, n, "", 0, bl, one(r, pn(t))), xs)
+      val t = tterm(expect(tail(ts), ":"), "[")
+      xs = NCons(Node(Binder, n, "", 0, bl, one(pn(t))), xs)
       ts = pr(t)
     if !isT(ts, close) then ts = expect(ts, ",") else ()
-  PR(Node(Group, open, out, 0, line, rev(r, xs)), tail(ts))
+  PR(Node(Group, open, out, 0, line, rev(xs)), tail(ts))
 
 // T | T[args] | 3: a type (open = "[") or a Datalog atom p(args) (open = "(")
-def tterm(r: Region, ts0: Nodes, open: Str): PR =
+def tterm {r: Region} (ts0: Nodes, open: Str): PR =
   val line = at(ts0)
   if isK(ts0, TInt) then PR(Node(TTerm, text(head(ts0)), "", 1, line, NNil), tail(ts0))
   else
@@ -135,28 +135,28 @@ def tterm(r: Region, ts0: Nodes, open: Str): PR =
     if isT(ts, open) then
       ts = tail(ts)
       while !isT(ts, close) do
-        val a = tterm(r, ts, open)
+        val a = tterm(ts, open)
         xs = NCons(pn(a), xs)
         ts = pr(a)
         if !isT(ts, close) then ts = expect(ts, ",") else ()
       ts = tail(ts)
     else ()
-    PR(Node(TTerm, f, "", 0, line, rev(r, xs)), ts)
+    PR(Node(TTerm, f, "", 0, line, rev(xs)), ts)
 
-def clauses(r: Region, ts0: Nodes): PR =
+def clauses {r: Region} (ts0: Nodes): PR =
   var ts = expectK(ts0, TIndent, "indent")
   var cs = NNil
   while !isK(ts, TDedent) do
-    val p = clause(r, ts)
+    val p = clause(ts)
     cs = NCons(pn(p), cs)
     ts = endLine(pr(p))
-  PR(list(r, Names, at(ts0), rev(r, cs)), tail(ts))
+  PR(list(Names, at(ts0), rev(cs)), tail(ts))
 
 def isClause(ts: Nodes): Bool =
   isT(ts, "requires") || isT(ts, "ensures") || isT(ts, "returns") || isT(ts, "decreases") || isT(ts, "invariant") || isT(ts, "proof")
 
 // requires e | ensures e | returns e | decreases e | invariant e | proof using a, b | proof by induction x | proof lean "tactics"
-def clause(r: Region, ts0: Nodes): PR =
+def clause {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val kw = text(head(ts0))
   if !isClause(ts0) then perr(ts0, "requires, ensures, returns, decreases, invariant or proof") else ()
@@ -165,29 +165,29 @@ def clause(r: Region, ts0: Nodes): PR =
     if isT(ts, "using") then
       var t = tail(ts)
       var xs = NNil
-      xs = NCons(leaf(r, Name, needIdent(t), line), xs)
+      xs = NCons(leaf(Name, needIdent(t), line), xs)
       t = tail(t)
       while isT(t, ",") do
-        xs = NCons(leaf(r, Name, needIdent(tail(t)), line), xs)
+        xs = NCons(leaf(Name, needIdent(tail(t)), line), xs)
         t = drop(t, 2)
-      PR(Node(SClause, kw, "using", 0, line, rev(r, xs)), t)
+      PR(Node(SClause, kw, "using", 0, line, rev(xs)), t)
     else if isT(ts, "by") then
       val t = expect(tail(ts), "induction")
-      PR(Node(SClause, kw, "by", 0, line, one(r, leaf(r, Name, needIdent(t), line))), tail(t))
+      PR(Node(SClause, kw, "by", 0, line, one(leaf(Name, needIdent(t), line))), tail(t))
     else
       val t = expect(ts, "lean")
       if !isK(t, TStr) then perr(t, "a string of Lean tactics") else ()
-      PR(Node(SClause, kw, "lean", 0, line, one(r, leaf(r, XStr, text(head(t)), line))), tail(t))
+      PR(Node(SClause, kw, "lean", 0, line, one(leaf(XStr, text(head(t)), line))), tail(t))
   else
-    val e = expr(r, tail(ts0))
-    PR(Node(SClause, kw, "", 0, line, one(r, pn(e))), pr(e))
+    val e = expr(tail(ts0))
+    PR(Node(SClause, kw, "", 0, line, one(pn(e))), pr(e))
 
-def enumDecl(r: Region, ts0: Nodes): PR =
+def enumDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   // `enum List [A: Type]:` [] binders; every case keeps them as its kid 1, so the case list stays the enum's kids
-  val g = groups(r, tail(ts0), NNil)
-  val gs = list(r, Groups, line, rev(r, kids(pn(g))))
+  val g = groups(tail(ts0), NNil)
+  val gs = list(Groups, line, rev(kids(pn(g))))
   var ts = layoutOpen(pr(g))
   var cs = NNil
   var tag = 0
@@ -196,18 +196,18 @@ def enumDecl(r: Region, ts0: Nodes): PR =
     val cl = at(ts)
     val cn = needIdent(ts)
     ts = tail(ts)
-    var fs = list(r, Params, cl, NNil)
+    var fs = list(Params, cl, NNil)
     if isT(ts, "(") then
-      val p = params(r, ts)
+      val p = params(ts)
       fs = pn(p)
       ts = pr(p)
     else ()
-    cs = NCons(Node(DCase, cn, name, tag, cl, NCons(fs, one(r, gs))), cs)
+    cs = NCons(Node(DCase, cn, name, tag, cl, NCons(fs, one(gs))), cs)
     tag = tag + 1
     ts = endLine(ts)
-  PR(Node(DEnum, name, "", 0, line, rev(r, cs)), tail(ts))
+  PR(Node(DEnum, name, "", 0, line, rev(cs)), tail(ts))
 
-def protoDecl(r: Region, ts0: Nodes): PR =
+def protoDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   var ts = layoutOpen(tail(ts0))
@@ -218,33 +218,33 @@ def protoDecl(r: Region, ts0: Nodes): PR =
   var ops = NNil
   while !isK(ts, TDedent) do
     if isT(ts, "state") then
-      val p = names(r, tail(ts))
+      val p = names(tail(ts))
       states = kids(pn(p))
       ts = pr(p)
     else if isT(ts, "start") then
       start = needIdent(tail(ts))
       ts = drop(ts, 2)
     else if isT(ts, "end") then
-      val p = names(r, tail(ts))
+      val p = names(tail(ts))
       ends = kids(pn(p))
       ts = pr(p)
     else if isT(ts, "drop") then
       dropOp = needIdent(tail(ts))
       ts = drop(ts, 2)
     else if isT(ts, "op") then
-      val p = opDecl(r, tail(ts))
+      val p = opDecl(tail(ts))
       ops = NCons(pn(p), ops)
       ts = pr(p)
     else perr(ts, "protocol item")
     ts = endLine(ts)
-  val parts = NCons(list(r, Names, line, states), NCons(list(r, Names, line, ends), NCons(leaf(r, Name, dropOp, line), one(r, list(r, Names, line, rev(r, ops))))))
+  val parts = NCons(list(Names, line, states), NCons(list(Names, line, ends), NCons(leaf(Name, dropOp, line), one(list(Names, line, rev(ops))))))
   PR(Node(DProto, name, start, 0, line, parts), tail(ts))
 
-def opDecl(r: Region, ts0: Nodes): PR =
+def opDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  val ps = params(r, tail(ts0))
-  val rt = ty(r, expect(pr(ps), ":"))
+  val ps = params(tail(ts0))
+  val rt = ty(expect(pr(ps), ":"))
   var ts = expect(pr(rt), ":")
   var tr = NNil
   var more = true
@@ -254,48 +254,48 @@ def opDecl(r: Region, ts0: Nodes): PR =
     tr = NCons(Node(DTrans, f, needIdent(ts), 0, line, NNil), tr)
     ts = tail(ts)
     if isT(ts, ",") then ts = tail(ts) else more = false
-  PR(Node(DOp, name, "", 0, line, NCons(pn(ps), NCons(pn(rt), one(r, list(r, Names, line, rev(r, tr)))))), ts)
+  PR(Node(DOp, name, "", 0, line, NCons(pn(ps), NCons(pn(rt), one(list(Names, line, rev(tr)))))), ts)
 
-def names(r: Region, ts0: Nodes): PR =
+def names {r: Region} (ts0: Nodes): PR =
   var ts = ts0
-  var xs = one(r, leaf(r, Name, needIdent(ts), at(ts)))
+  var xs = one(leaf(Name, needIdent(ts), at(ts)))
   ts = tail(ts)
   while isT(ts, ",") do
-    xs = NCons(leaf(r, Name, needIdent(tail(ts)), at(ts)), xs)
+    xs = NCons(leaf(Name, needIdent(tail(ts)), at(ts)), xs)
     ts = drop(ts, 2)
-  PR(list(r, Names, at(ts0), rev(r, xs)), ts)
+  PR(list(Names, at(ts0), rev(xs)), ts)
 
 // trait Show [A: Type]: indented `def` signatures (no bodies) (vic-9l7.6 BD4a)
-def traitDecl(r: Region, ts0: Nodes): PR =
+def traitDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  val g = groups(r, tail(ts0), NNil)
+  val g = groups(tail(ts0), NNil)
   var ts = layoutOpen(pr(g))
   var fs = NNil
   while !isK(ts, TDedent) do
-    val p = fn(r, ts, 1)
+    val p = fn(ts, 1)
     fs = NCons(pn(p), fs)
     ts = endLine(pr(p))
-  PR(Node(DTrait, name, "", 0, line, NCons(list(r, Groups, line, rev(r, kids(pn(g)))), rev(r, fs))), tail(ts))
+  PR(Node(DTrait, name, "", 0, line, NCons(list(Groups, line, rev(kids(pn(g)))), rev(fs))), tail(ts))
 
 // given [A: Type] {s: Show[A]} Show[List[A]]: indented defs. a clause: its head holds when its {} evidence does.
 // each def keeps the given's groups as its kid 4, so it is checked and instantiated as a generic def
-def givenDecl(r: Region, ts0: Nodes): PR =
+def givenDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
-  val g = groups(r, ts0, NNil)
-  val gs = list(r, Groups, line, rev(r, kids(pn(g))))
-  val hd = ty(r, pr(g))
+  val g = groups(ts0, NNil)
+  val gs = list(Groups, line, rev(kids(pn(g))))
+  val hd = ty(pr(g))
   var ts = layoutOpen(pr(hd))
   var fs = NNil
   while !isK(ts, TDedent) do
-    val p = fn(r, ts, 0)
+    val p = fn(ts, 0)
     val f = pn(p)
-    fs = NCons(withKids(r, f, NCons(kid(f, 0), NCons(kid(f, 1), NCons(kid(f, 2), NCons(kid(f, 3), one(r, gs)))))), fs)
+    fs = NCons(withKids(f, NCons(kid(f, 0), NCons(kid(f, 1), NCons(kid(f, 2), NCons(kid(f, 3), one(gs)))))), fs)
     ts = pr(p)
     if isK(ts, TNl) then ts = tail(ts) else ()
-  PR(Node(DGiven, text(pn(hd)), "", 0, line, NCons(gs, NCons(pn(hd), rev(r, fs)))), tail(ts))
+  PR(Node(DGiven, text(pn(hd)), "", 0, line, NCons(gs, NCons(pn(hd), rev(fs)))), tail(ts))
 
-def handlerDecl(r: Region, ts0: Nodes): PR =
+def handlerDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   var ts = expect(tail(ts0), "for")
@@ -303,25 +303,25 @@ def handlerDecl(r: Region, ts0: Nodes): PR =
   ts = layoutOpen(tail(ts))
   var fs = NNil
   while !isK(ts, TDedent) do
-    val p = fn(r, ts, 0)
+    val p = fn(ts, 0)
     fs = NCons(pn(p), fs)
     ts = pr(p)
     if isK(ts, TNl) then ts = tail(ts) else ()
-  PR(Node(DHandler, name, proto, 0, line, rev(r, fs)), tail(ts))
+  PR(Node(DHandler, name, proto, 0, line, rev(fs)), tail(ts))
 
-def params(r: Region, ts0: Nodes): PR =
+def params {r: Region} (ts0: Nodes): PR =
   var ts = expect(ts0, "(")
   var ps = NNil
   while !isT(ts, ")") do
     val n = needIdent(ts)
     val pl = at(ts)
-    val t = ty(r, expect(tail(ts), ":"))
-    ps = NCons(Node(Param, n, "", 0, pl, one(r, pn(t))), ps)
+    val t = ty(expect(tail(ts), ":"))
+    ps = NCons(Node(Param, n, "", 0, pl, one(pn(t))), ps)
     ts = pr(t)
     if !isT(ts, ")") then ts = expect(ts, ",") else ()
-  PR(list(r, Params, at(ts0), rev(r, ps)), tail(ts))
+  PR(list(Params, at(ts0), rev(ps)), tail(ts))
 
-def ty(r: Region, ts0: Nodes): PR =
+def ty {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   var ts = tail(ts0)
@@ -337,7 +337,7 @@ def ty(r: Region, ts0: Nodes): PR =
   else if isT(ts, "[") then
     ts = tail(ts)
     while !isT(ts, "]") do
-      val a = ty(r, ts)
+      val a = ty(ts)
       args = NCons(pn(a), args)
       ts = pr(a)
       if !isT(ts, "]") then ts = expect(ts, ",") else ()
@@ -350,27 +350,27 @@ def ty(r: Region, ts0: Nodes): PR =
     annotated = 1
     ts = expect(tail(ts), "<")
     while !isT(ts, ">") do
-      caps = NCons(leaf(r, TyCap, needIdent(ts), line), caps)
+      caps = NCons(leaf(TyCap, needIdent(ts), line), caps)
       ts = tail(ts)
       if !isT(ts, ">") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
-  PR(Node(Ty, name, from, annotated, line, NCons(Node(TyTo, to, "", 0, line, rev(r, args)), rev(r, caps))), ts)
+  PR(Node(Ty, name, from, annotated, line, NCons(Node(TyTo, to, "", 0, line, rev(args)), rev(caps))), ts)
 
-def rhs(r: Region, ts: Nodes): PR =
-  if isK(ts, TNl) && isK(tail(ts), TIndent) then block(r, tail(ts)) else expr(r, ts)
+def rhs {r: Region} (ts: Nodes): PR =
+  if isK(ts, TNl) && isK(tail(ts), TIndent) then block(tail(ts)) else expr(ts)
 
-def block(r: Region, ts0: Nodes): PR =
+def block {r: Region} (ts0: Nodes): PR =
   var ts = expectK(ts0, TIndent, "indent")
   var ss = NNil
   while !isK(ts, TDedent) do
-    val p = stmt(r, ts)
+    val p = stmt(ts)
     ss = NCons(pn(p), ss)
     ts = pr(p)
     if isK(ts, TNl) then ts = tail(ts) else ()
-  PR(list(r, XBlock, at(ts0), rev(r, ss)), tail(ts))
+  PR(list(XBlock, at(ts0), rev(ss)), tail(ts))
 
-def stmt(r: Region, ts0: Nodes): PR =
+def stmt {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   if isT(ts0, "val") || isT(ts0, "var") then
     val mut = if isT(ts0, "var") then 1 else 0
@@ -378,56 +378,56 @@ def stmt(r: Region, ts0: Nodes): PR =
     var ts = drop(ts0, 2)
     var tyk = NNil
     if isT(ts, ":") then
-      val t = ty(r, tail(ts))
-      tyk = one(r, pn(t))
+      val t = ty(tail(ts))
+      tyk = one(pn(t))
       ts = pr(t)
     else ()
-    val e = rhs(r, expect(ts, "="))
+    val e = rhs(expect(ts, "="))
     PR(Node(SVal, name, "", mut, line, NCons(pn(e), tyk)), pr(e))
-  else if isT(ts0, "invariant") || isT(ts0, "decreases") then clause(r, ts0)
+  else if isT(ts0, "invariant") || isT(ts0, "decreases") then clause(ts0)
   else if isT(ts0, "handle") then
     val name = needIdent(tail(ts0))
     val ts = expect(drop(ts0, 2), "=")
-    val a = args(r, tail(ts))
+    val a = args(tail(ts))
     PR(Node(SHandle, name, needIdent(ts), 0, line, kids(pn(a))), pr(a))
-  else expr(r, ts0)
+  else expr(ts0)
 
-def args(r: Region, ts0: Nodes): PR =
+def args {r: Region} (ts0: Nodes): PR =
   var ts = expect(ts0, "(")
   var xs = NNil
   while !isT(ts, ")") do
-    val e = expr(r, ts)
+    val e = expr(ts)
     xs = NCons(pn(e), xs)
     ts = pr(e)
     if !isT(ts, ")") then ts = expect(ts, ",") else ()
-  PR(list(r, Names, at(ts0), rev(r, xs)), tail(ts))
+  PR(list(Names, at(ts0), rev(xs)), tail(ts))
 
-def expr(r: Region, ts0: Nodes): PR =
+def expr {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   if isT(ts0, "if") then
-    val c = expr(r, tail(ts0))
-    val t = rhs(r, expect(pr(c), "then"))
+    val c = expr(tail(ts0))
+    val t = rhs(expect(pr(c), "then"))
     var ts = pr(t)
     if isK(ts, TNl) && isT(tail(ts), "else") then ts = tail(ts) else ()
-    val e = rhs(r, expect(ts, "else"))
-    PR(Node(XIf, "", "", 0, line, NCons(pn(c), NCons(pn(t), one(r, pn(e))))), pr(e))
+    val e = rhs(expect(ts, "else"))
+    PR(Node(XIf, "", "", 0, line, NCons(pn(c), NCons(pn(t), one(pn(e))))), pr(e))
   else if isT(ts0, "forall") || isT(ts0, "exists") then
     val x = needIdent(tail(ts0))
-    val t = ty(r, expect(drop(ts0, 2), ":"))
-    val b = expr(r, expect(pr(t), "=>"))
-    PR(Node(if isT(ts0, "forall") then XForall else XExists, x, "", 0, line, NCons(pn(t), one(r, pn(b)))), pr(b))
+    val t = ty(expect(drop(ts0, 2), ":"))
+    val b = expr(expect(pr(t), "=>"))
+    PR(Node(if isT(ts0, "forall") then XForall else XExists, x, "", 0, line, NCons(pn(t), one(pn(b)))), pr(b))
   else if isT(ts0, "while") then
-    val c = expr(r, tail(ts0))
-    val b = rhs(r, expect(pr(c), "do"))
-    PR(Node(XWhile, "", "", 0, line, NCons(pn(c), one(r, pn(b)))), pr(b))
+    val c = expr(tail(ts0))
+    val b = rhs(expect(pr(c), "do"))
+    PR(Node(XWhile, "", "", 0, line, NCons(pn(c), one(pn(b)))), pr(b))
   else if isK(ts0, TIdent) && isK(tail(ts0), TOp) && eqs(text(head(tail(ts0))), "=") then
-    val e = rhs(r, drop(ts0, 2))
-    PR(Node(XAssign, text(head(ts0)), "", 0, line, one(r, pn(e))), pr(e))
+    val e = rhs(drop(ts0, 2))
+    PR(Node(XAssign, text(head(ts0)), "", 0, line, one(pn(e))), pr(e))
   else
-    val b = binary(r, ts0, 0)
-    if isT(pr(b), "match") then arms(r, pn(b), tail(pr(b))) else b
+    val b = binary(ts0, 0)
+    if isT(pr(b), "match") then arms(pn(b), tail(pr(b))) else b
 
-def arms(r: Region, scrut: Node, ts0: Nodes): PR =
+def arms {r: Region} (scrut: Node, ts0: Nodes): PR =
   var ts = expectK(expectK(ts0, TNl, "newline"), TIndent, "indent")
   var xs = NNil
   while !isK(ts, TDedent) do
@@ -442,16 +442,16 @@ def arms(r: Region, scrut: Node, ts0: Nodes): PR =
       if isT(ts, "(") then
         ts = tail(ts)
         while !isT(ts, ")") do
-          binds = NCons(leaf(r, XName, needIdent(ts), al), binds)
+          binds = NCons(leaf(XName, needIdent(ts), al), binds)
           ts = tail(ts)
           if !isT(ts, ")") then ts = expect(ts, ",") else ()
         ts = tail(ts)
       else ()
-    val b = rhs(r, expect(ts, "=>"))
-    xs = NCons(Node(XArm, ctor, "", 0, al, NCons(pn(b), rev(r, binds))), xs)
+    val b = rhs(expect(ts, "=>"))
+    xs = NCons(Node(XArm, ctor, "", 0, al, NCons(pn(b), rev(binds))), xs)
     ts = pr(b)
     if isK(ts, TNl) then ts = tail(ts) else ()
-  PR(Node(XMatch, "", "", 0, lineOf(scrut), NCons(scrut, rev(r, xs))), tail(ts))
+  PR(Node(XMatch, "", "", 0, lineOf(scrut), NCons(scrut, rev(xs))), tail(ts))
 
 def opLevel(s: Str): I64 =
   if eqs(s, "||") then 0 else if eqs(s, "&&") then 1
@@ -461,21 +461,21 @@ def opLevel(s: Str): I64 =
   else if eqs(s, "*") || eqs(s, "/") || eqs(s, "%") then 5
   else -1
 
-def binary(r: Region, ts0: Nodes, lvl: I64): PR =
-  if lvl == 6 then unary(r, ts0)
+def binary {r: Region} (ts0: Nodes, lvl: I64): PR =
+  if lvl == 6 then unary(ts0)
   else
-    var p = binary(r, ts0, lvl + 1)
+    var p = binary(ts0, lvl + 1)
     while isK(pr(p), TOp) && opLevel(text(head(pr(p)))) == lvl do
       val op = head(pr(p))
-      val q = binary(r, tail(pr(p)), lvl + 1)
-      p = PR(Node(XBin, text(op), "", 0, lineOf(op), NCons(pn(p), one(r, pn(q)))), pr(q))
+      val q = binary(tail(pr(p)), lvl + 1)
+      p = PR(Node(XBin, text(op), "", 0, lineOf(op), NCons(pn(p), one(pn(q)))), pr(q))
     p
 
-def unary(r: Region, ts: Nodes): PR =
+def unary {r: Region} (ts: Nodes): PR =
   if isT(ts, "-") || isT(ts, "!") then
-    val e = unary(r, tail(ts))
-    PR(Node(XUn, text(head(ts)), "", 0, at(ts), one(r, pn(e))), pr(e))
-  else primary(r, ts)
+    val e = unary(tail(ts))
+    PR(Node(XUn, text(head(ts)), "", 0, at(ts), one(pn(e))), pr(e))
+  else primary(ts)
 
 def parseInt(s: Str): I64 =
   var v = 0
@@ -496,28 +496,28 @@ def charValue(ts: Nodes): I64 =
       perr(ts, "char escape")
       0
 
-def primary(r: Region, ts: Nodes): PR =
+def primary {r: Region} (ts: Nodes): PR =
   val t = head(ts)
   val line = lineOf(t)
   val k = kind(t)
   if k == TInt then PR(Node(XInt, "", "", parseInt(text(t)), line, NNil), tail(ts))
-  else if k == TStr then PR(leaf(r, XStr, text(t), line), tail(ts))
+  else if k == TStr then PR(leaf(XStr, text(t), line), tail(ts))
   else if k == TChar then PR(Node(XInt, "", "", charValue(ts), line, NNil), tail(ts))
   else if k == TIdent then
     val s = text(t)
     if eqs(s, "true") then PR(Node(XBool, "", "", 1, line, NNil), tail(ts))
     else if eqs(s, "false") then PR(Node(XBool, "", "", 0, line, NNil), tail(ts))
     else if isT(tail(ts), "(") then
-      val a = args(r, tail(ts))
+      val a = args(tail(ts))
       PR(Node(XCall, s, "", 0, line, kids(pn(a))), pr(a))
     else if isT(tail(ts), ".") then
-      val a = args(r, drop(ts, 3))
+      val a = args(drop(ts, 3))
       PR(Node(XMethod, s, needIdent(drop(ts, 2)), 0, line, kids(pn(a))), pr(a))
-    else PR(leaf(r, XName, s, line), tail(ts))
+    else PR(leaf(XName, s, line), tail(ts))
   else if isT(ts, "(") then
-    if isT(tail(ts), ")") then PR(leaf(r, XUnit, "", line), drop(ts, 2))
+    if isT(tail(ts), ")") then PR(leaf(XUnit, "", line), drop(ts, 2))
     else
-      val e = expr(r, tail(ts))
+      val e = expr(tail(ts))
       PR(pn(e), expect(pr(e), ")"))
   else
     perr(ts, "expression")

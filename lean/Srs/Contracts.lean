@@ -52,6 +52,18 @@ partial_fixpoint
 
 end
 
+mutual
+def «buildAt» («n» : Int) : Option «List» := do {
+if («n» == (0 : Int)) then {
+pure «List».«Nil»;
+} else {
+pure («List».«Cons» «n» (← «buildAt» («n» - (1 : Int))));
+};
+}
+partial_fixpoint
+
+end
+
 def «count_loop0» («xs» : «List») (st' : (Int × «List»)) : Option (Int × «List») := do {
 if (← (fun ((_, «c») : (Int × «List»)) => (do {
 pure (← (do {

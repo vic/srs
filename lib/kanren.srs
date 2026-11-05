@@ -39,44 +39,44 @@ def occursIn(s: Subst, n: I64, ts: Terms): Bool = ts match
   case TCons(h, t) => occurs(s, n, h) || occursIn(s, n, t)
 
 // s extended so a and b are equal, or Fail
-def unify(r: Region, s: Subst, a: Term, b: Term): Unified =
+def unify {r: Region} (s: Subst, a: Term, b: Term): Unified =
   val x = walk(s, a)
   val y = walk(s, b)
   x match
-    case TVar(n) => bind(r, s, n, y)
+    case TVar(n) => bind(s, n, y)
     case TCon(f, xs) => y match
-      case TVar(m) => bind(r, s, m, x)
-      case TCon(g, ys) => if rt_str_eq(f, g) then unifyAll(r, s, xs, ys) else Fail
+      case TVar(m) => bind(s, m, x)
+      case TCon(g, ys) => if rt_str_eq(f, g) then unifyAll(s, xs, ys) else Fail
       case TInt(_) => Fail
     case TInt(v) => y match
-      case TVar(m) => bind(r, s, m, x)
+      case TVar(m) => bind(s, m, x)
       case TInt(w) => if v == w then Ok(s) else Fail
       case TCon(_, _) => Fail
 
-def bind(r: Region, s: Subst, n: I64, t: Term): Unified = t match
+def bind {r: Region} (s: Subst, n: I64, t: Term): Unified = t match
   case TVar(m) => if m == n then Ok(s) else Ok(SBind(n, t, s))
   case TCon(_, _) => if occurs(s, n, t) then Fail else Ok(SBind(n, t, s))
   case TInt(_) => Ok(SBind(n, t, s))
 
-def unifyAll(r: Region, s: Subst, xs: Terms, ys: Terms): Unified = xs match
+def unifyAll {r: Region} (s: Subst, xs: Terms, ys: Terms): Unified = xs match
   case TNil => ys match
     case TNil => Ok(s)
     case TCons(_, _) => Fail
   case TCons(x, xt) => ys match
     case TNil => Fail
-    case TCons(y, yt) => unify(r, s, x, y) match
+    case TCons(y, yt) => unify(s, x, y) match
       case Fail => Fail
-      case Ok(s2) => unifyAll(r, s2, xt, yt)
+      case Ok(s2) => unifyAll(s2, xt, yt)
 
 // t with every bound variable replaced, deeply
-def walkAll(r: Region, s: Subst, t: Term): Term = walk(s, t) match
+def walkAll {r: Region} (s: Subst, t: Term): Term = walk(s, t) match
   case TVar(n) => TVar(n)
-  case TCon(f, args) => TCon(f, walkEach(r, s, args))
+  case TCon(f, args) => TCon(f, walkEach(s, args))
   case TInt(v) => TInt(v)
 
-def walkEach(r: Region, s: Subst, ts: Terms): Terms = ts match
+def walkEach {r: Region} (s: Subst, ts: Terms): Terms = ts match
   case TNil => TNil
-  case TCons(h, t) => TCons(walkAll(r, s, h), walkEach(r, s, t))
+  case TCons(h, t) => TCons(walkAll(s, h), walkEach(s, t))
 
 def showTerm(t: Term): Unit = t match
   case TVar(n) =>
@@ -199,79 +199,79 @@ enum Run:
   case Run(answers: Answers, status: Status)
 
 // rename apart: every variable moved by k
-def shift(r: Region, t: Term, k: I64): Term = t match
+def shift {r: Region} (t: Term, k: I64): Term = t match
   case TVar(n) => TVar(n + k)
-  case TCon(f, args) => TCon(f, shiftAll(r, args, k))
+  case TCon(f, args) => TCon(f, shiftAll(args, k))
   case TInt(v) => TInt(v)
 
-def shiftAll(r: Region, ts: Terms, k: I64): Terms = ts match
+def shiftAll {r: Region} (ts: Terms, k: I64): Terms = ts match
   case TNil => TNil
-  case TCons(h, t) => TCons(shift(r, h, k), shiftAll(r, t, k))
+  case TCons(h, t) => TCons(shift(h, k), shiftAll(t, k))
 
-def shiftGoal(r: Region, g: Goal, k: I64): Goal = g match
+def shiftGoal {r: Region} (g: Goal, k: I64): Goal = g match
   case GTrue => GTrue
-  case GEq(a, b) => GEq(shift(r, a, k), shift(r, b, k))
-  case GEqAll(as, bs) => GEqAll(shiftAll(r, as, k), shiftAll(r, bs, k))
-  case GConj(x, y) => GConj(shiftGoal(r, x, k), shiftGoal(r, y, k))
-  case GDisj(x, y) => GDisj(shiftGoal(r, x, k), shiftGoal(r, y, k))
-  case GNeq(a, b) => GNeq(shift(r, a, k), shift(r, b, k))
-  case GDom(x, d) => GDom(shift(r, x, k), d)
-  case GFd(c) => GFd(shiftFd(r, c, k))
-  case GLabel(xs) => GLabel(shiftAll(r, xs, k))
-  case GCall(f, args) => GCall(f, shiftAll(r, args, k))
+  case GEq(a, b) => GEq(shift(a, k), shift(b, k))
+  case GEqAll(as, bs) => GEqAll(shiftAll(as, k), shiftAll(bs, k))
+  case GConj(x, y) => GConj(shiftGoal(x, k), shiftGoal(y, k))
+  case GDisj(x, y) => GDisj(shiftGoal(x, k), shiftGoal(y, k))
+  case GNeq(a, b) => GNeq(shift(a, k), shift(b, k))
+  case GDom(x, d) => GDom(shift(x, k), d)
+  case GFd(c) => GFd(shiftFd(c, k))
+  case GLabel(xs) => GLabel(shiftAll(xs, k))
+  case GCall(f, args) => GCall(f, shiftAll(args, k))
 
-def shiftFd(r: Region, c: Fd, k: I64): Fd = c match
-  case FBin(op, x, y) => FBin(op, shift(r, x, k), shift(r, y, k))
-  case FPlus(x, y, z) => FPlus(shift(r, x, k), shift(r, y, k), shift(r, z, k))
+def shiftFd {r: Region} (c: Fd, k: I64): Fd = c match
+  case FBin(op, x, y) => FBin(op, shift(x, k), shift(y, k))
+  case FPlus(x, y, z) => FPlus(shift(x, k), shift(y, k), shift(z, k))
 
 def substSize(s: Subst): I64 = s match
   case SNil => 0
   case SBind(_, _, rest) => 1 + substSize(rest)
 
 // the first n bindings of s: what unify added on top of the substitution it started from
-def newest(r: Region, s: Subst, n: I64): Subst = if n <= 0 then SNil else s match
+def newest {r: Region} (s: Subst, n: I64): Subst = if n <= 0 then SNil else s match
   case SNil => SNil
-  case SBind(v, t, rest) => SBind(v, t, newest(r, rest, n - 1))
+  case SBind(v, t, rest) => SBind(v, t, newest(rest, n - 1))
 
 // s extended with every binding of p
-def unifyBinds(r: Region, s: Subst, p: Subst): Unified = p match
+def unifyBinds {r: Region} (s: Subst, p: Subst): Unified = p match
   case SNil => Ok(s)
-  case SBind(v, t, rest) => unify(r, s, TVar(v), t) match
+  case SBind(v, t, rest) => unify(s, TVar(v), t) match
     case Fail => Fail
-    case Ok(s2) => unifyBinds(r, s2, rest)
+    case Ok(s2) => unifyBinds(s2, rest)
 
 // a =/= b: drop it when they can never unify, Bad when they already are equal, else store what equality needs
-def addNeq(r: Region, st: State, a: Term, b: Term): Checked = st match
-  case State(s, ns, ds, fs, nx) => unify(r, s, a, b) match
+def addNeq {r: Region} (st: State, a: Term, b: Term): Checked = st match
+  case State(s, ns, ds, fs, nx) => unify(s, a, b) match
     case Fail => Good(st)
     case Ok(s2) =>
       val n = substSize(s2) - substSize(s)
-      if n == 0 then Bad else Good(State(s, NeqCons(newest(r, s2, n), ns), ds, fs, nx))
+      if n == 0 then Bad else Good(State(s, NeqCons(newest(s2, n), ns), ds, fs, nx))
 
 enum NeqsR:
   case Violated
   case Kept(ns: Neqs)
 
 // the store under substitution s: each disequality checked again (as addNeq)
-def recheck(r: Region, s: Subst, ns: Neqs): NeqsR = ns match
+def recheck {r: Region} (s: Subst, ns: Neqs): NeqsR = ns match
   case NeqNil => Kept(NeqNil)
-  case NeqCons(p, t) => recheck(r, s, t) match
+  case NeqCons(p, t) => recheck(s, t) match
     case Violated => Violated
-    case Kept(kept) => unifyBinds(r, s, p) match
+    case Kept(kept) => unifyBinds(s, p) match
       case Fail => Kept(kept)
       case Ok(s2) =>
         val n = substSize(s2) - substSize(s)
-        if n == 0 then Violated else Kept(NeqCons(newest(r, s2, n), kept))
+        if n == 0 then Violated else Kept(NeqCons(newest(s2, n), kept))
 
 // the state after unify gave u: dead on Fail, else every constraint settled again
-def post(r: Region, st: State, u: Unified): Checked = u match
+def post {r: Region} (st: State, u: Unified): Checked = u match
   case Fail => Bad
   case Ok(s2) => st match
-    case State(_, ns, ds, fs, nx) => settle(r, State(s2, ns, ds, fs, nx))
+    case State(_, ns, ds, fs, nx) => settle(State(s2, ns, ds, fs, nx))
 
-def settled(r: Region, c: Checked): Checked = c match
+def settled {r: Region} (c: Checked): Checked = c match
   case Bad => Bad
-  case Good(st) => settle(r, st)
+  case Good(st) => settle(st)
 
 // ── domains ──
 def member(v: I64, xs: Ints): Bool = xs match
@@ -281,7 +281,7 @@ def member(v: I64, xs: Ints): Bool = xs match
 def inDom(v: I64, d: Dom): Bool = d match
   case Dom(h, t) => h == v || member(v, t)
 
-def ints(r: Region, d: Dom): Ints = d match
+def ints {r: Region} (d: Dom): Ints = d match
   case Dom(h, t) => ICons(h, t)
 
 def lastOf(h: I64, t: Ints): I64 = t match
@@ -302,135 +302,135 @@ def domSize(d: Dom): I64 = d match
   case Dom(_, t) => 1 + intsSize(t)
 
 // a..b ascending
-def range(r: Region, a: I64, b: I64): Ints = if a > b then INil else ICons(a, range(r, a + 1, b))
+def range {r: Region} (a: I64, b: I64): Ints = if a > b then INil else ICons(a, range(a + 1, b))
 
 // the values of xs in a..b
-def between(r: Region, xs: Ints, a: I64, b: I64): Ints = xs match
+def between {r: Region} (xs: Ints, a: I64, b: I64): Ints = xs match
   case INil => INil
-  case ICons(h, t) => if h >= a && h <= b then ICons(h, between(r, t, a, b)) else between(r, t, a, b)
+  case ICons(h, t) => if h >= a && h <= b then ICons(h, between(t, a, b)) else between(t, a, b)
 
-def without(r: Region, xs: Ints, v: I64): Ints = xs match
+def without {r: Region} (xs: Ints, v: I64): Ints = xs match
   case INil => INil
-  case ICons(h, t) => if h == v then without(r, t, v) else ICons(h, without(r, t, v))
+  case ICons(h, t) => if h == v then without(t, v) else ICons(h, without(t, v))
 
-def meetInts(r: Region, xs: Ints, d: Dom): Ints = xs match
+def meetInts {r: Region} (xs: Ints, d: Dom): Ints = xs match
   case INil => INil
-  case ICons(h, t) => if inDom(h, d) then ICons(h, meetInts(r, t, d)) else meetInts(r, t, d)
+  case ICons(h, t) => if inDom(h, d) then ICons(h, meetInts(t, d)) else meetInts(t, d)
 
 enum DomOf:
   case NoDom
   case Has(d: Dom)
   case NotInt
 
-def lookupDom(r: Region, ds: Doms, n: I64): DomOf = ds match
+def lookupDom {r: Region} (ds: Doms, n: I64): DomOf = ds match
   case DNil => NoDom
-  case DCons(v, d, t) => if v == n then Has(d) else lookupDom(r, t, n)
+  case DCons(v, d, t) => if v == n then Has(d) else lookupDom(t, n)
 
-def dropDom(r: Region, ds: Doms, n: I64): Doms = ds match
+def dropDom {r: Region} (ds: Doms, n: I64): Doms = ds match
   case DNil => DNil
-  case DCons(v, d, t) => if v == n then dropDom(r, t, n) else DCons(v, d, dropDom(r, t, n))
+  case DCons(v, d, t) => if v == n then dropDom(t, n) else DCons(v, d, dropDom(t, n))
 
 // the domain of t: an integer has itself, a variable its entry (or none), a constructor is not an integer
-def domOf(r: Region, st: State, t: Term): DomOf = st match
+def domOf {r: Region} (st: State, t: Term): DomOf = st match
   case State(s, _, ds, _, _) => walk(s, t) match
-    case TVar(n) => lookupDom(r, ds, n)
+    case TVar(n) => lookupDom(ds, n)
     case TInt(v) => Has(Dom(v, INil))
     case TCon(_, _) => NotInt
 
 // t takes a value of xs (ascending): Bad when none is left, bound when one is left
-def setDom(r: Region, st: State, t: Term, xs: Ints): Checked = st match
+def setDom {r: Region} (st: State, t: Term, xs: Ints): Checked = st match
   case State(s, ns, ds, fs, nx) => xs match
     case INil => Bad
     case ICons(h, rest) => walk(s, t) match
       case TInt(v) => if member(v, xs) then Good(st) else Bad
       case TCon(_, _) => Bad
       case TVar(n) => rest match
-        case INil => unify(r, s, TVar(n), TInt(h)) match
+        case INil => unify(s, TVar(n), TInt(h)) match
           case Fail => Bad
-          case Ok(s2) => Good(State(s2, ns, dropDom(r, ds, n), fs, nx))
-        case ICons(_, _) => Good(State(s, ns, DCons(n, Dom(h, rest), dropDom(r, ds, n)), fs, nx))
+          case Ok(s2) => Good(State(s2, ns, dropDom(ds, n), fs, nx))
+        case ICons(_, _) => Good(State(s, ns, DCons(n, Dom(h, rest), dropDom(ds, n)), fs, nx))
 
 // t takes a value of xs and of the domain it already has
-def meet(r: Region, st: State, t: Term, xs: Ints): Checked = domOf(r, st, t) match
-  case NoDom => setDom(r, st, t, xs)
-  case Has(d) => setDom(r, st, t, meetInts(r, xs, d))
+def meet {r: Region} (st: State, t: Term, xs: Ints): Checked = domOf(st, t) match
+  case NoDom => setDom(st, t, xs)
+  case Has(d) => setDom(st, t, meetInts(xs, d))
   case NotInt => Bad
 
 // every domain entry added again under the current substitution: bound ones checked, unified ones met
-def redom(r: Region, st: State, ds: Doms): Checked = ds match
+def redom {r: Region} (st: State, ds: Doms): Checked = ds match
   case DNil => Good(st)
-  case DCons(n, d, t) => redom(r, st, t) match
+  case DCons(n, d, t) => redom(st, t) match
     case Bad => Bad
-    case Good(st2) => meet(r, st2, TVar(n), ints(r, d))
+    case Good(st2) => meet(st2, TVar(n), ints(d))
 
 // ── propagators (bounds) ──
 // x <= y - k: k = 0 for <=, 1 for <
-def leAt(r: Region, st: State, x: Term, y: Term, dx: Dom, dy: Dom, k: I64): Checked =
-  setDom(r, st, x, between(r, ints(r, dx), lo(dx), hi(dy) - k)) match
+def leAt {r: Region} (st: State, x: Term, y: Term, dx: Dom, dy: Dom, k: I64): Checked =
+  setDom(st, x, between(ints(dx), lo(dx), hi(dy) - k)) match
     case Bad => Bad
-    case Good(st2) => setDom(r, st2, y, between(r, ints(r, dy), lo(dx) + k, hi(dy)))
+    case Good(st2) => setDom(st2, y, between(ints(dy), lo(dx) + k, hi(dy)))
 
-def neqAt(r: Region, st: State, x: Term, y: Term, dx: Dom, dy: Dom): Checked =
+def neqAt {r: Region} (st: State, x: Term, y: Term, dx: Dom, dy: Dom): Checked =
   if domSize(dx) == 1 && domSize(dy) == 1 then (if lo(dx) == lo(dy) then Bad else Good(st))
-  else if domSize(dx) == 1 then setDom(r, st, y, without(r, ints(r, dy), lo(dx)))
-  else if domSize(dy) == 1 then setDom(r, st, x, without(r, ints(r, dx), lo(dy)))
+  else if domSize(dx) == 1 then setDom(st, y, without(ints(dy), lo(dx)))
+  else if domSize(dy) == 1 then setDom(st, x, without(ints(dx), lo(dy)))
   else Good(st)
 
-def binAt(r: Region, st: State, op: Bin, x: Term, y: Term, dx: Dom, dy: Dom): Checked = op match
-  case BLe => leAt(r, st, x, y, dx, dy, 0)
-  case BLt => leAt(r, st, x, y, dx, dy, 1)
-  case BNeq => neqAt(r, st, x, y, dx, dy)
+def binAt {r: Region} (st: State, op: Bin, x: Term, y: Term, dx: Dom, dy: Dom): Checked = op match
+  case BLe => leAt(st, x, y, dx, dy, 0)
+  case BLt => leAt(st, x, y, dx, dy, 1)
+  case BNeq => neqAt(st, x, y, dx, dy)
 
 // x + y = z
-def plusAt(r: Region, st: State, x: Term, y: Term, z: Term, dx: Dom, dy: Dom, dz: Dom): Checked =
-  setDom(r, st, z, between(r, ints(r, dz), lo(dx) + lo(dy), hi(dx) + hi(dy))) match
+def plusAt {r: Region} (st: State, x: Term, y: Term, z: Term, dx: Dom, dy: Dom, dz: Dom): Checked =
+  setDom(st, z, between(ints(dz), lo(dx) + lo(dy), hi(dx) + hi(dy))) match
     case Bad => Bad
-    case Good(st1) => setDom(r, st1, x, between(r, ints(r, dx), lo(dz) - hi(dy), hi(dz) - lo(dy))) match
+    case Good(st1) => setDom(st1, x, between(ints(dx), lo(dz) - hi(dy), hi(dz) - lo(dy))) match
       case Bad => Bad
-      case Good(st2) => setDom(r, st2, y, between(r, ints(r, dy), lo(dz) - hi(dx), hi(dz) - lo(dx)))
+      case Good(st2) => setDom(st2, y, between(ints(dy), lo(dz) - hi(dx), hi(dz) - lo(dx)))
 
 // a propagator runs once every variable it reads has a domain
-def fire(r: Region, st: State, c: Fd): Checked = c match
-  case FBin(op, x, y) => domOf(r, st, x) match
+def fire {r: Region} (st: State, c: Fd): Checked = c match
+  case FBin(op, x, y) => domOf(st, x) match
     case NoDom => Good(st)
     case NotInt => Bad
-    case Has(dx) => domOf(r, st, y) match
+    case Has(dx) => domOf(st, y) match
       case NoDom => Good(st)
       case NotInt => Bad
-      case Has(dy) => binAt(r, st, op, x, y, dx, dy)
-  case FPlus(x, y, z) => domOf(r, st, x) match
+      case Has(dy) => binAt(st, op, x, y, dx, dy)
+  case FPlus(x, y, z) => domOf(st, x) match
     case NoDom => Good(st)
     case NotInt => Bad
-    case Has(dx) => domOf(r, st, y) match
+    case Has(dx) => domOf(st, y) match
       case NoDom => Good(st)
       case NotInt => Bad
-      case Has(dy) => domOf(r, st, z) match
+      case Has(dy) => domOf(st, z) match
         case NoDom => Good(st)
         case NotInt => Bad
-        case Has(dz) => plusAt(r, st, x, y, z, dx, dy, dz)
+        case Has(dz) => plusAt(st, x, y, z, dx, dy, dz)
 
-def fireAll(r: Region, st: State, fs: Fds): Checked = fs match
+def fireAll {r: Region} (st: State, fs: Fds): Checked = fs match
   case FNil => Good(st)
-  case FCons(c, t) => fire(r, st, c) match
+  case FCons(c, t) => fire(st, c) match
     case Bad => Bad
-    case Good(st2) => fireAll(r, st2, t)
+    case Good(st2) => fireAll(st2, t)
 
 def domTotal(ds: Doms): I64 = ds match
   case DNil => 0
   case DCons(_, d, t) => 1 + domSize(d) + domTotal(t)
 
 // one round: disequalities, domains, propagators
-def round(r: Region, st: State): Checked = st match
-  case State(s, ns, ds, fs, nx) => recheck(r, s, ns) match
+def round {r: Region} (st: State): Checked = st match
+  case State(s, ns, ds, fs, nx) => recheck(s, ns) match
     case Violated => Bad
-    case Kept(ns2) => redom(r, State(s, ns2, DNil, fs, nx), ds) match
+    case Kept(ns2) => redom(State(s, ns2, DNil, fs, nx), ds) match
       case Bad => Bad
-      case Good(st2) => fireAll(r, st2, fs)
+      case Good(st2) => fireAll(st2, fs)
 
 // rounds until nothing changes. Ends: a changing round binds a variable or removes a domain value or entry
-def settle(r: Region, st: State): Checked = round(r, st) match
+def settle {r: Region} (st: State): Checked = round(st) match
   case Bad => Bad
-  case Good(st2) => if same(st, st2) then Good(st2) else settle(r, st2)
+  case Good(st2) => if same(st, st2) then Good(st2) else settle(st2)
 
 def same(a: State, b: State): Bool = a match
   case State(sa, _, da, _, _) => b match
@@ -442,31 +442,31 @@ enum Pick:
   case Pick(t: Term, d: Dom)
 
 // the variable of xs with the smallest domain of 2 or more values (first-fail)
-def pickVar(r: Region, st: State, xs: Terms, best: Pick): Pick = xs match
+def pickVar {r: Region} (st: State, xs: Terms, best: Pick): Pick = xs match
   case TNil => best
-  case TCons(h, t) => domOf(r, st, h) match
-    case Has(d) => if domSize(d) > 1 && smaller(d, best) then pickVar(r, st, t, Pick(h, d)) else pickVar(r, st, t, best)
-    case NoDom => pickVar(r, st, t, best)
-    case NotInt => pickVar(r, st, t, best)
+  case TCons(h, t) => domOf(st, h) match
+    case Has(d) => if domSize(d) > 1 && smaller(d, best) then pickVar(st, t, Pick(h, d)) else pickVar(st, t, best)
+    case NoDom => pickVar(st, t, best)
+    case NotInt => pickVar(st, t, best)
 
 def smaller(d: Dom, best: Pick): Bool = best match
   case NoPick => true
   case Pick(_, e) => domSize(d) < domSize(e)
 
-def labelBranches(r: Region, st: State, t: Term, vs: Ints, after: Goals): Queue = vs match
+def labelBranches {r: Region} (st: State, t: Term, vs: Ints, after: Goals): Queue = vs match
   case INil => QNil
-  case ICons(v, more) => QCons(Branch(st, GCons(GEq(t, TInt(v)), after)), labelBranches(r, st, t, more, after))
+  case ICons(v, more) => QCons(Branch(st, GCons(GEq(t, TInt(v)), after)), labelBranches(st, t, more, after))
 
 // every two of xs differ
-def distinct(r: Region, xs: Terms): Goal = xs match
+def distinct {r: Region} (xs: Terms): Goal = xs match
   case TNil => GTrue
-  case TCons(h, t) => GConj(neqEach(r, h, t), distinct(r, t))
+  case TCons(h, t) => GConj(neqEach(h, t), distinct(t))
 
-def neqEach(r: Region, x: Term, ys: Terms): Goal = ys match
+def neqEach {r: Region} (x: Term, ys: Terms): Goal = ys match
   case TNil => GTrue
-  case TCons(y, t) => GConj(GFd(FBin(BNeq, x, y)), neqEach(r, x, t))
+  case TCons(y, t) => GConj(GFd(FBin(BNeq, x, y)), neqEach(x, t))
 
-def onward(r: Region, c: Checked, rest: Goals): Step = c match
+def onward {r: Region} (c: Checked, rest: Goals): Step = c match
   case Bad => Dead
   case Good(st) => More(Branch(st, rest))
 
@@ -474,46 +474,46 @@ def onward(r: Region, c: Checked, rest: Goals): Step = c match
 enum Picked:
   case Picked(bs: Queue, cost: I64)
 
-def picks(r: Region, rules: Rules, rel: Str, args: Terms, st: State, nx: I64, rest: Goals): Picked = rules match
+def picks {r: Region} (rules: Rules, rel: Str, args: Terms, st: State, nx: I64, rest: Goals): Picked = rules match
   case RNil => Picked(QNil, 0)
-  case RCons(h, t) => picks(r, t, rel, args, st, nx, rest) match
+  case RCons(h, t) => picks(t, rel, args, st, nx, rest) match
     case Picked(bs, cost) => h match
       case Rule(f, head, body, nv) =>
         if rt_str_eq(f, rel) then
-          val b = Branch(withNext(r, st, nx + nv), GCons(GEqAll(shiftAll(r, head, nx), args), GCons(shiftGoal(r, body, nx), rest)))
+          val b = Branch(withNext(st, nx + nv), GCons(GEqAll(shiftAll(head, nx), args), GCons(shiftGoal(body, nx), rest)))
           Picked(QCons(b, bs), cost + 1)
         else Picked(bs, cost)
 
-def step(r: Region, rules: Rules, b: Branch): Step = b match
+def step {r: Region} (rules: Rules, b: Branch): Step = b match
   case Branch(st, gs) => gs match
     case GNil => Done(st)
     case GCons(g, rest) => st match
       case State(s, _, _, fs, nx) => g match
         case GTrue => More(Branch(st, rest))
-        case GEq(a, c) => onward(r, post(r, st, unify(r, s, a, c)), rest)
-        case GEqAll(as, cs) => onward(r, post(r, st, unifyAll(r, s, as, cs)), rest)
-        case GNeq(a, c) => onward(r, addNeq(r, st, a, c), rest)
+        case GEq(a, c) => onward(post(st, unify(s, a, c)), rest)
+        case GEqAll(as, cs) => onward(post(st, unifyAll(s, as, cs)), rest)
+        case GNeq(a, c) => onward(addNeq(st, a, c), rest)
         case GConj(x, y) => More(Branch(st, GCons(x, GCons(y, rest))))
         case GDisj(x, y) => Split(QCons(Branch(st, GCons(x, rest)), QCons(Branch(st, GCons(y, rest)), QNil)), 1)
-        case GDom(x, xs) => onward(r, settled(r, meet(r, st, x, xs)), rest)
-        case GFd(c) => onward(r, settle(r, withFds(r, st, FCons(c, fs))), rest)
-        case GLabel(xs) => pickVar(r, st, xs, NoPick) match
+        case GDom(x, xs) => onward(settled(meet(st, x, xs)), rest)
+        case GFd(c) => onward(settle(withFds(st, FCons(c, fs))), rest)
+        case GLabel(xs) => pickVar(st, xs, NoPick) match
           case NoPick => More(Branch(st, rest))
-          case Pick(t, d) => Split(labelBranches(r, st, t, ints(r, d), gs), domSize(d))
-        case GCall(f, args) => picks(r, rules, f, args, st, nx, rest) match
+          case Pick(t, d) => Split(labelBranches(st, t, ints(d), gs), domSize(d))
+        case GCall(f, args) => picks(rules, f, args, st, nx, rest) match
           case Picked(bs, cost) => Split(bs, cost)
 
-def enqueue(r: Region, q: Queue, bs: Queue): Queue = q match
+def enqueue {r: Region} (q: Queue, bs: Queue): Queue = q match
   case QNil => bs
-  case QCons(h, t) => QCons(h, enqueue(r, t, bs))
+  case QCons(h, t) => QCons(h, enqueue(t, bs))
 
-def revAnswers(r: Region, xs: Answers, acc: Answers): Answers = xs match
+def revAnswers {r: Region} (xs: Answers, acc: Answers): Answers = xs match
   case ANil => acc
-  case ACons(h, t) => revAnswers(r, t, ACons(h, acc))
+  case ACons(h, t) => revAnswers(t, ACons(h, acc))
 
 // prove g (variables 0..nvars-1) over rules. Deterministic: a branch runs until a choice, the choice's branches
 // go to the back of the queue (fair, so complete). Every infinite path makes choices, so fuel bounds the run (§17).
-def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): Run =
+def solve {r: Region} (rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): Run =
   var q = QCons(Branch(State(SNil, NeqNil, DNil, FNil, nvars), GCons(g, GNil)), QNil)
   var left = fuel
   var found = ANil
@@ -525,7 +525,7 @@ def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): 
       case QNil => go = false
       case QCons(b, t) =>
         q = t
-        step(r, rules, b) match
+        step(rules, b) match
           case Done(st) =>
             found = ACons(st, found)
             n = n + 1
@@ -537,19 +537,19 @@ def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): 
               go = false
             else
               left = left - cost
-              q = enqueue(r, q, bs)
+              q = enqueue(q, bs)
     if go && n >= limit then
       status = Limit
       go = false
     else ()
-  Run(revAnswers(r, found, ANil), status)
+  Run(revAnswers(found, ANil), status)
 
 // the substitution of a state (answers are states)
 def substOf(st: State): Subst = st match
   case State(s, _, _, _, _) => s
 
-def withNext(r: Region, st: State, nx: I64): State = st match
+def withNext {r: Region} (st: State, nx: I64): State = st match
   case State(s, ns, ds, fs, _) => State(s, ns, ds, fs, nx)
 
-def withFds(r: Region, st: State, fs: Fds): State = st match
+def withFds {r: Region} (st: State, fs: Fds): State = st match
   case State(s, ns, ds, _, nx) => State(s, ns, ds, fs, nx)

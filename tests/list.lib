@@ -2,10 +2,14 @@ enum List:
   case Nil
   case Cons(h: I64, t: List)
 
-def build(r: Region, n: I64): List =
-  if n == 0 then Nil else Cons(n, build(r, n - 1))
+def build {r: Region} (n: I64): List =
+  if n == 0 then Nil else Cons(n, build(n - 1))
 
 def sum(xs: List): I64 =
   xs match
     case Nil => 0
     case Cons(h, t) => h + sum(t)
+
+// the region chosen by the caller (2+ regions in scope): explicit cap param until a choice syntax is ruled (vic-9l7.7)
+def buildAt(r: Region, n: I64): List =
+  if n == 0 then Nil else Cons(n, buildAt(r, n - 1))

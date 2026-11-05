@@ -29,13 +29,13 @@ spec def memL(v: I64, xs: List): Bool = xs match
   case Nil => false
   case Cons(h, t) => h == v || memL(v, t)
 
-def push(r: Region, h: I64, xs: List): List
+def push {r: Region} (h: I64, xs: List): List
   ensures forall v: I64 => memL(v, result) == (h == v || memL(v, xs))
   proof using memL
 = Cons(h, xs)
 
 def main(): I64 =
   handle r = Arena()
-  rt_print_i64(count(build(r, 5)))
+  rt_print_i64(count(build(5)))
   rt_print("\n")
   0

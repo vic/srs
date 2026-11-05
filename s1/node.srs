@@ -151,7 +151,7 @@ def drop(xs: Nodes, i: I64): Nodes =
 spec def revOnto(xs: Nodes, acc: Nodes): Nodes = xs match
   case NNil => acc
   case NCons(h, t) => revOnto(t, NCons(h, acc))
-def rev(r: Region, xs: Nodes): Nodes
+def rev {r: Region} (xs: Nodes): Nodes
   ensures result == revOnto(xs, NNil)
 =
   var out = NNil
@@ -162,15 +162,15 @@ def rev(r: Region, xs: Nodes): Nodes
     out = NCons(head(c), out)
     c = tail(c)
   out
-def one(r: Region, x: Node): Nodes = NCons(x, NNil)
-def append(r: Region, xs: Nodes, ys: Nodes): Nodes =
+def one {r: Region} (x: Node): Nodes = NCons(x, NNil)
+def append {r: Region} (xs: Nodes, ys: Nodes): Nodes =
   var out = ys
-  var c = rev(r, xs)
+  var c = rev(xs)
   while !isNil(c) do
     out = NCons(head(c), out)
     c = tail(c)
   out
-def leaf(r: Region, k: Kind, s: Str, line: I64): Node = Node(k, s, "", 0, line, NNil)
+def leaf {r: Region} (k: Kind, s: Str, line: I64): Node = Node(k, s, "", 0, line, NNil)
 
 def eqs(a: Str, b: Str): Bool = rt_str_eq(a, b)
 // specs (Lean only): the texts of a node list, its size
