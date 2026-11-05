@@ -107,7 +107,7 @@ def outFacts {r: Region} (ts: Nodes, acc: Nodes): PR =
 def group {r: Region} (ts0: Nodes, out: Str): PR =
   val line = at(ts0)
   val open = text(head(ts0))
-  val close = if eqs(open, "{") then "}" else if eqs(open, "[") then "]" else ">"
+  val close = if eqs(open, "{") then "}" else if eqs(open, "[") then "]" else if eqs(open, "(") then ")" else ">"
   var ts = tail(ts0)
   var xs = NNil
   while !isT(ts, close) do
@@ -298,8 +298,39 @@ def typeDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
   val g = groups(tail(ts0), NNil)
-  val gs = list(Groups, line, rev(kids(pn(g))))
-  var ts = expect(pr(g), "=")
+  // () value binders after the other groups (vic-u2d.3): type Bits (n: I64) = ...
+  val vg = if isT(pr(g), "(") then group(pr(g), "") else PR(NoNode, pr(g))
+  val gs = list(Groups, line, if found(pn(vg)) then append(rev(kids(pn(g))), one(pn(vg))) else rev(kids(pn(g))))
+  var ts = expect(pr(vg), "=")
+  // a value match: type Bits (n: I64) = n match / case 8 => U8 / case _ => U64 (vic Q-U3 a); DType n = 2
+  val vm = found(pn(vg)) && isK(ts, TIdent) && found(find(kids(pn(vg)), Binder, text(head(ts)))) && isT(tail(ts), "match")
+  if vm then
+    val scrut = leaf(XName, text(head(ts)), line)
+    ts = expectK(expectK(drop(ts, 2), TNl, "newline"), TIndent, "indent")
+    var vcs = NNil
+    while !isK(ts, TDedent) do
+      val cl = at(ts)
+      val p = valuePat(expect(ts, "case"))
+      val t = ty(expect(pr(p), "=>"))
+      vcs = NCons(Node(DTCase, "", "", 0, cl, NCons(pn(p), one(pn(t)))), vcs)
+      ts = endLine(pr(t))
+    PR(Node(DType, name, "", 2, line, NCons(gs, NCons(scrut, rev(vcs)))), tail(ts))
+  else typeBody(name, line, gs, ts)
+
+// a value match pattern: an int, a string, true, false or _
+def valuePat {r: Region} (ts: Nodes): PR =
+  val line = at(ts)
+  if isK(ts, TInt) then PR(Node(XInt, "", "", parseInt(text(head(ts))), line, NNil), tail(ts))
+  else if isK(ts, TStr) then PR(leaf(XStr, text(head(ts)), line), tail(ts))
+  else if isT(ts, "true") || isT(ts, "false") then PR(Node(XBool, "", "", if isT(ts, "true") then 1 else 0, line, NNil), tail(ts))
+  else if isT(ts, "_") then PR(leaf(XName, "_", line), tail(ts))
+  else
+    perr(ts, "a value pattern (int, string, true, false, _)")
+    PR(NoNode, ts)
+
+// the body of a type decl: a type, or a match type on a type
+def typeBody {r: Region} (name: Str, line: I64, gs: Node, ts0: Nodes): PR =
+  var ts = ts0
   val b = ty(ts)
   ts = pr(b)
   if isT(ts, "match") then
@@ -385,6 +416,19 @@ def ty {r: Region} (ts0: Nodes): PR =
       if !isT(ts, "]") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
+  // value args T(v, ...) (vic-u2d.3): compile-time values, the last kid (normTy evaluates them and drops it)
+  var vals = NNil
+  // a one-char test: this runs for every type parsed (bench: isT here cost +0.1% of a compile)
+  val hasVals = isK(ts, TOp) && rt_str_at(text(head(ts)), 0) == 40 && rt_str_len(text(head(ts))) == 1
+  if hasVals then
+    ts = tail(ts)
+    while !isT(ts, ")") do
+      val v = expr(ts)
+      vals = NCons(pn(v), vals)
+      ts = pr(v)
+      if !isT(ts, ")") then ts = expect(ts, ",") else ()
+    ts = tail(ts)
+  else ()
   var caps = NNil
   var annotated = 0
   // caps T^<r, q>: the regions a value lives in are facts (vic 2026-11-05)
@@ -397,7 +441,8 @@ def ty {r: Region} (ts0: Nodes): PR =
       if !isT(ts, ">") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
-  PR(Node(Ty, name, "", annotated, line, NCons(Node(TyTo, "", "", 0, line, rev(args)), rev(caps))), ts)
+  val tail0 = if hasVals then append(rev(caps), one(list(TyVals, line, rev(vals)))) else rev(caps)
+  PR(Node(Ty, name, "", annotated, line, NCons(Node(TyTo, "", "", 0, line, rev(args)), tail0)), ts)
 
 def rhs {r: Region} (ts: Nodes): PR =
   if isK(ts, TNl) && isK(tail(ts), TIndent) then block(tail(ts)) else expr(ts)

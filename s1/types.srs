@@ -5,9 +5,11 @@
 def typeFuel(): I64 = 1000
 
 // the program with every type lambda applied and every match type reduced
-def expandTypes {r: Region} (ds: Decls): Nodes =
+def expandTypes {r: Region} (ds0: Decls): Nodes =
+  // value args call pure defs at compile time: the fns with effects (s1/purity.srs), when a type has () binders
+  val ds = if hasValueTypes(declList(ds0)) then declsCons(impureDecl(ds0), ds0) else ds0
   var out = NNil
-  var c = declList(ds)
+  var c = declList(ds0)
   while !isNil(c) do
     val d = head(c)
     if kind(d) == DType then checkTypeDecl(ds, d) else ()
@@ -28,26 +30,92 @@ def expandIn {r: Region} (ds: Decls, env: Nodes, e: Node): Node =
     withKids(e, rev(out))
 
 // t with its args normalized and, if it names a type decl, applied (and its match reduced); the use keeps its caps
-def normTy {r: Region} (ds: Decls, env: Nodes, t: Node, fuel: I64): Node =
+def normTy {r: Region} (ds: Decls, env: Nodes, t: Node, fuel: I64): Node = normTyV(ds, env, CEnvNil, t, fuel)
+
+// t inside the body of a type decl whose () value params are cv (vic-u2d.3): its value args see them
+def normTyV {r: Region} (ds: Decls, env: Nodes, cv: CEnv, t: Node, fuel: I64): Node =
   if fuel <= 0 then errTy("type reduction ran out of fuel at", t, lineOf(t)) else ()
   var args = NNil
   var c = tyArgs(t)
   while !isNil(c) do
-    args = NCons(normTy(ds, env, head(c), fuel - 1), args)
+    args = NCons(normTyV(ds, env, cv, head(c), fuel - 1), args)
     c = tail(c)
-  val t1 = Node(Ty, text(t), text2(t), num(t), lineOf(t), NCons(Node(TyTo, tyTo(t), "", 0, 0, rev(args)), tyCaps(t)))
+  val vals = if isNil(tyCaps(t)) then NoNode else find(tyCaps(t), TyVals, "")
+  val t1 = Node(Ty, text(t), text2(t), num(t), lineOf(t), NCons(Node(TyTo, tyTo(t), "", 0, 0, rev(args)), if found(vals) then dropVals(tyCaps(t)) else tyCaps(t)))
   val d = findDecl(ds, DType, text(t))
-  if !found(d) then t1
+  if !found(d) then
+    if found(vals) then err("value args on a type that takes none:", text(t), lineOf(t)) else ()
+    t1
   else
     val tps = groupBinders(kids(kid(d, 0)))
     if len(tyArgs(t1)) != len(tps) then err("wrong number of type args for", text(t), lineOf(t)) else ()
+    val vbs = valueBinders(kids(kid(d, 0)))
+    if (if found(vals) then len(kids(vals)) else 0) != len(vbs) then err("wrong number of value args for", text(t), lineOf(t)) else ()
+    // the value args, evaluated at compile time (U2), bound to the decl's () params
+    val cv2 = if found(vals) then bindVals(ds, cv, vbs, kids(vals), text(t)) else CEnvNil
     val sub = zipBind(tps, tyArgs(t1))
     // its {} evidence: resolved at this use (as a call's, local evidence first, vic-jxk)
     goals(ds, env, kids(kid(d, 0)), sub, NNil, givenFuel(), lineOf(t))
-    val body = applyTy(sub, kid(d, 1))
-    val res = if num(d) == 1 then reduceMatch(ds, d, normTy(ds, env, body, fuel - 1), sub, lineOf(t)) else body
+    val res = if num(d) == 2 then reduceValues(ds, d, cv2, sub, lineOf(t)) else if num(d) == 1 then reduceMatch(ds, d, normTyV(ds, env, cv2, applyTy(sub, kid(d, 1)), fuel - 1), sub, lineOf(t)) else applyTy(sub, kid(d, 1))
     // its facts <at(f, S)>: the caps of the use's scope, each with its required state (vic-jxk)
-    withCaps(normTy(ds, env, res, fuel - 1), t, typeFacts(ds, env, d, lineOf(t)))
+    withCaps(normTyV(ds, env, cv2, res, fuel - 1), t1, typeFacts(ds, env, d, lineOf(t)))
+
+def dropVals {r: Region} (cs: Nodes): Nodes =
+  var out = NNil
+  var c = cs
+  while !isNil(c) do
+    if kind(head(c)) != TyVals then out = NCons(head(c), out) else ()
+    c = tail(c)
+  rev(out)
+
+// the binders of the () group of a type decl
+def valueBinders {r: Region} (gs: Nodes): Nodes =
+  var out = NNil
+  var c = gs
+  while !isNil(c) do
+    if kind(head(c)) == Group && eqs(text(head(c)), "(") then out = append(out, kids(head(c))) else ()
+    c = tail(c)
+  out
+
+def hasValueTypes {r: Region} (ds: Nodes): Bool =
+  var res = false
+  var c = ds
+  while !res && !isNil(c) do
+    if kind(head(c)) == DType then res = !isNil(valueBinders(kids(kid(head(c), 0)))) else ()
+    c = tail(c)
+  res
+
+// a compile-time value fits a value binder type: I64, Bool or Str
+def cvFits(v: CVal, t: Str): Bool = v match
+  case CInt(_) => eqs(t, "I64")
+  case CBool(_) => eqs(t, "Bool")
+  case CStr(_) => eqs(t, "Str")
+  case _ => false
+
+def bindVals {r: Region} (ds: Decls, cv: CEnv, bs: Nodes, xs: Nodes, ty: Str): CEnv =
+  var out = CEnvNil
+  var b = bs
+  var x = xs
+  while !isNil(b) && !isNil(x) do
+    val v = crV(evExpr(ds, ty, cv, comptimeFuel(), head(x)))
+    if !cvFits(v, text(kid(head(b), 0))) then err("value arg does not fit", text(kid(head(b), 0)), lineOf(head(x))) else ()
+    out = CBind(text(head(b)), v, out)
+    b = tail(b)
+    x = tail(x)
+  out
+
+// the result of the first case of value match d whose pattern is the scrutinee's value (or _)
+def reduceValues {r: Region} (ds: Decls, d: Node, cv: CEnv, sub: Nodes, line: I64): Node =
+  val v = crV(evExpr(ds, text(d), cv, comptimeFuel(), kid(d, 1)))
+  var res = NoNode
+  var c = tail(tail(kids(d)))
+  while !found(res) && !isNil(c) do
+    val p = kid(head(c), 0)
+    val hit = (kind(p) == XName && eqs(text(p), "_")) || cvEq(crV(evExpr(ds, text(d), CEnvNil, comptimeFuel(), p)), v)
+    if hit then res = applyTy(sub, kid(head(c), 1)) else ()
+    c = tail(c)
+  if !found(res) then err("no case of the value match matches", text(d), line) else ()
+  res
 
 // res at the use t: t's caps, annotation flag and line
 def withCaps {r: Region} (res: Node, t: Node, facts: Nodes): Node = Node(Ty, text(res), text2(res), num(t), lineOf(t), NCons(head(kids(res)), append(facts, tyCaps(t))))
@@ -69,17 +137,33 @@ def checkTypeDecl {r: Region} (ds0: Decls, d: Node): Unit =
   var gs = kids(kid(d, 0))
   while !isNil(gs) do
     val g = head(gs)
-    if !eqs(text(g), "[") && !eqs(text(g), "{") && !eqs(text(g), "<") then err("not yet: binder group on a type", text(g), lineOf(g)) else ()
+    if !eqs(text(g), "[") && !eqs(text(g), "{") && !eqs(text(g), "<") && !eqs(text(g), "(") then err("not yet: binder group on a type", text(g), lineOf(g)) else ()
     if eqs(text(g), "<") then needTypeFacts(ds, d, g) else ()
     var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
-      if eqs(text(g), "[") then
+      // () values (vic-u2d.3): a compile-time value of I64, Bool or Str
+      if eqs(text(g), "(") then
+        if !(eqs(text(k), "I64") || eqs(text(k), "Bool") || eqs(text(k), "Str")) || !isNil(kids(k)) then err("not yet: value binder of type", text(k), lineOf(head(bs))) else ()
+      else if eqs(text(g), "[") then
         if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
       else if eqs(text(g), "<") || isProto(ds, text(k)) then ()
       else needTrait(ds, termTy(k))
       bs = tail(bs)
     gs = tail(gs)
+  if num(d) == 2 then needPatterns(d) else ()
+
+// a value match: each pattern is _ or a literal of the scrutinee's binder type
+def needPatterns {r: Region} (d: Node): Unit =
+  val b = find(valueBinders(kids(kid(d, 0))), Binder, text(kid(d, 1)))
+  val t = text(kid(b, 0))
+  var c = tail(tail(kids(d)))
+  while !isNil(c) do
+    val p = kid(head(c), 0)
+    val k = kind(p)
+    val ok = k == XName || (k == XInt && eqs(t, "I64")) || (k == XBool && eqs(t, "Bool")) || (k == XStr && eqs(t, "Str"))
+    if !ok then err("value match pattern does not fit", t, lineOf(p)) else ()
+    c = tail(c)
 
 // the {} evidence in scope of a decl's types: a def's (a given's def: the given's) {} binders
 def declEv {r: Region} (ds: Decls, d: Node): Nodes =
