@@ -184,7 +184,7 @@ partial_fixpoint
 
 end
 
-def «matchArg» («e» : «Env») («a» : «Arg») («v» : «Val») : Option «Envs» := do {
+def «matchOne» («e» : «Env») («a» : «Arg») («v» : «Val») : Option «Envs» := do {
 match «a» with
 | «Arg».«AVal» «w» => {
 if (← «valEq» «w» «v») then {
@@ -342,7 +342,7 @@ partial_fixpoint
 end
 
 mutual
-def «bound» («args» : «Args») («body» : «Lits») : Option Bool := do {
+def «argsBound» («args» : «Args») («body» : «Lits») : Option Bool := do {
 match «args» with
 | «Args».«ArgNil» => {
 pure true;
@@ -352,14 +352,14 @@ match «a» with
 | «Arg».«AVar» «n» => {
 pure (← (do {
 if (← «posHas» «body» «n») then {
-pure (← «bound» «t» «body»)
+pure (← «argsBound» «t» «body»)
 } else {
 pure false
 }
 }));
 }
 | «Arg».«AVal» _ => {
-pure (← «bound» «t» «body»);
+pure (← «argsBound» «t» «body»);
 }
 ;
 }
@@ -384,7 +384,7 @@ pure (← «negsBound» «t» «body»);
 match «a» with
 | «Atom».«Atom» _ «args» => {
 pure (← (do {
-if (← «bound» «args» «body») then {
+if (← «argsBound» «args» «body») then {
 pure (← «negsBound» «t» «body»)
 } else {
 pure false
@@ -407,7 +407,7 @@ match «c» with
 match «h» with
 | «Atom».«Atom» _ «args» => {
 pure (← (do {
-if (← «bound» «args» «body») then {
+if (← «argsBound» «args» «body») then {
 pure (← «negsBound» «body» «body»)
 } else {
 pure false
@@ -877,7 +877,7 @@ match «vals» with
 pure «Envs».«EnvsNil»;
 }
 | «Vals».«ValCons» «v» «vt» => {
-match (← «matchArg» «e» «a» «v») with
+match (← «matchOne» «e» «a» «v») with
 | «Envs».«EnvsNil» => {
 pure «Envs».«EnvsNil»;
 }

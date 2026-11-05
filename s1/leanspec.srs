@@ -438,8 +438,8 @@ def invLoop {r: Region} (body: Node): Node =
 
 // env at loop w: params + the vals before it (types from the checker, as lsBlock does)
 def loopEnv {r: Region} (ds: Nodes, f: Node, w: Node): Nodes =
-  var env = fnEnv(ds, sigParams(ds, f))
-  var gam = fnGam(ds, sigParams(ds, f))
+  var env = fnEnv(ds, sigParams(ds, f, defSol(ds, f)))
+  var gam = fnGam(ds, sigParams(ds, f, defSol(ds, f)))
   var c = if kind(kid(f, 2)) == XBlock then kids(kid(f, 2)) else NNil
   while !isNil(c) && !(kind(head(c)) == XWhile && lineOf(head(c)) == lineOf(w)) do
     val s = head(c)

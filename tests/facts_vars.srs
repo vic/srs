@@ -1,0 +1,12 @@
+// pass: BD5b-1 variables in <> facts (vic (a′)): readAny works from any state that has a read; its body is checked
+// for each solution (Opened -> Read1, Read1 -> Read2); a call binds s from Γ and steps f to s2
+def readAny {f: File} <at(f, s), next(s, read, s2)> (): I64 <at(f, s2)> = f.read()
+
+def main(): I64 =
+  handle f = CFile()
+  val a = readAny()
+  val b = readAny()
+  f.close()
+  rt_print_i64(a + b)
+  rt_print("\n")
+  0

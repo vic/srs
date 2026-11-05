@@ -111,11 +111,11 @@ def matchArgs {r: Region} (e: Env, args: Args, vals: Vals): Envs = args match
     case ValCons(_, _) => EnvsNil
   case ArgCons(a, at) => vals match
     case ValNil => EnvsNil
-    case ValCons(v, vt) => matchArg(e, a, v) match
+    case ValCons(v, vt) => matchOne(e, a, v) match
       case EnvsNil => EnvsNil
       case EnvsCons(e2, _) => matchArgs(e2, at, vt)
 
-def matchArg {r: Region} (e: Env, a: Arg, v: Val): Envs = a match
+def matchOne {r: Region} (e: Env, a: Arg, v: Val): Envs = a match
   case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
   case AVar(n) => envGet(e, n) match
     case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
@@ -184,22 +184,22 @@ def posHas(body: Lits, n: I64): Bool = body match
     case Neg(_) => posHas(t, n)
 
 // every variable of args is in a positive literal of body
-def bound(args: Args, body: Lits): Bool = args match
+def argsBound(args: Args, body: Lits): Bool = args match
   case ArgNil => true
   case ArgCons(a, t) => a match
-    case AVar(n) => posHas(body, n) && bound(t, body)
-    case AVal(_) => bound(t, body)
+    case AVar(n) => posHas(body, n) && argsBound(t, body)
+    case AVal(_) => argsBound(t, body)
 
 def negsBound(ls: Lits, body: Lits): Bool = ls match
   case LitNil => true
   case LitCons(l, t) => l match
     case Pos(_) => negsBound(t, body)
     case Neg(a) => a match
-      case Atom(_, args) => bound(args, body) && negsBound(t, body)
+      case Atom(_, args) => argsBound(args, body) && negsBound(t, body)
 
 def safe(c: Clause): Bool = c match
   case Clause(h, body) => h match
-    case Atom(_, args) => bound(args, body) && negsBound(body, body)
+    case Atom(_, args) => argsBound(args, body) && negsBound(body, body)
 
 // ── strata ──
 def stratum(st: Strata, p: Str): I64 = st match
