@@ -109,33 +109,34 @@ def group(r: Region, ts0: Nodes, out: Str): PR =
   var xs = NNil
   while !isT(ts, close) do
     if eqs(open, "<") then
-      val a = tterm(r, ts)
+      val a = tterm(r, ts, "(")
       xs = NCons(pn(a), xs)
       ts = pr(a)
     else
       val n = needIdent(ts)
       val bl = at(ts)
-      val t = tterm(r, expect(tail(ts), ":"))
+      val t = tterm(r, expect(tail(ts), ":"), "{")
       xs = NCons(Node(Binder, n, "", 0, bl, one(r, pn(t))), xs)
       ts = pr(t)
     if !isT(ts, close) then ts = expect(ts, ",") else ()
   PR(Node(Group, open, out, 0, line, rev(r, xs)), tail(ts))
 
-// T | T(args) | 3: a type (application) or a Datalog atom
-def tterm(r: Region, ts0: Nodes): PR =
+// T | T{args} | 3: a type (open = "{") or a Datalog atom p(args) (open = "(")
+def tterm(r: Region, ts0: Nodes, open: Str): PR =
   val line = at(ts0)
   if isK(ts0, TInt) then PR(Node(TTerm, text(head(ts0)), "", 1, line, NNil), tail(ts0))
   else
     val f = needIdent(ts0)
     var ts = tail(ts0)
     var xs = NNil
-    if isT(ts, "(") then
+    val close = if eqs(open, "{") then "}" else ")"
+    if isT(ts, open) then
       ts = tail(ts)
-      while !isT(ts, ")") do
-        val a = tterm(r, ts)
+      while !isT(ts, close) do
+        val a = tterm(r, ts, open)
         xs = NCons(pn(a), xs)
         ts = pr(a)
-        if !isT(ts, ")") then ts = expect(ts, ",") else ()
+        if !isT(ts, close) then ts = expect(ts, ",") else ()
       ts = tail(ts)
     else ()
     PR(Node(TTerm, f, "", 0, line, rev(r, xs)), ts)
@@ -294,15 +295,15 @@ def ty(r: Region, ts0: Nodes): PR =
   var ts = tail(ts0)
   var from = ""
   var to = ""
-  // type application T(args) (vic 2026-11-05): the args are the kids of TyTo, so tyCaps stays the tail
+  // type application T{args} (vic 2026-11-05: {} = types): the args are the kids of TyTo, so tyCaps stays the tail
   var args = NNil
-  if isT(ts, "(") then
+  if isT(ts, "{") then
     ts = tail(ts)
-    while !isT(ts, ")") do
+    while !isT(ts, "}") do
       val a = ty(r, ts)
       args = NCons(pn(a), args)
       ts = pr(a)
-      if !isT(ts, ")") then ts = expect(ts, ",") else ()
+      if !isT(ts, "}") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
   if isT(ts, "[") then
@@ -317,13 +318,14 @@ def ty(r: Region, ts0: Nodes): PR =
   else ()
   var caps = NNil
   var annotated = 0
+  // caps T^<r, q>: the regions a value lives in are facts (vic 2026-11-05)
   if isT(ts, "^") then
     annotated = 1
-    ts = expect(tail(ts), "{")
-    while !isT(ts, "}") do
+    ts = expect(tail(ts), "<")
+    while !isT(ts, ">") do
       caps = NCons(leaf(r, TyCap, needIdent(ts), line), caps)
       ts = tail(ts)
-      if !isT(ts, "}") then ts = expect(ts, ",") else ()
+      if !isT(ts, ">") then ts = expect(ts, ",") else ()
     ts = tail(ts)
   else ()
   PR(Node(Ty, name, from, annotated, line, NCons(Node(TyTo, to, "", 0, line, rev(r, args)), rev(r, caps))), ts)

@@ -42,8 +42,8 @@ If a decision is not ruled, it is not yours to make. Write the question to the d
 - One language: type level is the pure, finite part of srs. There is no second type-level language.
 - Order: Kanren with constraints, then Datalog, then binders and telescopes. Δ-Nets are deferred
   (bead vic-z95).
-- Binder groups: `()` values, `{A: Type}` type ascription (A is ascribed the type Type; vic 2026-11-05: "type abscription not type params"), `[s: Show(A)]` evidence (always named),
-  `<at(f, s)>` Datalog facts. Type application is `T(args)`. Facts after the return type are the exit facts.
+- Binder groups: `()` values, `{A: Type}` type ascription (A is ascribed the type Type; vic 2026-11-05: "type abscription not type params"), `[s: Show{A}]` evidence (always named, also a capability: handler presence, `[r: Region]`),
+  `<at(f, s)>` Datalog facts. Type application is `T{args}` ({} = types). Caps on a type are facts: `List{I64}^<r>`. Facts after the return type are the exit facts.
 - `<>` holds Datalog atoms and rules only. There is no regex protocol syntax.
 - `spec def` takes no groups. `extern def` takes all groups as a trusted contract. A slot of an extern typed by a `{}` binder
   is `void*`.

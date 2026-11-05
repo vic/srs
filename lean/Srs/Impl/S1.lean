@@ -1239,16 +1239,16 @@ pure («Node».«Node» «k» "".toUTF8 "".toUTF8 (0 : Int) «line» «xs»);
 }
 
 mutual
-def «tterm_loop0» («f» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «tterm_loop0» («close» : ByteArray) («f» : ByteArray) («line» : Int) («open» : ByteArray) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isT» «ts» ")".toUTF8))
-} : Option Bool)) st') then «tterm_loop0» «f» «line» «ts0» (← (fun ((«xs», «ts») : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isT» «ts» «close»))
+} : Option Bool)) st') then «tterm_loop0» «close» «f» «line» «open» «ts0» (← (fun ((«xs», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «xs» := «xs»;
 let mut «ts» := «ts»;
-let «a» ← (pure (← «tterm» «ts»));
+let «a» ← (pure (← «tterm» «ts» «open»));
 «xs» := («Nodes».«NCons» (← «pn» «a») «xs»);
 «ts» := (← «pr» «a»);
-if (!(← «isT» «ts» ")".toUTF8)) then {
+if (!(← «isT» «ts» «close»)) then {
 «ts» := (← «expect» «ts» ",".toUTF8);
 } else {
 let _ := ();
@@ -1258,7 +1258,7 @@ pure («xs», «ts»)
 }
 partial_fixpoint
 
-def «tterm» («ts0» : «Nodes») : Option «PR» := do {
+def «tterm» («ts0» : «Nodes») («open» : ByteArray) : Option «PR» := do {
 let «line» ← (pure (← «at» «ts0»));
 if (← «isK» «ts0» «Kind».«TInt») then {
 pure («PR».«PR» («Node».«Node» «Kind».«TTerm» (← «text» (← «head» «ts0»)) "".toUTF8 (1 : Int) «line» «Nodes».«NNil») (← «tail» «ts0»));
@@ -1266,9 +1266,16 @@ pure («PR».«PR» («Node».«Node» «Kind».«TTerm» (← «text» (← «h
 let «f» ← (pure (← «needIdent» «ts0»));
 let mut «ts» := (← «tail» «ts0»);
 let mut «xs» := «Nodes».«NNil»;
-if (← «isT» «ts» "(".toUTF8) then {
+let «close» ← (pure (← (do {
+if (← «eqs» «open» "{".toUTF8) then {
+pure "}".toUTF8;
+} else {
+pure ")".toUTF8;
+};
+})));
+if (← «isT» «ts» «open») then {
 «ts» := (← «tail» «ts»);
-let t_ ← «tterm_loop0» «f» «line» «ts0» («xs», «ts»);
+let t_ ← «tterm_loop0» «close» «f» «line» «open» «ts0» («xs», «ts»);
 «xs» := t_.1;
 «ts» := t_.2;
 «ts» := (← «tail» «ts»);
@@ -1342,14 +1349,14 @@ pure («PR».«PR» (← «list» «Kind».«Names» (← «at» «ts0») (← �
 mutual
 def «ty_loop0» («to» : ByteArray) («from» : ByteArray) («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isT» «ts» ")".toUTF8))
+pure (!(← «isT» «ts» "}".toUTF8))
 } : Option Bool)) st') then «ty_loop0» «to» «from» «name» «line» «ts0» (← (fun ((«args», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «args» := «args»;
 let mut «ts» := «ts»;
 let «a» ← (pure (← «ty» «ts»));
 «args» := («Nodes».«NCons» (← «pn» «a») «args»);
 «ts» := (← «pr» «a»);
-if (!(← «isT» «ts» ")".toUTF8)) then {
+if (!(← «isT» «ts» "}".toUTF8)) then {
 «ts» := (← «expect» «ts» ",".toUTF8);
 } else {
 let _ := ();
@@ -1361,13 +1368,13 @@ partial_fixpoint
 
 def «ty_loop1» («annotated» : Int) («args» : «Nodes») («to» : ByteArray) («from» : ByteArray) («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isT» «ts» "}".toUTF8))
+pure (!(← «isT» «ts» ">".toUTF8))
 } : Option Bool)) st') then «ty_loop1» «annotated» «args» «to» «from» «name» «line» «ts0» (← (fun ((«caps», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «caps» := «caps»;
 let mut «ts» := «ts»;
 «caps» := («Nodes».«NCons» (← «leaf» «Kind».«TyCap» (← «needIdent» «ts») «line») «caps»);
 «ts» := (← «tail» «ts»);
-if (!(← «isT» «ts» "}".toUTF8)) then {
+if (!(← «isT» «ts» ">".toUTF8)) then {
 «ts» := (← «expect» «ts» ",".toUTF8);
 } else {
 let _ := ();
@@ -1384,7 +1391,7 @@ let mut «ts» := (← «tail» «ts0»);
 let mut «from» := "".toUTF8;
 let mut «to» := "".toUTF8;
 let mut «args» := «Nodes».«NNil»;
-if (← «isT» «ts» "(".toUTF8) then {
+if (← «isT» «ts» "{".toUTF8) then {
 «ts» := (← «tail» «ts»);
 let t_ ← «ty_loop0» «to» «from» «name» «line» «ts0» («args», «ts»);
 «args» := t_.1;
@@ -1411,7 +1418,7 @@ let mut «caps» := «Nodes».«NNil»;
 let mut «annotated» := (0 : Int);
 if (← «isT» «ts» "^".toUTF8) then {
 «annotated» := (1 : Int);
-«ts» := (← «expect» (← «tail» «ts») "{".toUTF8);
+«ts» := (← «expect» (← «tail» «ts») "<".toUTF8);
 let t_ ← «ty_loop1» «annotated» «args» «to» «from» «name» «line» «ts0» («caps», «ts»);
 «caps» := t_.1;
 «ts» := t_.2;
@@ -2110,11 +2117,11 @@ partial_fixpoint
 def «eprintTy» («t» : «Node») : Option Unit := do {
 let _ := (← «rt_eprint» (← «text» «t»));
 if (!(← «isNil» (← «tyArgs» «t»))) then {
-let _ := (← «rt_eprint» "(".toUTF8);
+let _ := (← «rt_eprint» "{".toUTF8);
 let mut «c» := (← «tyArgs» «t»);
 let t_ ← «eprintTy_loop0» «t» «c»;
 «c» := t_;
-pure (← «rt_eprint» ")".toUTF8);
+pure (← «rt_eprint» "}".toUTF8);
 } else {
 pure ();
 };
@@ -5109,13 +5116,13 @@ pure (!(← «isT» «ts» «close»))
 let mut «xs» := «xs»;
 let mut «ts» := «ts»;
 if (← «eqs» «open» "<".toUTF8) then {
-let «a» ← (pure (← «tterm» «ts»));
+let «a» ← (pure (← «tterm» «ts» "(".toUTF8));
 «xs» := («Nodes».«NCons» (← «pn» «a») «xs»);
 «ts» := (← «pr» «a»);
 } else {
 let «n» ← (pure (← «needIdent» «ts»));
 let «bl» ← (pure (← «at» «ts»));
-let «t» ← (pure (← «tterm» (← «expect» (← «tail» «ts») ":".toUTF8)));
+let «t» ← (pure (← «tterm» (← «expect» (← «tail» «ts») ":".toUTF8) "{".toUTF8));
 «xs» := («Nodes».«NCons» («Node».«Node» «Kind».«Binder» «n» "".toUTF8 (0 : Int) «bl» (← «one» (← «pn» «t»))) «xs»);
 «ts» := (← «pr» «t»);
 };
