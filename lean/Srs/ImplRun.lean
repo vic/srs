@@ -14,7 +14,7 @@ def implAccepts (srcs : List String) : IO Bool := do
     match lex src >>= parseFile >>= append ds with
     | some x => ds := x
     | none => return false
-  return (check ds >>= mono).isSome
+  return (check ds >>= mkDecls >>= mono).isSome
 
 def checkVerdicts : IO Unit := do
   let libs := ["../lib/prelude.srs", "../lib/kanren.srs", "../lib/datalog.srs", "../tests/list.lib", "../tests/file.lib"]

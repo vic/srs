@@ -55,6 +55,9 @@ inductive «Model» where
   | «Unsafe» («rel» : ByteArray)
   | «NegCycle» («rel» : ByteArray)
   | «Model» («facts» : «Facts»)
+inductive «Rels» where
+  | «RelNil»
+  | «Rel» («name» : ByteArray) («all» : «Facts») («delta» : «Facts») («t» : «Rels»)
 inductive «Safety» where
   | «AllSafe»
   | «UnsafeIn» («rel» : ByteArray)
@@ -653,6 +656,183 @@ partial_fixpoint
 end
 
 mutual
+def «factsOf» («rs» : «Rels») («p» : ByteArray) («delta» : Bool) : Option «Facts» := do {
+match «rs» with
+| «Rels».«RelNil» => {
+pure «Facts».«FactNil»;
+}
+| «Rels».«Rel» «q» «all» «d» «t» => {
+if (← «rt_str_eq» «p» «q») then {
+if «delta» then {
+pure «d»;
+} else {
+pure «all»;
+};
+} else {
+pure (← «factsOf» «t» «p» «delta»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «addFact» («rs» : «Rels») («f» : «Fact») («src» : «Source») («delta» : Bool) : Option «Rels» := do {
+match «f» with
+| «Fact».«Fact» «p» _ => {
+match «rs» with
+| «Rels».«RelNil» => {
+pure («Rels».«Rel» «p» («Facts».«FactCons» «f» «src» «Facts».«FactNil») (← (do {
+if «delta» then {
+pure («Facts».«FactCons» «f» «src» «Facts».«FactNil»);
+} else {
+pure «Facts».«FactNil»;
+};
+})) «Rels».«RelNil»);
+}
+| «Rels».«Rel» «q» «all» «d» «t» => {
+if (← «rt_str_eq» «p» «q») then {
+pure («Rels».«Rel» «q» («Facts».«FactCons» «f» «src» «all») (← (do {
+if «delta» then {
+pure («Facts».«FactCons» «f» «src» «d»);
+} else {
+pure «d»;
+};
+})) «t»);
+} else {
+pure («Rels».«Rel» «q» «all» «d» (← «addFact» «t» «f» «src» «delta»));
+};
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «resetDelta» («rs» : «Rels») : Option «Rels» := do {
+match «rs» with
+| «Rels».«RelNil» => {
+pure «Rels».«RelNil»;
+}
+| «Rels».«Rel» «q» «all» _ «t» => {
+pure («Rels».«Rel» «q» «all» «Facts».«FactNil» (← «resetDelta» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «addFacts» («rs» : «Rels») («fs» : «Facts») («delta» : Bool) : Option «Rels» := do {
+match «fs» with
+| «Facts».«FactNil» => {
+pure «rs»;
+}
+| «Facts».«FactCons» «f» «src» «t» => {
+pure (← «addFacts» (← «addFact» «rs» «f» «src» «delta») «t» «delta»);
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «absentIn» («es» : «Envs») («a» : «Atom») («rs» : «Rels») : Option «Envs» := do {
+match «es» with
+| «Envs».«EnvsNil» => {
+pure «Envs».«EnvsNil»;
+}
+| «Envs».«EnvsCons» «e» «t» => {
+if (← «hasFact» (← «factsOf» «rs» (← «relOf» «a») false) (← «factOf» «e» «a»)) then {
+pure (← «absentIn» «t» «a» «rs»);
+} else {
+pure («Envs».«EnvsCons» «e» (← «absentIn» «t» «a» «rs»));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «addNew» («es» : «Envs») («h» : «Atom») («i» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «es» with
+| «Envs».«EnvsNil» => {
+pure «acc»;
+}
+| «Envs».«EnvsCons» «e» «t» => {
+let «f» ← (pure (← «factOf» «e» «h»));
+let «known» ← (pure (← (do {
+if (← «hasFact» (← «factsOf» «rs» (← «relOf» «h») false) «f») then {
+pure true
+} else {
+pure (← «hasFact» «acc» «f»)
+}
+})));
+pure (← «addNew» «t» «h» «i» «rs» (← (do {
+if «known» then {
+pure «acc»;
+} else {
+pure («Facts».«FactCons» «f» («Source».«ByRule» «i» «e») «acc»);
+};
+})));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «noFacts» («fs» : «Facts») : Option Bool := do {
+match «fs» with
+| «Facts».«FactNil» => {
+pure true;
+}
+| «Facts».«FactCons» _ _ _ => {
+pure false;
+}
+;
+}
+
+mutual
+def «factsCat» («a» : «Facts») («b» : «Facts») : Option «Facts» := do {
+match «a» with
+| «Facts».«FactNil» => {
+pure «b»;
+}
+| «Facts».«FactCons» «f» «s» «t» => {
+pure («Facts».«FactCons» «f» «s» (← «factsCat» «t» «b»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «factsRev» («a» : «Facts») («out» : «Facts») : Option «Facts» := do {
+match «a» with
+| «Facts».«FactNil» => {
+pure «out»;
+}
+| «Facts».«FactCons» «f» «s» «t» => {
+pure (← «factsRev» «t» («Facts».«FactCons» «f» «s» «out»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
 def «safety» («cs» : «Clauses») : Option «Safety» := do {
 match «cs» with
 | «Clauses».«ClNil» => {
@@ -1003,30 +1183,16 @@ partial_fixpoint
 
 end
 
-def «derive» («c» : «Clause») («i» : Int) («db» : «Facts») («acc» : «Facts») : Option «Facts» := do {
-match «c» with
-| «Clause».«Clause» «h» «body» => {
-pure (← «addAll» (← «dropNeg» (← «joinPos» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «db») «body» «db») «h» «i» «acc»);
-}
-;
-}
-
 mutual
-def «pass» («st» : «Strata») («cs» : «Clauses») («i» : Int) («k» : Int) («db» : «Facts») : Option «Facts» := do {
-match «cs» with
-| «Clauses».«ClNil» => {
-pure «db»;
+def «matchRel» («e» : «Env») («args» : «Args») («fs» : «Facts») : Option «Envs» := do {
+match «fs» with
+| «Facts».«FactNil» => {
+pure «Envs».«EnvsNil»;
 }
-| «Clauses».«ClCons» «c» «t» => {
-match «c» with
-| «Clause».«Clause» «h» _ => {
-pure (← «pass» «st» «t» («i» + (1 : Int)) «k» (← (do {
-if ((← «stratum» «st» (← «relOf» «h»)) == «k») then {
-pure (← «derive» «c» «i» «db» «db»);
-} else {
-pure «db»;
-};
-})));
+| «Facts».«FactCons» «f» _ «t» => {
+match «f» with
+| «Fact».«Fact» _ «vals» => {
+pure (← «envsAppend» (← «matchArgs» «e» «args» «vals») (← «matchRel» «e» «args» «t»));
 }
 ;
 }
@@ -1037,13 +1203,129 @@ partial_fixpoint
 end
 
 mutual
-def «fix» («st» : «Strata») («cs» : «Clauses») («k» : Int) («db» : «Facts») : Option «Facts» := do {
-let «db2» ← (pure (← «pass» «st» «cs» (0 : Int) «k» «db»));
-if ((← «factCount» «db2») == (← «factCount» «db»)) then {
-pure «db»;
+def «matchAll» («es» : «Envs») («args» : «Args») («fs» : «Facts») : Option «Envs» := do {
+match «es» with
+| «Envs».«EnvsNil» => {
+pure «Envs».«EnvsNil»;
+}
+| «Envs».«EnvsCons» «e» «t» => {
+pure (← «envsAppend» (← «matchRel» «e» «args» «fs») (← «matchAll» «t» «args» «fs»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «joinRels» («es» : «Envs») («body» : «Lits») («rs» : «Rels») («at» : Int) («i» : Int) : Option «Envs» := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure «es»;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» «a» => {
+match «a» with
+| «Atom».«Atom» «p» «args» => {
+pure (← «joinRels» (← «matchAll» «es» «args» (← «factsOf» «rs» «p» («i» == «at»))) «t» «rs» «at» («i» + (1 : Int)));
+}
+;
+}
+| «Lit».«Neg» _ => {
+pure (← «joinRels» «es» «t» «rs» «at» («i» + (1 : Int)));
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «dropNegRels» («es» : «Envs») («body» : «Lits») («rs» : «Rels») : Option «Envs» := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure «es»;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» _ => {
+pure (← «dropNegRels» «es» «t» «rs»);
+}
+| «Lit».«Neg» «a» => {
+pure (← «dropNegRels» (← «absentIn» «es» «a» «rs») «t» «rs»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «fireRule» («c» : «Clause») («i» : Int) («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+pure (← «addNew» (← «dropNegRels» (← «joinRels» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «rs» «at» (0 : Int)) «body» «rs») «h» «i» «rs» «acc»);
+}
+;
+}
+
+mutual
+def «fireDeltas» («c» : «Clause») («i» : Int) («body» : «Lits») («at» : Int) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure «acc»;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» «a» => {
+pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» (← (do {
+if (← «noFacts» (← «factsOf» «rs» (← «relOf» «a») true)) then {
+pure «acc»;
 } else {
-pure (← «fix» «st» «cs» «k» «db2»);
+pure (← «fireRule» «c» «i» «at» «rs» «acc»);
 };
+})));
+}
+| «Lit».«Neg» _ => {
+pure (← «fireDeltas» «c» «i» «t» («at» + (1 : Int)) «rs» «acc»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «dlRound» («st» : «Strata») («cs» : «Clauses») («i» : Int) («k» : Int) («first» : Bool) («rs» : «Rels») («acc» : «Facts») : Option «Facts» := do {
+match «cs» with
+| «Clauses».«ClNil» => {
+pure «acc»;
+}
+| «Clauses».«ClCons» «c» «t» => {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+let «acc2» ← (pure (← (do {
+if ((← «stratum» «st» (← «relOf» «h»)) != «k») then {
+pure «acc»;
+} else {
+if «first» then {
+pure (← «fireRule» «c» «i» (0 - (1 : Int)) «rs» «acc»);
+} else {
+pure (← «fireDeltas» «c» «i» «body» (0 : Int) «rs» «acc»);
+};
+};
+})));
+pure (← «dlRound» «st» «t» («i» + (1 : Int)) «k» «first» «rs» «acc2»);
+}
+;
+}
+;
 }
 partial_fixpoint
 
@@ -1069,16 +1351,37 @@ pure («go», «st»)
 }
 partial_fixpoint
 
-def «evalDatalog_loop1» («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Int × «Facts»)) : Option (Int × «Facts») := do {
-if (← (fun ((«k», _) : (Int × «Facts»)) => (do {
+def «evalDatalog_loop2» («k» : Int) («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : («Facts» × «Facts» × «Rels»)) : Option («Facts» × «Facts» × «Rels») := do {
+if (← (fun ((«acc», _, _) : («Facts» × «Facts» × «Rels»)) => (do {
+pure (!(← «noFacts» «acc»))
+} : Option Bool)) st') then «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«acc», «log», «rs») : («Facts» × «Facts» × «Rels»)) => (do {
+let mut «acc» := «acc»;
+let mut «log» := «log»;
+let mut «rs» := «rs»;
+«rs» := (← «addFacts» (← «resetDelta» «rs») «acc» true);
+«log» := (← «factsCat» «acc» «log»);
+«acc» := (← «dlRound» «st» «cs» (0 : Int) «k» false «rs» «Facts».«FactNil»);
+pure («acc», «log», «rs»)
+} : Option («Facts» × «Facts» × «Rels»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evalDatalog_loop1» («gs» : «Facts») («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Int × «Facts» × «Rels»)) : Option (Int × «Facts» × «Rels») := do {
+if (← (fun ((«k», _, _) : (Int × «Facts» × «Rels»)) => (do {
 pure (decide («k» <= (← «topStratum» «st» (0 : Int))))
-} : Option Bool)) st') then «evalDatalog_loop1» «go» «st» «n» «edb» «cs» (← (fun ((«k», «out») : (Int × «Facts»)) => (do {
+} : Option Bool)) st') then «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» (← (fun ((«k», «log», «rs») : (Int × «Facts» × «Rels»)) => (do {
 let mut «k» := «k»;
-let mut «out» := «out»;
-«out» := (← «fix» «st» «cs» «k» «out»);
+let mut «log» := «log»;
+let mut «rs» := «rs»;
+let mut «acc» := (← «dlRound» «st» «cs» (0 : Int) «k» true «rs» «Facts».«FactNil»);
+let t_ ← «evalDatalog_loop2» «k» «gs» «go» «st» «n» «edb» «cs» («acc», «log», «rs»);
+«acc» := t_.1;
+«log» := t_.2.1;
+«rs» := t_.2.2;
+«rs» := (← «resetDelta» «rs»);
 «k» := («k» + (1 : Int));
-pure («k», «out»)
-} : Option (Int × «Facts»))) st') else pure st'
+pure («k», «log», «rs»)
+} : Option (Int × «Facts» × «Rels»))) st') else pure st'
 }
 partial_fixpoint
 
@@ -1097,13 +1400,24 @@ let t_ ← «evalDatalog_loop0» «n» «edb» «cs» («go», «st»);
 if (decide ((← «topStratum» «st» (0 : Int)) > «n»)) then {
 pure («Model».«NegCycle» (← «overRel» «st» «n»));
 } else {
-let mut «out» := (← «given» «edb»);
+let «gs» ← (pure (← «given» «edb»));
+let mut «rs» := (← «addFacts» «Rels».«RelNil» (← «factsRev» «gs» «Facts».«FactNil») false);
+let mut «log» := «Facts».«FactNil»;
 let mut «k» := (0 : Int);
-let t_ ← «evalDatalog_loop1» «go» «st» «n» «edb» «cs» («k», «out»);
+let t_ ← «evalDatalog_loop1» «gs» «go» «st» «n» «edb» «cs» («k», «log», «rs»);
 «k» := t_.1;
-«out» := t_.2;
-pure («Model».«Model» «out»);
+«log» := t_.2.1;
+«rs» := t_.2.2;
+pure («Model».«Model» (← «factsCat» «gs» (← «factsRev» «log» «Facts».«FactNil»)));
 };
+}
+;
+}
+
+def «derive» («c» : «Clause») («i» : Int) («db» : «Facts») («acc» : «Facts») : Option «Facts» := do {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+pure (← «addAll» (← «dropNeg» (← «joinPos» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «db») «body» «db») «h» «i» «acc»);
 }
 ;
 }
