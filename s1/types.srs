@@ -46,10 +46,11 @@ def normTy {r: Region} (ds: Nodes, env: Nodes, t: Node, fuel: I64): Node =
     goals(ds, env, kids(kid(d, 0)), sub, NNil, givenFuel(), lineOf(t))
     val body = applyTy(sub, kid(d, 1))
     val res = if num(d) == 1 then reduceMatch(ds, d, normTy(ds, env, body, fuel - 1), sub, lineOf(t)) else body
-    withCaps(normTy(ds, env, res, fuel - 1), t)
+    // its facts <at(f, S)>: the caps of the use's scope, each with its required state (vic-jxk)
+    withCaps(normTy(ds, env, res, fuel - 1), t, typeFacts(ds, env, d, lineOf(t)))
 
 // res at the use t: t's caps, annotation flag and line
-def withCaps {r: Region} (res: Node, t: Node): Node = Node(Ty, text(res), text2(res), num(t), lineOf(t), NCons(head(kids(res)), tyCaps(t)))
+def withCaps {r: Region} (res: Node, t: Node, facts: Nodes): Node = Node(Ty, text(res), text2(res), num(t), lineOf(t), NCons(head(kids(res)), append(facts, tyCaps(t))))
 
 // the result of the first case of match type d whose pattern is s; s must be a concrete type
 def reduceMatch {r: Region} (ds: Nodes, d: Node, s: Node, sub: Nodes, line: I64): Node =
@@ -62,25 +63,73 @@ def reduceMatch {r: Region} (ds: Nodes, d: Node, s: Node, sub: Nodes, line: I64)
   if !found(res) then errTy("no case of the match type matches", s, line) else ()
   res
 
-// [A: Type] binders and {s: Trait[..]} evidence (vic-jxk); () values and <> facts on a type: not yet
+// [A: Type] binders, {} evidence (a trait) or capabilities (a protocol), <at(f, S)> facts (vic-jxk); () values: not yet
 def checkTypeDecl {r: Region} (ds0: Nodes, d: Node): Unit =
   val ds = append(groupBinders(kids(kid(d, 0))), ds0)
   var gs = kids(kid(d, 0))
   while !isNil(gs) do
     val g = head(gs)
-    if !eqs(text(g), "[") && !eqs(text(g), "{") then err("not yet: binder group on a type", text(g), lineOf(g)) else ()
+    if !eqs(text(g), "[") && !eqs(text(g), "{") && !eqs(text(g), "<") then err("not yet: binder group on a type", text(g), lineOf(g)) else ()
+    if eqs(text(g), "<") then needTypeFacts(ds, d, g) else ()
     var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
       if eqs(text(g), "[") then
         if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
-      else if isProto(ds, text(k)) then err("not yet: capability on a type", text(head(bs)), lineOf(head(bs)))
+      else if eqs(text(g), "<") || isProto(ds, text(k)) then ()
       else needTrait(ds, termTy(k))
       bs = tail(bs)
     gs = tail(gs)
 
 // the {} evidence in scope of a decl's types: a def's (a given's def: the given's) {} binders
 def declEv {r: Region} (ds: Nodes, d: Node): Nodes =
-  if kind(d) == DFn then evEnv(ds, d)
+  if kind(d) == DFn then append(capEnv(ds, d), evEnv(ds, d))
   else if kind(d) == DGiven then groupsEv(ds, kids(kid(d, 0)))
   else NNil
+
+// a def's {} capabilities as env entries (BVar n 2, t = protocol): the caps a fact type at a use can name
+def capEnv {r: Region} (ds: Nodes, d: Node): Nodes =
+  var out = NNil
+  var c = capParams(ds, d, NNil)
+  while !isNil(c) do
+    out = NCons(Node(BVar, text(head(c)), text(kid(head(c), 0)), 2, lineOf(head(c)), NNil), out)
+    c = tail(c)
+  out
+
+// the protocol of type decl d's {} binder n, or ""
+def typeBinderProto(ds: Nodes, d: Node, n: Str): Str =
+  var res = ""
+  var gs = kids(kid(d, 0))
+  while !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+      val b = find(kids(head(gs)), Binder, n)
+      if found(b) && isProto(ds, text(kid(b, 0))) then res = text(kid(b, 0)) else ()
+    else ()
+    gs = tail(gs)
+  res
+
+// a type's facts: at(cap, State), cap a {} capability of the type, State a state of its protocol (no variables yet)
+def needTypeFacts {r: Region} (ds: Nodes, d: Node, g: Node): Unit =
+  var c = kids(g)
+  while !isNil(c) do
+    val a = head(c)
+    if !eqs(text(a), "at") || len(kids(a)) != 2 then err("not yet: fact on a type", text(a), lineOf(a)) else ()
+    val p = typeBinderProto(ds, d, text(kid(a, 0)))
+    if rt_str_len(p) == 0 then err("at: not a {} capability of this type:", text(kid(a, 0)), lineOf(a)) else ()
+    if !has(protoStates(ds, p), text(kid(a, 1))) then err("unknown protocol state in", p, lineOf(a)) else ()
+    c = tail(c)
+
+// the facts of type decl d at a use: each at(b, S) as the use scope's one cap of b's protocol, required in state S
+def typeFacts {r: Region} (ds: Nodes, env: Nodes, d: Node, line: I64): Nodes =
+  var out = NNil
+  var gs = kids(kid(d, 0))
+  while !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "<") then
+      var c = kids(head(gs))
+      while !isNil(c) do
+        val cap = theCap(env, typeBinderProto(ds, d, text(kid(head(c), 0))), line)
+        out = NCons(Node(TyCap, cap, text(kid(head(c), 1)), 0, line, NNil), out)
+        c = tail(c)
+    else ()
+    gs = tail(gs)
+  out

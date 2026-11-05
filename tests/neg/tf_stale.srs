@@ -1,0 +1,10 @@
+// expect: value needs 'f' in state Opened, it is Read1
+type OpenFile {f: File} <at(f, Opened)> = Ptr
+extern def rt_handle {f: File} <at(f, Opened)> (): OpenFile
+def use {f: File} <at(f, Opened)> (h: OpenFile): I64 = 1
+def g {f: File} <at(f, Opened)> (): I64 <at(f, Read1)> =
+  val h: OpenFile = rt_handle()
+  val a = f.read()
+  use0(h)
+def use0(h: Ptr): I64 = 0
+def main(): I64 = 0
