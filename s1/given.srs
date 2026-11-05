@@ -77,14 +77,15 @@ def termTy(r: Region, k: Node): Node =
   Node(Ty, text(k), "", 0, lineOf(k), one(r, Node(TyTo, "", "", 0, 0, rev(r, out))))
 
 // f's {} evidence binders as env entries (n 3): only a method-call receiver
-def evEnv(r: Region, f: Node): Nodes =
+def evEnv(r: Region, ds: Nodes, f: Node): Nodes =
   var out = NNil
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
     if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
       var bs = kids(head(gs))
       while !isNil(bs) do
-        out = NCons(Node(BVar, text(head(bs)), "", 3, lineOf(head(bs)), one(r, termTy(r, kid(head(bs), 0)))), out)
+        // a protocol binder is a capability (capParams), not trait evidence
+        if !isProto(ds, text(kid(head(bs), 0))) then out = NCons(Node(BVar, text(head(bs)), "", 3, lineOf(head(bs)), one(r, termTy(r, kid(head(bs), 0)))), out) else ()
         bs = tail(bs)
     else ()
     gs = tail(gs)
@@ -178,7 +179,8 @@ def goals(r: Region, ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, fuel: I64, li
     if kind(head(c)) == Group && eqs(text(head(c)), "{") then
       var bs = kids(head(c))
       while !isNil(bs) do
-        f = resolve(r, ds, env, applyTy(r, sub, termTy(r, kid(head(bs), 0))), f, line)
+        // a protocol binder is a capability: chkCall takes it from scope (theCap)
+        if !isProto(ds, text(kid(head(bs), 0))) then f = resolve(r, ds, env, applyTy(r, sub, termTy(r, kid(head(bs), 0))), f, line) else ()
         bs = tail(bs)
     else ()
     c = tail(c)

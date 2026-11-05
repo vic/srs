@@ -1,0 +1,12 @@
+// pass: BD4b capabilities are {} evidence (vic-9l7.7): {r: Region} is the one Region in scope at the call;
+// in C it is the first param, the call passes it first
+def make {r: Region} (n: I64): List =
+  if n == 0 then Nil else Cons(n, make(n - 1))
+
+def main(): I64 =
+  handle h = Heap()
+  val s = sum(make(4))
+  h.free()
+  rt_print_i64(s)
+  rt_print("\n")
+  0

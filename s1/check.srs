@@ -268,7 +268,7 @@ def check(r: Region, ds: Nodes): Nodes =
     if kind(d) == DProto then checkProto(ds, d) else ()
     if kind(d) == DTrait then checkTrait(r, ds, d) else ()
     // spec defs: pure, no regions; Lean type-checks them
-    val d2 = if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else if kind(d) == DHandler then checkHandler(r, ds, d) else if kind(d) == DGiven then checkGiven(r, ds, d) else d
+    val d2 = if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else if kind(d) == DHandler then checkHandler(r, ds, d) else if kind(d) == DGiven then checkGiven(r, ds, d) else if kind(d) == DFn && num(d) == 1 then withKids(r, d, NCons(list(r, Params, lineOf(d), sigParams(r, ds, d)), tail(kids(d)))) else d
     out = NCons(d2, out)
     c = tail(c)
   rev(r, out)
@@ -343,7 +343,8 @@ def checkSig(r: Region, ds0: Nodes, f: Node): Unit =
       if eqs(text(g), "[") then
         if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
         if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("[] binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
-      else needTrait(r, withTParams(r, ds0, f), termTy(r, k))
+      else if !isProto(ds0, text(k)) then needTrait(r, withTParams(r, ds0, f), termTy(r, k))
+      else ()
       bs = tail(bs)
     gs = tail(gs)
   val ds = withTParams(r, ds0, f)
@@ -355,6 +356,25 @@ def checkSig(r: Region, ds0: Nodes, f: Node): Unit =
   if isProto(ds, text(kid(f, 1))) then err("capability returned from", text(f), lineOf(f)) else ()
 
 // the env and Γ a fn body starts in: params, caps in their `from` state (also used by the Lean backend)
+// f's {} binders of a protocol type: its capabilities (vic 2026-11-05: capability = evidence of a handler),
+// as params in written order; the elaborated fn has them first, so C and the body see ordinary cap params
+def capParams(r: Region, ds: Nodes, f: Node): Nodes =
+  var out = NNil
+  var gs = kids(kid(f, 4))
+  while !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+      var bs = kids(head(gs))
+      while !isNil(bs) do
+        val k = kid(head(bs), 0)
+        if isProto(ds, text(k)) then out = NCons(Node(Param, text(head(bs)), "", 0, lineOf(head(bs)), one(r, termTy(r, k))), out) else ()
+        bs = tail(bs)
+    else ()
+    gs = tail(gs)
+  rev(r, out)
+
+// f's params as its body sees them: capabilities, then values
+def sigParams(r: Region, ds: Nodes, f: Node): Nodes = append(r, capParams(r, ds, f), kids(kid(f, 0)))
+
 def fnEnv(r: Region, ds: Nodes, ps: Nodes): Nodes =
   var env = NNil
   var c = ps
@@ -380,8 +400,8 @@ def fnGam(r: Region, ds: Nodes, ps: Nodes): Nodes =
 // f with its body expanded (e2)
 def checkFn(r: Region, ds0: Nodes, f: Node): Node =
   val ds = withTParams(r, ds0, f)
-  val ps = kids(kid(f, 0))
-  val res = chk(r, ds, append(r, evEnv(r, f), fnEnv(r, ds, ps)), fnGam(r, ds, ps), kid(f, 2), NoNode)
+  val ps = sigParams(r, ds, f)
+  val res = chk(r, ds, append(r, evEnv(r, ds, f), fnEnv(r, ds, ps)), fnGam(r, ds, ps), kid(f, 2), NoNode)
   needAssign(tgTy(res), sigTy(r, ds, ps, kid(f, 1)), lineOf(f))
   var c = ps
   while !isNil(c) do
@@ -391,7 +411,8 @@ def checkFn(r: Region, ds0: Nodes, f: Node): Node =
       if !eqs(state(tgGam(res), text(head(c))), want) then err("capability must end in its declared state:", text(head(c)), lineOf(f)) else ()
     else ()
     c = tail(c)
-  withKids(r, f, NCons(kid(f, 0), NCons(kid(f, 1), NCons(tgE(res), tail(tail(tail(kids(f))))))))
+  // elaborated: capabilities are leading params (the call e2 passes them first)
+  withKids(r, f, NCons(list(r, Params, lineOf(f), ps), NCons(kid(f, 1), NCons(tgE(res), tail(tail(tail(kids(f))))))))
 
 // want: the type the context expects (an annotation, a param), or NoNode; it solves [] binders only the result names
 def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node, want: Node): TG =
@@ -492,6 +513,22 @@ def chkBin(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
     needAssign(tb, prim(r, "I64"), line)
     val cmp = eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")
     TG(prim(r, if cmp then "Bool" else "I64"), tgGam(b), e2)
+
+// the one capability of protocol p in scope: what a {} binder of a callee takes (vic-9l7.7)
+def theCap(env: Nodes, p: Str, line: I64): Str =
+  var c = env
+  var res = ""
+  var n = 0
+  while !isNil(c) do
+    val b = head(c)
+    if num(b) == 2 && eqs(text2(b), p) && !eqs(text(b), res) then
+      if n == 0 then res = text(b) else ()
+      n = n + 1
+    else ()
+    c = tail(c)
+  if n == 0 then err("no capability in scope for", p, line) else ()
+  if n > 1 then err("ambiguous capability, more than one in scope for", p, line) else ()
+  res
 
 // unique Region capability in scope (effects.md)
 def theRegion(env: Nodes, line: I64): Str =
@@ -645,6 +682,17 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     else ()
     a = tail(a)
     p = tail(p)
+  // {} capabilities: the one cap of that protocol in scope (as a constructor finds its region); 0 or 2+ = reject
+  val cps = capParams(r, ds, f)
+  var c = cps
+  var capArgs = NNil
+  while !isNil(c) do
+    val cap = theCap(env, text(kid(head(c), 0)), line)
+    if has(mapVals(r, m), cap) then err("capability passed twice:", cap, line) else ()
+    m = NCons(Node(GState, text(head(c)), cap, 0, 0, NNil), m)
+    capArgs = NCons(leaf(r, XName, cap, line), capArgs)
+    c = tail(c)
+  val allPs = append(r, cps, ps)
   // pass 2: value args, left to right
   val tps = tparams(r, f)
   var sub = NNil
@@ -676,7 +724,7 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     a = tail(a)
     p = tail(p)
   // cap transitions happen during the call, after the args
-  p = ps
+  p = allPs
   while !isNil(p) do
     val pt = kid(head(p), 0)
     if isProto(ds, text(pt)) then
@@ -704,8 +752,8 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
   if isNil(tps) then
     // the callee's {} evidence: each goal has one given (s1/given.srs)
     goals(r, ds, env, kids(kid(f, 4)), NNil, givenFuel(), line)
-    val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(r, rho, mapCaps(r, regionParams(r, ps), m)) else mapCaps(r, tyCaps(rt), m)
-    TG(recap(r, rt, caps), gam, withKids(r, e, rev(r, a2)))
+    val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(r, rho, mapCaps(r, regionParams(r, allPs), m)) else mapCaps(r, tyCaps(rt), m)
+    TG(recap(r, rt, caps), gam, withKids(r, e, append(r, rev(r, capArgs), rev(r, a2))))
   else
     // a [] binder only the result names: the context's expected type solves it (check mode)
     if mentions(tps, applyTy(r, sub, rt)) && found(want) then sub = matchTy(r, tps, rt, want, sub, line) else ()
@@ -715,7 +763,7 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     val rt2 = applyTy(r, sub, rt)
     // only data (an enum, or a [] binder still open) lives in regions; I64, Bool, ... carry none
     val res = if mentions(tps, rt) then recap(r, rt2, if isEnum(ds, text(rt2)) || isTParam(ds, text(rt2)) then rho else NNil) else recap(r, rt, mapCaps(r, tyCaps(rt), m))
-    TG(res, gam, Node(XInst, text(e), "", 0, line, NCons(list(r, Names, line, targs), rev(r, a2))))
+    TG(res, gam, Node(XInst, text(e), "", 0, line, NCons(list(r, Names, line, targs), append(r, rev(r, capArgs), rev(r, a2)))))
 
 // t is one of the [] binders tps
 def isTP(tps: Nodes, t: Node): Bool = found(find(tps, Binder, text(t)))
