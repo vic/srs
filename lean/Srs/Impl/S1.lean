@@ -6038,26 +6038,30 @@ let _ := (← «errTy» "given search ran out of fuel at".toUTF8 «goal» «line
 let _ := ();
 };
 let «loc» ← (pure (← «localCount» «env» «goal»));
-let «gv» ← (pure (← «givensFor» «ds» «goal»));
-let «n» ← (pure («loc» + (← «givenCount» «gv»)));
-if («n» == (0 : Int)) then {
-let _ := (← «errTy» "no given for".toUTF8 «goal» «line»);
+if (decide («loc» > (1 : Int))) then {
+let _ := (← «errTy» "ambiguous evidence for".toUTF8 «goal» «line»);
 } else {
 let _ := ();
 };
-if (decide («n» > (1 : Int))) then {
+if («loc» == (1 : Int)) then {
+pure («fuel» - (1 : Int));
+} else {
+let «gv» ← (pure (← «givensFor» «ds» «goal»));
+if (decide ((← «givenCount» «gv») > (1 : Int))) then {
 let _ := (← «errTy» "ambiguous givens for".toUTF8 «goal» «line»);
 } else {
 let _ := ();
 };
 match «gv» with
 | «GivenAt».«NoGiven» => {
-pure («fuel» - (1 : Int));
+let _ := (← «errTy» "no given for".toUTF8 «goal» «line»);
+pure «fuel»;
 }
 | «GivenAt».«GivenAt» «g» «s» _ => {
 pure (← «goals» «ds» «env» (← «kids» (← «kid» «g» (0 : Int))) «s» «Nodes».«NNil» («fuel» - (1 : Int)) «line»);
 }
 ;
+};
 }
 partial_fixpoint
 

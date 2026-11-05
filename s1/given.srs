@@ -158,18 +158,21 @@ def localCount(env: Nodes, goal: Node): I64 =
 // the default fuel of a given search, as a default stack limit (vic Q-R4b); 1 per pick (vic B1)
 def givenFuel(): I64 = 1000
 
-// goal has exactly one candidate, and so has each {} goal of the given picked; the fuel left
+// goal has exactly one candidate in the nearest scope that has one (as Scala3, vic-9l7.10): local {} evidence
+// first, then the givens; so has each {} goal of the given picked; the fuel left
 def resolve {r: Region} (ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64): I64 =
   if fuel <= 0 then errTy("given search ran out of fuel at", goal, line) else ()
   val loc = localCount(env, goal)
-  val gv = givensFor(ds, goal)
-  val n = loc + givenCount(gv)
-  if n == 0 then errTy("no given for", goal, line) else ()
-  if n > 1 then errTy("ambiguous givens for", goal, line) else ()
-  // local evidence: no given matches too (else ambiguous), so gv is NoGiven
-  gv match
-    case NoGiven => fuel - 1
-    case GivenAt(g, s, _) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
+  if loc > 1 then errTy("ambiguous evidence for", goal, line) else ()
+  if loc == 1 then fuel - 1
+  else
+    val gv = givensFor(ds, goal)
+    if givenCount(gv) > 1 then errTy("ambiguous givens for", goal, line) else ()
+    gv match
+      case NoGiven =>
+        errTy("no given for", goal, line)
+        fuel
+      case GivenAt(g, s, _) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
 
 // each {} binder of the groups gs under sub, resolved in turn; ch = names chosen at the call (f{a}(x)), or NNil
 def goals {r: Region} (ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, ch: Nodes, fuel: I64, line: I64): I64 =
