@@ -280,7 +280,7 @@ enum DMap:
   case DBin(h: I64, bucket: Nodes, l: DMap, rt: DMap)
 
 enum Decls:
-  case Decls(all: Nodes, idx: DMap)
+  case Decls(all: Nodes, idx: DMap, rec: DMap)
 
 // a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
 def strHash(s: Str): I64 =
@@ -306,14 +306,14 @@ def declList(ds: Decls): Nodes
   ensures result == declsS(ds)
   proof by induction ds
 = ds match
-  case Decls(all, _) => all
+  case Decls(all, _, _) => all
 
 def findDecl(ds: Decls, k: Kind, s: Str): Node = ds match
-  case Decls(_, m) => find(dmGet(m, strHash(s)), k, s)
+  case Decls(_, m, _) => find(dmGet(m, strHash(s)), k, s)
 
 // an enum's cases are in the index too (not in the list): findDecl(ds, DCase, c)
 def declsCons {r: Region} (x: Node, ds: Decls): Decls = ds match
-  case Decls(all, m) => Decls(NCons(x, all), if kind(x) == DEnum then dmAddAll(dmAdd(m, strHash(text(x)), x), kids(x)) else dmAdd(m, strHash(text(x)), x))
+  case Decls(all, m, rs) => Decls(NCons(x, all), if kind(x) == DEnum then dmAddAll(dmAdd(m, strHash(text(x)), x), kids(x)) else dmAdd(m, strHash(text(x)), x), rs)
 
 def dmAddAll {r: Region} (m: DMap, xs: Nodes): DMap =
   var out = m
@@ -332,8 +332,15 @@ def declsPrepend {r: Region} (xs: Nodes, ds: Decls): Decls =
     c = tail(c)
   out
 
-def mkDecls {r: Region} (xs: Nodes): Decls = declsPrepend(xs, Decls(NNil, DTip))
+def mkDecls {r: Region} (xs: Nodes): Decls = declsPrepend(xs, Decls(NNil, DTip, DTip))
 
 // the decls as a list (the model of Decls in contracts: an index finds what lookS(declsS(ds), ...) finds)
 spec def declsS(ds: Decls): Nodes = ds match
-  case Decls(all, _) => all
+  case Decls(all, _, _) => all
+
+// ds with the set of recursive fns (s1/lean.srs computes it once: Tarjan SCCs)
+def withRec {r: Region} (ds: Decls, rs: DMap): Decls = ds match
+  case Decls(all, m, _) => Decls(all, m, rs)
+
+def isRec(ds: Decls, name: Str): Bool = ds match
+  case Decls(_, _, rs) => found(find(dmGet(rs, strHash(name)), Name, name))
