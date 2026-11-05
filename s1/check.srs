@@ -331,7 +331,8 @@ def check {r: Region} (ds0: Nodes): Nodes =
     if kind(d) == DProto then checkProto(ds, d) else ()
     if kind(d) == DTrait then checkTrait(ds, d) else ()
     // spec defs: pure, no regions; Lean type-checks them
-    val d2 = if kind(d) == DFn && num(d) == 0 then checkFn(ds, d) else if kind(d) == DHandler then checkHandler(ds, d) else if kind(d) == DGiven then checkGiven(ds, d) else if kind(d) == DFn && num(d) == 1 then withKids(d, NCons(list(Params, lineOf(d), sigParams(ds, d, defSol(ds, d))), tail(kids(d)))) else d
+    // defs and spec defs (pure mode, vic-u2d U1) are checked; their expansion e2 is kept
+    val d2 = if kind(d) == DFn && (num(d) == 0 || num(d) == 2) then checkFn(ds, d) else if kind(d) == DHandler then checkHandler(ds, d) else if kind(d) == DGiven then checkGiven(ds, d) else if kind(d) == DFn && num(d) == 1 then withKids(d, NCons(list(Params, lineOf(d), sigParams(ds, d, defSol(ds, d))), tail(kids(d)))) else d
     out = NCons(d2, out)
     c = tail(c)
   rev(out)
@@ -485,7 +486,10 @@ def checkFn {r: Region} (ds0: Nodes, f: Node): Node =
 def checkFnAt {r: Region} (ds0: Nodes, f: Node, sol: Nodes): Node =
   val ds = withTParams(ds0, f)
   val ps = sigParams(ds, f, sol)
-  val res = chk(ds, append(evEnv(ds, f), fnEnv(ds, ps)), fnGam(ds, ps), kid(f, 2), NoNode)
+  val env0 = append(evEnv(ds, f), fnEnv(ds, ps))
+  // a spec def body: checked in pure mode (vic-u2d U1), the compile-time fragment
+  val env = if num(f) == 2 then NCons(leaf(BVar, "%pure", lineOf(f)), env0) else env0
+  val res = chk(ds, env, fnGam(ds, ps), kid(f, 2), NoNode)
   needAssign(tgTy(res), sigTy(ds, ps, kid(f, 1)), lineOf(f))
   var c = ps
   while !isNil(c) do
@@ -602,6 +606,12 @@ def chkBin {r: Region} (ds: Nodes, env: Nodes, gam: Nodes, e: Node): TG =
     val cmp = eqs(op, "<") || eqs(op, "<=") || eqs(op, ">") || eqs(op, ">=")
     TG(prim(if cmp then "Bool" else "I64"), tgGam(b), e2)
 
+// in a spec def body: the env holds the marker %pure (no srs name has a %)
+def isPure(env: Nodes): Bool = found(find(env, BVar, "%pure"))
+
+// the externs a spec def may call: pure, total, also in Lean (lean/Srs/Rt.lean namespace P)
+def isPureExtern(n: Str): Bool = eqs(n, "rt_str_len") || eqs(n, "rt_str_at") || eqs(n, "rt_str_slice") || eqs(n, "rt_str_eq")
+
 // the one capability of protocol p in scope: what a {} binder of a callee takes (vic-9l7.7)
 def theCap(env: Nodes, p: Str, line: I64): Str =
   var c = env
@@ -674,9 +684,11 @@ def chkCtor {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node, w
   var fs = kids(kid(c, 0))
   if len(fs) != len(kids(e)) then err("constructor arity", text(c), line) else ()
   if isNil(fs) then err("nullary constructor takes no ()", text(c), line) else ()
-  val reg = theRegion(env, line)
-  var gam = step(ds, gam0, reg, "Region", "alloc", line)
-  var caps = one(leaf(TyCap, reg, line))
+  // a spec def builds compile-time data: no Region (vic Q-U4); else the one Region in scope allocates it
+  val inSpec = isPure(env)
+  val reg = if inSpec then "" else theRegion(env, line)
+  var gam = if inSpec then gam0 else step(ds, gam0, reg, "Region", "alloc", line)
+  var caps = if inSpec then NNil else one(leaf(TyCap, reg, line))
   // a generic enum: the field types match the args, binding its [] binders (as chkCall)
   val tps = enumTParams(ds, text2(c))
   var sub = NNil
@@ -760,6 +772,8 @@ def chkCall {r: Region} (ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node
   val line = lineOf(e)
   val f = find(ds, DFn, text(e))
   if !found(f) then err("unknown function", text(e), line) else ()
+  // a spec def calls only spec defs and the pure externs (vic-u2d U1)
+  if isPure(env) && num(f) != 2 && !isPureExtern(text(f)) then err("a spec def calls only spec defs and pure externs, not", text(e), line) else ()
   var ps = kids(kid(f, 0))
   if len(ps) != len(kids(e)) then err("arity of", text(e), line) else ()
   // pass 1: cap args, protocol state transitions S1 -> S2
@@ -1019,6 +1033,7 @@ def chkBlock {r: Region} (ds: Nodes, env0: Nodes, gam0: Nodes, blk: Node, want: 
       env = NCons(Node(BVar, text(s), "", num(s), lineOf(s), one(t)), env)
       res = prim("Unit")
     else if k == SHandle then
+      if isPure(env) then err("a spec def is pure: no handle of", text2(s), lineOf(s)) else ()
       val h = find(ds, DHandler, text2(s))
       if !found(h) then err("unknown handler", text2(s), lineOf(s)) else ()
       val init = find(kids(h), DFn, "init")

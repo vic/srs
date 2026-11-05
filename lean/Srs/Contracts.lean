@@ -17,6 +17,12 @@ def «size» («xs» : «List») : Int :=
 def «memL» («v» : Int) («xs» : «List») : Bool :=
   (match «xs» with | «List».«Nil» => false | «List».«Cons» «h» «t» => ((«h» == «v») || («memL» «v» «t»)))
 
+def «twoOf» («n» : Int) : «List» :=
+  («List».«Cons» «n» («List».«Cons» «n» «List».«Nil»))
+
+def «strLen2» («s» : ByteArray) : Int :=
+  ((Srs.Rt.P.rt_str_len «s») * (2 : Int))
+
 theorem «size_spec» :
     ∀ («xs» : «List»), (((«size» «xs») ≥ (0 : Int)))
   | «List».«Nil» => by
