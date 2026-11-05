@@ -30,7 +30,7 @@ def capState(f: Node, cap: Str, out: Str, sol: Nodes): Str =
   res
 
 // the protocol of f's {} binder n, or ""
-def binderProto(ds: Nodes, f: Node, n: Str): Str =
+def binderProto(ds: Decls, f: Node, n: Str): Str =
   var res = ""
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
@@ -42,7 +42,7 @@ def binderProto(ds: Nodes, f: Node, n: Str): Str =
   res
 
 // the protocols of f's {} capabilities, one Name each
-def capProtos {r: Region} (ds: Nodes, f: Node): Nodes =
+def capProtos {r: Region} (ds: Decls, f: Node): Nodes =
   var out = NNil
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
@@ -57,17 +57,17 @@ def capProtos {r: Region} (ds: Nodes, f: Node): Nodes =
   out
 
 // the protocol of f's caps that has op, or ""
-def opProto {r: Region} (ds: Nodes, f: Node, op: Str): Str =
+def opProto {r: Region} (ds: Decls, f: Node, op: Str): Str =
   var res = ""
   var ps = capProtos(ds, f)
   while !isNil(ps) do
-    if found(find(kids(kid(find(ds, DProto, text(head(ps))), 3)), DOp, op)) then res = text(head(ps)) else ()
+    if found(find(kids(kid(findDecl(ds, DProto, text(head(ps))), 3)), DOp, op)) then res = text(head(ps)) else ()
     ps = tail(ps)
   res
 
 // a state position: a variable, or a state of protocol p
-def needState(ds: Nodes, p: Str, x: Node): Unit =
-  if !isVarName(text(x)) && !has(protoStates(ds, p), text(x)) then err("unknown protocol state in", p, lineOf(x)) else ()
+def needState(ds: Decls, p: Str, x: Node): Unit =
+  if !isVarName(text(x)) && !has(protoStates(declList(ds), p), text(x)) then err("unknown protocol state in", p, lineOf(x)) else ()
 
 // the variables of the entry fact groups of f, each once, in written order
 def entryVars {r: Region} (f: Node): Nodes =
@@ -96,7 +96,7 @@ def statePos {r: Region} (a: Node): Nodes =
 def hasVars {r: Region} (f: Node): Bool = !isNil(entryVars(f))
 
 // each atom of the fact group g: at(cap, S) or (entry only) next(S1, op, S2); exit variables are entry variables
-def needFacts {r: Region} (ds: Nodes, f: Node, g: Node): Unit =
+def needFacts {r: Region} (ds: Decls, f: Node, g: Node): Unit =
   var c = kids(g)
   var seen = NNil
   while !isNil(c) do
@@ -152,11 +152,11 @@ def query {r: Region} (f: Node, vars: Nodes): Clause =
 def varArgs {r: Region} (i: I64, n: I64): Args = if i >= n then ArgNil else ArgCons(AVar(i), varArgs(i + 1, n))
 
 // the transitions of f's protocols as next(S1, op, S2), onto edb
-def nextFacts {r: Region} (ds: Nodes, f: Node, edb: Edb): Edb =
+def nextFacts {r: Region} (ds: Decls, f: Node, edb: Edb): Edb =
   var out = edb
   var ps = capProtos(ds, f)
   while !isNil(ps) do
-    var ops = kids(kid(find(ds, DProto, text(head(ps))), 3))
+    var ops = kids(kid(findDecl(ds, DProto, text(head(ps))), 3))
     while !isNil(ops) do
       var ts = kids(kid(head(ops), 2))
       while !isNil(ts) do
@@ -167,7 +167,7 @@ def nextFacts {r: Region} (ds: Nodes, f: Node, edb: Edb): Edb =
   out
 
 // at(cap, S) for each {} capability of f: its state in entry (a call), else every state of its protocol (a def)
-def atFacts {r: Region} (ds: Nodes, f: Node, entry: Nodes, edb: Edb): Edb =
+def atFacts {r: Region} (ds: Decls, f: Node, entry: Nodes, edb: Edb): Edb =
   var out = edb
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
@@ -178,7 +178,7 @@ def atFacts {r: Region} (ds: Nodes, f: Node, entry: Nodes, edb: Edb): Edb =
         val p = text(kid(head(bs), 0))
         if isProto(ds, p) then
           val e = find(entry, Name, cap)
-          var ss = if found(e) then one(leaf(Name, text2(e), 0)) else protoStates(ds, p)
+          var ss = if found(e) then one(leaf(Name, text2(e), 0)) else protoStates(declList(ds), p)
           while !isNil(ss) do
             out = EdbCons(Fact("at", ValCons(VSym(cap), ValCons(VSym(text(head(ss))), ValNil))), out)
             ss = tail(ss)
@@ -189,7 +189,7 @@ def atFacts {r: Region} (ds: Nodes, f: Node, entry: Nodes, edb: Edb): Edb =
   out
 
 // the solutions of f's entry facts: each a list of Name(var, state); entry = Name(cap, state) of a call, or NNil
-def solutions {r: Region} (ds: Nodes, f: Node, entry: Nodes): Nodes =
+def solutions {r: Region} (ds: Decls, f: Node, entry: Nodes): Nodes =
   val vars = entryVars(f)
   evalDatalog(ClCons(query(f, vars), ruleClauses(ds, f, ClNil)), atFacts(ds, f, entry, nextFacts(ds, f, EdbNil))) match
     case Unsafe(_) =>
@@ -218,24 +218,24 @@ def symOf(v: Val): Str = v match
   case VInt(_) => ""
 
 // the one solution of f's entry facts at a call: Γ gives each capability's state (entry)
-def callSol {r: Region} (ds: Nodes, f: Node, entry: Nodes, line: I64): Nodes =
+def callSol {r: Region} (ds: Decls, f: Node, entry: Nodes, line: I64): Nodes =
   val ss = solutions(ds, f, entry)
   if isNil(ss) then err("entry facts do not hold at the call of", text(f), line) else ()
   if !isNil(tail(ss)) then err("entry facts have more than one solution at the call of", text(f), line) else ()
   kids(head(ss))
 
 // the solution a def's body and its C/Lean output use: the first one (states are erased in C and Lean), or NNil
-def defSol {r: Region} (ds: Nodes, f: Node): Nodes = if hasVars(f) then kids(head(solutions(ds, f, NNil))) else NNil
+def defSol {r: Region} (ds: Decls, f: Node): Nodes = if hasVars(f) then kids(head(solutions(ds, f, NNil))) else NNil
 
 // the entry of a call: each callee capability (m: GState s = callee binder, t = caller cap) at its state in Γ
 def capEntry {r: Region} (m: Nodes, gam: Nodes): Nodes =
   if isNil(m) then NNil else NCons(Node(Name, text(head(m)), state(gam, text2(head(m))), 0, 0, NNil), capEntry(tail(m), gam))
 
 // ── rule defs of protocols (vic 2026-11-05: a protocol is its own Datalog program) ──
-def protoRules(ds: Nodes, p: Str): Nodes = kids(kid(find(ds, DProto, p), 4))
+def protoRules(ds: Decls, p: Str): Nodes = kids(kid(findDecl(ds, DProto, p), 4))
 
 // the protocols of f's caps that define relation rel; err when none or two
-def ruleProto {r: Region} (ds: Nodes, f: Node, rel: Str, line: I64): Str =
+def ruleProto {r: Region} (ds: Decls, f: Node, rel: Str, line: I64): Str =
   var res = ""
   var n = 0
   var ps = capProtos(ds, f)
@@ -250,10 +250,10 @@ def ruleProto {r: Region} (ds: Nodes, f: Node, rel: Str, line: I64): Str =
   res
 
 // atom a uses a relation of protocol p (next or a rule def of p) w/ its arity; states are p's or variables
-def needAtomOf {r: Region} (ds: Nodes, p: Str, a: Node): Unit =
+def needAtomOf {r: Region} (ds: Decls, p: Str, a: Node): Unit =
   if eqs(text(a), "next") then
     if len(kids(a)) != 3 then err("next takes 3 args:", text(a), lineOf(a)) else ()
-    if !found(find(kids(kid(find(ds, DProto, p), 3)), DOp, text(kid(a, 1)))) then err("next: not an op of protocol", p, lineOf(a)) else ()
+    if !found(find(kids(kid(findDecl(ds, DProto, p), 3)), DOp, text(kid(a, 1)))) then err("next: not an op of protocol", p, lineOf(a)) else ()
   else
     val rl = find(protoRules(ds, p), DRule, text(a))
     if !found(rl) then err("unknown relation in rule:", text(a), lineOf(a)) else ()
@@ -264,7 +264,7 @@ def needAtomOf {r: Region} (ds: Nodes, p: Str, a: Node): Unit =
     xs = tail(xs)
 
 // the rule defs of protocol d: names not at/next, unique; params variables, each in the body (Datalog safety)
-def checkRules {r: Region} (ds: Nodes, d: Node): Unit =
+def checkRules {r: Region} (ds: Decls, d: Node): Unit =
   var seen = NNil
   var rs = kids(kid(d, 4))
   while !isNil(rs) do
@@ -306,7 +306,7 @@ def ruleClause {r: Region} (rl: Node): Clause =
   Clause(Atom(text(rl), toArgs(vs, kids(kid(rl, 0)))), body)
 
 // the rule clauses of f's cap protocols onto cs; a name in two of them = reject (their clauses would merge)
-def ruleClauses {r: Region} (ds: Nodes, f: Node, cs: Clauses): Clauses =
+def ruleClauses {r: Region} (ds: Decls, f: Node, cs: Clauses): Clauses =
   var out = cs
   var other = NNil
   var ps = capProtos(ds, f)

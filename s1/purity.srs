@@ -31,11 +31,11 @@ def curlyBinders {r: Region} (f: Node): Nodes =
   out
 
 // the facts of expr x in fn who (hd: who is a handler): calls, handles, method calls on trait evidence ev
-def bodyFacts {r: Region} (ds: Nodes, hd: Bool, who: Str, ev: Nodes, x: Node, edb0: Edb): Edb =
+def bodyFacts {r: Region} (ds: Decls, hd: Bool, who: Str, ev: Nodes, x: Node, edb0: Edb): Edb =
   val k = kind(x)
   var edb = edb0
   if k == XCall || k == XCallG then edb = purFact2(if hd then "hcalls" else "calls", who, text(x), edb) else ()
-  if k == SHandle then edb = purFact2(if hd then "huses" else "uses", who, text2(find(ds, DHandler, text2(x))), edb) else ()
+  if k == SHandle then edb = purFact2(if hd then "huses" else "uses", who, text2(findDecl(ds, DHandler, text2(x))), edb) else ()
   // the given that answers trait evidence is not known before mono: a direct effect
   if k == XMethod && has(ev, text(x)) then edb = purFact1(if hd then "hdirect" else "direct", who, edb) else ()
   var c = kids(x)
@@ -45,7 +45,7 @@ def bodyFacts {r: Region} (ds: Nodes, hd: Bool, who: Str, ev: Nodes, x: Node, ed
   edb
 
 // the facts of fn f, named who: an extern not in the pure set is a direct effect; a {} cap binder uses its protocol
-def fnFacts {r: Region} (ds: Nodes, hd: Bool, who: Str, f: Node, edb0: Edb): Edb =
+def fnFacts {r: Region} (ds: Decls, hd: Bool, who: Str, f: Node, edb0: Edb): Edb =
   var edb = edb0
   if num(f) == 1 && !isPureExtern(text(f)) then edb = purFact1("direct", who, edb) else ()
   var ev = NNil
@@ -56,9 +56,9 @@ def fnFacts {r: Region} (ds: Nodes, hd: Bool, who: Str, f: Node, edb0: Edb): Edb
     c = tail(c)
   if num(f) == 1 then edb else bodyFacts(ds, hd, who, ev, kid(f, 2), edb)
 
-def purityFacts {r: Region} (ds: Nodes): Edb =
+def purityFacts {r: Region} (ds: Decls): Edb =
   var edb = EdbNil
-  var c = ds
+  var c = declList(ds)
   while !isNil(c) do
     val d = head(c)
     if kind(d) == DFn then edb = fnFacts(ds, false, text(d), d, edb) else ()
@@ -80,7 +80,7 @@ def impureOf {r: Region} (db: Facts): Nodes = db match
       case ValNil => impureOf(t)
 
 // the marker decl %impure (no srs name has a %): the fns with effects; check() prepends it to the decls it passes down
-def impureDecl {r: Region} (ds: Nodes): Node = evalDatalog(purityRules(), purityFacts(ds)) match
+def impureDecl {r: Region} (ds: Decls): Node = evalDatalog(purityRules(), purityFacts(ds)) match
   case Model(db) => Node(Names, "%impure", "", 0, 0, impureOf(db))
   case Unsafe(p) =>
     err("internal: unsafe purity rule", p, 0)
@@ -89,7 +89,7 @@ def impureDecl {r: Region} (ds: Nodes): Node = evalDatalog(purityRules(), purity
     err("internal: negation in purity rules", p, 0)
     NoNode
 
-def isImpure(ds: Nodes, n: Str): Bool =
-  val m = find(ds, Names, "%impure")
+def isImpure(ds: Decls, n: Str): Bool =
+  val m = findDecl(ds, Names, "%impure")
   if !found(m) then err("internal: no purity facts for", n, 0) else ()
   has(kids(m), n)

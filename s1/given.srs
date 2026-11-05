@@ -3,8 +3,8 @@
 // 1 fuel per pick (vic B1), 0 or 2+ candidates = reject (vic B2). Mono rebuilds the chosen method at the concrete goal.
 
 // t names trait T[args]: the trait exists, one arg per [] binder, each arg a type
-def needTrait {r: Region} (ds: Nodes, t: Node): Unit =
-  val tr = find(ds, DTrait, text(t))
+def needTrait {r: Region} (ds: Decls, t: Node): Unit =
+  val tr = findDecl(ds, DTrait, text(t))
   if !found(tr) then err("unknown trait", text(t), lineOf(t)) else ()
   if len(tyArgs(t)) != len(groupBinders(kids(kid(tr, 0)))) then err("wrong number of type args for", text(t), lineOf(t)) else ()
   var c = tyArgs(t)
@@ -13,13 +13,13 @@ def needTrait {r: Region} (ds: Nodes, t: Node): Unit =
     c = tail(c)
 
 // trait Show [A: Type]: [] binders only; method signatures over them (vic-9l7.6 BD4a)
-def checkTrait {r: Region} (ds0: Nodes, d: Node): Unit =
+def checkTrait {r: Region} (ds0: Decls, d: Node): Unit =
   val gs = kids(kid(d, 0))
   var g = gs
   while !isNil(g) do
     if !eqs(text(head(g)), "[") then err("not yet: binder group on a trait", text(head(g)), lineOf(head(g))) else ()
     g = tail(g)
-  val ds = append(groupBinders(gs), ds0)
+  val ds = declsPrepend(groupBinders(gs), ds0)
   var ms = tail(kids(d))
   while !isNil(ms) do
     if !isNil(kids(kid(head(ms), 4))) then err("not yet: binder groups on a trait method", text(head(ms)), lineOf(head(ms))) else ()
@@ -27,11 +27,11 @@ def checkTrait {r: Region} (ds0: Nodes, d: Node): Unit =
     ms = tail(ms)
 
 // given ... T[args]: each trait method, with the trait's binders = the head's args, is a def of the given w/ that sig
-def checkGiven {r: Region} (ds: Nodes, d: Node): Node =
-  val tr = find(ds, DTrait, text(d))
+def checkGiven {r: Region} (ds: Decls, d: Node): Node =
+  val tr = findDecl(ds, DTrait, text(d))
   if !found(tr) then err("unknown trait", text(d), lineOf(d)) else ()
   val hd = kid(d, 1)
-  needTrait(append(groupBinders(kids(kid(d, 0))), ds), hd)
+  needTrait(declsPrepend(groupBinders(kids(kid(d, 0))), ds), hd)
   // every [] binder is fixed by the head, so a goal fixes all of them
   var bs = groupBinders(kids(kid(d, 0)))
   while !isNil(bs) do
@@ -77,10 +77,10 @@ def termTy {r: Region} (k: Node): Node =
   Node(Ty, text(k), "", 0, lineOf(k), one(Node(TyTo, "", "", 0, 0, rev(out))))
 
 // f's {} evidence binders as env entries (n 3): only a method-call receiver
-def evEnv {r: Region} (ds: Nodes, f: Node): Nodes = groupsEv(ds, kids(kid(f, 4)))
+def evEnv {r: Region} (ds: Decls, f: Node): Nodes = groupsEv(ds, kids(kid(f, 4)))
 
 // the {} evidence binders of groups gs as env entries
-def groupsEv {r: Region} (ds: Nodes, gs0: Nodes): Nodes =
+def groupsEv {r: Region} (ds: Decls, gs0: Nodes): Nodes =
   var out = NNil
   var gs = gs0
   while !isNil(gs) do
@@ -130,8 +130,8 @@ enum GivenAt:
   case GivenAt(g: Node, sub: Nodes)
 
 // the givens of ds whose head matches goal
-def givenCands {r: Region} (ds: Nodes, goal: Node): Nodes =
-  var c = ds
+def givenCands {r: Region} (ds: Decls, goal: Node): Nodes =
+  var c = declList(ds)
   var out = NNil
   while !isNil(c) do
     val g = head(c)
@@ -147,7 +147,7 @@ def gBinders {r: Region} (g: Node): Nodes = groupBinders(kids(kid(g, 0)))
 
 // the one given for goal: the only candidate, or the one that beats every other (as Scala3 CompareScheme.New,
 // vic-9l7.11); none = NoGiven, no such winner = Ambiguous
-def pickGiven {r: Region} (ds: Nodes, goal: Node): GivenAt =
+def pickGiven {r: Region} (ds: Decls, goal: Node): GivenAt =
   val cs = givenCands(ds, goal)
   var res = NoGiven
   if !isNil(cs) then res = Ambiguous else ()
@@ -212,7 +212,7 @@ def givenFuel(): I64 = 1000
 
 // goal has exactly one candidate in the nearest scope that has one (as Scala3, vic-9l7.10): local {} evidence
 // first, then the givens; so has each {} goal of the given picked; the fuel left
-def resolve {r: Region} (ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64): I64 =
+def resolve {r: Region} (ds: Decls, env: Nodes, goal: Node, fuel: I64, line: I64): I64 =
   if fuel <= 0 then errTy("given search ran out of fuel at", goal, line) else ()
   val loc = localCount(env, goal)
   if loc > 1 then errTy("ambiguous evidence for", goal, line) else ()
@@ -228,7 +228,7 @@ def resolve {r: Region} (ds: Nodes, env: Nodes, goal: Node, fuel: I64, line: I64
       case GivenAt(g, s) => goals(ds, env, kids(kid(g, 0)), s, NNil, fuel - 1, line)
 
 // each {} binder of the groups gs under sub, resolved in turn; ch = names chosen at the call (f{a}(x)), or NNil
-def goals {r: Region} (ds: Nodes, env: Nodes, gs: Nodes, sub: Nodes, ch: Nodes, fuel: I64, line: I64): I64 =
+def goals {r: Region} (ds: Decls, env: Nodes, gs: Nodes, sub: Nodes, ch: Nodes, fuel: I64, line: I64): I64 =
   var f = fuel
   var i = 0
   var c = gs
@@ -278,10 +278,10 @@ def curlyIndex(f: Node, n: Str): I64 =
 def callGroup(gs: Nodes, g: Str): Nodes = kids(find(gs, Group, g))
 
 // s.m(args), s a {} binder: m of s's trait, its types with the trait's binders = s's type args. e2 = XEv
-def chkEv {r: Region} (ds: Nodes, env: Nodes, gam: Nodes, e: Node, b: Node): TG =
+def chkEv {r: Region} (ds: Decls, env: Nodes, gam: Nodes, e: Node, b: Node): TG =
   val line = lineOf(e)
   val et = kid(b, 0)
-  val tr = find(ds, DTrait, text(et))
+  val tr = findDecl(ds, DTrait, text(et))
   val m = find(tail(kids(tr)), DFn, text2(e))
   if !found(m) then err("not a method of the trait:", text2(e), line) else ()
   val sub = zipBind(groupBinders(kids(kid(tr, 0))), tyArgs(et))

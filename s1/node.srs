@@ -272,3 +272,68 @@ def fatal(msg: Str, line: I64): Unit =
   rt_eprint(msg)
   rt_eprint("\n")
   rt_exit(1)
+
+// ── decls, indexed (vic-qf6, speed): the list, and a binary search tree on the name hash ──
+// a bucket holds the decls of one hash in list order, so findDecl = find on the whole list (first match)
+enum DMap:
+  case DTip
+  case DBin(h: I64, bucket: Nodes, l: DMap, rt: DMap)
+
+enum Decls:
+  case Decls(all: Nodes, idx: DMap)
+
+// a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
+def strHash(s: Str): I64 =
+  var h = 2166136261
+  var i = 0
+  val n = rt_str_len(s)
+  while i < n do
+    h = ((h + rt_str_at(s, i)) * 16777619) % 4294967296
+    i = i + 1
+  h
+
+def dmGet(m: DMap, h: I64): Nodes = m match
+  case DTip => NNil
+  case DBin(k, b, l, rt) => if h == k then b else if h < k then dmGet(l, h) else dmGet(rt, h)
+
+// x in front of its bucket: x is now first in the list
+def dmAdd {r: Region} (m: DMap, h: I64, x: Node): DMap = m match
+  case DTip => DBin(h, NCons(x, NNil), DTip, DTip)
+  case DBin(k, b, l, rt) =>
+    if h == k then DBin(k, NCons(x, b), l, rt) else if h < k then DBin(k, b, dmAdd(l, h, x), rt) else DBin(k, b, l, dmAdd(rt, h, x))
+
+def declList(ds: Decls): Nodes
+  ensures result == declsS(ds)
+  proof by induction ds
+= ds match
+  case Decls(all, _) => all
+
+def findDecl(ds: Decls, k: Kind, s: Str): Node = ds match
+  case Decls(_, m) => find(dmGet(m, strHash(s)), k, s)
+
+// an enum's cases are in the index too (not in the list): findDecl(ds, DCase, c)
+def declsCons {r: Region} (x: Node, ds: Decls): Decls = ds match
+  case Decls(all, m) => Decls(NCons(x, all), if kind(x) == DEnum then dmAddAll(dmAdd(m, strHash(text(x)), x), kids(x)) else dmAdd(m, strHash(text(x)), x))
+
+def dmAddAll {r: Region} (m: DMap, xs: Nodes): DMap =
+  var out = m
+  var c = rev(xs)
+  while !isNil(c) do
+    out = dmAdd(out, strHash(text(head(c))), head(c))
+    c = tail(c)
+  out
+
+// xs in front of ds, in order
+def declsPrepend {r: Region} (xs: Nodes, ds: Decls): Decls =
+  var out = ds
+  var c = rev(xs)
+  while !isNil(c) do
+    out = declsCons(head(c), out)
+    c = tail(c)
+  out
+
+def mkDecls {r: Region} (xs: Nodes): Decls = declsPrepend(xs, Decls(NNil, DTip))
+
+// the decls as a list (the model of Decls in contracts: an index finds what lookS(declsS(ds), ...) finds)
+spec def declsS(ds: Decls): Nodes = ds match
+  case Decls(all, _) => all
