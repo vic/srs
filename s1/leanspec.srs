@@ -295,7 +295,7 @@ def fnTheorem(r: Region, ds: Nodes, f: Node): Unit =
       c = tail(c)
     say(" = some «result» ∧ ")
     lpAll(r, ds, ens)
-    if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind) else
+    if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind, false) else
       say(" := ")
       proofText(r, ds, f, p)
     say("\n\n")
@@ -362,7 +362,7 @@ def specTheorems(r: Region, ds: Nodes): Unit =
         args = NCons(leaf(r, XName, text(head(a)), 0), args)
         a = tail(a)
       lpAllR(r, ds, Node(XCall, text(f), "", 0, 0, rev(r, args)), ens)
-      if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind) else
+      if rt_str_len(ind) > 0 then inductionArms(r, ds, f, p, ind, true) else
         say(" := ")
         proofText(r, ds, f, p)
       say("\n\n")
@@ -513,8 +513,8 @@ def without(r: Region, ps: Nodes, name: Str): Nodes =
   rev(r, out)
 
 // proof by induction x: one arm per case of x's enum, an induction hypothesis per field of that enum
-// (structural recursion: works for mutual enums too)
-def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
+// (structural recursion: works for mutual enums too); gen: the hypothesis holds for all other params (accumulators)
+def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str, gen: Bool): Unit =
   val ty = text(kid(find(kids(kid(f, 0)), Param, x), 0))
   var cs = kids(find(ds, DEnum, ty))
   while !isNil(cs) do
@@ -535,10 +535,20 @@ def inductionArms(r: Region, ds: Nodes, f: Node, p: Node, x: Str): Unit =
       if eqs(text(kid(head(fs), 0)), ty) then
         say("have ih")
         sayn(i)
-        say(" := «")
+        say(" := ")
+        var a = without(r, kids(kid(f, 0)), x)
+        if gen && !isNil(a) then
+          say("fun")
+          var g = a
+          while !isNil(g) do
+            say(" ")
+            lid(true, text(head(g)))
+            g = tail(g)
+          say(" => ")
+        else ()
+        say("«")
         say(text(f))
         say("_spec»")
-        var a = without(r, kids(kid(f, 0)), x)
         while !isNil(a) do
           say(" ")
           lid(true, text(head(a)))

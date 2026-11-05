@@ -33,13 +33,20 @@ def isBuiltin(n: Str): Bool = eqs(n, "I64") || eqs(n, "Bool") || eqs(n, "Unit") 
 def isEnum(ds: Nodes, n: Str): Bool = found(find(ds, DEnum, n))
 def isProto(ds: Nodes, n: Str): Bool = found(find(ds, DProto, n))
 
-def union(r: Region, a: Nodes, b: Nodes): Nodes
+// a, then each node of b whose text is not yet in, in b's order (onto the front)
+spec def unionS(a: Nodes, b: Nodes): Nodes
   ensures forall s: Str => memS(s, result) == (memS(s, a) || memS(s, b))
+  proof by induction b
+= b match
+  case NNil => a
+  case NCons(h, t) => unionS(if memS(textS(h), a) then a else NCons(h, a), t)
+def union(r: Region, a: Nodes, b: Nodes): Nodes
+  ensures result == unionS(a, b)
 =
   var out = a
   var c = b
   while !isNil(c) do
-    invariant forall s: Str => (memS(s, out) || memS(s, c)) == (memS(s, a) || memS(s, b))
+    invariant unionS(out, c) == unionS(a, b)
     decreases sizeS(c)
     if !has(out, text(head(c))) then out = NCons(head(c), out) else ()
     c = tail(c)
@@ -83,12 +90,25 @@ def setG(r: Region, gam: Nodes, x: Node): Nodes
     else out = NCons(head(c), out)
     c = tail(c)
   rev(r, out)
+// spec: the cap states (text2) of a and b agree entry by entry
+spec def agreeS(a: Nodes, b: Nodes): Bool = a match
+  case NNil => true
+  case NCons(h, t) => rt_str_eq(text2S(h), text2S(headS(b))) && agreeS(t, tailS(b))
+// spec: entry by entry, a's entry with the caps of both entries
+spec def joinS(a: Nodes, b: Nodes): Nodes = a match
+  case NNil => NNil
+  case NCons(h, t) => NCons(Node(kindS(h), textS(h), text2S(h), 0, 0, unionS(kidsS(h), kidsS(headS(b)))), joinS(t, tailS(b)))
 // Γ of two paths from one Γ (same entries, same order): var caps join by union (C8), cap states must agree
-def joinGam(r: Region, a: Nodes, b: Nodes, what: Str, line: I64): Nodes =
+// accepts only when the states agree
+def joinGam(r: Region, a: Nodes, b: Nodes, what: Str, line: I64): Nodes
+  returns agreeS(a, b) && result == joinS(a, b)
+=
   var out = NNil
   var x = a
   var y = b
   while !isNil(x) do
+    invariant agreeS(a, b) == agreeS(x, y) && joinS(a, b) == revOnto(out, joinS(x, y))
+    decreases sizeS(x)
     if !eqs(text2(head(x)), text2(head(y))) then err(what, text(head(x)), line) else ()
     out = NCons(Node(kind(head(x)), text(head(x)), text2(head(x)), 0, 0, union(r, kids(head(x)), kids(head(y)))), out)
     x = tail(x)
