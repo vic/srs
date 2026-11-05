@@ -11,7 +11,8 @@ def mono(r: Region, ds: Nodes): Nodes =
   var todo = NNil
   var c = ds
   while !isNil(c) do
-    if !isGeneric(r, head(c)) then todo = insts(r, head(c), todo) else ()
+    // a given's defs are reached by its evidence calls, not as roots
+    if !isGeneric(r, head(c)) && kind(head(c)) != DGiven then todo = insts(r, head(c), todo) else ()
     c = tail(c)
   var made = NNil
   while !isNil(todo) do
@@ -75,7 +76,8 @@ def enumInsts(r: Region, ds: Nodes): Nodes =
   var c = ds
   while !isNil(c) do
     val d = head(c)
-    val generic = isGeneric(r, d) || (kind(d) == DEnum && isGenericEnum(ds, d))
+    // not roots: generic defs and enums, givens (reached by evidence calls), traits (signatures only)
+    val generic = isGeneric(r, d) || (kind(d) == DEnum && isGenericEnum(ds, d)) || kind(d) == DGiven || kind(d) == DTrait
     if !generic then todo = applied(r, ds, cs, d, todo) else ()
     c = tail(c)
   var made = NNil

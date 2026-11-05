@@ -266,11 +266,71 @@ def check(r: Region, ds: Nodes): Nodes =
     if kind(d) == DFn then checkSig(r, ds, d) else ()
     if kind(d) == DEnum then checkEnum(r, ds, d) else ()
     if kind(d) == DProto then checkProto(ds, d) else ()
+    if kind(d) == DTrait then checkTrait(r, ds, d) else ()
     // spec defs: pure, no regions; Lean type-checks them
-    val d2 = if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else if kind(d) == DHandler then checkHandler(r, ds, d) else d
+    val d2 = if kind(d) == DFn && num(d) == 0 then checkFn(r, ds, d) else if kind(d) == DHandler then checkHandler(r, ds, d) else if kind(d) == DGiven then checkGiven(r, ds, d) else d
     out = NCons(d2, out)
     c = tail(c)
   rev(r, out)
+
+// t names trait T[args]: the trait exists, one arg per [] binder, each arg a type
+def needTrait(r: Region, ds: Nodes, t: Node): Unit =
+  val tr = find(ds, DTrait, text(t))
+  if !found(tr) then err("unknown trait", text(t), lineOf(t)) else ()
+  if len(tyArgs(t)) != len(groupBinders(r, kids(kid(tr, 0)))) then err("wrong number of type args for", text(t), lineOf(t)) else ()
+  var c = tyArgs(t)
+  while !isNil(c) do
+    needTy(ds, head(c))
+    c = tail(c)
+
+// trait Show [A: Type]: [] binders only; method signatures over them (vic-9l7.6 BD4a)
+def checkTrait(r: Region, ds0: Nodes, d: Node): Unit =
+  val gs = kids(kid(d, 0))
+  var g = gs
+  while !isNil(g) do
+    if !eqs(text(head(g)), "[") then err("not yet: binder group on a trait", text(head(g)), lineOf(head(g))) else ()
+    g = tail(g)
+  val ds = append(r, groupBinders(r, gs), ds0)
+  var ms = tail(kids(d))
+  while !isNil(ms) do
+    if !isNil(kids(kid(head(ms), 4))) then err("not yet: binder groups on a trait method", text(head(ms)), lineOf(head(ms))) else ()
+    checkSig(r, ds, head(ms))
+    ms = tail(ms)
+
+// given ... T[args]: each trait method, with the trait's binders = the head's args, is a def of the given w/ that sig
+def checkGiven(r: Region, ds: Nodes, d: Node): Node =
+  val tr = find(ds, DTrait, text(d))
+  if !found(tr) then err("unknown trait", text(d), lineOf(d)) else ()
+  val hd = kid(d, 1)
+  needTrait(r, append(r, groupBinders(r, kids(kid(d, 0))), ds), hd)
+  val sub = zipBind(r, groupBinders(r, kids(kid(tr, 0))), tyArgs(hd))
+  val fs = tail(tail(kids(d)))
+  var ms = tail(kids(tr))
+  while !isNil(ms) do
+    val m = head(ms)
+    val f = find(fs, DFn, text(m))
+    if !found(f) then err("given misses trait method", text(m), lineOf(d)) else ()
+    if !sameSig(r, sub, m, f) then err("given method signature differs from its trait:", text(m), lineOf(f)) else ()
+    ms = tail(ms)
+  var c = fs
+  var fs2 = NNil
+  while !isNil(c) do
+    if !found(find(tail(kids(tr)), DFn, text(head(c)))) then err("not a method of the trait:", text(head(c)), lineOf(head(c))) else ()
+    checkSig(r, ds, head(c))
+    fs2 = NCons(checkFn(r, ds, head(c)), fs2)
+    c = tail(c)
+  withKids(r, d, NCons(kid(d, 0), NCons(hd, rev(r, fs2))))
+
+// f's params and result are m's with sub applied
+def sameSig(r: Region, sub: Nodes, m: Node, f: Node): Bool =
+  var a = kids(kid(m, 0))
+  var b = kids(kid(f, 0))
+  var ok = len(a) == len(b) && tyEq(applyTy(r, sub, kid(m, 1)), kid(f, 1))
+  while ok && !isNil(a) do
+    ok = tyEq(applyTy(r, sub, kid(head(a), 0)), kid(head(b), 0))
+    a = tail(a)
+    b = tail(b)
+  ok
 
 def checkEnum(r: Region, ds0: Nodes, d: Node): Unit =
   // its [] binders are types in its field types; [] and <> on an enum: not yet

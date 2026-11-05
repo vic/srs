@@ -61,6 +61,8 @@ def decl(r: Region, ts: Nodes): PR =
   else if isT(ts, "enum") then enumDecl(r, tail(ts))
   else if isT(ts, "protocol") then protoDecl(r, tail(ts))
   else if isT(ts, "handler") then handlerDecl(r, tail(ts))
+  else if isT(ts, "trait") then traitDecl(r, tail(ts))
+  else if isT(ts, "given") then givenDecl(r, tail(ts))
   else
     perr(ts, "declaration")
     PR(NoNode, ts)
@@ -262,6 +264,36 @@ def names(r: Region, ts0: Nodes): PR =
     xs = NCons(leaf(r, Name, needIdent(tail(ts)), at(ts)), xs)
     ts = drop(ts, 2)
   PR(list(r, Names, at(ts0), rev(r, xs)), ts)
+
+// trait Show [A: Type]: indented `def` signatures (no bodies) (vic-9l7.6 BD4a)
+def traitDecl(r: Region, ts0: Nodes): PR =
+  val line = at(ts0)
+  val name = needIdent(ts0)
+  val g = groups(r, tail(ts0), NNil)
+  var ts = layoutOpen(pr(g))
+  var fs = NNil
+  while !isK(ts, TDedent) do
+    val p = fn(r, ts, 1)
+    fs = NCons(pn(p), fs)
+    ts = endLine(pr(p))
+  PR(Node(DTrait, name, "", 0, line, NCons(list(r, Groups, line, rev(r, kids(pn(g)))), rev(r, fs))), tail(ts))
+
+// given [A: Type] {s: Show[A]} Show[List[A]]: indented defs. a clause: its head holds when its {} evidence does.
+// each def keeps the given's groups as its kid 4, so it is checked and instantiated as a generic def
+def givenDecl(r: Region, ts0: Nodes): PR =
+  val line = at(ts0)
+  val g = groups(r, ts0, NNil)
+  val gs = list(r, Groups, line, rev(r, kids(pn(g))))
+  val hd = ty(r, pr(g))
+  var ts = layoutOpen(pr(hd))
+  var fs = NNil
+  while !isK(ts, TDedent) do
+    val p = fn(r, ts, 0)
+    val f = pn(p)
+    fs = NCons(withKids(r, f, NCons(kid(f, 0), NCons(kid(f, 1), NCons(kid(f, 2), NCons(kid(f, 3), one(r, gs)))))), fs)
+    ts = pr(p)
+    if isK(ts, TNl) then ts = tail(ts) else ()
+  PR(Node(DGiven, text(pn(hd)), "", 0, line, NCons(gs, NCons(pn(hd), rev(r, fs)))), tail(ts))
 
 def handlerDecl(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
