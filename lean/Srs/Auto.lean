@@ -26,6 +26,12 @@ theorem ok_bind {α β : Type} (x : Option α) (f : α → Option β) (P : β �
   cases x <;> simp [ok, bind, Option.bind]
 theorem ok_ite {α : Type} (c : Prop) [Decidable c] (a b : Option α) (P : α → Prop) :
     ok (ite c a b) P = ite c (ok a P) (ok b P) := by split <;> rfl
+/-- no claim on the value (a loop w/o invariant: the claim holds for any loop result) -/
+theorem ok_true {α : Type} (o : Option α) : ok o (fun _ => True) = True := by simp [ok]
+/-- a callee with `returns E`: its value comes with E (generated `f_ok`; the rhs has no `ok`, so simp stops) -/
+theorem ok_ret {α : Type} {o : Option α} {E : α → Prop} (h : ∀ r, o = some r → E r) (P : α → Prop) :
+    ok o P = ∀ r, o = some r → E r → P r :=
+  propext ⟨fun hp r hr _ => hp r hr, fun hp r hr => hp r hr (h r hr)⟩
 
 end Srs
 
@@ -40,18 +46,19 @@ macro_rules
     let ss ← ls.mapM fun i => `(Lean.Parser.Tactic.simpLemma| $i:ident)
     let gs ← ls.mapM fun i => `(Lean.Parser.Tactic.grindParam| $i:ident)
     `(tactic| (
-      (try simp only [$ss,*, pure_bind, Srs.some_bind, Srs.ite_bind, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.Rt.rt_str_eq, Srs.Rt.rt_eprint, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit] at *)
+      (try simp only [$ss,*, pure_bind, Srs.some_bind, Srs.ite_bind, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true, Srs.Rt.rt_str_eq, Srs.Rt.rt_eprint, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit] at *)
       (try simp only [bind, Option.bind, pure, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit] at *)
       first
         | done
-        -- split first: simp_all on a match over an unsplit var can loop (`c = t[c]`, maxRecDepth: no alt after it runs)
-        | ((repeat' split) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
-        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]; done)
-        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> omega)
-        | ((repeat' split) <;> (repeat' apply And.intro) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
-        | ((refine ⟨_, rfl, ?_⟩ <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]); done)
-        | ((repeat' split) <;> (try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Int.max_eq_left, Int.add_nonneg]) <;> grind [$gs,*])
-        | ((try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite]) <;> grind [$gs,*])))
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true]; done)
+        | (simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true, Int.max_eq_left, Int.add_nonneg] <;> omega)
+        | ((repeat' split) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
+        | ((repeat' split) <;> (repeat' apply And.intro) <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true, Int.max_eq_left, Int.add_nonneg] <;> (first | done | omega))
+        | ((refine ⟨_, rfl, ?_⟩ <;> simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true]); done)
+        | ((repeat' split) <;> (try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true, Int.max_eq_left, Int.add_nonneg]) <;> grind [$gs,*])
+        | ((try simp_all [$ss,*, Srs.Rt.rt_str_eq, Srs.Rt.rt_str_len, Srs.Rt.rt_str_at, Srs.Rt.rt_str_slice, Srs.Rt.P.rt_str_eq, Srs.Rt.P.rt_str_len, Srs.Rt.P.rt_str_at, Srs.Rt.P.rt_str_slice, Srs.Rt.rt_print, Srs.Rt.rt_eprint, Srs.Rt.rt_print_i64, Srs.Rt.rt_eprint_i64, Srs.Rt.rt_exit, Srs.ok_none, Srs.ok_some, Srs.ok_pure, Srs.ok_bind, Srs.ok_ite, Srs.ok_true]) <;> grind [$gs,*])
+        -- ok unfolded: grind picks the witness of an `exists` claim (a value only the run knows, e.g. a loop result)
+        | (simp only [Srs.ok] at *; intros; grind [$gs,*])))
 
 
 namespace Srs

@@ -454,7 +454,12 @@ def chkCtor(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node): TG
     fs = tail(fs)
   TG(mkTy(r, text2(c), caps), gam)
 
-def chkMethod(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node): TG =
+spec def tgGamS(x: TG): Nodes = x match
+  case TG(_, g) => g
+// accepts only when, in the Γ after the args, op and its transition exist; Γ after = cap e moved by op
+def chkMethod(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node): TG
+  returns exists gam: Nodes => foundS(opS(ds, text2S(lookS(env, BVar, textS(e))), text2S(e))) && foundS(trS(ds, gam, textS(e), text2S(lookS(env, BVar, textS(e))), text2S(e))) && tgGamS(result) == replS(gam, Node(GState, textS(e), text2S(trS(ds, gam, textS(e), text2S(lookS(env, BVar, textS(e))), text2S(e))), 0, 0, NNil))
+=
   val line = lineOf(e)
   val b = find(env, BVar, text(e))
   if !found(b) || num(b) != 2 then err("not a capability:", text(e), line) else ()

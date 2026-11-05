@@ -215,10 +215,11 @@ def factList(r: Region, ds: Nodes, p: Node, extra: Nodes, first0: Bool): Unit =
     // n 1 = the fn being proven: its own contract is not a fact yet
     val spec = found(f) && num(head(c)) == 0 && num(f) != 1 && !isNil(clauseExprs(r, clausesOf(f), "ensures"))
     val eqn = spec && isEqFn(r, ds, f)
-    // a fn with an _eq rule is used through it, not unfolded
-    if !eqn then
+    val ret = found(f) && num(head(c)) == 0 && !isNil(clauseExprs(r, clausesOf(f), "returns"))
+    // a fn with an _eq or returns rule is used through it, not unfolded; a recursive fn never (unfolding never ends)
+    if !eqn && !ret && !(found(f) && num(f) == 0 && isRec(r, ds, text(head(c)))) then
       if !first then say(", ") else ()
-      lid(true, text(head(c)))
+      factName(f, text(head(c)))
       first = false
     else ()
     if spec then
@@ -228,20 +229,45 @@ def factList(r: Region, ds: Nodes, p: Node, extra: Nodes, first0: Bool): Unit =
       say(if eqn then "_eq»" else "_spec»")
       first = false
     else ()
-    if found(f) && num(head(c)) == 0 && !isNil(clauseExprs(r, clausesOf(f), "returns")) then
+    if ret then
       if !first then say(", ") else ()
       say("«")
       say(text(head(c)))
-      say("_ret»")
+      say(if isNil(clauseExprs(r, clausesOf(f), "requires")) then "_ok»" else "_ret»")
       first = false
     else ()
     c = tail(c)
 
+// a fact: a non-recursive match-defined spec def gives its equation lemmas, they rewrite constructors only
+// (simp unfolds the def itself on a var into a match: simp_all loops on `c = t[c]` from such matches)
+def factName(f: Node, name: Str): Unit =
+  val b = if num(f) == 2 then kid(f, 2) else NoNode
+  if kind(b) == XMatch && !selfCalls(b, name) then
+    var i = 1
+    var a = tail(kids(b))
+    while !isNil(a) do
+      if i > 1 then say(", ") else ()
+      lid(true, name)
+      say(".eq_")
+      sayn(i)
+      i = i + 1
+      a = tail(a)
+  else lid(true, name)
+// name is on a call-graph cycle (Lean partial_fixpoint)
+def isRec(r: Region, ds: Nodes, name: Str): Bool = has(reach(r, callGraph(r, ds), name), name)
+// e calls name
+def selfCalls(e: Node, name: Str): Bool =
+  var hit = kind(e) == XCall && eqs(text(e), name)
+  var c = kids(e)
+  while !hit && !isNil(c) do
+    hit = selfCalls(head(c), name)
+    c = tail(c)
+  hit
 // f has an _eq rule: one `ensures result == E`, no requires
 def isEqFn(r: Region, ds: Nodes, f: Node): Bool =
   val ce = clausesOf(f)
   num(f) == 0 && isNil(clauseExprs(r, ce, "requires")) && !isNil(clauseExprs(r, ce, "ensures")) && isNil(tail(clauseExprs(r, ce, "ensures"))) && resultEq(head(clauseExprs(r, ce, "ensures")))
-// facts xs + the match-defined spec defs in the E of each fn used through its _eq rule: they unfold only on
+// facts xs + the match-defined spec defs in the E of each fn used through its _eq rule: they rewrite only
 // constructors. other spec defs there (if bodies) stay opaque: the proof reasons about them as atoms
 def eqSpecs(r: Region, ds: Nodes, xs: Nodes): Nodes =
   var out = xs
@@ -325,8 +351,39 @@ def retTheorem(r: Region, ds: Nodes, f: Node, rets: Nodes): Unit =
   lpAll(r, ds, rets)
   say(" := by\n  refine Srs.ok_intro ?_\n  ")
   val lp0 = invLoop(r, kid(f, 2))
-  if found(lp0) then loopSkeleton(r, ds, f, lp0, p, true) else autoCall(r, ds, p, selfFacts(r, ds, f))
+  if found(lp0) then loopSkeleton(r, ds, f, lp0, p, true)
+  else
+    // a recursive f unfolds once (a fact would unfold it forever); a loop w/o invariant stays opaque: the claim
+    // must hold for any loop result (Srs.ok_true)
+    if isRec(r, ds, text(f)) then
+      say("rw [«")
+      say(text(f))
+      say("»]\n  ")
+    else ()
+    autoCall(r, ds, p, selfFacts(r, ds, f))
   say("\n\n")
+  // callers use f through f_ok: ok (f params) P = ∀ result, f params = some result → returns → P result
+  if isNil(req) then
+    say("theorem «")
+    say(text(f))
+    say("_ok»")
+    lparams(ds, kids(kid(f, 0)))
+    say(" (P : ")
+    lty(kid(f, 1))
+    say(" → Prop) :\n    Srs.ok (")
+    lid(true, text(f))
+    largs(ds, kids(kid(f, 0)))
+    say(") P = ∀ «result», ")
+    lid(true, text(f))
+    largs(ds, kids(kid(f, 0)))
+    say(" = some «result» → ")
+    lpAll(r, ds, rets)
+    say(" → P «result» :=\n  Srs.ok_ret («")
+    say(text(f))
+    say("_ret»")
+    largs(ds, kids(kid(f, 0)))
+    say(") P\n\n")
+  else ()
 
 def verification(r: Region, ds: Nodes): Unit =
   var c = ds
@@ -455,14 +512,14 @@ def loopSkeleton(r: Region, ds: Nodes, f: Node, w: Node, p: Node, ret: Bool): Un
   say(").toNat) ?_ _ _ _ ?_ ?_\n  · rintro ")
   rpat(mu)
   say(if ret then " hI b hc hb\n    " else " hI\n    ")
-  casesEnums(ds, condVars(r, mu, kid(w, 0)))
+  casesEnums(ds, condVars(r, ds, mu, kid(w, 0), kid(w, 1)))
   autoCall(r, ds, p, hints)
   say("\n  · ")
   autoCall(r, ds, p, hints)
   say("\n  · rintro ")
   rpat(mu)
   say(" hI hc\n    ")
-  casesEnums(ds, condVars(r, mu, kid(w, 0)))
+  casesEnums(ds, condVars(r, ds, mu, kid(w, 0), kid(w, 1)))
   autoCall(r, ds, p, hints)
 
 // case split on each enum- or Bool-typed loop var, and one level into its enum fields: conditions and bodies
@@ -617,11 +674,31 @@ def largs(ds: Nodes, ps: Nodes): Unit =
     else ()
     c = tail(c)
 
-// the loop vars the condition reads: the case splits the condition needs
-def condVars(r: Region, mu: Nodes, cond: Node): Nodes =
+// the loop vars the condition reads, or the body passes to a fn whose _eq rule is a non-recursive match: the
+// case splits they need (that rule's equation lemmas rewrite constructors only)
+def condVars(r: Region, ds: Nodes, mu: Nodes, cond: Node, body: Node): Nodes =
   var out = NNil
   var c = mu
   while !isNil(c) do
-    if reads(cond, text(head(c))) then out = NCons(head(c), out) else ()
+    if reads(cond, text(head(c))) || matchArg(r, ds, body, text(head(c))) then out = NCons(head(c), out) else ()
     c = tail(c)
   rev(r, out)
+// e has a call g(.., x, ..) with g's _eq rule a non-recursive match-defined spec def
+def matchArg(r: Region, ds: Nodes, e: Node, x: Str): Bool =
+  var hit = kind(e) == XCall && nameArg(kids(e), x) && matchEq(r, ds, text(e))
+  var c = kids(e)
+  while !hit && !isNil(c) do
+    hit = matchArg(r, ds, head(c), x)
+    c = tail(c)
+  hit
+def nameArg(xs: Nodes, x: Str): Bool =
+  var hit = false
+  var c = xs
+  while !hit && !isNil(c) do
+    hit = kind(head(c)) == XName && eqs(text(head(c)), x)
+    c = tail(c)
+  hit
+def matchEq(r: Region, ds: Nodes, g: Str): Bool =
+  val f = find(ds, DFn, g)
+  val s = if found(f) && isEqFn(r, ds, f) then find(ds, DFn, text(kid(head(clauseExprs(r, clausesOf(f), "ensures")), 1))) else NoNode
+  num(s) == 2 && kind(kid(s, 2)) == XMatch && !selfCalls(kid(s, 2), text(s))
