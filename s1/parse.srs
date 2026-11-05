@@ -77,8 +77,9 @@ def fn(r: Region, ts0: Nodes, ext: I64): PR =
   val g3 = if isT(pr(rt), "<") then outFacts(r, pr(rt), kids(pn(g2))) else g2
   val gs = list(r, Groups, line, rev(r, kids(pn(g3))))
   val after = if isT(pr(rt), "<") then pr(g3) else pr(rt)
-  if ext != 0 && !isNil(kids(gs)) then fatal("binder groups on def only, not extern or spec def", line) else ()
-  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), one(r, pn(rt)))), after)
+  // spec defs are Lean only (vic 2026-11-05); externs take groups: a trusted contract of the C body
+  if ext == 2 && !isNil(kids(gs)) then fatal("binder groups on def and extern def only, not spec def", line) else ()
+  if ext == 1 then PR(Node(DFn, name, "", 1, line, NCons(pn(ps), NCons(pn(rt), NCons(NoNode, NCons(list(r, Names, line, NNil), one(r, gs)))))), after)
   else
     // contract clauses, indented between the signature and `=`
     val cl = if isK(after, TNl) && isK(tail(after), TIndent) then clauses(r, tail(after)) else PR(list(r, Names, line, NNil), after)

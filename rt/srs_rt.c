@@ -90,3 +90,5 @@ srs_str rt_str_slice(srs_str s, int64_t b, int64_t e) {
 }
 bool rt_str_eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }
 int64_t rt_exit(int64_t code) { fflush(stdout); exit((int)code); }
+// identity on a void* slot: the test of generic externs (vic-9l7.4 BD2, tests/generic.srs)
+void* rt_same(void* x) { return x; }

@@ -230,7 +230,7 @@ def lsBlock(r: Region, ds: Nodes, fn: Str, env0: Nodes, gam0: Nodes, ss: Nodes, 
         lxAct(r, ds, fn, env, gam, kid(s, 0), on)
       put(on, ";\n")
       // the checker's own type of the bound value: the Lean types of the loop aux params
-      val x = chk(r, ds, env, gam, kid(s, 0))
+      val x = chk(r, ds, env, gam, kid(s, 0), NoNode)
       val t = if !isNil(tail(kids(s))) then kid(s, 1) else if num(s) == 1 then uncapped(r, text(tgTy(x))) else tgTy(x)
       gam = tgGam(x)
       env = NCons(Node(BVar, text(s), "", num(s), lineOf(s), one(r, t)), env)
@@ -243,14 +243,14 @@ def lsBlock(r: Region, ds: Nodes, fn: Str, env0: Nodes, gam0: Nodes, ss: Nodes, 
       if last then put(on, "pure ();\n") else ()
     else
       ls(r, ds, fn, env, gam, s, on, if last then mode else 0)
-      gam = tgGam(chk(r, ds, env, gam, s))
+      gam = tgGam(chk(r, ds, env, gam, s, NoNode))
     c = tail(c)
 
 def lsMatch(r: Region, ds: Nodes, fn: Str, env: Nodes, gam: Nodes, e: Node, on: Bool, mode: I64): Unit =
   put(on, "match ")
   lx(r, ds, fn, env, gam, kid(e, 0), on)
   put(on, " with\n")
-  val sx = chk(r, ds, env, gam, kid(e, 0))
+  val sx = chk(r, ds, env, gam, kid(e, 0), NoNode)
   val en = find(ds, DEnum, text(tgTy(sx)))
   var arms = tail(kids(e))
   while !isNil(arms) do

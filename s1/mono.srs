@@ -1,0 +1,72 @@
+// Mono (vic-9l7.4 BD2): the instances of generic defs. A generic def is copied once per distinct type args its calls
+// reach (C name f_<name>__<T1>_<T2>), type params replaced by the types; its kid 4 then holds the type args (Names).
+// A generic extern keeps one C symbol: its type params are void* (vic B-Q6), so only pointer types fill them.
+// BD2 type args are names the program declares, so the instances are finite and the loop ends.
+
+// a def with type params: only its instances are code
+def isGeneric(r: Region, d: Node): Bool = kind(d) == DFn && num(d) == 0 && !isNil(tparams(r, d))
+
+// the checked program and the instances it reaches
+def mono(r: Region, ds: Nodes): Nodes =
+  var todo = NNil
+  var c = ds
+  while !isNil(c) do
+    if !isGeneric(r, head(c)) then todo = insts(r, head(c), todo) else ()
+    c = tail(c)
+  var made = NNil
+  while !isNil(todo) do
+    val x = head(todo)
+    todo = tail(todo)
+    val f = find(ds, DFn, text(x))
+    if num(f) == 1 then needPointers(ds, x)
+    else if !isMade(made, x) then
+      val g = instantiate(r, f, kids(kid(x, 0)))
+      made = NCons(g, made)
+      todo = insts(r, kid(g, 2), todo)
+    else ()
+  append(r, ds, rev(r, made))
+
+// the XInst nodes of e, onto acc
+def insts(r: Region, e: Node, acc: Nodes): Nodes =
+  var out = if kind(e) == XInst then NCons(e, acc) else acc
+  var c = kids(e)
+  while !isNil(c) do
+    out = insts(r, head(c), out)
+    c = tail(c)
+  out
+
+// an instance of x's callee at x's type args is made already
+def isMade(made: Nodes, x: Node): Bool =
+  var c = made
+  var res = false
+  while !res && !isNil(c) do
+    res = eqs(text(head(c)), text(x)) && sameNames(kids(kid(head(c), 4)), kids(kid(x, 0)))
+    c = tail(c)
+  res
+
+def sameNames(a: Nodes, b: Nodes): Bool =
+  if isNil(a) || isNil(b) then isNil(a) && isNil(b)
+  else eqs(text(head(a)), text(head(b))) && sameNames(tail(a), tail(b))
+
+// f with its type params replaced by targs; kid 4 = the type args
+def instantiate(r: Region, f: Node, targs: Nodes): Node =
+  val g = substTy(r, f, tparams(r, f), targs)
+  withKids(r, g, NCons(kid(g, 0), NCons(kid(g, 1), NCons(kid(g, 2), NCons(kid(g, 3), one(r, list(r, Names, lineOf(f), targs)))))))
+
+def substTy(r: Region, e: Node, tps: Nodes, targs: Nodes): Node =
+  val i = if kind(e) == Ty then index(tps, text(e)) else -1
+  if i >= 0 then nth(targs, i)
+  else
+    var out = NNil
+    var c = kids(e)
+    while !isNil(c) do
+      out = NCons(substTy(r, head(c), tps, targs), out)
+      c = tail(c)
+    withKids(r, e, rev(r, out))
+
+// an extern's type param is a void* slot
+def needPointers(ds: Nodes, x: Node): Unit =
+  var c = kids(kid(x, 0))
+  while !isNil(c) do
+    if !isEnum(ds, text(head(c))) && !eqs(text(head(c)), "Ptr") then err("extern type param needs a pointer type (void*), not", text(head(c)), lineOf(x)) else ()
+    c = tail(c)

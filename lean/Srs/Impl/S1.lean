@@ -39,6 +39,7 @@ inductive «Kind» where
   | «XUnit»
   | «XName»
   | «XCall»
+  | «XInst»
   | «XMethod»
   | «XBin»
   | «XUn»
@@ -2041,6 +2042,10 @@ def «isProto» («ds» : «Nodes») («n» : ByteArray) : Option Bool := do {
 pure (← «found» (← «find» «ds» «Kind».«DProto» «n»));
 }
 
+def «isTParam» («ds» : «Nodes») («n» : ByteArray) : Option Bool := do {
+pure (← «found» (← «find» «ds» «Kind».«Binder» «n»));
+}
+
 def «union_loop0» («b» : «Nodes») («a» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
@@ -2295,6 +2300,7 @@ def «needTy» («ds» : «Nodes») («t» : «Node») : Option Unit := do {
 let «n» ← (pure (← «text» «t»));
 if (← (do {
 if (← (do {
+if (← (do {
 if (!(← «isBuiltin» «n»)) then {
 pure (!(← «isEnum» «ds» «n»))
 } else {
@@ -2302,6 +2308,11 @@ pure false
 }
 })) then {
 pure (!(← «isProto» «ds» «n»))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isTParam» «ds» «n»))
 } else {
 pure false
 }
@@ -2473,10 +2484,100 @@ pure ();
 };
 }
 
-def «checkSig_loop0» («gs» : «Nodes») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+def «tparams_loop0» («f» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«gs», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «gs»))
+} : Option Bool)) st') then «tparams_loop0» «f» (← (fun ((«gs», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «gs» := «gs»;
+let mut «out» := «out»;
+if (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8) then {
+«out» := (← «append» «out» (← «kids» (← «head» «gs»)));
+} else {
+let _ := ();
+};
+«gs» := (← «tail» «gs»);
+pure («gs», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «tparams» («f» : «Node») : Option «Nodes» := do {
+let mut «out» := «Nodes».«NNil»;
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let t_ ← «tparams_loop0» «f» («gs», «out»);
+«gs» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+
+def «withTParams» («ds» : «Nodes») («f» : «Node») : Option «Nodes» := do {
+pure (← «append» (← «tparams» «f») «ds»);
+}
+
+def «checkSig_loop1» («g» : «Node») («gs» : «Nodes») («f» : «Node») («ds0» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («bs» : («Nodes»)) => (do {
+pure (!(← «isNil» «bs»))
+} : Option Bool)) st') then «checkSig_loop1» «g» «gs» «f» «ds0» (← (fun («bs» : («Nodes»)) => (do {
+let mut «bs» := «bs»;
+let «k» ← (pure (← «kid» (← «head» «bs») (0 : Int)));
+if (← (do {
+if (!(← «eqs» (← «text» «k») "Type".toUTF8)) then {
+pure true
+} else {
+pure (!(← «isNil» (← «kids» «k»)))
+}
+})) then {
+let _ := (← «err» "not yet: {} binder of kind".toUTF8 (← «text» «k») (← «lineOf» (← «head» «bs»)));
+} else {
+let _ := ();
+};
+if (← (do {
+if (← (do {
+if (← «isBuiltin» (← «text» (← «head» «bs»))) then {
+pure true
+} else {
+pure (← «isEnum» «ds0» (← «text» (← «head» «bs»)))
+}
+})) then {
+pure true
+} else {
+pure (← «isProto» «ds0» (← «text» (← «head» «bs»)))
+}
+})) then {
+let _ := (← «err» "type param hides a type:".toUTF8 (← «text» (← «head» «bs»)) (← «lineOf» (← «head» «bs»)));
+} else {
+let _ := ();
+};
+«bs» := (← «tail» «bs»);
+pure «bs»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkSig_loop0» («f» : «Node») («ds0» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («gs» : («Nodes»)) => (do {
+pure (!(← «isNil» «gs»))
+} : Option Bool)) st') then «checkSig_loop0» «f» «ds0» (← (fun («gs» : («Nodes»)) => (do {
+let mut «gs» := «gs»;
+let «g» ← (pure (← «head» «gs»));
+if (!(← «eqs» (← «text» «g») "{".toUTF8)) then {
+let _ := (← «err» "not yet: binder group".toUTF8 (← «text» «g») (← «lineOf» «g»));
+} else {
+let _ := ();
+};
+let mut «bs» := (← «kids» «g»);
+let t_ ← «checkSig_loop1» «g» «gs» «f» «ds0» «bs»;
+«bs» := t_;
+«gs» := (← «tail» «gs»);
+pure «gs»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «checkSig_loop2» («ds» : «Nodes») («gs» : «Nodes») («f» : «Node») («ds0» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («ps» : («Nodes»)) => (do {
 pure (!(← «isNil» «ps»))
-} : Option Bool)) st') then «checkSig_loop0» «gs» «f» «ds» (← (fun («ps» : («Nodes»)) => (do {
+} : Option Bool)) st') then «checkSig_loop2» «ds» «gs» «f» «ds0» (← (fun («ps» : («Nodes»)) => (do {
 let mut «ps» := «ps»;
 let _ := (← «needTy» «ds» (← «kid» (← «head» «ps») (0 : Int)));
 «ps» := (← «tail» «ps»);
@@ -2485,15 +2586,13 @@ pure «ps»
 }
 partial_fixpoint
 
-def «checkSig» («ds» : «Nodes») («f» : «Node») : Option Unit := do {
-let «gs» ← (pure (← «kids» (← «kid» «f» (4 : Int))));
-if (!(← «isNil» «gs»)) then {
-let _ := (← «err» "not yet: binder group".toUTF8 (← «text» (← «head» «gs»)) (← «lineOf» (← «head» «gs»)));
-} else {
-let _ := ();
-};
+def «checkSig» («ds0» : «Nodes») («f» : «Node») : Option Unit := do {
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let t_ ← «checkSig_loop0» «f» «ds0» «gs»;
+«gs» := t_;
+let «ds» ← (pure (← «withTParams» «ds0» «f»));
 let mut «ps» := (← «kids» (← «kid» «f» (0 : Int)));
-let t_ ← «checkSig_loop0» «gs» «f» «ds» «ps»;
+let t_ ← «checkSig_loop2» «ds» «gs» «f» «ds0» «ps»;
 «ps» := t_;
 let _ := (← «needTy» «ds» (← «kid» «f» (1 : Int)));
 if (← «isProto» «ds» (← «text» (← «kid» «f» (1 : Int)))) then {
@@ -2692,6 +2791,46 @@ let t_ ← «mapCaps_loop0» «m» «caps» («c», «out»);
 pure «out»;
 }
 
+def «isTP» («tps» : «Nodes») («t» : «Node») : Option Bool := do {
+pure (← «found» (← «find» «tps» «Kind».«Binder» (← «text» «t»)));
+}
+
+def «needSame» («a» : «Node») («b» : «Node») («line» : Int) : Option Unit := do {
+if (!(← «eqs» (← «text» «a») (← «text» «b»))) then {
+pure (← «needAssign» «a» «b» «line»);
+} else {
+pure ();
+};
+}
+
+def «instArgs_loop0» («line» : Int) («sub» : «Nodes») («tps» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «instArgs_loop0» «line» «sub» «tps» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+let «b» ← (pure (← «find» «sub» «Kind».«Binder» (← «text» (← «head» «c»))));
+if (!(← «found» «b»)) then {
+let _ := (← «err» "cannot infer type param".toUTF8 (← «text» (← «head» «c»)) «line»);
+} else {
+let _ := ();
+};
+«out» := («Nodes».«NCons» (← «kid» «b» (0 : Int)) «out»);
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «instArgs» («tps» : «Nodes») («sub» : «Nodes») («line» : Int) : Option «Nodes» := do {
+let mut «out» := «Nodes».«NNil»;
+let mut «c» := «tps»;
+let t_ ← «instArgs_loop0» «line» «sub» «tps» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure (← «rev» «out»);
+}
+
 def «mapVals_loop0» («m» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
@@ -2712,6 +2851,150 @@ let t_ ← «mapVals_loop0» «m» («c», «out»);
 «c» := t_.1;
 «out» := t_.2;
 pure «out»;
+}
+
+def «isGeneric» («d» : «Node») : Option Bool := do {
+pure (← (do {
+if (← (do {
+if ((← «kind» «d») == «Kind».«DFn») then {
+pure ((← «num» «d») == (0 : Int))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isNil» (← «tparams» «d»)))
+} else {
+pure false
+}
+}));
+}
+
+mutual
+def «insts_loop0» («acc» : «Nodes») («e» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «insts_loop0» «acc» «e» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+«out» := (← «insts» (← «head» «c») «out»);
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «insts» («e» : «Node») («acc» : «Nodes») : Option «Nodes» := do {
+let mut «out» := (← (do {
+if ((← «kind» «e») == «Kind».«XInst») then {
+pure («Nodes».«NCons» «e» «acc»);
+} else {
+pure «acc»;
+};
+}));
+let mut «c» := (← «kids» «e»);
+let t_ ← «insts_loop0» «acc» «e» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «sameNames» («a» : «Nodes») («b» : «Nodes») : Option Bool := do {
+if (← (do {
+if (← «isNil» «a») then {
+pure true
+} else {
+pure (← «isNil» «b»)
+}
+})) then {
+pure (← (do {
+if (← «isNil» «a») then {
+pure (← «isNil» «b»)
+} else {
+pure false
+}
+}));
+} else {
+pure (← (do {
+if (← «eqs» (← «text» (← «head» «a»)) (← «text» (← «head» «b»))) then {
+pure (← «sameNames» (← «tail» «a») (← «tail» «b»))
+} else {
+pure false
+}
+}));
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «substTy_loop0» («i» : Int) («targs» : «Nodes») («tps» : «Nodes») («e» : «Node») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «substTy_loop0» «i» «targs» «tps» «e» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+«out» := («Nodes».«NCons» (← «substTy» (← «head» «c») «tps» «targs») «out»);
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «substTy» («e» : «Node») («tps» : «Nodes») («targs» : «Nodes») : Option «Node» := do {
+let «i» ← (pure (← (do {
+if ((← «kind» «e») == «Kind».«Ty») then {
+pure (← «index» «tps» (← «text» «e»));
+} else {
+pure (0 - (1 : Int));
+};
+})));
+if (decide («i» >= (0 : Int))) then {
+pure (← «nth» «targs» «i»);
+} else {
+let mut «out» := «Nodes».«NNil»;
+let mut «c» := (← «kids» «e»);
+let t_ ← «substTy_loop0» «i» «targs» «tps» «e» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure (← «withKids» «e» (← «rev» «out»));
+};
+}
+partial_fixpoint
+
+end
+
+def «needPointers_loop0» («x» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («c» : («Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «needPointers_loop0» «x» «ds» (← (fun («c» : («Nodes»)) => (do {
+let mut «c» := «c»;
+if (← (do {
+if (!(← «isEnum» «ds» (← «text» (← «head» «c»)))) then {
+pure (!(← «eqs» (← «text» (← «head» «c»)) "Ptr".toUTF8))
+} else {
+pure false
+}
+})) then {
+let _ := (← «err» "extern type param needs a pointer type (void*), not".toUTF8 (← «text» (← «head» «c»)) (← «lineOf» «x»));
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure «c»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «needPointers» («ds» : «Nodes») («x» : «Node») : Option Unit := do {
+let mut «c» := (← «kids» (← «kid» «x» (0 : Int)));
+let t_ ← «needPointers_loop0» «x» «ds» «c»;
+«c» := t_;
+pure ()
 }
 
 def «allCases_loop0» («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
@@ -2790,64 +3073,65 @@ pure (← «sayn» (← «num» «b»));
 };
 }
 
-def «fname» («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
-if («tag» == (1 : Int)) then {
-let _ := (← «say» "f_".toUTF8);
-} else {
-let _ := ();
-};
-if («tag» == (2 : Int)) then {
-let _ := (← «say» "h_".toUTF8);
-let _ := (← «say» «h»);
+def «typeSuffix_loop0» («ts» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («c» : («Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «typeSuffix_loop0» «ts» (← (fun («c» : («Nodes»)) => (do {
+let mut «c» := «c»;
 let _ := (← «say» "_".toUTF8);
-} else {
-let _ := ();
-};
-pure (← «say» (← «text» «f»));
+let _ := (← «say» (← «text» (← «head» «c»)));
+«c» := (← «tail» «c»);
+pure «c»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «typeSuffix» («ts» : «Nodes») : Option Unit := do {
+let _ := (← «say» "_".toUTF8);
+let mut «c» := «ts»;
+let t_ ← «typeSuffix_loop0» «ts» «c»;
+«c» := t_;
+pure ()
 }
 
-def «sig_loop0» («h» : ByteArray) («tag» : Int) («f» : «Node») («ds» : «Nodes») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
-if (← (fun ((_, «ps») : (Bool × «Nodes»)) => (do {
-pure (!(← «isNil» «ps»))
-} : Option Bool)) st') then «sig_loop0» «h» «tag» «f» «ds» (← (fun ((«first», «ps») : (Bool × «Nodes»)) => (do {
-let mut «first» := «first»;
-let mut «ps» := «ps»;
-if (!«first») then {
-let _ := (← «say» ", ".toUTF8);
+def «isTParamOf_loop0» («n» : ByteArray) («f» : «Node») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
+if (← (fun ((«res», «gs») : (Bool × «Nodes»)) => (do {
+pure (← (do {
+if (!«res») then {
+pure (!(← «isNil» «gs»))
 } else {
-let _ := ();
-};
-«first» := false;
-let _ := (← «ctype» «ds» (← «kid» (← «head» «ps») (0 : Int)));
-let _ := (← «say» " p_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «ps»)));
-«ps» := (← «tail» «ps»);
-pure («first», «ps»)
+pure false
+}
+}))
+} : Option Bool)) st') then «isTParamOf_loop0» «n» «f» (← (fun ((«res», «gs») : (Bool × «Nodes»)) => (do {
+let mut «res» := «res»;
+let mut «gs» := «gs»;
+«res» := (← (do {
+if (← (do {
+if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
+pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+} else {
+pure false
+}
+})) then {
+pure (← «found» (← «find» (← «kids» (← «head» «gs»)) «Kind».«Binder» «n»))
+} else {
+pure false
+}
+}));
+«gs» := (← «tail» «gs»);
+pure («res», «gs»)
 } : Option (Bool × «Nodes»))) st') else pure st'
 }
 partial_fixpoint
 
-def «sig» («ds» : «Nodes») («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
-if («tag» != (0 : Int)) then {
-let _ := (← «say» "static ".toUTF8);
-} else {
-let _ := ();
-};
-let _ := (← «ctype» «ds» (← «kid» «f» (1 : Int)));
-let _ := (← «say» " ".toUTF8);
-let _ := (← «fname» «f» «tag» «h»);
-let _ := (← «say» "(".toUTF8);
-let mut «ps» := (← «kids» (← «kid» «f» (0 : Int)));
-if (← «isNil» «ps») then {
-let _ := (← «say» "void".toUTF8);
-} else {
-let _ := ();
-};
-let mut «first» := true;
-let t_ ← «sig_loop0» «h» «tag» «f» «ds» («first», «ps»);
-«first» := t_.1;
-«ps» := t_.2;
-pure (← «say» ")".toUTF8);
+def «isTParamOf» («f» : «Node») («n» : ByteArray) : Option Bool := do {
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let mut «res» := false;
+let t_ ← «isTParamOf_loop0» «n» «f» («res», «gs»);
+«res» := t_.1;
+«gs» := t_.2;
+pure «res»;
 }
 
 def «unescLen_loop0» («s» : ByteArray) (st' : (Int × Int)) : Option (Int × Int) := do {
@@ -3046,6 +3330,52 @@ def «opIndex» («ops» : «Nodes») («name» : ByteArray) : Option Int := do 
 pure (← «index» «ops» «name»);
 }
 
+def «tparamIndex_loop0» («n» : ByteArray) («f» : «Node») (st' : (Int × Int × «Nodes»)) : Option (Int × Int × «Nodes») := do {
+if (← (fun ((«res», _, «gs») : (Int × Int × «Nodes»)) => (do {
+pure (← (do {
+if (decide («res» < (0 : Int))) then {
+pure (!(← «isNil» «gs»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «tparamIndex_loop0» «n» «f» (← (fun ((«res», «i», «gs») : (Int × Int × «Nodes»)) => (do {
+let mut «res» := «res»;
+let mut «i» := «i»;
+let mut «gs» := «gs»;
+if (← (do {
+if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
+pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+} else {
+pure false
+}
+})) then {
+let «j» ← (pure (← «index» (← «kids» (← «head» «gs»)) «n»));
+if (decide («j» >= (0 : Int))) then {
+«res» := («i» + «j»);
+} else {
+«i» := («i» + (← «len» (← «kids» (← «head» «gs»))));
+};
+} else {
+let _ := ();
+};
+«gs» := (← «tail» «gs»);
+pure («res», «i», «gs»)
+} : Option (Int × Int × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «tparamIndex» («f» : «Node») («n» : ByteArray) : Option Int := do {
+let mut «gs» := (← «kids» (← «kid» «f» (4 : Int)));
+let mut «i» := (0 : Int);
+let mut «res» := (0 - (1 : Int));
+let t_ ← «tparamIndex_loop0» «n» «f» («res», «i», «gs»);
+«res» := t_.1;
+«i» := t_.2.1;
+«gs» := t_.2.2;
+pure «res»;
+}
+
 mutual
 def «exArgs_loop0» («lead» : Bool) («xs» : «Nodes») («env» : «Nodes») («cs» : «Nodes») («ds» : «Nodes») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
 if (← (fun ((_, «c») : (Bool × «Nodes»)) => (do {
@@ -3073,6 +3403,46 @@ let t_ ← «exArgs_loop0» «lead» «xs» «env» «cs» «ds» («first», «
 «first» := t_.1;
 «c» := t_.2;
 pure ()
+}
+partial_fixpoint
+
+def «exInst» («ds» : «Nodes») («cs» : «Nodes») («env» : «Nodes») («e» : «Node») : Option Unit := do {
+let «f» ← (pure (← «find» «ds» «Kind».«DFn» (← «text» «e»)));
+let «targs» ← (pure (← «kids» (← «kid» «e» (0 : Int))));
+let «ext» ← (pure ((← «num» «f») == (1 : Int)));
+let «cast» ← (pure (← (do {
+if «ext» then {
+pure (← «isTParamOf» «f» (← «text» (← «kid» «f» (1 : Int))))
+} else {
+pure false
+}
+})));
+if «cast» then {
+let _ := (← «say» "((".toUTF8);
+let _ := (← «ctype» «ds» (← «nth» «targs» (← «tparamIndex» «f» (← «text» (← «kid» «f» (1 : Int))))));
+let _ := (← «say» ")".toUTF8);
+} else {
+let _ := ();
+};
+if (!«ext») then {
+let _ := (← «say» "f_".toUTF8);
+} else {
+let _ := ();
+};
+let _ := (← «say» (← «text» «e»));
+if (!«ext») then {
+let _ := (← «typeSuffix» «targs»);
+} else {
+let _ := ();
+};
+let _ := (← «say» "(".toUTF8);
+let _ := (← «exArgs» «ds» «cs» «env» (← «tail» (← «kids» «e»)) false);
+let _ := (← «say» ")".toUTF8);
+if «cast» then {
+pure (← «say» ")".toUTF8);
+} else {
+pure ();
+};
 }
 partial_fixpoint
 
@@ -3129,6 +3499,9 @@ let _ := (← «exArgs» «ds» «cs» «env» (← «kids» «e») false);
 pure (← «say» ")".toUTF8);
 };
 } else {
+if («k» == «Kind».«XInst») then {
+pure (← «exInst» «ds» «cs» «env» «e»);
+} else {
 if («k» == «Kind».«XMethod») then {
 pure (← «exMethod» «ds» «cs» «env» «e»);
 } else {
@@ -3177,6 +3550,7 @@ let _ := (← «ex» «ds» «cs» «env» (← «kid» «e» (0 : Int)));
 pure (← «say» "), (int64_t)0)".toUTF8);
 } else {
 pure (← «fatal» "internal: expression kind".toUTF8 (← «lineOf» «e»));
+};
 };
 };
 };
@@ -5033,7 +5407,7 @@ pure («PR».«PR» (← «list» «Kind».«Params» (← «at» «ts0») (← 
 }
 
 mutual
-def «chk» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («e» : «Node») : Option «TG» := do {
+def «chk» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («e» : «Node») («want» : «Node») : Option «TG» := do {
 let «k» ← (pure (← «kind» «e»));
 let «line» ← (pure (← «lineOf» «e»));
 if («k» == «Kind».«XInt») then {
@@ -5085,7 +5459,7 @@ let «c» ← (pure (← «find» (← «allCases» «ds») «Kind».«DCase» (
 if (← «found» «c») then {
 pure (← «chkCtor» «ds» «env» «gam» «c» «e»);
 } else {
-pure (← «chkCall» «ds» «env» «gam» «e»);
+pure (← «chkCall» «ds» «env» «gam» «e» «want»);
 };
 } else {
 if («k» == «Kind».«XMethod») then {
@@ -5095,30 +5469,30 @@ if («k» == «Kind».«XBin») then {
 pure (← «chkBin» «ds» «env» «gam» «e»);
 } else {
 if («k» == «Kind».«XUn») then {
-let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
-let «want» ← (pure (← (do {
+let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
+let «need» ← (pure (← (do {
 if (← «eqs» (← «text» «e») "-".toUTF8) then {
 pure "I64".toUTF8;
 } else {
 pure "Bool".toUTF8;
 };
 })));
-let _ := (← «needAssign» (← «tgTy» «a») (← «prim» «want») «line»);
+let _ := (← «needAssign» (← «tgTy» «a») (← «prim» «need») «line»);
 pure («TG».«TG» (← «tgTy» «a») (← «tgGam» «a») (← «withKids» «e» (← «one» (← «tgE» «a»))));
 } else {
 if («k» == «Kind».«XIf») then {
-let «c» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
+let «c» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «c») (← «prim» "Bool".toUTF8) «line»);
-let «t» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (1 : Int))));
-let «f» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (2 : Int))));
+let «t» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (1 : Int)) «want»));
+let «f» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (2 : Int)) «want»));
 let «e2» ← (pure (← «withKids» «e» («Nodes».«NCons» (← «tgE» «c») («Nodes».«NCons» (← «tgE» «t») (← «one» (← «tgE» «f»))))));
 pure («TG».«TG» (← «join» (← «tgTy» «t») (← «tgTy» «f») «line») (← «joinGam» (← «tgGam» «t») (← «tgGam» «f») (← «branchErr») «line») «e2»);
 } else {
 if («k» == «Kind».«XMatch») then {
-pure (← «chkMatch» «ds» «env» «gam» «e»);
+pure (← «chkMatch» «ds» «env» «gam» «e» «want»);
 } else {
 if («k» == «Kind».«XBlock») then {
-pure (← «chkBlock» «ds» «env» «gam» «e»);
+pure (← «chkBlock» «ds» «env» «gam» «e» «want»);
 } else {
 if («k» == «Kind».«XWhile») then {
 pure (← «chkWhile» «ds» «env» «gam» «e»);
@@ -5136,7 +5510,7 @@ let _ := (← «err» "assignment to non-var".toUTF8 (← «text» «e») «line
 } else {
 let _ := ();
 };
-let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
+let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «a») (← «bound» (← «kid» «b» (0 : Int)) (← «tgTy» «a»)) «line»);
 pure («TG».«TG» (← «prim» "Unit".toUTF8) (← «setG» (← «tgGam» «a») («Node».«Node» «Kind».«GVar» (← «text» «e») "".toUTF8 (0 : Int) (0 : Int) (← «tyCaps» (← «tgTy» «a»)))) (← «withKids» «e» (← «one» (← «tgE» «a»))));
 } else {
@@ -5166,9 +5540,9 @@ pure (!«done»)
 let mut «e2» := «e2»;
 let mut «done» := «done»;
 let mut «g» := «g»;
-let «c» ← (pure (← «chk» «ds» «env» «g» (← «kid» «e» (0 : Int))));
+let «c» ← (pure (← «chk» «ds» «env» «g» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «c») (← «prim» "Bool".toUTF8) (← «lineOf» «e»));
-let «b» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (1 : Int))));
+let «b» ← (pure (← «chk» «ds» «env» (← «tgGam» «c») (← «kid» «e» (1 : Int)) «Node».«NoNode»));
 let «w» ← (pure (← «joinGam» «g» (← «joinGam» (← «tgGam» «c») (← «tgGam» «b») «what» (← «lineOf» «e»)) «what» (← «lineOf» «e»)));
 «done» := (← «within» «w» «g»);
 «g» := «w»;
@@ -5194,8 +5568,8 @@ partial_fixpoint
 def «chkBin» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («e» : «Node») : Option «TG» := do {
 let «op» ← (pure (← «text» «e»));
 let «line» ← (pure (← «lineOf» «e»));
-let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
-let «b» ← (pure (← «chk» «ds» «env» (← «tgGam» «a») (← «kid» «e» (1 : Int))));
+let «a» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
+let «b» ← (pure (← «chk» «ds» «env» (← «tgGam» «a») (← «kid» «e» (1 : Int)) «Node».«NoNode»));
 let «ta» ← (pure (← «tgTy» «a»));
 let «tb» ← (pure (← «tgTy» «b»));
 let «e2» ← (pure (← «withKids» «e» («Nodes».«NCons» (← «tgE» «a») (← «one» (← «tgE» «b»)))));
@@ -5271,7 +5645,7 @@ let mut «a» := «a»;
 let mut «caps» := «caps»;
 let mut «gam» := «gam»;
 let mut «fs» := «fs»;
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a»)));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a») «Node».«NoNode»));
 let «ft» ← (pure (← «kid» (← «head» «fs») (0 : Int)));
 if (!(← «eqs» (← «text» (← «tgTy» «x»)) (← «text» «ft»))) then {
 let _ := (← «needAssign» (← «tgTy» «x») «ft» «line»);
@@ -5324,7 +5698,7 @@ let mut «a2» := «a2»;
 let mut «a» := «a»;
 let mut «gam» := «gam»;
 let mut «ps» := «ps»;
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a»)));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a») «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «x») (← «kid» (← «head» «ps») (0 : Int)) «line»);
 «gam» := (← «tgGam» «x»);
 «a2» := («Nodes».«NCons» (← «tgE» «x») «a2»);
@@ -5373,10 +5747,10 @@ pure («TG».«TG» (← «kid» «op» (1 : Int)) (← «step» «ds» «gam» 
 }
 partial_fixpoint
 
-def «chkCall_loop0» («gam» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
+def «chkCall_loop0» («gam» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («want» : «Node») («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
 if (← (fun ((_, «a», _) : («Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «a»))
-} : Option Bool)) st') then «chkCall_loop0» «gam» «ps» «f» «line» «e» «gam0» «env» «ds» (← (fun ((«p», «a», «m») : («Nodes» × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkCall_loop0» «gam» «ps» «f» «line» «want» «e» «gam0» «env» «ds» (← (fun ((«p», «a», «m») : («Nodes» × «Nodes» × «Nodes»)) => (do {
 let mut «p» := «p»;
 let mut «a» := «a»;
 let mut «m» := «m»;
@@ -5429,12 +5803,13 @@ pure («p», «a», «m»)
 }
 partial_fixpoint
 
-def «chkCall_loop1» («m» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes») := do {
-if (← (fun ((_, _, _, «a», _) : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
+def «chkCall_loop1» («tps» : «Nodes») («m» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («want» : «Node») («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes») := do {
+if (← (fun ((_, _, _, _, «a», _) : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «a»))
-} : Option Bool)) st') then «chkCall_loop1» «m» «ps» «f» «line» «e» «gam0» «env» «ds» (← (fun ((«a2», «rho», «p», «a», «gam») : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkCall_loop1» «tps» «m» «ps» «f» «line» «want» «e» «gam0» «env» «ds» (← (fun ((«a2», «rho», «sub», «p», «a», «gam») : («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 let mut «a2» := «a2»;
 let mut «rho» := «rho»;
+let mut «sub» := «sub»;
 let mut «p» := «p»;
 let mut «a» := «a»;
 let mut «gam» := «gam»;
@@ -5444,8 +5819,26 @@ if (← «isProto» «ds» (← «text» «pt»)) then {
 } else {
 let _ := ();
 };
+if (← «isTP» «tps» «pt») then {
+let «bnd» ← (pure (← «find» «sub» «Kind».«Binder» (← «text» «pt»)));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a») (← (do {
+if (← «found» «bnd») then {
+pure (← «kid» «bnd» (0 : Int));
+} else {
+pure «Node».«NoNode»;
+};
+}))));
+«gam» := (← «tgGam» «x»);
+«a2» := («Nodes».«NCons» (← «tgE» «x») «a2»);
+if (← «found» «bnd») then {
+let _ := (← «needSame» (← «tgTy» «x») (← «kid» «bnd» (0 : Int)) «line»);
+} else {
+«sub» := («Nodes».«NCons» («Node».«Node» «Kind».«Binder» (← «text» «pt») "".toUTF8 (0 : Int) «line» (← «one» (← «tgTy» «x»))) «sub»);
+};
+«rho» := (← «union» «rho» (← «tyCaps» (← «tgTy» «x»)));
+} else {
 if (!(← «isProto» «ds» (← «text» «pt»))) then {
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a»)));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a») «pt»));
 «gam» := (← «tgGam» «x»);
 «a2» := («Nodes».«NCons» (← «tgE» «x») «a2»);
 if (← (do {
@@ -5467,17 +5860,18 @@ let _ := (← «needAssign» (← «tgTy» «x») (← «mkTy» (← «text» «
 } else {
 let _ := ();
 };
+};
 «a» := (← «tail» «a»);
 «p» := (← «tail» «p»);
-pure («a2», «rho», «p», «a», «gam»)
-} : Option («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»))) st') else pure st'
+pure («a2», «rho», «sub», «p», «a», «gam»)
+} : Option («Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes» × «Nodes»))) st') else pure st'
 }
 partial_fixpoint
 
-def «chkCall_loop2» («a2» : «Nodes») («rho» : «Nodes») («a» : «Nodes») («m» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «chkCall_loop2» («a2» : «Nodes») («rho» : «Nodes») («sub» : «Nodes») («tps» : «Nodes») («a» : «Nodes») («m» : «Nodes») («ps» : «Nodes») («f» : «Node») («line» : Int) («want» : «Node») («e» : «Node») («gam0» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«p», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «p»))
-} : Option Bool)) st') then «chkCall_loop2» «a2» «rho» «a» «m» «ps» «f» «line» «e» «gam0» «env» «ds» (← (fun ((«p», «gam») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkCall_loop2» «a2» «rho» «sub» «tps» «a» «m» «ps» «f» «line» «want» «e» «gam0» «env» «ds» (← (fun ((«p», «gam») : («Nodes» × «Nodes»)) => (do {
 let mut «p» := «p»;
 let mut «gam» := «gam»;
 let «pt» ← (pure (← «kid» (← «head» «p») (0 : Int)));
@@ -5523,7 +5917,7 @@ pure («p», «gam»)
 }
 partial_fixpoint
 
-def «chkCall» («ds» : «Nodes») («env» : «Nodes») («gam0» : «Nodes») («e» : «Node») : Option «TG» := do {
+def «chkCall» («ds» : «Nodes») («env» : «Nodes») («gam0» : «Nodes») («e» : «Node») («want» : «Node») : Option «TG» := do {
 let «line» ← (pure (← «lineOf» «e»));
 let «f» ← (pure (← «find» «ds» «Kind».«DFn» (← «text» «e»)));
 if (!(← «found» «f»)) then {
@@ -5541,25 +5935,29 @@ let mut «m» := «Nodes».«NNil»;
 let mut «gam» := «gam0»;
 let mut «a» := (← «kids» «e»);
 let mut «p» := «ps»;
-let t_ ← «chkCall_loop0» «gam» «ps» «f» «line» «e» «gam0» «env» «ds» («p», «a», «m»);
+let t_ ← «chkCall_loop0» «gam» «ps» «f» «line» «want» «e» «gam0» «env» «ds» («p», «a», «m»);
 «p» := t_.1;
 «a» := t_.2.1;
 «m» := t_.2.2;
+let «tps» ← (pure (← «tparams» «f»));
+let mut «sub» := «Nodes».«NNil»;
 let mut «rho» := «Nodes».«NNil»;
 let mut «a2» := «Nodes».«NNil»;
 «a» := (← «kids» «e»);
 «p» := «ps»;
-let t_ ← «chkCall_loop1» «m» «ps» «f» «line» «e» «gam0» «env» «ds» («a2», «rho», «p», «a», «gam»);
+let t_ ← «chkCall_loop1» «tps» «m» «ps» «f» «line» «want» «e» «gam0» «env» «ds» («a2», «rho», «sub», «p», «a», «gam»);
 «a2» := t_.1;
 «rho» := t_.2.1;
-«p» := t_.2.2.1;
-«a» := t_.2.2.2.1;
-«gam» := t_.2.2.2.2;
+«sub» := t_.2.2.1;
+«p» := t_.2.2.2.1;
+«a» := t_.2.2.2.2.1;
+«gam» := t_.2.2.2.2.2;
 «p» := «ps»;
-let t_ ← «chkCall_loop2» «a2» «rho» «a» «m» «ps» «f» «line» «e» «gam0» «env» «ds» («p», «gam»);
+let t_ ← «chkCall_loop2» «a2» «rho» «sub» «tps» «a» «m» «ps» «f» «line» «want» «e» «gam0» «env» «ds» («p», «gam»);
 «p» := t_.1;
 «gam» := t_.2;
 let «rt» ← (pure (← «kid» «f» (1 : Int)));
+if (← «isNil» «tps») then {
 let «caps» ← (pure (← (do {
 if (← (do {
 if (← «isEnum» «ds» (← «text» «rt»)) then {
@@ -5574,13 +5972,41 @@ pure (← «mapCaps» (← «tyCaps» «rt») «m»);
 };
 })));
 pure («TG».«TG» (← «mkTy» (← «text» «rt») «caps») «gam» (← «withKids» «e» (← «rev» «a2»)));
+} else {
+if (← (do {
+if (← (do {
+if (← «isTP» «tps» «rt») then {
+pure (!(← «found» (← «find» «sub» «Kind».«Binder» (← «text» «rt»))))
+} else {
+pure false
+}
+})) then {
+pure (← «found» «want»)
+} else {
+pure false
+}
+})) then {
+«sub» := («Nodes».«NCons» («Node».«Node» «Kind».«Binder» (← «text» «rt») "".toUTF8 (0 : Int) «line» (← «one» «want»)) «sub»);
+} else {
+let _ := ();
+};
+let «targs» ← (pure (← «instArgs» «tps» «sub» «line»));
+let «res» ← (pure (← (do {
+if (← «isTP» «tps» «rt») then {
+pure (← «mkTy» (← «text» (← «kid» (← «find» «sub» «Kind».«Binder» (← «text» «rt»)) (0 : Int))) «rho»);
+} else {
+pure (← «mkTy» (← «text» «rt») (← «mapCaps» (← «tyCaps» «rt») «m»));
+};
+})));
+pure («TG».«TG» «res» «gam» («Node».«Node» «Kind».«XInst» (← «text» «e») "".toUTF8 (0 : Int) «line» («Nodes».«NCons» (← «list» «Kind».«Names» «line» «targs») (← «rev» «a2»))));
+};
 }
 partial_fixpoint
 
-def «chkMatch_loop1» («c» : «Node») («arm» : «Node») («arms2» : «Nodes») («out» : «Nodes») («res» : «Node») («wild» : Bool) («seen» : «Nodes») («arms» : «Nodes») («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
+def «chkMatch_loop1» («c» : «Node») («arm» : «Node») («arms2» : «Nodes») («out» : «Nodes») («res» : «Node») («wild» : Bool) («seen» : «Nodes») («arms» : «Nodes») («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («want» : «Node») («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
 if (← (fun ((_, «bs», _) : («Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «bs»))
-} : Option Bool)) st') then «chkMatch_loop1» «c» «arm» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «e» «gam» «env» «ds» (← (fun ((«fs», «bs», «env2») : («Nodes» × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkMatch_loop1» «c» «arm» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» (← (fun ((«fs», «bs», «env2») : («Nodes» × «Nodes» × «Nodes»)) => (do {
 let mut «fs» := «fs»;
 let mut «bs» := «bs»;
 let mut «env2» := «env2»;
@@ -5600,10 +6026,10 @@ pure («fs», «bs», «env2»)
 }
 partial_fixpoint
 
-def «chkMatch_loop0» («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes») := do {
+def «chkMatch_loop0» («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («want» : «Node») («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes») := do {
 if (← (fun ((_, _, _, _, _, «arms») : («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «arms»))
-} : Option Bool)) st') then «chkMatch_loop0» «en» «st» «s» «line» «e» «gam» «env» «ds» (← (fun ((«arms2», «out», «res», «wild», «seen», «arms») : («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkMatch_loop0» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» (← (fun ((«arms2», «out», «res», «wild», «seen», «arms») : («Nodes» × «Nodes» × «Node» × Bool × «Nodes» × «Nodes»)) => (do {
 let mut «arms2» := «arms2»;
 let mut «out» := «out»;
 let mut «res» := «res»;
@@ -5629,12 +6055,12 @@ let _ := (← «err» "pattern arity".toUTF8 (← «text» «arm») (← «lineO
 } else {
 let _ := ();
 };
-let t_ ← «chkMatch_loop1» «c» «arm» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «e» «gam» «env» «ds» («fs», «bs», «env2»);
+let t_ ← «chkMatch_loop1» «c» «arm» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» («fs», «bs», «env2»);
 «fs» := t_.1;
 «bs» := t_.2.1;
 «env2» := t_.2.2;
 };
-let «x» ← (pure (← «chk» «ds» «env2» (← «tgGam» «s») (← «kid» «arm» (0 : Int))));
+let «x» ← (pure (← «chk» «ds» «env2» (← «tgGam» «s») (← «kid» «arm» (0 : Int)) «want»));
 «arms2» := («Nodes».«NCons» (← «withKids» «arm» («Nodes».«NCons» (← «tgE» «x») (← «tail» (← «kids» «arm»)))) «arms2»);
 if (← «found» «res») then {
 «res» := (← «join» «res» (← «tgTy» «x») (← «lineOf» «arm»));
@@ -5649,10 +6075,10 @@ pure («arms2», «out», «res», «wild», «seen», «arms»)
 }
 partial_fixpoint
 
-def «chkMatch_loop2» («arms2» : «Nodes») («out» : «Nodes») («res» : «Node») («wild» : Bool) («seen» : «Nodes») («arms» : «Nodes») («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+def «chkMatch_loop2» («arms2» : «Nodes») («out» : «Nodes») («res» : «Node») («wild» : Bool) («seen» : «Nodes») («arms» : «Nodes») («en» : «Node») («st» : «Node») («s» : «TG») («line» : Int) («want» : «Node») («e» : «Node») («gam» : «Nodes») («env» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («cs» : («Nodes»)) => (do {
 pure (!(← «isNil» «cs»))
-} : Option Bool)) st') then «chkMatch_loop2» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «e» «gam» «env» «ds» (← (fun («cs» : («Nodes»)) => (do {
+} : Option Bool)) st') then «chkMatch_loop2» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» (← (fun («cs» : («Nodes»)) => (do {
 let mut «cs» := «cs»;
 if (!(← «has» «seen» (← «text» (← «head» «cs»)))) then {
 let _ := (← «err» "match is not exhaustive, missing case".toUTF8 (← «text» (← «head» «cs»)) «line»);
@@ -5665,9 +6091,9 @@ pure «cs»
 }
 partial_fixpoint
 
-def «chkMatch» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («e» : «Node») : Option «TG» := do {
+def «chkMatch» («ds» : «Nodes») («env» : «Nodes») («gam» : «Nodes») («e» : «Node») («want» : «Node») : Option «TG» := do {
 let «line» ← (pure (← «lineOf» «e»));
-let «s» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
+let «s» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
 let «st» ← (pure (← «tgTy» «s»));
 let «en» ← (pure (← «find» «ds» «Kind».«DEnum» (← «text» «st»)));
 if (!(← «found» «en»)) then {
@@ -5681,7 +6107,7 @@ let mut «wild» := false;
 let mut «res» := «Node».«NoNode»;
 let mut «out» := «Nodes».«NNil»;
 let mut «arms2» := «Nodes».«NNil»;
-let t_ ← «chkMatch_loop0» «en» «st» «s» «line» «e» «gam» «env» «ds» («arms2», «out», «res», «wild», «seen», «arms»);
+let t_ ← «chkMatch_loop0» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» («arms2», «out», «res», «wild», «seen», «arms»);
 «arms2» := t_.1;
 «out» := t_.2.1;
 «res» := t_.2.2.1;
@@ -5690,7 +6116,7 @@ let t_ ← «chkMatch_loop0» «en» «st» «s» «line» «e» «gam» «env»
 «arms» := t_.2.2.2.2.2;
 if (!«wild») then {
 let mut «cs» := (← «kids» «en»);
-let t_ ← «chkMatch_loop2» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «e» «gam» «env» «ds» «cs»;
+let t_ ← «chkMatch_loop2» «arms2» «out» «res» «wild» «seen» «arms» «en» «st» «s» «line» «want» «e» «gam» «env» «ds» «cs»;
 «cs» := t_;
 } else {
 let _ := ();
@@ -5699,15 +6125,15 @@ pure («TG».«TG» «res» «out» (← «withKids» «e» («Nodes».«NCons»
 }
 partial_fixpoint
 
-def «chkBlock_loop1» («init» : «Node») («h» : «Node») («k» : «Kind») («s» : «Node») («ss2» : «Nodes») («c» : «Nodes») («res» : «Node») («caps» : «Nodes») («env» : «Nodes») («line» : Int) («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes» × «Nodes») := do {
+def «chkBlock_loop1» («init» : «Node») («h» : «Node») («k» : «Kind») («s» : «Node») («ss2» : «Nodes») («c» : «Nodes») («res» : «Node») («caps» : «Nodes») («env» : «Nodes») («line» : Int) («want» : «Node») («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes» × «Nodes») := do {
 if (← (fun ((_, «a», _, _) : («Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «a»))
-} : Option Bool)) st') then «chkBlock_loop1» «init» «h» «k» «s» «ss2» «c» «res» «caps» «env» «line» «blk» «gam0» «env0» «ds» (← (fun ((«a2», «a», «ps», «gam») : («Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkBlock_loop1» «init» «h» «k» «s» «ss2» «c» «res» «caps» «env» «line» «want» «blk» «gam0» «env0» «ds» (← (fun ((«a2», «a», «ps», «gam») : («Nodes» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 let mut «a2» := «a2»;
 let mut «a» := «a»;
 let mut «ps» := «ps»;
 let mut «gam» := «gam»;
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a»)));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «head» «a») «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «x») (← «kid» (← «head» «ps») (0 : Int)) (← «lineOf» «s»));
 «gam» := (← «tgGam» «x»);
 «a2» := («Nodes».«NCons» (← «tgE» «x») «a2»);
@@ -5718,10 +6144,10 @@ pure («a2», «a», «ps», «gam»)
 }
 partial_fixpoint
 
-def «chkBlock_loop0» («line» : Int) («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes») := do {
+def «chkBlock_loop0» («line» : Int) («want» : «Node») («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes») := do {
 if (← (fun ((_, «c», _, _, _, _) : («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «chkBlock_loop0» «line» «blk» «gam0» «env0» «ds» (← (fun ((«ss2», «c», «res», «caps», «gam», «env») : («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «chkBlock_loop0» «line» «want» «blk» «gam0» «env0» «ds» (← (fun ((«ss2», «c», «res», «caps», «gam», «env») : («Nodes» × «Nodes» × «Node» × «Nodes» × «Nodes» × «Nodes»)) => (do {
 let mut «ss2» := «ss2»;
 let mut «c» := «c»;
 let mut «res» := «res»;
@@ -5734,7 +6160,13 @@ if («k» == «Kind».«SClause») then {
 «ss2» := («Nodes».«NCons» «s» «ss2»);
 } else {
 if («k» == «Kind».«SVal») then {
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int))));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int)) (← (do {
+if (← «isNil» (← «tail» (← «kids» «s»))) then {
+pure «Node».«NoNode»;
+} else {
+pure (← «kid» «s» (1 : Int));
+};
+}))));
 «ss2» := («Nodes».«NCons» (← «withKids» «s» («Nodes».«NCons» (← «tgE» «x») (← «tail» (← «kids» «s»)))) «ss2»);
 «gam» := (← «tgGam» «x»);
 let mut «t» := (← «tgTy» «x»);
@@ -5785,7 +6217,7 @@ let _ := (← «err» "handler init arity".toUTF8 (← «text2» «s») (← «l
 } else {
 let _ := ();
 };
-let t_ ← «chkBlock_loop1» «init» «h» «k» «s» «ss2» «c» «res» «caps» «env» «line» «blk» «gam0» «env0» «ds» («a2», «a», «ps», «gam»);
+let t_ ← «chkBlock_loop1» «init» «h» «k» «s» «ss2» «c» «res» «caps» «env» «line» «want» «blk» «gam0» «env0» «ds» («a2», «a», «ps», «gam»);
 «a2» := t_.1;
 «a» := t_.2.1;
 «ps» := t_.2.2.1;
@@ -5797,7 +6229,13 @@ let «p» ← (pure (← «find» «ds» «Kind».«DProto» (← «text2» «h�
 «caps» := («Nodes».«NCons» («Node».«Node» «Kind».«BVar» (← «text» «s») (← «text» «p») (2 : Int) (← «lineOf» «s») «Nodes».«NNil») «caps»);
 «res» := (← «prim» "Unit".toUTF8);
 } else {
-let «x» ← (pure (← «chk» «ds» «env» «gam» «s»));
+let «x» ← (pure (← «chk» «ds» «env» «gam» «s» (← (do {
+if (← «isNil» (← «tail» «c»)) then {
+pure «want»;
+} else {
+pure «Node».«NoNode»;
+};
+}))));
 «ss2» := («Nodes».«NCons» (← «tgE» «x») «ss2»);
 «gam» := (← «tgGam» «x»);
 «res» := (← «tgTy» «x»);
@@ -5810,10 +6248,10 @@ pure («ss2», «c», «res», «caps», «gam», «env»)
 }
 partial_fixpoint
 
-def «chkBlock_loop2» («ss2» : «Nodes») («c» : «Nodes») («res» : «Node») («gam» : «Nodes») («env» : «Nodes») («line» : Int) («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+def «chkBlock_loop2» («ss2» : «Nodes») («c» : «Nodes») («res» : «Node») («gam» : «Nodes») («env» : «Nodes») («line» : Int) («want» : «Node») («blk» : «Node») («gam0» : «Nodes») («env0» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («caps» : («Nodes»)) => (do {
 pure (!(← «isNil» «caps»))
-} : Option Bool)) st') then «chkBlock_loop2» «ss2» «c» «res» «gam» «env» «line» «blk» «gam0» «env0» «ds» (← (fun («caps» : («Nodes»)) => (do {
+} : Option Bool)) st') then «chkBlock_loop2» «ss2» «c» «res» «gam» «env» «line» «want» «blk» «gam0» «env0» «ds» (← (fun («caps» : («Nodes»)) => (do {
 let mut «caps» := «caps»;
 let «b» ← (pure (← «head» «caps»));
 let «p» ← (pure (← «find» «ds» «Kind».«DProto» (← «text2» «b»)));
@@ -5862,7 +6300,7 @@ pure «caps»
 }
 partial_fixpoint
 
-def «chkBlock» («ds» : «Nodes») («env0» : «Nodes») («gam0» : «Nodes») («blk» : «Node») : Option «TG» := do {
+def «chkBlock» («ds» : «Nodes») («env0» : «Nodes») («gam0» : «Nodes») («blk» : «Node») («want» : «Node») : Option «TG» := do {
 let «line» ← (pure (← «lineOf» «blk»));
 let mut «env» := «env0»;
 let mut «gam» := «gam0»;
@@ -5870,20 +6308,132 @@ let mut «caps» := «Nodes».«NNil»;
 let mut «res» := (← «prim» "Unit".toUTF8);
 let mut «c» := (← «kids» «blk»);
 let mut «ss2» := «Nodes».«NNil»;
-let t_ ← «chkBlock_loop0» «line» «blk» «gam0» «env0» «ds» («ss2», «c», «res», «caps», «gam», «env»);
+let t_ ← «chkBlock_loop0» «line» «want» «blk» «gam0» «env0» «ds» («ss2», «c», «res», «caps», «gam», «env»);
 «ss2» := t_.1;
 «c» := t_.2.1;
 «res» := t_.2.2.1;
 «caps» := t_.2.2.2.1;
 «gam» := t_.2.2.2.2.1;
 «env» := t_.2.2.2.2.2;
-let t_ ← «chkBlock_loop2» «ss2» «c» «res» «gam» «env» «line» «blk» «gam0» «env0» «ds» «caps»;
+let t_ ← «chkBlock_loop2» «ss2» «c» «res» «gam» «env» «line» «want» «blk» «gam0» «env0» «ds» «caps»;
 «caps» := t_;
 pure («TG».«TG» «res» (← «drop» «gam» ((← «len» «gam») - (← «len» «gam0»))) (← «withKids» «blk» (← «rev» «ss2»)));
 }
 partial_fixpoint
 
 end
+
+def «isMade_loop0» («x» : «Node») («made» : «Nodes») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
+if (← (fun ((«res», «c») : (Bool × «Nodes»)) => (do {
+pure (← (do {
+if (!«res») then {
+pure (!(← «isNil» «c»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «isMade_loop0» «x» «made» (← (fun ((«res», «c») : (Bool × «Nodes»)) => (do {
+let mut «res» := «res»;
+let mut «c» := «c»;
+«res» := (← (do {
+if (← «eqs» (← «text» (← «head» «c»)) (← «text» «x»)) then {
+pure (← «sameNames» (← «kids» (← «kid» (← «head» «c») (4 : Int))) (← «kids» (← «kid» «x» (0 : Int))))
+} else {
+pure false
+}
+}));
+«c» := (← «tail» «c»);
+pure («res», «c»)
+} : Option (Bool × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «isMade» («made» : «Nodes») («x» : «Node») : Option Bool := do {
+let mut «c» := «made»;
+let mut «res» := false;
+let t_ ← «isMade_loop0» «x» «made» («res», «c»);
+«res» := t_.1;
+«c» := t_.2;
+pure «res»;
+}
+
+def «instantiate» («f» : «Node») («targs» : «Nodes») : Option «Node» := do {
+let «g» ← (pure (← «substTy» «f» (← «tparams» «f») «targs»));
+pure (← «withKids» «g» («Nodes».«NCons» (← «kid» «g» (0 : Int)) («Nodes».«NCons» (← «kid» «g» (1 : Int)) («Nodes».«NCons» (← «kid» «g» (2 : Int)) («Nodes».«NCons» (← «kid» «g» (3 : Int)) (← «one» (← «list» «Kind».«Names» (← «lineOf» «f») «targs»)))))));
+}
+
+def «fname» («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
+if («tag» == (1 : Int)) then {
+let _ := (← «say» "f_".toUTF8);
+} else {
+let _ := ();
+};
+if («tag» == (2 : Int)) then {
+let _ := (← «say» "h_".toUTF8);
+let _ := (← «say» «h»);
+let _ := (← «say» "_".toUTF8);
+} else {
+let _ := ();
+};
+let _ := (← «say» (← «text» «f»));
+if ((← «kind» (← «kid» «f» (4 : Int))) == «Kind».«Names») then {
+pure (← «typeSuffix» (← «kids» (← «kid» «f» (4 : Int))));
+} else {
+pure ();
+};
+}
+
+def «slotType» («ds» : «Nodes») («f» : «Node») («t» : «Node») : Option Unit := do {
+if (← «isTParamOf» «f» (← «text» «t»)) then {
+pure (← «say» "void*".toUTF8);
+} else {
+pure (← «ctype» «ds» «t»);
+};
+}
+
+def «sig_loop0» («h» : ByteArray) («tag» : Int) («f» : «Node») («ds» : «Nodes») (st' : (Bool × «Nodes»)) : Option (Bool × «Nodes») := do {
+if (← (fun ((_, «ps») : (Bool × «Nodes»)) => (do {
+pure (!(← «isNil» «ps»))
+} : Option Bool)) st') then «sig_loop0» «h» «tag» «f» «ds» (← (fun ((«first», «ps») : (Bool × «Nodes»)) => (do {
+let mut «first» := «first»;
+let mut «ps» := «ps»;
+if (!«first») then {
+let _ := (← «say» ", ".toUTF8);
+} else {
+let _ := ();
+};
+«first» := false;
+let _ := (← «slotType» «ds» «f» (← «kid» (← «head» «ps») (0 : Int)));
+let _ := (← «say» " p_".toUTF8);
+let _ := (← «say» (← «text» (← «head» «ps»)));
+«ps» := (← «tail» «ps»);
+pure («first», «ps»)
+} : Option (Bool × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «sig» («ds» : «Nodes») («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
+if («tag» != (0 : Int)) then {
+let _ := (← «say» "static ".toUTF8);
+} else {
+let _ := ();
+};
+let _ := (← «slotType» «ds» «f» (← «kid» «f» (1 : Int)));
+let _ := (← «say» " ".toUTF8);
+let _ := (← «fname» «f» «tag» «h»);
+let _ := (← «say» "(".toUTF8);
+let mut «ps» := (← «kids» (← «kid» «f» (0 : Int)));
+if (← «isNil» «ps») then {
+let _ := (← «say» "void".toUTF8);
+} else {
+let _ := ();
+};
+let mut «first» := true;
+let t_ ← «sig_loop0» «h» «tag» «f» «ds» («first», «ps»);
+«first» := t_.1;
+«ps» := t_.2;
+pure (← «say» ")".toUTF8);
+}
 
 def «body» («ds» : «Nodes») («cs» : «Nodes») («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
 let _ := (← «sig» «ds» «f» «tag» «h»);
@@ -6201,7 +6751,7 @@ let mut «gam» := «gam»;
 let mut «env» := «env»;
 let «s» ← (pure (← «head» «c»));
 if ((← «kind» «s») == «Kind».«SVal») then {
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int))));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int)) «Node».«NoNode»));
 let «t» ← (pure (← (do {
 if (!(← «isNil» (← «tail» (← «kids» «s»)))) then {
 pure (← «kid» «s» (1 : Int));
@@ -6225,7 +6775,7 @@ pure ((← «kind» «s») == «Kind».«SHandle»)
 })) then {
 let _ := ();
 } else {
-«gam» := (← «tgGam» (← «chk» «ds» «env» «gam» «s»));
+«gam» := (← «tgGam» (← «chk» «ds» «env» «gam» «s» «Node».«NoNode»));
 };
 };
 «c» := (← «tail» «c»);
@@ -6470,10 +7020,10 @@ let t_ ← «opDecl_loop0» «rt» «ps» «name» «line» «ts0» («more», �
 pure («PR».«PR» («Node».«Node» «Kind».«DOp» «name» "".toUTF8 (0 : Int) «line» («Nodes».«NCons» (← «pn» «ps») («Nodes».«NCons» (← «pn» «rt») (← «one» (← «list» «Kind».«Names» «line» (← «rev» «tr»)))))) «ts»);
 }
 
-def «checkFn_loop0» («res» : «TG») («ps» : «Nodes») («f» : «Node») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+def «checkFn_loop0» («res» : «TG») («ps» : «Nodes») («ds» : «Nodes») («f» : «Node») («ds0» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («c» : («Nodes»)) => (do {
 pure (!(← «isNil» «c»))
-} : Option Bool)) st') then «checkFn_loop0» «res» «ps» «f» «ds» (← (fun («c» : («Nodes»)) => (do {
+} : Option Bool)) st') then «checkFn_loop0» «res» «ps» «ds» «f» «ds0» (← (fun («c» : («Nodes»)) => (do {
 let mut «c» := «c»;
 let «t» ← (pure (← «kid» (← «head» «c») (0 : Int)));
 if (← «isProto» «ds» (← «text» «t»)) then {
@@ -6498,14 +7048,70 @@ pure «c»
 }
 partial_fixpoint
 
-def «checkFn» («ds» : «Nodes») («f» : «Node») : Option «Node» := do {
+def «checkFn» («ds0» : «Nodes») («f» : «Node») : Option «Node» := do {
+let «ds» ← (pure (← «withTParams» «ds0» «f»));
 let «ps» ← (pure (← «kids» (← «kid» «f» (0 : Int))));
-let «res» ← (pure (← «chk» «ds» (← «fnEnv» «ds» «ps») (← «fnGam» «ds» «ps») (← «kid» «f» (2 : Int))));
+let «res» ← (pure (← «chk» «ds» (← «fnEnv» «ds» «ps») (← «fnGam» «ds» «ps») (← «kid» «f» (2 : Int)) «Node».«NoNode»));
 let _ := (← «needAssign» (← «tgTy» «res») (← «sigTy» «ds» «ps» (← «kid» «f» (1 : Int))) (← «lineOf» «f»));
 let mut «c» := «ps»;
-let t_ ← «checkFn_loop0» «res» «ps» «f» «ds» «c»;
+let t_ ← «checkFn_loop0» «res» «ps» «ds» «f» «ds0» «c»;
 «c» := t_;
 pure (← «withKids» «f» («Nodes».«NCons» (← «kid» «f» (0 : Int)) («Nodes».«NCons» (← «kid» «f» (1 : Int)) («Nodes».«NCons» (← «tgE» «res») (← «tail» (← «tail» (← «tail» (← «kids» «f»))))))));
+}
+
+def «mono_loop0» («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «mono_loop0» «ds» (← (fun ((«c», «todo») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «todo» := «todo»;
+if (!(← «isGeneric» (← «head» «c»))) then {
+«todo» := (← «insts» (← «head» «c») «todo»);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «todo»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «mono_loop1» («c» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((_, «todo») : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «todo»))
+} : Option Bool)) st') then «mono_loop1» «c» «ds» (← (fun ((«made», «todo») : («Nodes» × «Nodes»)) => (do {
+let mut «made» := «made»;
+let mut «todo» := «todo»;
+let «x» ← (pure (← «head» «todo»));
+«todo» := (← «tail» «todo»);
+let «f» ← (pure (← «find» «ds» «Kind».«DFn» (← «text» «x»)));
+if ((← «num» «f») == (1 : Int)) then {
+let _ := (← «needPointers» «ds» «x»);
+} else {
+if (!(← «isMade» «made» «x»)) then {
+let «g» ← (pure (← «instantiate» «f» (← «kids» (← «kid» «x» (0 : Int)))));
+«made» := («Nodes».«NCons» «g» «made»);
+«todo» := (← «insts» (← «kid» «g» (2 : Int)) «todo»);
+} else {
+let _ := ();
+};
+};
+pure («made», «todo»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «mono» («ds» : «Nodes») : Option «Nodes» := do {
+let mut «todo» := «Nodes».«NNil»;
+let mut «c» := «ds»;
+let t_ ← «mono_loop0» «ds» («c», «todo»);
+«c» := t_.1;
+«todo» := t_.2;
+let mut «made» := «Nodes».«NNil»;
+let t_ ← «mono_loop1» «c» «ds» («made», «todo»);
+«made» := t_.1;
+«todo» := t_.2;
+pure (← «append» «ds» (← «rev» «made»));
 }
 
 def «emitProgram_loop0» («cs» : «Nodes») («ds» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
@@ -6562,8 +7168,14 @@ pure (!(← «isNil» «c»))
 let mut «c» := «c»;
 let «d» ← (pure (← «head» «c»));
 if (← (do {
+if (← (do {
 if ((← «kind» «d») == «Kind».«DFn») then {
 pure ((← «num» «d») != (2 : Int))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isGeneric» «d»))
 } else {
 pure false
 }
@@ -6620,8 +7232,14 @@ pure (!(← «isNil» «c»))
 let mut «c» := «c»;
 let «d» ← (pure (← «head» «c»));
 if (← (do {
+if (← (do {
 if ((← «kind» «d») == «Kind».«DFn») then {
 pure ((← «num» «d») == (0 : Int))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isGeneric» «d»))
 } else {
 pure false
 }
@@ -6797,7 +7415,7 @@ let _ := (← «put» «on» " ← ".toUTF8);
 let _ := (← «lxAct» «ds» «fn» «env» «gam» (← «kid» «s» (0 : Int)) «on»);
 };
 let _ := (← «put» «on» ";\n".toUTF8);
-let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int))));
+let «x» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «s» (0 : Int)) «Node».«NoNode»));
 let «t» ← (pure (← (do {
 if (!(← «isNil» (← «tail» (← «kids» «s»)))) then {
 pure (← «kid» «s» (1 : Int));
@@ -6834,7 +7452,7 @@ pure «mode»;
 pure (0 : Int);
 };
 })));
-«gam» := (← «tgGam» (← «chk» «ds» «env» «gam» «s»));
+«gam» := (← «tgGam» (← «chk» «ds» «env» «gam» «s» «Node».«NoNode»));
 };
 };
 };
@@ -6914,7 +7532,7 @@ def «lsMatch» («ds» : «Nodes») («fn» : ByteArray) («env» : «Nodes») 
 let _ := (← «put» «on» "match ".toUTF8);
 let _ := (← «lx» «ds» «fn» «env» «gam» (← «kid» «e» (0 : Int)) «on»);
 let _ := (← «put» «on» " with\n".toUTF8);
-let «sx» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int))));
+let «sx» ← (pure (← «chk» «ds» «env» «gam» (← «kid» «e» (0 : Int)) «Node».«NoNode»));
 let «en» ← (pure (← «find» «ds» «Kind».«DEnum» (← «text» (← «tgTy» «sx»))));
 let mut «arms» := (← «tail» (← «kids» «e»));
 let t_ ← «lsMatch_loop0» «en» «sx» «mode» «on» «e» «gam» «env» «fn» «ds» «arms»;
@@ -7425,18 +8043,18 @@ pure (← «pr» «rt»);
 };
 })));
 if (← (do {
-if («ext» != (0 : Int)) then {
+if («ext» == (2 : Int)) then {
 pure (!(← «isNil» (← «kids» «gs»)))
 } else {
 pure false
 }
 })) then {
-let _ := (← «fatal» "binder groups on def only, not extern or spec def".toUTF8 «line»);
+let _ := (← «fatal» "binder groups on def and extern def only, not spec def".toUTF8 «line»);
 } else {
 let _ := ();
 };
 if («ext» == (1 : Int)) then {
-pure («PR».«PR» («Node».«Node» «Kind».«DFn» «name» "".toUTF8 (1 : Int) «line» («Nodes».«NCons» (← «pn» «ps») (← «one» (← «pn» «rt»)))) «after»);
+pure («PR».«PR» («Node».«Node» «Kind».«DFn» «name» "".toUTF8 (1 : Int) «line» («Nodes».«NCons» (← «pn» «ps») («Nodes».«NCons» (← «pn» «rt») («Nodes».«NCons» «Node».«NoNode» («Nodes».«NCons» (← «list» «Kind».«Names» «line» «Nodes».«NNil») (← «one» «gs»)))))) «after»);
 } else {
 let «cl» ← (pure (← (do {
 if (← (do {
@@ -7588,6 +8206,11 @@ pure (!(← «isNil» «fs»))
 } : Option Bool)) st') then «checkHandler_loop1» «ops» «p» «h» «ds» (← (fun ((«fs2», «fs») : («Nodes» × «Nodes»)) => (do {
 let mut «fs2» := «fs2»;
 let mut «fs» := «fs»;
+if (!(← «isNil» (← «kids» (← «kid» (← «head» «fs») (4 : Int))))) then {
+let _ := (← «err» "not yet: binder groups on a handler fn".toUTF8 (← «text» (← «head» «fs»)) (← «lineOf» (← «head» «fs»)));
+} else {
+let _ := ();
+};
 let _ := (← «checkSig» «ds» (← «head» «fs»));
 «fs2» := («Nodes».«NCons» (← «checkFn» «ds» (← «head» «fs»)) «fs2»);
 «fs» := (← «tail» «fs»);

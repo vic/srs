@@ -44,10 +44,32 @@ def fname(f: Node, tag: I64, h: Str): Unit =
     say("_")
   else ()
   say(text(f))
+  // an instance (mono): kid 4 = its type args
+  if kind(kid(f, 4)) == Names then typeSuffix(kids(kid(f, 4))) else ()
+
+def typeSuffix(ts: Nodes): Unit =
+  say("_")
+  var c = ts
+  while !isNil(c) do
+    say("_")
+    say(text(head(c)))
+    c = tail(c)
+
+// a type param of a generic extern is a void* slot (vic B-Q6)
+def slotType(ds: Nodes, f: Node, t: Node): Unit = if isTParamOf(f, text(t)) then say("void*") else ctype(ds, t)
+
+// n names a type param of f ({} groups of kid 4; an instance's kid 4 is Names, no groups)
+def isTParamOf(f: Node, n: Str): Bool =
+  var gs = kids(kid(f, 4))
+  var res = false
+  while !res && !isNil(gs) do
+    res = kind(head(gs)) == Group && eqs(text(head(gs)), "{") && found(find(kids(head(gs)), Binder, n))
+    gs = tail(gs)
+  res
 
 def sig(ds: Nodes, f: Node, tag: I64, h: Str): Unit =
   if tag != 0 then say("static ") else ()
-  ctype(ds, kid(f, 1))
+  slotType(ds, f, kid(f, 1))
   say(" ")
   fname(f, tag, h)
   say("(")
@@ -57,7 +79,7 @@ def sig(ds: Nodes, f: Node, tag: I64, h: Str): Unit =
   while !isNil(ps) do
     if !first then say(", ") else ()
     first = false
-    ctype(ds, kid(head(ps), 0))
+    slotType(ds, f, kid(head(ps), 0))
     say(" p_")
     say(text(head(ps)))
     ps = tail(ps)
@@ -92,7 +114,7 @@ def emitProgram(r: Region, ds: Nodes): Unit =
   c = ds
   while !isNil(c) do
     val d = head(c)
-    if kind(d) == DFn && num(d) != 2 then
+    if kind(d) == DFn && num(d) != 2 && !isGeneric(r, d) then
       sig(ds, d, 1 - num(d), "")
       say(";\n")
     else if kind(d) == DHandler then
@@ -110,7 +132,7 @@ def emitProgram(r: Region, ds: Nodes): Unit =
   c = ds
   while !isNil(c) do
     val d = head(c)
-    if kind(d) == DFn && num(d) == 0 then body(r, ds, cs, d, 1, "")
+    if kind(d) == DFn && num(d) == 0 && !isGeneric(r, d) then body(r, ds, cs, d, 1, "")
     else if kind(d) == DHandler then
       var fs = kids(d)
       while !isNil(fs) do
@@ -207,6 +229,38 @@ def regionOf(env: Nodes): Node =
 
 def opIndex(ops: Nodes, name: Str): I64 = index(ops, name)
 
+// a call of a generic fn: a def calls its instance; an extern its one C symbol, a void* result cast to its type
+def exInst(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
+  val f = find(ds, DFn, text(e))
+  val targs = kids(kid(e, 0))
+  val ext = num(f) == 1
+  val cast = ext && isTParamOf(f, text(kid(f, 1)))
+  if cast then
+    say("((")
+    ctype(ds, nth(targs, tparamIndex(f, text(kid(f, 1)))))
+    say(")")
+  else ()
+  if !ext then say("f_") else ()
+  say(text(e))
+  if !ext then typeSuffix(targs) else ()
+  say("(")
+  exArgs(r, ds, cs, env, tail(kids(e)), false)
+  say(")")
+  if cast then say(")") else ()
+
+// position of type param n among f's type params, in written order
+def tparamIndex(f: Node, n: Str): I64 =
+  var gs = kids(kid(f, 4))
+  var i = 0
+  var res = -1
+  while res < 0 && !isNil(gs) do
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+      val j = index(kids(head(gs)), n)
+      if j >= 0 then res = i + j else i = i + len(kids(head(gs)))
+    else ()
+    gs = tail(gs)
+  res
+
 def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
   val k = kind(e)
   if k == XInt then
@@ -238,6 +292,7 @@ def ex(r: Region, ds: Nodes, cs: Nodes, env: Nodes, e: Node): Unit =
       say("(")
       exArgs(r, ds, cs, env, kids(e), false)
       say(")")
+  else if k == XInst then exInst(r, ds, cs, env, e)
   else if k == XMethod then exMethod(r, ds, cs, env, e)
   else if k == XBin then
     say("(")
