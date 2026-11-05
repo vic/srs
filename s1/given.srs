@@ -77,9 +77,12 @@ def termTy {r: Region} (k: Node): Node =
   Node(Ty, text(k), "", 0, lineOf(k), one(Node(TyTo, "", "", 0, 0, rev(out))))
 
 // f's {} evidence binders as env entries (n 3): only a method-call receiver
-def evEnv {r: Region} (ds: Nodes, f: Node): Nodes =
+def evEnv {r: Region} (ds: Nodes, f: Node): Nodes = groupsEv(ds, kids(kid(f, 4)))
+
+// the {} evidence binders of groups gs as env entries
+def groupsEv {r: Region} (ds: Nodes, gs0: Nodes): Nodes =
   var out = NNil
-  var gs = kids(kid(f, 4))
+  var gs = gs0
   while !isNil(gs) do
     if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
       var bs = kids(head(gs))

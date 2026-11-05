@@ -10,29 +10,30 @@ def expandTypes {r: Region} (ds: Nodes): Nodes =
   var c = ds
   while !isNil(c) do
     val d = head(c)
-    if kind(d) == DType then checkTypeDecl(d) else ()
-    out = NCons(if kind(d) == DType then d else expandIn(ds, d), out)
+    if kind(d) == DType then checkTypeDecl(ds, d) else ()
+    // the evidence in scope of its types: a def's (or a given's) {} binders; a type's {} goals resolve against it
+    out = NCons(if kind(d) == DType then d else expandIn(ds, declEv(ds, d), d), out)
     c = tail(c)
   rev(out)
 
 // e with each Ty normalized
-def expandIn {r: Region} (ds: Nodes, e: Node): Node =
-  if kind(e) == Ty then normTy(ds, e, typeFuel())
+def expandIn {r: Region} (ds: Nodes, env: Nodes, e: Node): Node =
+  if kind(e) == Ty then normTy(ds, env, e, typeFuel())
   else
     var out = NNil
     var c = kids(e)
     while !isNil(c) do
-      out = NCons(expandIn(ds, head(c)), out)
+      out = NCons(expandIn(ds, env, head(c)), out)
       c = tail(c)
     withKids(e, rev(out))
 
 // t with its args normalized and, if it names a type decl, applied (and its match reduced); the use keeps its caps
-def normTy {r: Region} (ds: Nodes, t: Node, fuel: I64): Node =
+def normTy {r: Region} (ds: Nodes, env: Nodes, t: Node, fuel: I64): Node =
   if fuel <= 0 then errTy("type reduction ran out of fuel at", t, lineOf(t)) else ()
   var args = NNil
   var c = tyArgs(t)
   while !isNil(c) do
-    args = NCons(normTy(ds, head(c), fuel - 1), args)
+    args = NCons(normTy(ds, env, head(c), fuel - 1), args)
     c = tail(c)
   val t1 = Node(Ty, text(t), text2(t), num(t), lineOf(t), NCons(Node(TyTo, tyTo(t), "", 0, 0, rev(args)), tyCaps(t)))
   val d = find(ds, DType, text(t))
@@ -41,9 +42,11 @@ def normTy {r: Region} (ds: Nodes, t: Node, fuel: I64): Node =
     val tps = groupBinders(kids(kid(d, 0)))
     if len(tyArgs(t1)) != len(tps) then err("wrong number of type args for", text(t), lineOf(t)) else ()
     val sub = zipBind(tps, tyArgs(t1))
+    // its {} evidence: resolved at this use (as a call's, local evidence first, vic-jxk)
+    goals(ds, env, kids(kid(d, 0)), sub, NNil, givenFuel(), lineOf(t))
     val body = applyTy(sub, kid(d, 1))
-    val res = if num(d) == 1 then reduceMatch(ds, d, normTy(ds, body, fuel - 1), sub, lineOf(t)) else body
-    withCaps(normTy(ds, res, fuel - 1), t)
+    val res = if num(d) == 1 then reduceMatch(ds, d, normTy(ds, env, body, fuel - 1), sub, lineOf(t)) else body
+    withCaps(normTy(ds, env, res, fuel - 1), t)
 
 // res at the use t: t's caps, annotation flag and line
 def withCaps {r: Region} (res: Node, t: Node): Node = Node(Ty, text(res), text2(res), num(t), lineOf(t), NCons(head(kids(res)), tyCaps(t)))
@@ -59,14 +62,25 @@ def reduceMatch {r: Region} (ds: Nodes, d: Node, s: Node, sub: Nodes, line: I64)
   if !found(res) then errTy("no case of the match type matches", s, line) else ()
   res
 
-// [A: Type] binders only
-def checkTypeDecl {r: Region} (d: Node): Unit =
+// [A: Type] binders and {s: Trait[..]} evidence (vic-jxk); () values and <> facts on a type: not yet
+def checkTypeDecl {r: Region} (ds0: Nodes, d: Node): Unit =
+  val ds = append(groupBinders(kids(kid(d, 0))), ds0)
   var gs = kids(kid(d, 0))
   while !isNil(gs) do
-    if !eqs(text(head(gs)), "[") then err("not yet: binder group on a type", text(head(gs)), lineOf(head(gs))) else ()
-    var bs = kids(head(gs))
+    val g = head(gs)
+    if !eqs(text(g), "[") && !eqs(text(g), "{") then err("not yet: binder group on a type", text(g), lineOf(g)) else ()
+    var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
-      if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
+      if eqs(text(g), "[") then
+        if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
+      else if isProto(ds, text(k)) then err("not yet: capability on a type", text(head(bs)), lineOf(head(bs)))
+      else needTrait(ds, termTy(k))
       bs = tail(bs)
     gs = tail(gs)
+
+// the {} evidence in scope of a decl's types: a def's (a given's def: the given's) {} binders
+def declEv {r: Region} (ds: Nodes, d: Node): Nodes =
+  if kind(d) == DFn then evEnv(ds, d)
+  else if kind(d) == DGiven then groupsEv(ds, kids(kid(d, 0)))
+  else NNil
