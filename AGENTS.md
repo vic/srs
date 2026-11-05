@@ -100,8 +100,16 @@ Lists you must keep in sync:
 - A constructor call needs a `Region` in scope. A function that builds nodes needs an `r: Region` parameter.
 - srs has no string concatenation. Name things structurally, for example an instance is a callee plus its type
   arguments, and the emitter prints the parts.
-- All files share one namespace. Constructor and function names must be unique across libs and tests. S1 does
-  not catch a duplicate `def` (bead vic-gkz); only `zig cc` does.
+- All files share one namespace. Constructor and function names must be unique across libs and tests (S1
+  rejects a duplicate). Grep the libs before you name a new fn: `lib/kanren.srs` has `fire`, `round`, `FBin`.
+- S1 reads decls through `Decls` (s1/node.srs): `findDecl(ds, k, name)` is a hash lookup whose bucket keeps the
+  list order, so it finds what a linear `find` finds. Enum cases are in the index (`findDecl(ds, DCase, c)`).
+  A fn whose proved contract reads ds as a list keeps `ds: Nodes`; callers pass `declList(ds)`.
+- No xor or shift on I64: hashes use `%` with products below 2^63 (`strHash` in `lib/prelude.srs`).
+- A change to a lib changes the C of every test. The refactor oracle compiles the tests with the old libs and the
+  old prelude, and compares that C byte for byte.
+- A change to `lib/prelude.srs` stales 4 Lean files: lean-check needs up to 4 runs. Run lean-check before every
+  commit that changes `lib/*.srs` or `s1/*.srs`.
 - Make invalid data impossible to build. For example, `Dom(h, t)` is a non-empty domain, and the input facts
   have their own type `Edb`. Prefer a type with exactly the right cases to a type with impossible cases.
 - Lean traps are listed in `vic/notes/20261104T2200--lean4-proof-traps__lean_srs_proofs.md`. Read the list before
