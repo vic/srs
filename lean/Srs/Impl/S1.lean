@@ -2684,6 +2684,96 @@ pure «t»;
 };
 }
 
+def «uniqueNames_loop1» («k» : «Kind») («d» : «Node») («c» : «Nodes») («tys» : «Nodes») («ds» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«cs», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «cs»))
+} : Option Bool)) st') then «uniqueNames_loop1» «k» «d» «c» «tys» «ds» (← (fun ((«cs», «vals») : («Nodes» × «Nodes»)) => (do {
+let mut «cs» := «cs»;
+let mut «vals» := «vals»;
+if (← «has» «vals» (← «text» (← «head» «cs»))) then {
+let _ := (← «err» "duplicate name:".toUTF8 (← «text» (← «head» «cs»)) (← «lineOf» (← «head» «cs»)));
+} else {
+let _ := ();
+};
+«vals» := («Nodes».«NCons» (← «head» «cs») «vals»);
+«cs» := (← «tail» «cs»);
+pure («cs», «vals»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «uniqueNames_loop0» («ds» : «Nodes») (st' : («Nodes» × «Nodes» × «Nodes»)) : Option («Nodes» × «Nodes» × «Nodes») := do {
+if (← (fun ((«c», _, _) : («Nodes» × «Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «uniqueNames_loop0» «ds» (← (fun ((«c», «tys», «vals») : («Nodes» × «Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «tys» := «tys»;
+let mut «vals» := «vals»;
+let «d» ← (pure (← «head» «c»));
+let «k» ← (pure (← «kind» «d»));
+if («k» == «Kind».«DFn») then {
+if (← «has» «vals» (← «text» «d»)) then {
+let _ := (← «err» "duplicate name:".toUTF8 (← «text» «d») (← «lineOf» «d»));
+} else {
+let _ := ();
+};
+«vals» := («Nodes».«NCons» «d» «vals»);
+} else {
+let _ := ();
+};
+if (← (do {
+if (← (do {
+if (← (do {
+if («k» == «Kind».«DEnum») then {
+pure true
+} else {
+pure («k» == «Kind».«DProto»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«DTrait»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«DHandler»)
+}
+})) then {
+if (← «has» «tys» (← «text» «d»)) then {
+let _ := (← «err» "duplicate type name:".toUTF8 (← «text» «d») (← «lineOf» «d»));
+} else {
+let _ := ();
+};
+«tys» := («Nodes».«NCons» «d» «tys»);
+} else {
+let _ := ();
+};
+if («k» == «Kind».«DEnum») then {
+let mut «cs» := (← «kids» «d»);
+let t_ ← «uniqueNames_loop1» «k» «d» «c» «tys» «ds» («cs», «vals»);
+«cs» := t_.1;
+«vals» := t_.2;
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «tys», «vals»)
+} : Option («Nodes» × «Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «uniqueNames» («ds» : «Nodes») : Option Unit := do {
+let mut «vals» := «Nodes».«NNil»;
+let mut «tys» := «Nodes».«NNil»;
+let mut «c» := «ds»;
+let t_ ← «uniqueNames_loop0» «ds» («c», «tys», «vals»);
+«c» := t_.1;
+«tys» := t_.2.1;
+«vals» := t_.2.2;
+pure ()
+}
+
 def «checkEnum_loop0» («gs» : «Nodes») («d» : «Node») («ds0» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
 if (← (fun («g» : («Nodes»)) => (do {
 pure (!(← «isNil» «g»))
@@ -10759,6 +10849,7 @@ pure («out», «c»)
 partial_fixpoint
 
 def «check» («ds» : «Nodes») : Option «Nodes» := do {
+let _ := (← «uniqueNames» «ds»);
 let mut «c» := «ds»;
 let mut «out» := «Nodes».«NNil»;
 let t_ ← «check_loop0» «ds» («out», «c»);

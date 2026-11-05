@@ -257,8 +257,35 @@ def sigTy {r: Region} (ds: Nodes, ps: Nodes, t: Node): Node =
   if isEnum(ds, text(t)) && num(t) == 0 then recap(t, NCons(leaf(TyCap, "*", 0), regionParams(ps)))
   else t
 
+// one name, one meaning (vic-gkz): fns and enum cases share the call namespace, enums/protocols/traits/handlers the
+// type namespace; a second decl of a name would silently lose to the first (find takes the first)
+def uniqueNames {r: Region} (ds: Nodes): Unit =
+  var vals = NNil
+  var tys = NNil
+  var c = ds
+  while !isNil(c) do
+    val d = head(c)
+    val k = kind(d)
+    if k == DFn then
+      if has(vals, text(d)) then err("duplicate name:", text(d), lineOf(d)) else ()
+      vals = NCons(d, vals)
+    else ()
+    if k == DEnum || k == DProto || k == DTrait || k == DHandler then
+      if has(tys, text(d)) then err("duplicate type name:", text(d), lineOf(d)) else ()
+      tys = NCons(d, tys)
+    else ()
+    if k == DEnum then
+      var cs = kids(d)
+      while !isNil(cs) do
+        if has(vals, text(head(cs))) then err("duplicate name:", text(head(cs)), lineOf(head(cs))) else ()
+        vals = NCons(head(cs), vals)
+        cs = tail(cs)
+    else ()
+    c = tail(c)
+
 // the program checked: decls with fn bodies expanded (e2), for the C emitter
 def check {r: Region} (ds: Nodes): Nodes =
+  uniqueNames(ds)
   var c = ds
   var out = NNil
   while !isNil(c) do
