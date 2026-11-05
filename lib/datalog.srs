@@ -268,16 +268,98 @@ def factCount(db: Facts): I64 = db match
   case FactNil => 0
   case FactCons(_, _, t) => 1 + factCount(t)
 
-// one pass of every clause of stratum k
-def pass {r: Region} (st: Strata, cs: Clauses, i: I64, k: I64, db: Facts): Facts = cs match
-  case ClNil => db
-  case ClCons(c, t) => c match
-    case Clause(h, _) => pass(st, t, i + 1, k, if stratum(st, relOf(h)) == k then derive(c, i, db, db) else db)
+// ── semi-naive evaluation over one store per relation ──
+// a relation's facts: all of them, and delta = the ones the last round added (order-free: vic 2026-11-05)
+enum Rels:
+  case RelNil
+  case Rel(name: Str, all: Facts, delta: Facts, t: Rels)
 
-// stratum k to its fixpoint: facts only grow and are finite, so it ends
-def fix {r: Region} (st: Strata, cs: Clauses, k: I64, db: Facts): Facts =
-  val db2 = pass(st, cs, 0, k, db)
-  if factCount(db2) == factCount(db) then db else fix(st, cs, k, db2)
+def factsOf(rs: Rels, p: Str, delta: Bool): Facts = rs match
+  case RelNil => FactNil
+  case Rel(q, all, d, t) => if rt_str_eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
+
+def addFact {r: Region} (rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
+  case Fact(p, _) => rs match
+    case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, RelNil)
+    case Rel(q, all, d, t) =>
+      if rt_str_eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, t)
+      else Rel(q, all, d, addFact(t, f, src, delta))
+
+def resetDelta {r: Region} (rs: Rels): Rels = rs match
+  case RelNil => RelNil
+  case Rel(q, all, _, t) => Rel(q, all, FactNil, resetDelta(t))
+
+def addFacts {r: Region} (rs: Rels, fs: Facts, delta: Bool): Rels = fs match
+  case FactNil => rs
+  case FactCons(f, src, t) => addFacts(addFact(rs, f, src, delta), t, delta)
+
+// every extension of e that matches args against a fact of fs (one relation)
+def matchRel {r: Region} (e: Env, args: Args, fs: Facts): Envs = fs match
+  case FactNil => EnvsNil
+  case FactCons(f, _, t) => f match
+    case Fact(_, vals) => envsAppend(matchArgs(e, args, vals), matchRel(e, args, t))
+
+def matchAll {r: Region} (es: Envs, args: Args, fs: Facts): Envs = es match
+  case EnvsNil => EnvsNil
+  case EnvsCons(e, t) => envsAppend(matchRel(e, args, fs), matchAll(t, args, fs))
+
+// the positive literals joined: literal number at on the delta of its relation, the others on all facts
+def joinRels {r: Region} (es: Envs, body: Lits, rs: Rels, at: I64, i: I64): Envs = body match
+  case LitNil => es
+  case LitCons(l, t) => l match
+    case Pos(a) => a match
+      case Atom(p, args) => joinRels(matchAll(es, args, factsOf(rs, p, i == at)), t, rs, at, i + 1)
+    case Neg(_) => joinRels(es, t, rs, at, i + 1)
+
+// negative literals: stratified, so their relations are complete
+def dropNegRels {r: Region} (es: Envs, body: Lits, rs: Rels): Envs = body match
+  case LitNil => es
+  case LitCons(l, t) => l match
+    case Pos(_) => dropNegRels(es, t, rs)
+    case Neg(a) => dropNegRels(absentIn(es, a, rs), t, rs)
+
+def absentIn {r: Region} (es: Envs, a: Atom, rs: Rels): Envs = es match
+  case EnvsNil => EnvsNil
+  case EnvsCons(e, t) =>
+    if hasFact(factsOf(rs, relOf(a), false), factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
+
+// the new facts of clause i (at = its delta literal, -1 = none) added to acc, the new facts of this round
+def fireRule {r: Region} (c: Clause, i: I64, at: I64, rs: Rels, acc: Facts): Facts = c match
+  case Clause(h, body) => addNew(dropNegRels(joinRels(EnvsCons(EnvNil, EnvsNil), body, rs, at, 0), body, rs), h, i, rs, acc)
+
+def addNew {r: Region} (es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts = es match
+  case EnvsNil => acc
+  case EnvsCons(e, t) =>
+    val f = factOf(e, h)
+    val known = hasFact(factsOf(rs, relOf(h), false), f) || hasFact(acc, f)
+    addNew(t, h, i, rs, if known then acc else FactCons(f, ByRule(i, e), acc))
+
+// after the first round, a new fact needs a fact of the last round: fire once per literal whose relation grew
+def fireDeltas {r: Region} (c: Clause, i: I64, body: Lits, at: I64, rs: Rels, acc: Facts): Facts = body match
+  case LitNil => acc
+  case LitCons(l, t) => l match
+    case Pos(a) => fireDeltas(c, i, t, at + 1, rs, if noFacts(factsOf(rs, relOf(a), true)) then acc else fireRule(c, i, at, rs, acc))
+    case Neg(_) => fireDeltas(c, i, t, at + 1, rs, acc)
+
+// one round of every clause of stratum k
+def dlRound {r: Region} (st: Strata, cs: Clauses, i: I64, k: I64, first: Bool, rs: Rels, acc: Facts): Facts = cs match
+  case ClNil => acc
+  case ClCons(c, t) => c match
+    case Clause(h, body) =>
+      val acc2 = if stratum(st, relOf(h)) != k then acc else if first then fireRule(c, i, -1, rs, acc) else fireDeltas(c, i, body, 0, rs, acc)
+      dlRound(st, t, i + 1, k, first, rs, acc2)
+
+def noFacts(fs: Facts): Bool = fs match
+  case FactNil => true
+  case FactCons(_, _, _) => false
+
+def factsCat {r: Region} (a: Facts, b: Facts): Facts = a match
+  case FactNil => b
+  case FactCons(f, s, t) => FactCons(f, s, factsCat(t, b))
+
+def factsRev {r: Region} (a: Facts, out: Facts): Facts = a match
+  case FactNil => out
+  case FactCons(f, s, t) => factsRev(t, FactCons(f, s, out))
 
 enum Safety:
   case AllSafe
@@ -302,12 +384,20 @@ def evalDatalog {r: Region} (cs: Clauses, edb: Edb): Model = safety(cs) match
       st = st2
     if topStratum(st, 0) > n then NegCycle(overRel(st, n))
     else
-      var out = given(edb)
+      val gs = given(edb)
+      var rs = addFacts(RelNil, factsRev(gs, FactNil), false)
+      // the derived facts, newest first; each round uses only facts of earlier rounds, so the model is in derivation order
+      var log = FactNil
       var k = 0
       while k <= topStratum(st, 0) do
-        out = fix(st, cs, k, out)
+        var acc = dlRound(st, cs, 0, k, true, rs, FactNil)
+        while !noFacts(acc) do
+          rs = addFacts(resetDelta(rs), acc, true)
+          log = factsCat(acc, log)
+          acc = dlRound(st, cs, 0, k, false, rs, FactNil)
+        rs = resetDelta(rs)
         k = k + 1
-      Model(out)
+      Model(factsCat(gs, factsRev(log, FactNil)))
 
 def given {r: Region} (edb: Edb): Facts = edb match
   case EdbNil => FactNil
