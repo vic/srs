@@ -13,7 +13,7 @@ enum Kind:
   case TEof
   // types: s = name, t = from state, a = [TyTo(s = to), TyCap(s)...], n = 1 if caps annotated
   case Ty
-  case TyTo      // s = to state, a = type args of T(args)
+  case TyTo      // s = to state, a = type args of T[args]
   case TyCap
   // decls
   case DFn       // s name, n 0 def / 1 extern / 2 spec def (Lean only), a = [Params, ret Ty, body?, Names clauses?, Groups?]
@@ -26,7 +26,7 @@ enum Kind:
   case Params
   case Param     // s name, a = [Ty]
   case Groups    // a = Group in written order (vic/c/binders-design.md)
-  case Group     // s "{" {} binders / "[" evidence / "<" facts, t "out" = facts after the return type, a = Binder or TTerm
+  case Group     // s "[" type ascriptions / "{" evidence / "<" facts, t "out" = facts after the return type, a = Binder or TTerm
   case Binder    // s name, a = [TTerm]
   case TTerm     // s name or digits, n 1 = int, a = args: a type (application) or a Datalog atom
   case Names
@@ -38,7 +38,7 @@ enum Kind:
   case XUnit
   case XName     // s
   case XCall     // s callee, a = args
-  case XInst     // checker output (e2): call of a generic fn; s callee, a = [Names types in {} binder order, args...]
+  case XInst     // checker output (e2): call of a generic fn; s callee, a = [Names types in [] binder order, args...]
   case XNew      // checker output (e2): a case of a generic enum; s case, a = [Names type args, args...]
   case XMethod   // s receiver, t op, a = args
   case XBin      // s op, a = [l, r]

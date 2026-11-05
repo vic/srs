@@ -86,7 +86,7 @@ def fn(r: Region, ts0: Nodes, ext: I64): PR =
     val b = rhs(r, expect(pr(cl), "="))
     PR(Node(DFn, name, "", ext, line, NCons(pn(ps), NCons(pn(rt), NCons(pn(b), NCons(pn(cl), one(r, gs)))))), pr(b))
 
-// groups in written order, reversed onto acc: `{A: Type}` {} binders, `[s: Show(A)]` evidence, `<at(f, s)>` facts
+// groups in written order, reversed onto acc: `[A: Type]` type ascriptions, `{s: Show[A]}` evidence, `<at(f, s)>` facts
 def groups(r: Region, ts0: Nodes, acc: Nodes): PR =
   var ts = ts0
   var gs = acc
@@ -115,13 +115,13 @@ def group(r: Region, ts0: Nodes, out: Str): PR =
     else
       val n = needIdent(ts)
       val bl = at(ts)
-      val t = tterm(r, expect(tail(ts), ":"), "{")
+      val t = tterm(r, expect(tail(ts), ":"), "[")
       xs = NCons(Node(Binder, n, "", 0, bl, one(r, pn(t))), xs)
       ts = pr(t)
     if !isT(ts, close) then ts = expect(ts, ",") else ()
   PR(Node(Group, open, out, 0, line, rev(r, xs)), tail(ts))
 
-// T | T{args} | 3: a type (open = "{") or a Datalog atom p(args) (open = "(")
+// T | T[args] | 3: a type (open = "[") or a Datalog atom p(args) (open = "(")
 def tterm(r: Region, ts0: Nodes, open: Str): PR =
   val line = at(ts0)
   if isK(ts0, TInt) then PR(Node(TTerm, text(head(ts0)), "", 1, line, NNil), tail(ts0))
@@ -129,7 +129,7 @@ def tterm(r: Region, ts0: Nodes, open: Str): PR =
     val f = needIdent(ts0)
     var ts = tail(ts0)
     var xs = NNil
-    val close = if eqs(open, "{") then "}" else ")"
+    val close = if eqs(open, "[") then "]" else ")"
     if isT(ts, open) then
       ts = tail(ts)
       while !isT(ts, close) do
@@ -183,7 +183,7 @@ def clause(r: Region, ts0: Nodes): PR =
 def enumDecl(r: Region, ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  // `enum List {A: Type}:` {} binders; every case keeps them as its kid 1, so the case list stays the enum's kids
+  // `enum List [A: Type]:` [] binders; every case keeps them as its kid 1, so the case list stays the enum's kids
   val g = groups(r, tail(ts0), NNil)
   val gs = list(r, Groups, line, rev(r, kids(pn(g))))
   var ts = layoutOpen(pr(g))
@@ -295,26 +295,21 @@ def ty(r: Region, ts0: Nodes): PR =
   var ts = tail(ts0)
   var from = ""
   var to = ""
-  // type application T{args} (vic 2026-11-05: {} = types): the args are the kids of TyTo, so tyCaps stays the tail
+  // type application T[args] (vic 2026-11-05: [] = types, the Scala3 surface): the args are the kids of TyTo, so tyCaps stays the tail
   var args = NNil
-  if isT(ts, "{") then
+  // protocol state File[S1 ~> S2], told apart by the ~> after one name; dropped in BD5 for <> facts (vic-9l7.8)
+  if isT(ts, "[") && isT(drop(ts, 2), "~>") then
+    from = needIdent(tail(ts))
+    to = needIdent(drop(ts, 3))
+    ts = expect(drop(ts, 4), "]")
+  else if isT(ts, "[") then
     ts = tail(ts)
-    while !isT(ts, "}") do
+    while !isT(ts, "]") do
       val a = ty(r, ts)
       args = NCons(pn(a), args)
       ts = pr(a)
-      if !isT(ts, "}") then ts = expect(ts, ",") else ()
+      if !isT(ts, "]") then ts = expect(ts, ",") else ()
     ts = tail(ts)
-  else ()
-  if isT(ts, "[") then
-    from = needIdent(tail(ts))
-    to = from
-    ts = drop(ts, 2)
-    if isT(ts, "~>") then
-      to = needIdent(tail(ts))
-      ts = drop(ts, 2)
-    else ()
-    ts = expect(ts, "]")
   else ()
   var caps = NNil
   var annotated = 0

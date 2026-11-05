@@ -49,7 +49,7 @@ def fname(f: Node, tag: I64, h: Str): Unit =
   // an instance (mono): kid 4 = its type args
   if kind(kid(f, 4)) == Names then typeSuffix(kids(kid(f, 4))) else ()
 
-// the C name part of an instance: _ then _<type> per type arg; T(args) as T_<n>_<arg>... (n = arg count, unambiguous)
+// the C name part of an instance: _ then _<type> per type arg; T[args] as T_<n>_<arg>... (n = arg count, unambiguous)
 def typeSuffix(ts: Nodes): Unit =
   say("_")
   var c = ts
@@ -77,15 +77,15 @@ def enumName(d: Node): Unit =
   say(text(d))
   if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
 
-// a {} binder of a generic extern is a void* slot (vic B-Q6)
+// a [] binder of a generic extern is a void* slot (vic B-Q6)
 def slotType(ds: Nodes, f: Node, t: Node): Unit = if isTParamOf(f, text(t)) then say("void*") else ctype(ds, t)
 
-// n names a {} binder of f ({} groups of kid 4; an instance's kid 4 is Names, no groups)
+// n names a [] binder of f ([] groups of kid 4; an instance's kid 4 is Names, no groups)
 def isTParamOf(f: Node, n: Str): Bool =
   var gs = kids(kid(f, 4))
   var res = false
   while !res && !isNil(gs) do
-    res = kind(head(gs)) == Group && eqs(text(head(gs)), "{") && found(find(kids(head(gs)), Binder, n))
+    res = kind(head(gs)) == Group && eqs(text(head(gs)), "[") && found(find(kids(head(gs)), Binder, n))
     gs = tail(gs)
   res
 
@@ -286,13 +286,13 @@ def ctorStruct(c: Node, targs: Nodes): Unit =
   say(text2(c))
   if !isNil(targs) then typeSuffix(targs) else ()
 
-// position of {} binder n among f's {} binders, in written order
+// position of [] binder n among f's [] binders, in written order
 def tparamIndex(f: Node, n: Str): I64 =
   var gs = kids(kid(f, 4))
   var i = 0
   var res = -1
   while res < 0 && !isNil(gs) do
-    if kind(head(gs)) == Group && eqs(text(head(gs)), "{") then
+    if kind(head(gs)) == Group && eqs(text(head(gs)), "[") then
       val j = index(kids(head(gs)), n)
       if j >= 0 then res = i + j else i = i + len(kids(head(gs)))
     else ()

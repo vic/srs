@@ -1267,8 +1267,8 @@ let «f» ← (pure (← «needIdent» «ts0»));
 let mut «ts» := (← «tail» «ts0»);
 let mut «xs» := «Nodes».«NNil»;
 let «close» ← (pure (← (do {
-if (← «eqs» «open» "{".toUTF8) then {
-pure "}".toUTF8;
+if (← «eqs» «open» "[".toUTF8) then {
+pure "]".toUTF8;
 } else {
 pure ")".toUTF8;
 };
@@ -1349,14 +1349,14 @@ pure («PR».«PR» (← «list» «Kind».«Names» (← «at» «ts0») (← �
 mutual
 def «ty_loop0» («to» : ByteArray) («from» : ByteArray) («name» : ByteArray) («line» : Int) («ts0» : «Nodes») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((_, «ts») : («Nodes» × «Nodes»)) => (do {
-pure (!(← «isT» «ts» "}".toUTF8))
+pure (!(← «isT» «ts» "]".toUTF8))
 } : Option Bool)) st') then «ty_loop0» «to» «from» «name» «line» «ts0» (← (fun ((«args», «ts») : («Nodes» × «Nodes»)) => (do {
 let mut «args» := «args»;
 let mut «ts» := «ts»;
 let «a» ← (pure (← «ty» «ts»));
 «args» := («Nodes».«NCons» (← «pn» «a») «args»);
 «ts» := (← «pr» «a»);
-if (!(← «isT» «ts» "}".toUTF8)) then {
+if (!(← «isT» «ts» "]".toUTF8)) then {
 «ts» := (← «expect» «ts» ",".toUTF8);
 } else {
 let _ := ();
@@ -1391,7 +1391,18 @@ let mut «ts» := (← «tail» «ts0»);
 let mut «from» := "".toUTF8;
 let mut «to» := "".toUTF8;
 let mut «args» := «Nodes».«NNil»;
-if (← «isT» «ts» "{".toUTF8) then {
+if (← (do {
+if (← «isT» «ts» "[".toUTF8) then {
+pure (← «isT» (← «drop» «ts» (2 : Int)) "~>".toUTF8)
+} else {
+pure false
+}
+})) then {
+«from» := (← «needIdent» (← «tail» «ts»));
+«to» := (← «needIdent» (← «drop» «ts» (3 : Int)));
+«ts» := (← «expect» (← «drop» «ts» (4 : Int)) "]".toUTF8);
+} else {
+if (← «isT» «ts» "[".toUTF8) then {
 «ts» := (← «tail» «ts»);
 let t_ ← «ty_loop0» «to» «from» «name» «line» «ts0» («args», «ts»);
 «args» := t_.1;
@@ -1400,19 +1411,6 @@ let t_ ← «ty_loop0» «to» «from» «name» «line» «ts0» («args», «t
 } else {
 let _ := ();
 };
-if (← «isT» «ts» "[".toUTF8) then {
-«from» := (← «needIdent» (← «tail» «ts»));
-«to» := «from»;
-«ts» := (← «drop» «ts» (2 : Int));
-if (← «isT» «ts» "~>".toUTF8) then {
-«to» := (← «needIdent» (← «tail» «ts»));
-«ts» := (← «drop» «ts» (2 : Int));
-} else {
-let _ := ();
-};
-«ts» := (← «expect» «ts» "]".toUTF8);
-} else {
-let _ := ();
 };
 let mut «caps» := «Nodes».«NNil»;
 let mut «annotated» := (0 : Int);
@@ -2117,11 +2115,11 @@ partial_fixpoint
 def «eprintTy» («t» : «Node») : Option Unit := do {
 let _ := (← «rt_eprint» (← «text» «t»));
 if (!(← «isNil» (← «tyArgs» «t»))) then {
-let _ := (← «rt_eprint» "{".toUTF8);
+let _ := (← «rt_eprint» "[".toUTF8);
 let mut «c» := (← «tyArgs» «t»);
 let t_ ← «eprintTy_loop0» «t» «c»;
 «c» := t_;
-pure (← «rt_eprint» "}".toUTF8);
+pure (← «rt_eprint» "]".toUTF8);
 } else {
 pure ();
 };
@@ -2138,7 +2136,7 @@ let mut «c» := «c»;
 let mut «out» := «out»;
 if (← (do {
 if ((← «kind» (← «head» «c»)) == «Kind».«Group») then {
-pure (← «eqs» (← «text» (← «head» «c»)) "{".toUTF8)
+pure (← «eqs» (← «text» (← «head» «c»)) "[".toUTF8)
 } else {
 pure false
 }
@@ -2174,7 +2172,7 @@ let mut «c» := «c»;
 let mut «k» := «k»;
 if (← (do {
 if ((← «kind» (← «head» «c»)) == «Kind».«Group») then {
-pure (← «eqs» (← «text» (← «head» «c»)) "{".toUTF8)
+pure (← «eqs» (← «text» (← «head» «c»)) "[".toUTF8)
 } else {
 pure false
 }
@@ -2617,7 +2615,7 @@ if (← (fun («g» : («Nodes»)) => (do {
 pure (!(← «isNil» «g»))
 } : Option Bool)) st') then «checkEnum_loop0» «gs» «d» «ds0» (← (fun («g» : («Nodes»)) => (do {
 let mut «g» := «g»;
-if (!(← «eqs» (← «text» (← «head» «g»)) "{".toUTF8)) then {
+if (!(← «eqs» (← «text» (← «head» «g»)) "[".toUTF8)) then {
 let _ := (← «err» "not yet: binder group on an enum".toUTF8 (← «text» (← «head» «g»)) (← «lineOf» (← «head» «g»)));
 } else {
 let _ := ();
@@ -2753,7 +2751,7 @@ pure true
 pure (!(← «isNil» (← «kids» «k»)))
 }
 })) then {
-let _ := (← «err» "not yet: {} binder of kind".toUTF8 (← «text» «k») (← «lineOf» (← «head» «bs»)));
+let _ := (← «err» "not yet: [] binder of kind".toUTF8 (← «text» «k») (← «lineOf» (← «head» «bs»)));
 } else {
 let _ := ();
 };
@@ -2770,7 +2768,7 @@ pure true
 pure (← «isProto» «ds0» (← «text» (← «head» «bs»)))
 }
 })) then {
-let _ := (← «err» "{} binder hides a type:".toUTF8 (← «text» (← «head» «bs»)) (← «lineOf» (← «head» «bs»)));
+let _ := (← «err» "[] binder hides a type:".toUTF8 (← «text» (← «head» «bs»)) (← «lineOf» (← «head» «bs»)));
 } else {
 let _ := ();
 };
@@ -2786,7 +2784,7 @@ pure (!(← «isNil» «gs»))
 } : Option Bool)) st') then «checkSig_loop0» «f» «ds0» (← (fun («gs» : («Nodes»)) => (do {
 let mut «gs» := «gs»;
 let «g» ← (pure (← «head» «gs»));
-if (!(← «eqs» (← «text» «g») "{".toUTF8)) then {
+if (!(← «eqs» (← «text» «g») "[".toUTF8)) then {
 let _ := (← «err» "not yet: binder group".toUTF8 (← «text» «g») (← «lineOf» «g»));
 } else {
 let _ := ();
@@ -3316,7 +3314,7 @@ pure (!(← «eqs» (← «text» (← «head» «c»)) "Ptr".toUTF8))
 pure false
 }
 })) then {
-let _ := (← «err» "extern {} binder needs a pointer type (void*), not".toUTF8 (← «text» (← «head» «c»)) (← «lineOf» «x»));
+let _ := (← «err» "extern [] binder needs a pointer type (void*), not".toUTF8 (← «text» (← «head» «c»)) (← «lineOf» «x»));
 } else {
 let _ := ();
 };
@@ -3505,7 +3503,7 @@ let mut «gs» := «gs»;
 «res» := (← (do {
 if (← (do {
 if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
-pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+pure (← «eqs» (← «text» (← «head» «gs»)) "[".toUTF8)
 } else {
 pure false
 }
@@ -3667,7 +3665,7 @@ let mut «i» := «i»;
 let mut «gs» := «gs»;
 if (← (do {
 if ((← «kind» (← «head» «gs»)) == «Kind».«Group») then {
-pure (← «eqs» (← «text» (← «head» «gs»)) "{".toUTF8)
+pure (← «eqs» (← «text» (← «head» «gs»)) "[".toUTF8)
 } else {
 pure false
 }
@@ -5122,7 +5120,7 @@ let «a» ← (pure (← «tterm» «ts» "(".toUTF8));
 } else {
 let «n» ← (pure (← «needIdent» «ts»));
 let «bl» ← (pure (← «at» «ts»));
-let «t» ← (pure (← «tterm» (← «expect» (← «tail» «ts») ":".toUTF8) "{".toUTF8));
+let «t» ← (pure (← «tterm» (← «expect» (← «tail» «ts») ":".toUTF8) "[".toUTF8));
 «xs» := («Nodes».«NCons» («Node».«Node» «Kind».«Binder» «n» "".toUTF8 (0 : Int) «bl» (← «one» (← «pn» «t»))) «xs»);
 «ts» := (← «pr» «t»);
 };

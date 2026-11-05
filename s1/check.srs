@@ -36,7 +36,7 @@ def tyCaps(t: Node): Nodes
 def tyTo(t: Node): Str = text(head(kids(t)))
 def mkTy(r: Region, name: Str, caps: Nodes): Node = Node(Ty, name, "", 1, 0, NCons(leaf(r, TyTo, "", 0), caps))
 def prim(r: Region, name: Str): Node = mkTy(r, name, NNil)
-// the args of T(args)
+// the args of T[args]
 def tyArgs(t: Node): Nodes = kids(head(kids(t)))
 // t with new caps: name and type args kept
 def recap(r: Region, t: Node, caps: Nodes): Node = Node(Ty, text(t), "", 1, 0, NCons(Node(TyTo, "", "", 0, 0, tyArgs(t)), caps))
@@ -47,37 +47,37 @@ def tysEq(a: Nodes, b: Nodes): Bool =
 def eprintTy(t: Node): Unit =
   rt_eprint(text(t))
   if !isNil(tyArgs(t)) then
-    rt_eprint("{")
+    rt_eprint("[")
     var c = tyArgs(t)
     while !isNil(c) do
       eprintTy(head(c))
       if !isNil(tail(c)) then rt_eprint(", ") else ()
       c = tail(c)
-    rt_eprint("}")
+    rt_eprint("]")
   else ()
 
-// the binders of the {} groups of gs (type ascriptions, vic 2026-11-05)
+// the binders of the [] groups of gs (type ascriptions, vic 2026-11-05)
 def groupBinders(r: Region, gs: Nodes): Nodes =
   var out = NNil
   var c = gs
   while !isNil(c) do
-    if kind(head(c)) == Group && eqs(text(head(c)), "{") then out = append(r, out, kids(head(c))) else ()
+    if kind(head(c)) == Group && eqs(text(head(c)), "[") then out = append(r, out, kids(head(c))) else ()
     c = tail(c)
   out
-// {} binders of enum n: kept on each of its cases (kid 1)
+// [] binders of enum n: kept on each of its cases (kid 1)
 def enumTParams(r: Region, ds: Nodes, n: Str): Nodes = groupBinders(r, kids(kid(head(kids(find(ds, DEnum, n))), 1)))
 def enumArity(ds: Nodes, n: Str): I64 =
   var k = 0
   var c = kids(kid(head(kids(find(ds, DEnum, n))), 1))
   while !isNil(c) do
-    if kind(head(c)) == Group && eqs(text(head(c)), "{") then k = k + len(kids(head(c))) else ()
+    if kind(head(c)) == Group && eqs(text(head(c)), "[") then k = k + len(kids(head(c))) else ()
     c = tail(c)
   k
 
 def isBuiltin(n: Str): Bool = eqs(n, "I64") || eqs(n, "Bool") || eqs(n, "Unit") || eqs(n, "Str") || eqs(n, "Ptr")
 def isEnum(ds: Nodes, n: Str): Bool = found(find(ds, DEnum, n))
 def isProto(ds: Nodes, n: Str): Bool = found(find(ds, DProto, n))
-// a {} binder in scope: checkSig and checkFn put the fn's binders in front of ds
+// a [] binder in scope: checkSig and checkFn put the fn's binders in front of ds
 def isTParam(ds: Nodes, n: Str): Bool = found(find(ds, Binder, n))
 
 // a, then each node of b whose text is not yet in, in b's order (onto the front)
@@ -231,7 +231,7 @@ def needAssign(a: Node, b: Node, line: I64): Unit =
 def needTy(ds: Nodes, t: Node): Unit =
   val n = text(t)
   if !isBuiltin(n) && !isEnum(ds, n) && !isProto(ds, n) && !isTParam(ds, n) then err("unknown type", n, lineOf(t)) else ()
-  // T(args): as many args as T has {} binders (only an enum has any), each a type
+  // T[args]: as many args as T has [] binders (only an enum has any), each a type
   val arity = if isEnum(ds, n) then enumArity(ds, n) else 0
   if len(tyArgs(t)) != arity then err("wrong number of type args for", n, lineOf(t)) else ()
   var c = tyArgs(t)
@@ -273,11 +273,11 @@ def check(r: Region, ds: Nodes): Nodes =
   rev(r, out)
 
 def checkEnum(r: Region, ds0: Nodes, d: Node): Unit =
-  // its {} binders are types in its field types; [] and <> on an enum: not yet
+  // its [] binders are types in its field types; [] and <> on an enum: not yet
   val gs = kids(kid(head(kids(d)), 1))
   var g = gs
   while !isNil(g) do
-    if !eqs(text(head(g)), "{") then err("not yet: binder group on an enum", text(head(g)), lineOf(head(g))) else ()
+    if !eqs(text(head(g)), "[") then err("not yet: binder group on an enum", text(head(g)), lineOf(head(g))) else ()
     g = tail(g)
   val ds = append(r, groupBinders(r, gs), ds0)
   var cs = kids(d)
@@ -324,10 +324,10 @@ def checkHandler(r: Region, ds: Nodes, h: Node): Node =
     fs = tail(fs)
   withKids(r, h, rev(r, fs2))
 
-// {} binders of f: the binders of its {} groups, each of kind Type (vic-9l7.4 BD2)
+// [] binders of f: the binders of its [] groups, each of kind Type (vic-9l7.4 BD2)
 def tparams(r: Region, f: Node): Nodes = groupBinders(r, kids(kid(f, 4)))
 
-// decls as seen in f's signature and body: its {} binders are types there
+// decls as seen in f's signature and body: its [] binders are types there
 def withTParams(r: Region, ds: Nodes, f: Node): Nodes = append(r, tparams(r, f), ds)
 
 def checkSig(r: Region, ds0: Nodes, f: Node): Unit =
@@ -335,12 +335,12 @@ def checkSig(r: Region, ds0: Nodes, f: Node): Unit =
   var gs = kids(kid(f, 4))
   while !isNil(gs) do
     val g = head(gs)
-    if !eqs(text(g), "{") then err("not yet: binder group", text(g), lineOf(g)) else ()
+    if !eqs(text(g), "[") then err("not yet: binder group", text(g), lineOf(g)) else ()
     var bs = kids(g)
     while !isNil(bs) do
       val k = kid(head(bs), 0)
-      if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: {} binder of kind", text(k), lineOf(head(bs))) else ()
-      if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("{} binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
+      if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
+      if isBuiltin(text(head(bs))) || isEnum(ds0, text(head(bs))) || isProto(ds0, text(head(bs))) then err("[] binder hides a type:", text(head(bs)), lineOf(head(bs))) else ()
       bs = tail(bs)
     gs = tail(gs)
   val ds = withTParams(r, ds0, f)
@@ -390,7 +390,7 @@ def checkFn(r: Region, ds0: Nodes, f: Node): Node =
     c = tail(c)
   withKids(r, f, NCons(kid(f, 0), NCons(kid(f, 1), NCons(tgE(res), tail(tail(tail(kids(f))))))))
 
-// want: the type the context expects (an annotation, a param), or NoNode; it solves {} binders only the result names
+// want: the type the context expects (an annotation, a param), or NoNode; it solves [] binders only the result names
 def chk(r: Region, ds: Nodes, env: Nodes, gam: Nodes, e: Node, want: Node): TG =
   val k = kind(e)
   val line = lineOf(e)
@@ -540,7 +540,7 @@ def chkCtor(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node, wan
   val reg = theRegion(env, line)
   var gam = step(r, ds, gam0, reg, "Region", "alloc", line)
   var caps = one(r, leaf(r, TyCap, reg, line))
-  // a generic enum: the field types match the args, binding its {} binders (as chkCall)
+  // a generic enum: the field types match the args, binding its [] binders (as chkCall)
   val tps = enumTParams(r, ds, text2(c))
   var sub = NNil
   var a = kids(e)
@@ -564,7 +564,7 @@ def chkCtor(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, c: Node, e: Node, wan
     val targs = instArgs(r, tps, sub, line)
     TG(recap(r, applyTy(r, sub, self), caps), gam, Node(XNew, text(c), "", 0, line, NCons(list(r, Names, line, targs), rev(r, a2))))
 
-// enum n applied to its own {} binders: the pattern its values match
+// enum n applied to its own [] binders: the pattern its values match
 def enumSelf(r: Region, n: Str, tps: Nodes): Node =
   var out = NNil
   var c = tps
@@ -651,7 +651,7 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     // cap args stay as written
     if isProto(ds, text(pt)) then a2 = NCons(head(a), a2) else ()
     if mentions(tps, pt) then
-      // the param type names {} binders: the arg type matches it, binding them; bound ones must agree
+      // the param type names [] binders: the arg type matches it, binding them; bound ones must agree
       val w = applyTy(r, sub, pt)
       val x = chk(r, ds, env, gam, head(a), if mentions(tps, w) then NoNode else w)
       gam = tgGam(x)
@@ -699,16 +699,16 @@ def chkCall(r: Region, ds: Nodes, env: Nodes, gam0: Nodes, e: Node, want: Node):
     val caps = if isEnum(ds, text(rt)) && num(rt) == 0 then union(r, rho, mapCaps(r, regionParams(r, ps), m)) else mapCaps(r, tyCaps(rt), m)
     TG(recap(r, rt, caps), gam, withKids(r, e, rev(r, a2)))
   else
-    // a {} binder only the result names: the context's expected type solves it (check mode)
+    // a [] binder only the result names: the context's expected type solves it (check mode)
     if mentions(tps, applyTy(r, sub, rt)) && found(want) then sub = matchTy(r, tps, rt, want, sub, line) else ()
     val targs = instArgs(r, tps, sub, line)
-    // a value of a {} binder lives in the regions of the args given for it
+    // a value of a [] binder lives in the regions of the args given for it
     val rt2 = applyTy(r, sub, rt)
-    // only data (an enum, or a {} binder still open) lives in regions; I64, Bool, ... carry none
+    // only data (an enum, or a [] binder still open) lives in regions; I64, Bool, ... carry none
     val res = if mentions(tps, rt) then recap(r, rt2, if isEnum(ds, text(rt2)) || isTParam(ds, text(rt2)) then rho else NNil) else recap(r, rt, mapCaps(r, tyCaps(rt), m))
     TG(res, gam, Node(XInst, text(e), "", 0, line, NCons(list(r, Names, line, targs), rev(r, a2))))
 
-// t is one of the {} binders tps
+// t is one of the [] binders tps
 def isTP(tps: Nodes, t: Node): Bool = found(find(tps, Binder, text(t)))
 
 // binder i of tps bound to type i of ts
@@ -716,11 +716,11 @@ def zipBind(r: Region, tps: Nodes, ts: Nodes): Nodes =
   if isNil(tps) || isNil(ts) then NNil
   else NCons(Node(Binder, text(head(tps)), "", 0, 0, one(r, head(ts))), zipBind(r, tail(tps), tail(ts)))
 
-// t names a {} binder of tps, whole or inside T(args)
+// t names a [] binder of tps, whole or inside T[args]
 def mentions(tps: Nodes, t: Node): Bool = isTP(tps, t) || anyMentions(tps, tyArgs(t))
 def anyMentions(tps: Nodes, ts: Nodes): Bool = if isNil(ts) then false else mentions(tps, head(ts)) || anyMentions(tps, tail(ts))
 
-// sub extended so the pattern p (it may name {} binders tps) is the type a: one-sided unify (a names none of tps)
+// sub extended so the pattern p (it may name [] binders tps) is the type a: one-sided unify (a names none of tps)
 def matchTy(r: Region, tps: Nodes, p: Node, a: Node, sub: Nodes, line: I64): Nodes =
   if isTP(tps, p) then
     val b = find(sub, Binder, text(p))
@@ -739,7 +739,7 @@ def matchTy(r: Region, tps: Nodes, p: Node, a: Node, sub: Nodes, line: I64): Nod
       as = tail(as)
     s
 
-// t with its bound {} binders replaced; caps and to-state kept
+// t with its bound [] binders replaced; caps and to-state kept
 def applyTy(r: Region, sub: Nodes, t: Node): Node =
   val b = find(sub, Binder, text(t))
   if found(b) && isNil(tyArgs(t)) then kid(b, 0)
@@ -751,10 +751,10 @@ def applyTy(r: Region, sub: Nodes, t: Node): Node =
       c = tail(c)
     Node(Ty, text(t), text2(t), num(t), lineOf(t), NCons(Node(TyTo, tyTo(t), "", 0, 0, rev(r, out)), tyCaps(t)))
 
-// a {} binder bound twice: the same type (unify on names, BD2; structure comes with type application, BD3)
+// a [] binder bound twice: the same type (unify on names, BD2; structure comes with type application, BD3)
 def needSame(a: Node, b: Node, line: I64): Unit = if !tyEq(a, b) then needAssign(a, b, line) else ()
 
-// the types of an instance, in {} binder order; every {} binder must be solved
+// the types of an instance, in [] binder order; every [] binder must be solved
 def instArgs(r: Region, tps: Nodes, sub: Nodes, line: I64): Nodes =
   var out = NNil
   var c = tps
