@@ -157,6 +157,21 @@ inductive «GivenAt» where
   | «NoGiven»
   | «Ambiguous»
   | «GivenAt» («g» : «Node») («sub» : «Nodes»)
+inductive «Digest» where
+  | «Digest» («a» : Int) («b» : Int) («c» : Int) («d» : Int)
+inductive «HMap» where
+  | «HTip»
+  | «HBin» («k» : ByteArray) («g» : «Digest») («l» : «HMap») («rt» : «HMap»)
+inductive «HFound» where
+  | «HNone»
+  | «HSome» («g» : «Digest»)
+inductive «HCtx» where
+  | «HCtx» («ds» : «Decls») («hm» : «HMap») («mem» : «Nodes») («pass» : Int)
+inductive «HW» where
+  | «HW» («g» : «Digest») («env» : «Nodes»)
+inductive «HMem» where
+  | «HMemNil»
+  | «HMem» («name» : ByteArray) («g» : «Digest») («t» : «HMem»)
 inductive «Tarjan» where
   | «Tarjan» («next» : Int) («info» : «DMap») («stack» : «Nodes») («comps» : «Nodes»)
 end
@@ -6130,6 +6145,502 @@ let _ := ();
 pure (← «has» (← «kids» «m») «n»);
 }
 
+def «dgLane» («h» : Int) («x» : Int) («p» : Int) («m» : Int) : Option Int := do {
+pure (Int.tmod ((«h» * «p») + (Int.tmod ((Int.tmod «x» «m») + «m») «m»)) «m»);
+}
+
+def «dgAdd» («g» : «Digest») («x» : Int) : Option «Digest» := do {
+match «g» with
+| «Digest».«Digest» «a» «b» «c» «d» => {
+pure («Digest».«Digest» (← «dgLane» «a» «x» (1000000007 : Int) (4294967291 : Int)) (← «dgLane» «b» «x» (998244353 : Int) (4294967279 : Int)) (← «dgLane» «c» «x» (754974721 : Int) (4294967231 : Int)) (← «dgLane» «d» «x» (167772161 : Int) (4294967197 : Int)));
+}
+;
+}
+
+def «dgStr_loop0» («n» : Int) («s» : ByteArray) («g0» : «Digest») (st' : (Int × «Digest»)) : Option (Int × «Digest») := do {
+if (← (fun ((«i», _) : (Int × «Digest»)) => (do {
+pure (decide («i» < «n»))
+} : Option Bool)) st') then «dgStr_loop0» «n» «s» «g0» (← (fun ((«i», «g») : (Int × «Digest»)) => (do {
+let mut «i» := «i»;
+let mut «g» := «g»;
+«g» := (← «dgAdd» «g» (← «rt_str_at» «s» «i»));
+«i» := («i» + (1 : Int));
+pure («i», «g»)
+} : Option (Int × «Digest»))) st') else pure st'
+}
+partial_fixpoint
+
+def «dgStr» («g0» : «Digest») («s» : ByteArray) : Option «Digest» := do {
+let mut «g» := (← «dgAdd» «g0» (← «rt_str_len» «s»));
+let mut «i» := (0 : Int);
+let «n» ← (pure (← «rt_str_len» «s»));
+let t_ ← «dgStr_loop0» «n» «s» «g0» («i», «g»);
+«i» := t_.1;
+«g» := t_.2;
+pure «g»;
+}
+
+def «dgDg» («g» : «Digest») («h» : «Digest») : Option «Digest» := do {
+match «h» with
+| «Digest».«Digest» «a» «b» «c» «d» => {
+pure (← «dgAdd» (← «dgAdd» (← «dgAdd» (← «dgAdd» «g» «a») «b») «c») «d»);
+}
+;
+}
+
+def «dgLess» («x» : «Digest») («y» : «Digest») : Option Bool := do {
+match «x» with
+| «Digest».«Digest» «a» «b» «c» «d» => {
+match «y» with
+| «Digest».«Digest» «a2» «b2» «c2» «d2» => {
+pure (← (do {
+if (decide («a» < «a2»)) then {
+pure true
+} else {
+pure (← (do {
+if («a» == «a2») then {
+pure (← (do {
+if (decide («b» < «b2»)) then {
+pure true
+} else {
+pure (← (do {
+if («b» == «b2») then {
+pure (← (do {
+if (decide («c» < «c2»)) then {
+pure true
+} else {
+pure (← (do {
+if («c» == «c2») then {
+pure (decide («d» < «d2»))
+} else {
+pure false
+}
+}))
+}
+}))
+} else {
+pure false
+}
+}))
+}
+}))
+} else {
+pure false
+}
+}))
+}
+}));
+}
+;
+}
+;
+}
+
+def «dgEq» («x» : «Digest») («y» : «Digest») : Option Bool := do {
+pure (← (do {
+if (!(← «dgLess» «x» «y»)) then {
+pure (!(← «dgLess» «y» «x»))
+} else {
+pure false
+}
+}));
+}
+
+mutual
+def «hmGet» («m» : «HMap») («k» : ByteArray) : Option «HFound» := do {
+match «m» with
+| «HMap».«HTip» => {
+pure «HFound».«HNone»;
+}
+| «HMap».«HBin» «k2» «g» «l» «rt» => {
+if (← «eqs» «k» «k2») then {
+pure («HFound».«HSome» «g»);
+} else {
+if (decide ((← «strHash» «k») < (← «strHash» «k2»))) then {
+pure (← «hmGet» «l» «k»);
+} else {
+pure (← «hmGet» «rt» «k»);
+};
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «hmPut» («m» : «HMap») («k» : ByteArray) («g» : «Digest») : Option «HMap» := do {
+match «m» with
+| «HMap».«HTip» => {
+pure («HMap».«HBin» «k» «g» «HMap».«HTip» «HMap».«HTip»);
+}
+| «HMap».«HBin» «k2» «g2» «l» «rt» => {
+if (← «eqs» «k» «k2») then {
+pure («HMap».«HBin» «k2» «g» «l» «rt»);
+} else {
+if (decide ((← «strHash» «k») < (← «strHash» «k2»))) then {
+pure («HMap».«HBin» «k2» «g2» (← «hmPut» «l» «k» «g») «rt»);
+} else {
+pure («HMap».«HBin» «k2» «g2» «l» (← «hmPut» «rt» «k» «g»));
+};
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «hwG» («w» : «HW») : Option «Digest» := do {
+match «w» with
+| «HW».«HW» «g» _ => {
+pure «g»;
+}
+;
+}
+
+def «hwEnv» («w» : «HW») : Option «Nodes» := do {
+match «w» with
+| «HW».«HW» _ «e» => {
+pure «e»;
+}
+;
+}
+
+def «hBind» («env» : «Nodes») («s» : ByteArray) : Option «Nodes» := do {
+pure («Nodes».«NCons» («Node».«Node» «Kind».«Name» «s» "".toUTF8 (← «len» «env») (0 : Int) «Nodes».«NNil») «env»);
+}
+
+def «hRef» («hm» : «HMap») («g» : «Digest») («s» : ByteArray) : Option «Digest» := do {
+match (← «hmGet» «hm» «s») with
+| «HFound».«HSome» «h» => {
+pure (← «dgDg» (← «dgAdd» «g» (4 : Int)) «h»);
+}
+| «HFound».«HNone» => {
+pure (← «dgStr» (← «dgAdd» «g» (2 : Int)) «s»);
+}
+;
+}
+
+def «hName» («cx» : «HCtx») («env» : «Nodes») («g» : «Digest») («s» : ByteArray) («local» : Bool) : Option «Digest» := do {
+match «cx» with
+| «HCtx».«HCtx» _ «hm» «mem» «pass» => {
+let «b» ← (pure (← (do {
+if «local» then {
+pure (← «find» «env» «Kind».«Name» «s»);
+} else {
+pure «Node».«NoNode»;
+};
+})));
+if (← «found» «b») then {
+pure (← «dgAdd» (← «dgAdd» «g» (3 : Int)) (← «num» «b»));
+} else {
+if (← «has» «mem» «s») then {
+if («pass» == (1 : Int)) then {
+pure (← «dgAdd» «g» (5 : Int));
+} else {
+pure (← «dgAdd» (← «dgAdd» «g» (6 : Int)) (← «index» «mem» «s»));
+};
+} else {
+pure (← «hRef» «hm» «g» «s»);
+};
+};
+}
+;
+}
+
+def «hFnKids» («xs» : «Nodes») : Option «Nodes» := do {
+if (decide ((← «len» «xs») > (4 : Int))) then {
+pure («Nodes».«NCons» (← «nth» «xs» (4 : Int)) (← «rev» (← «drop» (← «rev» «xs») ((← «len» «xs») - (4 : Int)))));
+} else {
+pure «xs»;
+};
+}
+
+def «hRefName» («ds» : «Decls») («k» : «Kind») («s» : ByteArray) («acc» : «Nodes») : Option «Nodes» := do {
+let «d» ← (pure (← «findDecl» «ds» «k» «s»));
+if (← (do {
+if (← (do {
+if (← «found» «d») then {
+pure ((← «num» «d») != (1 : Int))
+} else {
+pure false
+}
+})) then {
+pure (!(← «has» «acc» «s»))
+} else {
+pure false
+}
+})) then {
+pure («Nodes».«NCons» (← «leaf» «Kind».«Name» «s» (0 : Int)) «acc»);
+} else {
+pure «acc»;
+};
+}
+
+mutual
+def «hmemIns» («xs» : «HMem») («n» : ByteArray) («g» : «Digest») : Option «HMem» := do {
+match «xs» with
+| «HMem».«HMemNil» => {
+pure («HMem».«HMem» «n» «g» «HMem».«HMemNil»);
+}
+| «HMem».«HMem» «n2» «g2» «t» => {
+if (← «dgLess» «g» «g2») then {
+pure («HMem».«HMem» «n» «g» «xs»);
+} else {
+pure («HMem».«HMem» «n2» «g2» (← «hmemIns» «t» «n» «g»));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «hmemNames» («xs» : «HMem») : Option «Nodes» := do {
+match «xs» with
+| «HMem».«HMemNil» => {
+pure «Nodes».«NNil»;
+}
+| «HMem».«HMem» «n» _ «t» => {
+pure («Nodes».«NCons» (← «leaf» «Kind».«Name» «n» (0 : Int)) (← «hmemNames» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «hPut_loop0» («g» : «Digest») («m» : ByteArray) («k» : «Kind») («hm0» : «HMap») («ds» : «Decls») (st' : («Nodes» × «HMap»)) : Option («Nodes» × «HMap») := do {
+if (← (fun ((«c», _) : («Nodes» × «HMap»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hPut_loop0» «g» «m» «k» «hm0» «ds» (← (fun ((«c», «hm») : («Nodes» × «HMap»)) => (do {
+let mut «c» := «c»;
+let mut «hm» := «hm»;
+«hm» := (← «hmPut» «hm» (← «text» (← «head» «c»)) (← «dgAdd» (← «dgAdd» «g» (8 : Int)) (← «num» (← «head» «c»))));
+«c» := (← «tail» «c»);
+pure («c», «hm»)
+} : Option («Nodes» × «HMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hPut» («ds» : «Decls») («hm0» : «HMap») («k» : «Kind») («m» : ByteArray) («g» : «Digest») : Option «HMap» := do {
+let mut «hm» := (← «hmPut» «hm0» «m» «g»);
+if («k» == «Kind».«DEnum») then {
+let mut «c» := (← «kids» (← «findDecl» «ds» «Kind».«DEnum» «m»));
+let t_ ← «hPut_loop0» «g» «m» «k» «hm0» «ds» («c», «hm»);
+«c» := t_.1;
+«hm» := t_.2;
+} else {
+let _ := ();
+};
+pure «hm»;
+}
+
+def «hShow» («n» : ByteArray) («g» : «Digest») : Option Unit := do {
+match «g» with
+| «Digest».«Digest» «a» «b» «c» «d» => {
+let _ := (← «say» «n»);
+let _ := (← «say» " ".toUTF8);
+let _ := (← «sayn» «a»);
+let _ := (← «say» ".".toUTF8);
+let _ := (← «sayn» «b»);
+let _ := (← «say» ".".toUTF8);
+let _ := (← «sayn» «c»);
+let _ := (← «say» ".".toUTF8);
+let _ := (← «sayn» «d»);
+pure (← «say» "\n".toUTF8);
+}
+;
+}
+
+def «kindCode» («k» : «Kind») : Option Int := do {
+match «k» with
+| «Kind».«TIdent» => {
+pure (0 : Int);
+}
+| «Kind».«TInt» => {
+pure (1 : Int);
+}
+| «Kind».«TStr» => {
+pure (2 : Int);
+}
+| «Kind».«TChar» => {
+pure (3 : Int);
+}
+| «Kind».«TOp» => {
+pure (4 : Int);
+}
+| «Kind».«TNl» => {
+pure (5 : Int);
+}
+| «Kind».«TIndent» => {
+pure (6 : Int);
+}
+| «Kind».«TDedent» => {
+pure (7 : Int);
+}
+| «Kind».«TEof» => {
+pure (8 : Int);
+}
+| «Kind».«Ty» => {
+pure (9 : Int);
+}
+| «Kind».«TyTo» => {
+pure (10 : Int);
+}
+| «Kind».«TyCap» => {
+pure (11 : Int);
+}
+| «Kind».«DFn» => {
+pure (12 : Int);
+}
+| «Kind».«DEnum» => {
+pure (13 : Int);
+}
+| «Kind».«DCase» => {
+pure (14 : Int);
+}
+| «Kind».«DProto» => {
+pure (15 : Int);
+}
+| «Kind».«DRule» => {
+pure (16 : Int);
+}
+| «Kind».«DType» => {
+pure (17 : Int);
+}
+| «Kind».«DTCase» => {
+pure (18 : Int);
+}
+| «Kind».«DOp» => {
+pure (19 : Int);
+}
+| «Kind».«DTrans» => {
+pure (20 : Int);
+}
+| «Kind».«DHandler» => {
+pure (21 : Int);
+}
+| «Kind».«DTrait» => {
+pure (22 : Int);
+}
+| «Kind».«DGiven» => {
+pure (23 : Int);
+}
+| «Kind».«Params» => {
+pure (24 : Int);
+}
+| «Kind».«Param» => {
+pure (25 : Int);
+}
+| «Kind».«Groups» => {
+pure (26 : Int);
+}
+| «Kind».«Group» => {
+pure (27 : Int);
+}
+| «Kind».«Binder» => {
+pure (28 : Int);
+}
+| «Kind».«TTerm» => {
+pure (29 : Int);
+}
+| «Kind».«Names» => {
+pure (30 : Int);
+}
+| «Kind».«Name» => {
+pure (31 : Int);
+}
+| «Kind».«XInt» => {
+pure (32 : Int);
+}
+| «Kind».«XBool» => {
+pure (33 : Int);
+}
+| «Kind».«XStr» => {
+pure (34 : Int);
+}
+| «Kind».«XUnit» => {
+pure (35 : Int);
+}
+| «Kind».«XName» => {
+pure (36 : Int);
+}
+| «Kind».«XCall» => {
+pure (37 : Int);
+}
+| «Kind».«XCallG» => {
+pure (38 : Int);
+}
+| «Kind».«XInst» => {
+pure (39 : Int);
+}
+| «Kind».«XNew» => {
+pure (40 : Int);
+}
+| «Kind».«XEv» => {
+pure (41 : Int);
+}
+| «Kind».«XMethod» => {
+pure (42 : Int);
+}
+| «Kind».«XBin» => {
+pure (43 : Int);
+}
+| «Kind».«XUn» => {
+pure (44 : Int);
+}
+| «Kind».«XIf» => {
+pure (45 : Int);
+}
+| «Kind».«XMatch» => {
+pure (46 : Int);
+}
+| «Kind».«XForall» => {
+pure (47 : Int);
+}
+| «Kind».«XExists» => {
+pure (48 : Int);
+}
+| «Kind».«XArm» => {
+pure (49 : Int);
+}
+| «Kind».«XBlock» => {
+pure (50 : Int);
+}
+| «Kind».«XWhile» => {
+pure (51 : Int);
+}
+| «Kind».«XAssign» => {
+pure (52 : Int);
+}
+| «Kind».«SVal» => {
+pure (53 : Int);
+}
+| «Kind».«SHandle» => {
+pure (54 : Int);
+}
+| «Kind».«SClause» => {
+pure (55 : Int);
+}
+| «Kind».«BVar» => {
+pure (56 : Int);
+}
+| «Kind».«BCap» => {
+pure (57 : Int);
+}
+| «Kind».«GState» => {
+pure (58 : Int);
+}
+| «Kind».«GVar» => {
+pure (59 : Int);
+}
+;
+}
+
 def «isGeneric» («d» : «Node») : Option Bool := do {
 pure (← (do {
 if (← (do {
@@ -9345,6 +9856,362 @@ partial_fixpoint
 
 end
 
+mutual
+def «hSeq_loop0» («xs» : «Nodes») («g0» : «Digest») («env0» : «Nodes») («cx» : «HCtx») (st' : («Nodes» × «HW»)) : Option («Nodes» × «HW») := do {
+if (← (fun ((«c», _) : («Nodes» × «HW»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hSeq_loop0» «xs» «g0» «env0» «cx» (← (fun ((«c», «w») : («Nodes» × «HW»)) => (do {
+let mut «c» := «c»;
+let mut «w» := «w»;
+«w» := (← «hNode» «cx» (← «hwEnv» «w») (← «hwG» «w») (← «head» «c»));
+«c» := (← «tail» «c»);
+pure («c», «w»)
+} : Option («Nodes» × «HW»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hSeq» («cx» : «HCtx») («env0» : «Nodes») («g0» : «Digest») («xs» : «Nodes») : Option «HW» := do {
+let mut «w» := («HW».«HW» «g0» «env0»);
+let mut «c» := «xs»;
+let t_ ← «hSeq_loop0» «xs» «g0» «env0» «cx» («c», «w»);
+«c» := t_.1;
+«w» := t_.2;
+pure «w»;
+}
+partial_fixpoint
+
+def «hKids_loop0» («xs» : «Nodes») («g0» : «Digest») («env» : «Nodes») («cx» : «HCtx») (st' : («Nodes» × «Digest»)) : Option («Nodes» × «Digest») := do {
+if (← (fun ((«c», _) : («Nodes» × «Digest»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hKids_loop0» «xs» «g0» «env» «cx» (← (fun ((«c», «g») : («Nodes» × «Digest»)) => (do {
+let mut «c» := «c»;
+let mut «g» := «g»;
+«g» := (← «hwG» (← «hNode» «cx» «env» «g» (← «head» «c»)));
+«c» := (← «tail» «c»);
+pure («c», «g»)
+} : Option («Nodes» × «Digest»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hKids» («cx» : «HCtx») («env» : «Nodes») («g0» : «Digest») («xs» : «Nodes») : Option «Digest» := do {
+let mut «g» := «g0»;
+let mut «c» := «xs»;
+let t_ ← «hKids_loop0» «xs» «g0» «env» «cx» («c», «g»);
+«c» := t_.1;
+«g» := t_.2;
+pure «g»;
+}
+partial_fixpoint
+
+def «hNode» («cx» : «HCtx») («env» : «Nodes») («g0» : «Digest») («x» : «Node») : Option «HW» := do {
+let «k» ← (pure (← «kind» «x»));
+let «g» ← (pure (← «dgAdd» (← «dgAdd» (← «dgAdd» (← «dgAdd» «g0» (7 : Int)) (← «kindCode» «k»)) (← «num» «x»)) (← «len» (← «kids» «x»))));
+if (← (do {
+if (← (do {
+if (← (do {
+if («k» == «Kind».«SVal») then {
+pure true
+} else {
+pure («k» == «Kind».«SHandle»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«Param»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«Binder»)
+}
+})) then {
+let «g2» ← (pure (← (do {
+if («k» == «Kind».«SHandle») then {
+pure (← «hName» «cx» «env» «g» (← «text2» «x») false);
+} else {
+pure «g»;
+};
+})));
+pure («HW».«HW» (← «hKids» «cx» «env» «g2» (← «kids» «x»)) (← «hBind» «env» (← «text» «x»)));
+} else {
+if (← (do {
+if («k» == «Kind».«XForall») then {
+pure true
+} else {
+pure («k» == «Kind».«XExists»)
+}
+})) then {
+pure («HW».«HW» (← «hKids» «cx» (← «hBind» «env» (← «text» «x»)) «g» (← «kids» «x»)) «env»);
+} else {
+if («k» == «Kind».«XArm») then {
+pure («HW».«HW» (← «hArm» «cx» «env» (← «hName» «cx» «env» «g» (← «text» «x») false) «x») «env»);
+} else {
+if («k» == «Kind».«DFn») then {
+pure («HW».«HW» (← «hwG» (← «hSeq» «cx» «env» «g» (← «hFnKids» (← «kids» «x»)))) «env»);
+} else {
+if («k» == «Kind».«DCase») then {
+pure («HW».«HW» (← «hwG» (← «hSeq» «cx» «env» «g» (← «rev» (← «kids» «x»)))) «env»);
+} else {
+if (← (do {
+if (← (do {
+if («k» == «Kind».«Params») then {
+pure true
+} else {
+pure («k» == «Kind».«Groups»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«Group»)
+}
+})) then {
+pure (← «hSeq» «cx» «env» «g» (← «kids» «x»));
+} else {
+if (← (do {
+if («k» == «Kind».«XBlock») then {
+pure true
+} else {
+pure («k» == «Kind».«DEnum»)
+}
+})) then {
+pure («HW».«HW» (← «hwG» (← «hSeq» «cx» «env» «g» (← «kids» «x»))) «env»);
+} else {
+if (← (do {
+if (← (do {
+if (← (do {
+if (← (do {
+if (← (do {
+if («k» == «Kind».«XStr») then {
+pure true
+} else {
+pure («k» == «Kind».«XInt»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«XBool»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«XBin»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«XUn»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«TTerm»)
+}
+})) then {
+pure («HW».«HW» (← «hKids» «cx» «env» (← «dgStr» (← «dgStr» «g» (← «text» «x»)) (← «text2» «x»)) (← «kids» «x»)) «env»);
+} else {
+let «loc» ← (pure (← (do {
+if (← (do {
+if (← (do {
+if (← (do {
+if («k» == «Kind».«XName») then {
+pure true
+} else {
+pure («k» == «Kind».«XAssign»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«XMethod»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«Ty»)
+}
+})) then {
+pure true
+} else {
+pure («k» == «Kind».«TyCap»)
+}
+})));
+pure («HW».«HW» (← «hKids» «cx» «env» (← «hName» «cx» «env» (← «hName» «cx» «env» «g» (← «text» «x») «loc») (← «text2» «x») («k» == «Kind».«XEv»)) (← «kids» «x»)) «env»);
+};
+};
+};
+};
+};
+};
+};
+};
+}
+partial_fixpoint
+
+def «hArm_loop0» («x» : «Node») («g» : «Digest») («env0» : «Nodes») («cx» : «HCtx») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hArm_loop0» «x» «g» «env0» «cx» (← (fun ((«c», «env») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «env» := «env»;
+«env» := (← «hBind» «env» (← «text» (← «head» «c»)));
+«c» := (← «tail» «c»);
+pure («c», «env»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hArm» («cx» : «HCtx») («env0» : «Nodes») («g» : «Digest») («x» : «Node») : Option «Digest» := do {
+let mut «env» := «env0»;
+let mut «c» := (← «tail» (← «kids» «x»));
+let t_ ← «hArm_loop0» «x» «g» «env0» «cx» («c», «env»);
+«c» := t_.1;
+«env» := t_.2;
+pure (← «hwG» (← «hNode» «cx» «env» «g» (← «head» (← «kids» «x»))));
+}
+partial_fixpoint
+
+end
+
+mutual
+def «hRefs_loop0» («acc» : «Nodes») («x» : «Node») («k» : «Kind») («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hRefs_loop0» «acc» «x» «k» «ds» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+«out» := (← «hRefs» «ds» «k» (← «head» «c») «out»);
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hRefs» («ds» : «Decls») («k» : «Kind») («x» : «Node») («acc» : «Nodes») : Option «Nodes» := do {
+let mut «out» := (← «hRefName» «ds» «k» (← «text2» «x») (← «hRefName» «ds» «k» (← «text» «x») «acc»));
+let mut «c» := (← «kids» «x»);
+let t_ ← «hRefs_loop0» «acc» «x» «k» «ds» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+partial_fixpoint
+
+end
+
+def «hGraph_loop0» («k» : «Kind») («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hGraph_loop0» «k» «ds» (← (fun ((«c», «out») : («Nodes» × «Nodes»)) => (do {
+let mut «c» := «c»;
+let mut «out» := «out»;
+let «d» ← (pure (← «head» «c»));
+if (← (do {
+if ((← «kind» «d») == «k») then {
+pure ((← «num» «d») != (1 : Int))
+} else {
+pure false
+}
+})) then {
+«out» := («Nodes».«NCons» («Node».«Node» «Kind».«Name» (← «text» «d») "".toUTF8 (0 : Int) (0 : Int) (← «hRefs» «ds» «k» «d» «Nodes».«NNil»)) «out»);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «out»)
+} : Option («Nodes» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hGraph» («ds» : «Decls») («k» : «Kind») : Option «Nodes» := do {
+let mut «out» := «Nodes».«NNil»;
+let mut «c» := (← «declList» «ds»);
+let t_ ← «hGraph_loop0» «k» «ds» («c», «out»);
+«c» := t_.1;
+«out» := t_.2;
+pure «out»;
+}
+
+def «hDecl» («cx» : «HCtx») («k» : «Kind») («m» : ByteArray) : Option «Digest» := do {
+match «cx» with
+| «HCtx».«HCtx» «ds» _ _ _ => {
+pure (← «hwG» (← «hNode» «cx» «Nodes».«NNil» («Digest».«Digest» (1 : Int) (2 : Int) (3 : Int) (4 : Int)) (← «findDecl» «ds» «k» «m»)));
+}
+;
+}
+
+def «hComp_loop0» («m0» : ByteArray) («ms» : «Nodes») («k» : «Kind») («gm» : «DMap») («hm0» : «HMap») («ds» : «Decls») (st' : («Nodes» × «HMem»)) : Option («Nodes» × «HMem») := do {
+if (← (fun ((«c», _) : («Nodes» × «HMem»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hComp_loop0» «m0» «ms» «k» «gm» «hm0» «ds» (← (fun ((«c», «sorted») : («Nodes» × «HMem»)) => (do {
+let mut «c» := «c»;
+let mut «sorted» := «sorted»;
+«sorted» := (← «hmemIns» «sorted» (← «text» (← «head» «c»)) (← «hDecl» («HCtx».«HCtx» «ds» «hm0» «ms» (1 : Int)) «k» (← «text» (← «head» «c»))));
+«c» := (← «tail» «c»);
+pure («c», «sorted»)
+} : Option («Nodes» × «HMem»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hComp_loop1» («order» : «Nodes») («sorted» : «HMem») («m0» : ByteArray) («ms» : «Nodes») («k» : «Kind») («gm» : «DMap») («hm0» : «HMap») («ds» : «Decls») (st' : («Digest» × «Nodes»)) : Option («Digest» × «Nodes») := do {
+if (← (fun ((_, «c») : («Digest» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hComp_loop1» «order» «sorted» «m0» «ms» «k» «gm» «hm0» «ds» (← (fun ((«comp», «c») : («Digest» × «Nodes»)) => (do {
+let mut «comp» := «comp»;
+let mut «c» := «c»;
+«comp» := (← «dgDg» «comp» (← «hDecl» («HCtx».«HCtx» «ds» «hm0» «order» (2 : Int)) «k» (← «text» (← «head» «c»))));
+«c» := (← «tail» «c»);
+pure («comp», «c»)
+} : Option («Digest» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hComp_loop2» («comp» : «Digest») («order» : «Nodes») («sorted» : «HMem») («m0» : ByteArray) («ms» : «Nodes») («k» : «Kind») («gm» : «DMap») («hm0» : «HMap») («ds» : «Decls») (st' : (Int × «HMap» × «Nodes»)) : Option (Int × «HMap» × «Nodes») := do {
+if (← (fun ((_, _, «c») : (Int × «HMap» × «Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hComp_loop2» «comp» «order» «sorted» «m0» «ms» «k» «gm» «hm0» «ds» (← (fun ((«i», «hm», «c») : (Int × «HMap» × «Nodes»)) => (do {
+let mut «i» := «i»;
+let mut «hm» := «hm»;
+let mut «c» := «c»;
+«hm» := (← «hPut» «ds» «hm» «k» (← «text» (← «head» «c»)) (← «dgAdd» (← «dgAdd» «comp» (10 : Int)) «i»));
+«i» := («i» + (1 : Int));
+«c» := (← «tail» «c»);
+pure («i», «hm», «c»)
+} : Option (Int × «HMap» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hComp» («ds» : «Decls») («hm0» : «HMap») («gm» : «DMap») («k» : «Kind») («ms» : «Nodes») : Option «HMap» := do {
+let «m0» ← (pure (← «text» (← «head» «ms»)));
+if (← (do {
+if ((← «len» «ms») == (1 : Int)) then {
+pure (!(← «has» (← «kids» (← «gGet» «gm» «m0»)) «m0»))
+} else {
+pure false
+}
+})) then {
+pure (← «hPut» «ds» «hm0» «k» «m0» (← «hDecl» («HCtx».«HCtx» «ds» «hm0» «Nodes».«NNil» (2 : Int)) «k» «m0»));
+} else {
+let mut «sorted» := «HMem».«HMemNil»;
+let mut «c» := «ms»;
+let t_ ← «hComp_loop0» «m0» «ms» «k» «gm» «hm0» «ds» («c», «sorted»);
+«c» := t_.1;
+«sorted» := t_.2;
+let «order» ← (pure (← «hmemNames» «sorted»));
+let mut «comp» := («Digest».«Digest» (9 : Int) (9 : Int) (9 : Int) (9 : Int));
+«c» := «order»;
+let t_ ← «hComp_loop1» «order» «sorted» «m0» «ms» «k» «gm» «hm0» «ds» («comp», «c»);
+«comp» := t_.1;
+«c» := t_.2;
+let mut «hm» := «hm0»;
+let mut «i» := (0 : Int);
+«c» := «order»;
+let t_ ← «hComp_loop2» «comp» «order» «sorted» «m0» «ms» «k» «gm» «hm0» «ds» («i», «hm», «c»);
+«i» := t_.1;
+«hm» := t_.2.1;
+«c» := t_.2.2;
+pure «hm»;
+};
+}
+
 def «instantiate» («f» : «Node») («targs» : «Nodes») : Option «Node» := do {
 let «g» ← (pure (← «substTy» «f» (← «tparams» «f») «targs»));
 pure (← «withKids» «g» («Nodes».«NCons» (← «kid» «g» (0 : Int)) («Nodes».«NCons» (← «kid» «g» (1 : Int)) («Nodes».«NCons» (← «kid» «g» (2 : Int)) («Nodes».«NCons» (← «kid» «g» (3 : Int)) (← «one» (← «list» «Kind».«Names» (← «lineOf» «f») «targs»)))))));
@@ -10507,6 +11374,119 @@ let _ := (← «err» "internal: negation in purity rules".toUTF8 «p» (0 : Int
 pure «Node».«NoNode»;
 }
 ;
+}
+
+def «hComps_loop0» («g» : «Nodes») («gm» : «DMap») (st' : («Nodes» × «Tarjan»)) : Option («Nodes» × «Tarjan») := do {
+if (← (fun ((«c», _) : («Nodes» × «Tarjan»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hComps_loop0» «g» «gm» (← (fun ((«c», «st») : («Nodes» × «Tarjan»)) => (do {
+let mut «c» := «c»;
+let mut «st» := «st»;
+if (!(← «found» (← «tInfo» «st» (← «text» (← «head» «c»))))) then {
+«st» := (← «tVisit» «gm» (← «text» (← «head» «c»)) «st»);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure («c», «st»)
+} : Option («Nodes» × «Tarjan»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hComps» («gm» : «DMap») («g» : «Nodes») : Option «Nodes» := do {
+let mut «st» := («Tarjan».«Tarjan» (0 : Int) «DMap».«DTip» «Nodes».«NNil» «Nodes».«NNil»);
+let mut «c» := «g»;
+let t_ ← «hComps_loop0» «g» «gm» («c», «st»);
+«c» := t_.1;
+«st» := t_.2;
+pure (← «rev» (← «tComps» «st»));
+}
+
+def «hashAll_loop0» («gme» : «DMap») («ge» : «Nodes») («ds» : «Decls») (st' : («Nodes» × «HMap»)) : Option («Nodes» × «HMap») := do {
+if (← (fun ((«cs», _) : («Nodes» × «HMap»)) => (do {
+pure (!(← «isNil» «cs»))
+} : Option Bool)) st') then «hashAll_loop0» «gme» «ge» «ds» (← (fun ((«cs», «hm») : («Nodes» × «HMap»)) => (do {
+let mut «cs» := «cs»;
+let mut «hm» := «hm»;
+«hm» := (← «hComp» «ds» «hm» «gme» «Kind».«DEnum» (← «kids» (← «head» «cs»)));
+«cs» := (← «tail» «cs»);
+pure («cs», «hm»)
+} : Option («Nodes» × «HMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hashAll_loop1» («gmf» : «DMap») («gf» : «Nodes») («gme» : «DMap») («ge» : «Nodes») («ds» : «Decls») (st' : («Nodes» × «HMap»)) : Option («Nodes» × «HMap») := do {
+if (← (fun ((«cs», _) : («Nodes» × «HMap»)) => (do {
+pure (!(← «isNil» «cs»))
+} : Option Bool)) st') then «hashAll_loop1» «gmf» «gf» «gme» «ge» «ds» (← (fun ((«cs», «hm») : («Nodes» × «HMap»)) => (do {
+let mut «cs» := «cs»;
+let mut «hm» := «hm»;
+«hm» := (← «hComp» «ds» «hm» «gmf» «Kind».«DFn» (← «kids» (← «head» «cs»)));
+«cs» := (← «tail» «cs»);
+pure («cs», «hm»)
+} : Option («Nodes» × «HMap»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hashAll» («ds» : «Decls») : Option «HMap» := do {
+let «ge» ← (pure (← «hGraph» «ds» «Kind».«DEnum»));
+let «gme» ← (pure (← «dmAddAll» «DMap».«DTip» «ge»));
+let mut «hm» := «HMap».«HTip»;
+let mut «cs» := (← «hComps» «gme» «ge»);
+let t_ ← «hashAll_loop0» «gme» «ge» «ds» («cs», «hm»);
+«cs» := t_.1;
+«hm» := t_.2;
+let «gf» ← (pure (← «hGraph» «ds» «Kind».«DFn»));
+let «gmf» ← (pure (← «dmAddAll» «DMap».«DTip» «gf»));
+«cs» := (← «hComps» «gmf» «gf»);
+let t_ ← «hashAll_loop1» «gmf» «gf» «gme» «ge» «ds» («cs», «hm»);
+«cs» := t_.1;
+«hm» := t_.2;
+pure «hm»;
+}
+
+def «hashPrint_loop0» («hm» : «HMap») («ds» : «Decls») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («c» : («Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «hashPrint_loop0» «hm» «ds» (← (fun («c» : («Nodes»)) => (do {
+let mut «c» := «c»;
+let «d» ← (pure (← «head» «c»));
+if (← (do {
+if (← (do {
+if ((← «kind» «d») == «Kind».«DFn») then {
+pure ((← «num» «d») != (1 : Int))
+} else {
+pure false
+}
+})) then {
+pure true
+} else {
+pure ((← «kind» «d») == «Kind».«DEnum»)
+}
+})) then {
+match (← «hmGet» «hm» (← «text» «d»)) with
+| «HFound».«HSome» «g» => {
+let _ := (← «hShow» (← «text» «d») «g»);
+}
+| «HFound».«HNone» => {
+let _ := ();
+}
+;
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure «c»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «hashPrint» («ds» : «Decls») : Option Unit := do {
+let «hm» ← (pure (← «hashAll» «ds»));
+let mut «c» := (← «declList» «ds»);
+let t_ ← «hashPrint_loop0» «hm» «ds» «c»;
+«c» := t_;
+pure ()
 }
 
 def «enumInsts_loop0» («cs» : «Nodes») («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {

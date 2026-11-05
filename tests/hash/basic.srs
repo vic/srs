@@ -1,0 +1,50 @@
+// hash: vic-uw3 H1 content hashes (vic: Unison hashing, names are metadata)
+// same: hsize hlen
+// differ: hsize hsize1
+// same: HSeq HSeq2
+// same: hp hq
+// differ: hcallA hcallB
+// same: hcallA hcallC
+// same: hev hev2
+// same: hod hod2
+// differ: hev hod
+// differ: hfa hex
+enum HSeq:
+  case HNil
+  case HCons(h: I64, t: HSeq)
+enum HSeq2:
+  case HNil2
+  case HCons2(h: I64, t: HSeq2)
+// renamed locals and fn name: same meaning
+def hsize(xs: HSeq): I64 = xs match
+  case HNil => 0
+  case HCons(_, t) => 1 + hsize(t)
+def hlen(ys: HSeq): I64 = ys match
+  case HNil => 0
+  case HCons(_, u) => 1 + hlen(u)
+def hsize1(xs: HSeq): I64 = xs match
+  case HNil => 1
+  case HCons(_, t) => 1 + hsize1(t)
+// a param named like a fn is still a local
+def hp(hf: I64): I64 = hf
+def hq(hg: I64): I64 = hg
+def hf1(x: I64): I64 = x + 1
+def hf2(x: I64): I64 = x + 2
+def hf3(y: I64): I64 = y + 1
+// callers: by the hash of the callee, not its name
+def hcallA(x: I64): I64 = hf1(x)
+def hcallB(x: I64): I64 = hf2(x)
+def hcallC(x: I64): I64 = hf3(x)
+// mutual recursion: one component; members by position
+def hev(n: I64): Bool = if n == 0 then true else hod(n - 1)
+def hod(n: I64): Bool = if n == 0 then false else hev(n - 1)
+def hev2(m: I64): Bool = if m == 0 then true else hod2(m - 1)
+def hod2(m: I64): Bool = if m == 0 then false else hev2(m - 1)
+// only the node kind differs (forall vs exists, same fields)
+def hfa(x: I64): I64
+  ensures forall y: I64 => y == y
+= x
+def hex(x: I64): I64
+  ensures exists y: I64 => y == y
+= x
+def main(): I64 = 0

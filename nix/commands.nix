@@ -52,7 +52,7 @@ in
         ''
           ${build}
           ${cc} -o "$B/seed" bootstrap/seed.c rt/srs_rt.c
-          S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs"
+          S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs"
           gen() { # gen NS OUT files...: generated Lean must match the committed file
             ns=$1; out=$2; shift 2
             timeout 10 "$B/seed" --lean "$ns" "$@" > "$B/gen.lean" || exit 1
@@ -74,7 +74,7 @@ in
         ${build}
         timeout 120 zig test s0/main.zig
         timeout 120 zig build-exe s0/main.zig -femit-bin="$B/s0"
-        S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/main.srs"
+        S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/main.srs"
         "$B/s0" $S1SRC > "$B/s1.c"
         ${cc} -o "$B/s1" "$B/s1.c" rt/srs_rt.c
         "$B/s1" $S1SRC > bootstrap/seed.c

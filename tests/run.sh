@@ -5,7 +5,7 @@
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"
 CC="zig cc -std=gnu11 -O1 -w"
-S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/main.srs"
+S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/main.srs"
 LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
 fail=0
 timeout 120 $CC -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
@@ -26,5 +26,20 @@ for t in tests/neg/*.srs; do
   msg=$(timeout 2 "$B/s2" $LIBS "$t" 2>&1 >/dev/null); code=$?
   case "$msg" in *"$want"*) [ $code -eq 1 ] && { echo "ok neg/$n"; continue; };; esac
   echo "FAIL neg/$n exit=$code msg=$msg"; fail=1
+done
+# content hashes (vic-uw3 H1): `s1 --hash` prints "name hash"; each "// same: a b" / "// differ: a b" line must hold
+for t in tests/hash/*.srs; do
+  n=$(basename "$t" .srs)
+  timeout 2 "$B/s2" --hash lib/prelude.srs "$t" > "$B/$n.hash" 2>&1 || { echo "FAIL hash/$n $(head -1 "$B/$n.hash")"; fail=1; continue; }
+  bad=""
+  # armed: a test with no relation line proves nothing
+  [ "$(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t" | wc -l)" -gt 0 ] || bad=" no-relations"
+  while read -r rel a b; do
+    ha=$(awk -v n="$a" '$1 == n {print $2}' "$B/$n.hash"); hb=$(awk -v n="$b" '$1 == n {print $2}' "$B/$n.hash")
+    if [ -z "$ha" ] || [ -z "$hb" ]; then bad="$bad missing($a $b)"
+    elif [ "$rel" = same: ] && [ "$ha" != "$hb" ]; then bad="$bad $a!=$b"
+    elif [ "$rel" = differ: ] && [ "$ha" = "$hb" ]; then bad="$bad $a==$b"; fi
+  done < <(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t")
+  if [ -n "$bad" ]; then echo "FAIL hash/$n$bad"; fail=1; else echo "ok hash/$n"; fi
 done
 exit $fail

@@ -1,0 +1,317 @@
+// vic-uw3 H1: content hashes of types and fns (vic 2026-11-06: Unison hashing, names are metadata; digest (a)).
+// the hash of a decl = the digest of its checked form (e2): locals as binding positions, a ref to another decl
+// as that decl's hash, a ref inside its own SCC as the member's position (canonical order: by first-pass hash)
+
+// ── digest (a): 4 lanes, each h = (h * p + x) % m, m a prime below 2^32, p < 2^30: every step stays below 2^63
+enum Digest:
+  case Digest(a: I64, b: I64, c: I64, d: I64)
+
+def dgLane(h: I64, x: I64, p: I64, m: I64): I64 = (h * p + ((x % m) + m) % m) % m
+
+def dgAdd {r: Region} (g: Digest, x: I64): Digest = g match
+  case Digest(a, b, c, d) => Digest(dgLane(a, x, 1000000007, 4294967291), dgLane(b, x, 998244353, 4294967279), dgLane(c, x, 754974721, 4294967231), dgLane(d, x, 167772161, 4294967197))
+
+// a string: its length, then its bytes (prefix-free)
+def dgStr {r: Region} (g0: Digest, s: Str): Digest =
+  var g = dgAdd(g0, rt_str_len(s))
+  var i = 0
+  val n = rt_str_len(s)
+  while i < n do
+    g = dgAdd(g, rt_str_at(s, i))
+    i = i + 1
+  g
+
+def dgDg {r: Region} (g: Digest, h: Digest): Digest = h match
+  case Digest(a, b, c, d) => dgAdd(dgAdd(dgAdd(dgAdd(g, a), b), c), d)
+
+def dgLess(x: Digest, y: Digest): Bool = x match
+  case Digest(a, b, c, d) => y match
+    case Digest(a2, b2, c2, d2) => a < a2 || (a == a2 && (b < b2 || (b == b2 && (c < c2 || (c == c2 && d < d2)))))
+
+def dgEq(x: Digest, y: Digest): Bool = !dgLess(x, y) && !dgLess(y, x)
+
+// ── the hashes made so far: name -> digest (BST on strHash; an equal strHash with another name goes right)
+enum HMap:
+  case HTip
+  case HBin(k: Str, g: Digest, l: HMap, rt: HMap)
+
+enum HFound:
+  case HNone
+  case HSome(g: Digest)
+
+def hmGet {r: Region} (m: HMap, k: Str): HFound = m match
+  case HTip => HNone
+  case HBin(k2, g, l, rt) =>
+    if eqs(k, k2) then HSome(g) else if strHash(k) < strHash(k2) then hmGet(l, k) else hmGet(rt, k)
+
+def hmPut {r: Region} (m: HMap, k: Str, g: Digest): HMap = m match
+  case HTip => HBin(k, g, HTip, HTip)
+  case HBin(k2, g2, l, rt) =>
+    if eqs(k, k2) then HBin(k2, g, l, rt) else if strHash(k) < strHash(k2) then HBin(k2, g2, hmPut(l, k, g), rt) else HBin(k2, g2, l, hmPut(rt, k, g))
+
+// ── the walk. pass 1: a ref to a member of the SCC is one token; pass 2: the member's position in mem
+enum HCtx:
+  case HCtx(ds: Decls, hm: HMap, mem: Nodes, pass: I64)
+
+// the digest so far, and the locals in scope (Name(s, position))
+enum HW:
+  case HW(g: Digest, env: Nodes)
+
+def hwG(w: HW): Digest = w match
+  case HW(g, _) => g
+
+def hwEnv(w: HW): Nodes = w match
+  case HW(_, e) => e
+
+def hBind {r: Region} (env: Nodes, s: Str): Nodes = NCons(Node(Name, s, "", len(env), 0, NNil), env)
+
+// a ref to a decl outside the walk: its hash, else its text (externs, ops, states, builtin types)
+def hRef {r: Region} (hm: HMap, g: Digest, s: Str): Digest = hmGet(hm, s) match
+  case HSome(h) => dgDg(dgAdd(g, 4), h)
+  case HNone => dgStr(dgAdd(g, 2), s)
+
+// a name field: a local (its position, only where a local can stand), a member of this SCC, or a ref
+def hName {r: Region} (cx: HCtx, env: Nodes, g: Digest, s: Str, local: Bool): Digest = cx match
+  case HCtx(_, hm, mem, pass) =>
+    val b = if local then find(env, Name, s) else NoNode
+    if found(b) then dgAdd(dgAdd(g, 3), num(b))
+    else if has(mem, s) then (if pass == 1 then dgAdd(g, 5) else dgAdd(dgAdd(g, 6), index(mem, s)))
+    else hRef(hm, g, s)
+
+// the kids in order, each seeing the bindings of the ones before (a block, params, binder groups)
+def hSeq {r: Region} (cx: HCtx, env0: Nodes, g0: Digest, xs: Nodes): HW =
+  var w = HW(g0, env0)
+  var c = xs
+  while !isNil(c) do
+    w = hNode(cx, hwEnv(w), hwG(w), head(c))
+    c = tail(c)
+  w
+
+// the kids in order, all in env (no binding leaks out)
+def hKids {r: Region} (cx: HCtx, env: Nodes, g0: Digest, xs: Nodes): Digest =
+  var g = g0
+  var c = xs
+  while !isNil(c) do
+    g = hwG(hNode(cx, env, g, head(c)))
+    c = tail(c)
+  g
+
+// a def: its binder groups first (kid 4), then params, result type, body, clauses
+def hFnKids {r: Region} (xs: Nodes): Nodes = if len(xs) > 4 then NCons(nth(xs, 4), rev(drop(rev(xs), len(xs) - 4))) else xs
+
+def hNode {r: Region} (cx: HCtx, env: Nodes, g0: Digest, x: Node): HW =
+  val k = kind(x)
+  val g = dgAdd(dgAdd(dgAdd(dgAdd(g0, 7), kindCode(k)), num(x)), len(kids(x)))
+  if k == SVal || k == SHandle || k == Param || k == Binder then
+    // a binding: its kids (value, type, handler args) see the old scope; the name becomes the next position
+    val g2 = if k == SHandle then hName(cx, env, g, text2(x), false) else g
+    HW(hKids(cx, env, g2, kids(x)), hBind(env, text(x)))
+  else if k == XForall || k == XExists then HW(hKids(cx, hBind(env, text(x)), g, kids(x)), env)
+  else if k == XArm then HW(hArm(cx, env, hName(cx, env, g, text(x), false), x), env)
+  else if k == DFn then HW(hwG(hSeq(cx, env, g, hFnKids(kids(x)))), env)
+  else if k == DCase then HW(hwG(hSeq(cx, env, g, rev(kids(x)))), env)
+  // params and binder groups pass their bindings on (to the body); a block or an enum closes its scope
+  else if k == Params || k == Groups || k == Group then hSeq(cx, env, g, kids(x))
+  else if k == XBlock || k == DEnum then HW(hwG(hSeq(cx, env, g, kids(x))), env)
+  else if k == XStr || k == XInt || k == XBool || k == XBin || k == XUn || k == TTerm then HW(hKids(cx, env, dgStr(dgStr(g, text(x)), text2(x)), kids(x)), env)
+  else
+    // s: a local only where one can stand; callees and constructors are refs
+    val loc = k == XName || k == XAssign || k == XMethod || k == Ty || k == TyCap
+    HW(hKids(cx, env, hName(cx, env, hName(cx, env, g, text(x), loc), text2(x), k == XEv), kids(x)), env)
+
+// an arm: the binds (kids after the body) are in scope in the body
+def hArm {r: Region} (cx: HCtx, env0: Nodes, g: Digest, x: Node): Digest =
+  var env = env0
+  var c = tail(kids(x))
+  while !isNil(c) do
+    env = hBind(env, text(head(c)))
+    c = tail(c)
+  hwG(hNode(cx, env, g, head(kids(x))))
+
+// ── SCCs in dependency order (Tarjan, s1/lean.srs), hashed callees first
+// the decls d refers to among those of kind k (fns: user defs and spec defs; enums: by name in types and cases)
+def hRefs {r: Region} (ds: Decls, k: Kind, x: Node, acc: Nodes): Nodes =
+  var out = hRefName(ds, k, text2(x), hRefName(ds, k, text(x), acc))
+  var c = kids(x)
+  while !isNil(c) do
+    out = hRefs(ds, k, head(c), out)
+    c = tail(c)
+  out
+
+def hRefName {r: Region} (ds: Decls, k: Kind, s: Str, acc: Nodes): Nodes =
+  val d = findDecl(ds, k, s)
+  if found(d) && num(d) != 1 && !has(acc, s) then NCons(leaf(Name, s, 0), acc) else acc
+
+def hGraph {r: Region} (ds: Decls, k: Kind): Nodes =
+  var out = NNil
+  var c = declList(ds)
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == k && num(d) != 1 then out = NCons(Node(Name, text(d), "", 0, 0, hRefs(ds, k, d, NNil)), out) else ()
+    c = tail(c)
+  out
+
+// the SCCs of g, callees first
+def hComps {r: Region} (gm: DMap, g: Nodes): Nodes =
+  var st = Tarjan(0, DTip, NNil, NNil)
+  var c = g
+  while !isNil(c) do
+    if !found(tInfo(st, text(head(c)))) then st = tVisit(gm, text(head(c)), st) else ()
+    c = tail(c)
+  rev(tComps(st))
+
+def hDecl {r: Region} (cx: HCtx, k: Kind, m: Str): Digest = cx match
+  case HCtx(ds, _, _, _) => hwG(hNode(cx, NNil, Digest(1, 2, 3, 4), findDecl(ds, k, m)))
+
+// members sorted by their pass-1 hash (insertion sort; equal hashes keep SCC order)
+enum HMem:
+  case HMemNil
+  case HMem(name: Str, g: Digest, t: HMem)
+
+def hmemIns {r: Region} (xs: HMem, n: Str, g: Digest): HMem = xs match
+  case HMemNil => HMem(n, g, HMemNil)
+  case HMem(n2, g2, t) => if dgLess(g, g2) then HMem(n, g, xs) else HMem(n2, g2, hmemIns(t, n, g))
+
+def hmemNames {r: Region} (xs: HMem): Nodes = xs match
+  case HMemNil => NNil
+  case HMem(n, _, t) => NCons(leaf(Name, n, 0), hmemNames(t))
+
+// one SCC: a plain decl hashes alone; a cycle hashes as one component, each member = (component, position)
+def hComp {r: Region} (ds: Decls, hm0: HMap, gm: DMap, k: Kind, ms: Nodes): HMap =
+  val m0 = text(head(ms))
+  if len(ms) == 1 && !has(kids(gGet(gm, m0)), m0) then hPut(ds, hm0, k, m0, hDecl(HCtx(ds, hm0, NNil, 2), k, m0))
+  else
+    var sorted = HMemNil
+    var c = ms
+    while !isNil(c) do
+      sorted = hmemIns(sorted, text(head(c)), hDecl(HCtx(ds, hm0, ms, 1), k, text(head(c))))
+      c = tail(c)
+    val order = hmemNames(sorted)
+    var comp = Digest(9, 9, 9, 9)
+    c = order
+    while !isNil(c) do
+      comp = dgDg(comp, hDecl(HCtx(ds, hm0, order, 2), k, text(head(c))))
+      c = tail(c)
+    var hm = hm0
+    var i = 0
+    c = order
+    while !isNil(c) do
+      hm = hPut(ds, hm, k, text(head(c)), dgAdd(dgAdd(comp, 10), i))
+      i = i + 1
+      c = tail(c)
+    hm
+
+// an enum's cases are refs too: (enum hash, tag)
+def hPut {r: Region} (ds: Decls, hm0: HMap, k: Kind, m: Str, g: Digest): HMap =
+  var hm = hmPut(hm0, m, g)
+  if k == DEnum then
+    var c = kids(findDecl(ds, DEnum, m))
+    while !isNil(c) do
+      hm = hmPut(hm, text(head(c)), dgAdd(dgAdd(g, 8), num(head(c))))
+      c = tail(c)
+  else ()
+  hm
+
+def hashAll {r: Region} (ds: Decls): HMap =
+  val ge = hGraph(ds, DEnum)
+  val gme = dmAddAll(DTip, ge)
+  var hm = HTip
+  var cs = hComps(gme, ge)
+  while !isNil(cs) do
+    hm = hComp(ds, hm, gme, DEnum, kids(head(cs)))
+    cs = tail(cs)
+  val gf = hGraph(ds, DFn)
+  val gmf = dmAddAll(DTip, gf)
+  cs = hComps(gmf, gf)
+  while !isNil(cs) do
+    hm = hComp(ds, hm, gmf, DFn, kids(head(cs)))
+    cs = tail(cs)
+  hm
+
+// `s1 --hash`: "name a.b.c.d" for every def and enum, in program order
+def hashPrint {r: Region} (ds: Decls): Unit =
+  val hm = hashAll(ds)
+  var c = declList(ds)
+  while !isNil(c) do
+    val d = head(c)
+    if (kind(d) == DFn && num(d) != 1) || kind(d) == DEnum then
+      hmGet(hm, text(d)) match
+        case HSome(g) => hShow(text(d), g)
+        case HNone => ()
+    else ()
+    c = tail(c)
+
+def hShow(n: Str, g: Digest): Unit = g match
+  case Digest(a, b, c, d) =>
+    say(n)
+    say(" ")
+    sayn(a)
+    say(".")
+    sayn(b)
+    say(".")
+    sayn(c)
+    say(".")
+    sayn(d)
+    say("\n")
+// a code per node kind (injective): the digest of a node starts with it
+def kindCode(k: Kind): I64 = k match
+  case TIdent => 0
+  case TInt => 1
+  case TStr => 2
+  case TChar => 3
+  case TOp => 4
+  case TNl => 5
+  case TIndent => 6
+  case TDedent => 7
+  case TEof => 8
+  case Ty => 9
+  case TyTo => 10
+  case TyCap => 11
+  case DFn => 12
+  case DEnum => 13
+  case DCase => 14
+  case DProto => 15
+  case DRule => 16
+  case DType => 17
+  case DTCase => 18
+  case DOp => 19
+  case DTrans => 20
+  case DHandler => 21
+  case DTrait => 22
+  case DGiven => 23
+  case Params => 24
+  case Param => 25
+  case Groups => 26
+  case Group => 27
+  case Binder => 28
+  case TTerm => 29
+  case Names => 30
+  case Name => 31
+  case XInt => 32
+  case XBool => 33
+  case XStr => 34
+  case XUnit => 35
+  case XName => 36
+  case XCall => 37
+  case XCallG => 38
+  case XInst => 39
+  case XNew => 40
+  case XEv => 41
+  case XMethod => 42
+  case XBin => 43
+  case XUn => 44
+  case XIf => 45
+  case XMatch => 46
+  case XForall => 47
+  case XExists => 48
+  case XArm => 49
+  case XBlock => 50
+  case XWhile => 51
+  case XAssign => 52
+  case SVal => 53
+  case SHandle => 54
+  case SClause => 55
+  case BVar => 56
+  case BCap => 57
+  case GState => 58
+  case GVar => 59
