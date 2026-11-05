@@ -172,6 +172,22 @@ inductive «HW» where
 inductive «HMem» where
   | «HMemNil»
   | «HMem» («name» : ByteArray) («g» : «Digest») («t» : «HMem»)
+inductive «CVal» where
+  | «CUnit»
+  | «CInt» («v» : Int)
+  | «CBool» («b» : Bool)
+  | «CStr» («s» : ByteArray)
+  | «CData» («c» : ByteArray) («fs» : «CVals»)
+inductive «CVals» where
+  | «CNil»
+  | «CCons» («h» : «CVal») («t» : «CVals»)
+inductive «CEnv» where
+  | «CEnvNil»
+  | «CBind» («n» : ByteArray) («v» : «CVal») («t» : «CEnv»)
+inductive «CRes» where
+  | «CRes» («v» : «CVal») («env» : «CEnv») («fuel» : Int)
+inductive «CArgs» where
+  | «CArgs» («vs» : «CVals») («env» : «CEnv») («fuel» : Int)
 inductive «Tarjan» where
   | «Tarjan» («next» : Int) («info» : «DMap») («stack» : «Nodes») («comps» : «Nodes»)
 end
@@ -6615,6 +6631,847 @@ pure (59 : Int);
 ;
 }
 
+def «comptimeFuel» : Option Int := do {
+pure (1000000 : Int);
+}
+
+def «crV» («x» : «CRes») : Option «CVal» := do {
+match «x» with
+| «CRes».«CRes» «v» _ _ => {
+pure «v»;
+}
+;
+}
+
+def «crEnv» («x» : «CRes») : Option «CEnv» := do {
+match «x» with
+| «CRes».«CRes» _ «e» _ => {
+pure «e»;
+}
+;
+}
+
+def «crFuel» («x» : «CRes») : Option Int := do {
+match «x» with
+| «CRes».«CRes» _ _ «f» => {
+pure «f»;
+}
+;
+}
+
+def «cvInt» («v» : «CVal») («what» : ByteArray) («line» : Int) : Option Int := do {
+match «v» with
+| «CVal».«CInt» «n» => {
+pure «n»;
+}
+| _ => {
+let _ := (← «err» "internal: comptime int expected in".toUTF8 «what» «line»);
+pure (0 : Int);
+}
+;
+}
+
+def «cvBool» («v» : «CVal») («what» : ByteArray) («line» : Int) : Option Bool := do {
+match «v» with
+| «CVal».«CBool» «b» => {
+pure «b»;
+}
+| _ => {
+let _ := (← «err» "internal: comptime bool expected in".toUTF8 «what» «line»);
+pure false;
+}
+;
+}
+
+def «cvStr» («v» : «CVal») («what» : ByteArray) («line» : Int) : Option ByteArray := do {
+match «v» with
+| «CVal».«CStr» «s» => {
+pure «s»;
+}
+| _ => {
+let _ := (← «err» "internal: comptime string expected in".toUTF8 «what» «line»);
+pure "".toUTF8;
+}
+;
+}
+
+mutual
+def «cvEq» («a» : «CVal») («b» : «CVal») : Option Bool := do {
+match «a» with
+| «CVal».«CUnit» => {
+pure true;
+}
+| «CVal».«CInt» «x» => {
+pure ((← «cvInt» «b» "==".toUTF8 (0 : Int)) == «x»);
+}
+| «CVal».«CBool» «x» => {
+pure ((← «cvBool» «b» "==".toUTF8 (0 : Int)) == «x»);
+}
+| «CVal».«CStr» «x» => {
+pure (← «eqs» (← «cvStr» «b» "==".toUTF8 (0 : Int)) «x»);
+}
+| «CVal».«CData» «c» «fs» => {
+match «b» with
+| «CVal».«CData» «c2» «fs2» => {
+pure (← (do {
+if (← «eqs» «c» «c2») then {
+pure (← «cvsEq» «fs» «fs2»)
+} else {
+pure false
+}
+}));
+}
+| _ => {
+pure false;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+def «cvsEq» («a» : «CVals») («b» : «CVals») : Option Bool := do {
+match «a» with
+| «CVals».«CNil» => {
+pure true;
+}
+| «CVals».«CCons» «x» «xt» => {
+match «b» with
+| «CVals».«CCons» «y» «yt» => {
+pure (← (do {
+if (← «cvEq» «x» «y») then {
+pure (← «cvsEq» «xt» «yt»)
+} else {
+pure false
+}
+}));
+}
+| «CVals».«CNil» => {
+pure false;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «envGetC» («e» : «CEnv») («n» : ByteArray) : Option «CEnv» := do {
+match «e» with
+| «CEnv».«CEnvNil» => {
+pure «CEnv».«CEnvNil»;
+}
+| «CEnv».«CBind» «m» _ «t» => {
+if (← «eqs» «m» «n») then {
+pure «e»;
+} else {
+pure (← «envGetC» «t» «n»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «envSetC» («e» : «CEnv») («n» : ByteArray) («v» : «CVal») : Option «CEnv» := do {
+match «e» with
+| «CEnv».«CEnvNil» => {
+pure «CEnv».«CEnvNil»;
+}
+| «CEnv».«CBind» «m» «w» «t» => {
+if (← «eqs» «m» «n») then {
+pure («CEnv».«CBind» «m» «v» «t»);
+} else {
+pure («CEnv».«CBind» «m» «w» (← «envSetC» «t» «n» «v»));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «envLen» («e» : «CEnv») : Option Int := do {
+match «e» with
+| «CEnv».«CEnvNil» => {
+pure (0 : Int);
+}
+| «CEnv».«CBind» _ _ «t» => {
+pure ((1 : Int) + (← «envLen» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «envDrop» («e» : «CEnv») («k» : Int) : Option «CEnv» := do {
+if (decide («k» <= (0 : Int))) then {
+pure «e»;
+} else {
+match «e» with
+| «CEnv».«CEnvNil» => {
+pure «CEnv».«CEnvNil»;
+}
+| «CEnv».«CBind» _ _ «t» => {
+pure (← «envDrop» «t» («k» - (1 : Int)));
+}
+;
+};
+}
+partial_fixpoint
+
+end
+
+def «burn» («fuel» : Int) («f» : ByteArray) («line» : Int) : Option Int := do {
+if (decide («fuel» <= (0 : Int))) then {
+let _ := (← «err» "comptime evaluation ran out of fuel at".toUTF8 «f» «line»);
+} else {
+let _ := ();
+};
+pure («fuel» - (1 : Int));
+}
+
+def «evStr_loop0» («n» : Int) («e» : «Node») («fuel» : Int) («env» : «CEnv») (st' : (Int)) : Option (Int) := do {
+if (← (fun («i» : (Int)) => (do {
+pure (decide («i» < «n»))
+} : Option Bool)) st') then «evStr_loop0» «n» «e» «fuel» «env» (← (fun («i» : (Int)) => (do {
+let mut «i» := «i»;
+if ((← «rt_str_at» (← «text» «e») «i») == (92 : Int)) then {
+let _ := (← «err» "not yet at compile time: a string escape in".toUTF8 (← «text» «e») (← «lineOf» «e»));
+} else {
+let _ := ();
+};
+«i» := («i» + (1 : Int));
+pure «i»
+} : Option (Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «evStr» («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let mut «i» := (0 : Int);
+let «n» ← (pure (← «rt_str_len» (← «text» «e»)));
+let t_ ← «evStr_loop0» «n» «e» «fuel» «env» «i»;
+«i» := t_;
+pure («CRes».«CRes» («CVal».«CStr» (← «text» «e»)) «env» «fuel»);
+}
+
+def «evName» («ds» : «Decls») («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+match (← «envGetC» «env» (← «text» «e»)) with
+| «CEnv».«CBind» _ «v» _ => {
+pure («CRes».«CRes» «v» «env» «fuel»);
+}
+| «CEnv».«CEnvNil» => {
+if (!(← «found» (← «findDecl» «ds» «Kind».«DCase» (← «text» «e»)))) then {
+let _ := (← «err» "not a compile-time value:".toUTF8 (← «text» «e») (← «lineOf» «e»));
+} else {
+let _ := ();
+};
+pure («CRes».«CRes» («CVal».«CData» (← «text» «e») «CVals».«CNil») «env» «fuel»);
+}
+;
+}
+
+def «caVs» («a» : «CArgs») : Option «CVals» := do {
+match «a» with
+| «CArgs».«CArgs» «vs» _ _ => {
+pure «vs»;
+}
+;
+}
+
+def «caEnv» («a» : «CArgs») : Option «CEnv» := do {
+match «a» with
+| «CArgs».«CArgs» _ «e» _ => {
+pure «e»;
+}
+;
+}
+
+def «caFuel» («a» : «CArgs») : Option Int := do {
+match «a» with
+| «CArgs».«CArgs» _ _ «f» => {
+pure «f»;
+}
+;
+}
+
+mutual
+def «cvsRev» («a» : «CVals») («out» : «CVals») : Option «CVals» := do {
+match «a» with
+| «CVals».«CNil» => {
+pure «out»;
+}
+| «CVals».«CCons» «h» «t» => {
+pure (← «cvsRev» «t» («CVals».«CCons» «h» «out»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «cvFields» («v» : «CVal») : Option «CVals» := do {
+match «v» with
+| «CVal».«CData» _ «fs» => {
+pure «fs»;
+}
+| _ => {
+pure «CVals».«CNil»;
+}
+;
+}
+
+def «cvCase» («v» : «CVal») : Option ByteArray := do {
+match «v» with
+| «CVal».«CData» «n» _ => {
+pure «n»;
+}
+| _ => {
+pure "".toUTF8;
+}
+;
+}
+
+mutual
+def «bindParams» («ps» : «Nodes») («vs» : «CVals») («acc» : «CEnv») : Option «CEnv» := do {
+if (← «isNil» «ps») then {
+pure «acc»;
+} else {
+match «vs» with
+| «CVals».«CNil» => {
+pure «acc»;
+}
+| «CVals».«CCons» «v» «t» => {
+pure (← «bindParams» (← «tail» «ps») «t» («CEnv».«CBind» (← «text» (← «head» «ps»)) «v» «acc»));
+}
+;
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «cvNth» («vs» : «CVals») («i» : Int) : Option «CVal» := do {
+match «vs» with
+| «CVals».«CNil» => {
+pure «CVal».«CUnit»;
+}
+| «CVals».«CCons» «h» «t» => {
+if («i» == (0 : Int)) then {
+pure «h»;
+} else {
+pure (← «cvNth» «t» («i» - (1 : Int)));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «evExtern» («n» : ByteArray) («vs» : «CVals») («line» : Int) : Option «CVal» := do {
+if (← «eqs» «n» "rt_str_len".toUTF8) then {
+pure («CVal».«CInt» (← «rt_str_len» (← «cvStr» (← «cvNth» «vs» (0 : Int)) «n» «line»)));
+} else {
+if (← «eqs» «n» "rt_str_at".toUTF8) then {
+pure («CVal».«CInt» (← «rt_str_at» (← «cvStr» (← «cvNth» «vs» (0 : Int)) «n» «line») (← «cvInt» (← «cvNth» «vs» (1 : Int)) «n» «line»)));
+} else {
+if (← «eqs» «n» "rt_str_slice".toUTF8) then {
+pure («CVal».«CStr» (← «rt_str_slice» (← «cvStr» (← «cvNth» «vs» (0 : Int)) «n» «line») (← «cvInt» (← «cvNth» «vs» (1 : Int)) «n» «line») (← «cvInt» (← «cvNth» «vs» (2 : Int)) «n» «line»)));
+} else {
+if (← «eqs» «n» "rt_str_eq".toUTF8) then {
+pure («CVal».«CBool» (← «eqs» (← «cvStr» (← «cvNth» «vs» (0 : Int)) «n» «line») (← «cvStr» (← «cvNth» «vs» (1 : Int)) «n» «line»)));
+} else {
+let _ := (← «err» "comptime call of a fn with effects:".toUTF8 «n» «line»);
+pure «CVal».«CUnit»;
+};
+};
+};
+};
+}
+
+def «evOp» («f» : ByteArray) («op» : ByteArray) («a» : «CVal») («b» : «CVal») («line» : Int) : Option «CVal» := do {
+if (← (do {
+if (← «eqs» «op» "&&".toUTF8) then {
+pure true
+} else {
+pure (← «eqs» «op» "||".toUTF8)
+}
+})) then {
+pure «b»;
+} else {
+if (← «eqs» «op» "==".toUTF8) then {
+pure («CVal».«CBool» (← «cvEq» «a» «b»));
+} else {
+if (← «eqs» «op» "!=".toUTF8) then {
+pure («CVal».«CBool» (!(← «cvEq» «a» «b»)));
+} else {
+let «x» ← (pure (← «cvInt» «a» «op» «line»));
+let «y» ← (pure (← «cvInt» «b» «op» «line»));
+if (← (do {
+if (← (do {
+if (← «eqs» «op» "/".toUTF8) then {
+pure true
+} else {
+pure (← «eqs» «op» "%".toUTF8)
+}
+})) then {
+pure («y» == (0 : Int))
+} else {
+pure false
+}
+})) then {
+let _ := (← «err» "comptime division by zero in".toUTF8 «f» «line»);
+} else {
+let _ := ();
+};
+if (← «eqs» «op» "+".toUTF8) then {
+pure («CVal».«CInt» («x» + «y»));
+} else {
+if (← «eqs» «op» "-".toUTF8) then {
+pure («CVal».«CInt» («x» - «y»));
+} else {
+if (← «eqs» «op» "*".toUTF8) then {
+pure («CVal».«CInt» («x» * «y»));
+} else {
+if (← «eqs» «op» "/".toUTF8) then {
+pure («CVal».«CInt» (Int.tdiv «x» «y»));
+} else {
+if (← «eqs» «op» "%".toUTF8) then {
+pure («CVal».«CInt» (Int.tmod «x» «y»));
+} else {
+if (← «eqs» «op» "<".toUTF8) then {
+pure («CVal».«CBool» (decide («x» < «y»)));
+} else {
+if (← «eqs» «op» "<=".toUTF8) then {
+pure («CVal».«CBool» (decide («x» <= «y»)));
+} else {
+if (← «eqs» «op» ">".toUTF8) then {
+pure («CVal».«CBool» (decide («x» > «y»)));
+} else {
+if (← «eqs» «op» ">=".toUTF8) then {
+pure («CVal».«CBool» (decide («x» >= «y»)));
+} else {
+let _ := (← «err» "not yet at compile time: operator".toUTF8 «op» «line»);
+pure «CVal».«CUnit»;
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+}
+
+mutual
+def «bindArm» («bs» : «Nodes») («vs» : «CVals») («acc» : «CEnv») : Option «CEnv» := do {
+if (← «isNil» «bs») then {
+pure «acc»;
+} else {
+match «vs» with
+| «CVals».«CNil» => {
+pure «acc»;
+}
+| «CVals».«CCons» «v» «t» => {
+pure (← «bindArm» (← «tail» «bs») «t» (← (do {
+if (← «eqs» (← «text» (← «head» «bs»)) "_".toUTF8) then {
+pure «acc»;
+} else {
+pure («CEnv».«CBind» (← «text» (← «head» «bs»)) «v» «acc»);
+};
+})));
+}
+;
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «evExpr» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let «k» ← (pure (← «kind» «e»));
+let «line» ← (pure (← «lineOf» «e»));
+if («k» == «Kind».«XInt») then {
+pure («CRes».«CRes» («CVal».«CInt» (← «num» «e»)) «env» «fuel»);
+} else {
+if («k» == «Kind».«XBool») then {
+pure («CRes».«CRes» («CVal».«CBool» ((← «num» «e») == (1 : Int))) «env» «fuel»);
+} else {
+if («k» == «Kind».«XUnit») then {
+pure («CRes».«CRes» «CVal».«CUnit» «env» «fuel»);
+} else {
+if («k» == «Kind».«XStr») then {
+pure (← «evStr» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XName») then {
+pure (← «evName» «ds» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XCall») then {
+pure (← «evCall» «ds» «f» «env» «fuel» «e» (← «kids» «e»));
+} else {
+if («k» == «Kind».«XInst») then {
+pure (← «evCall» «ds» «f» «env» «fuel» «e» (← «tail» (← «kids» «e»)));
+} else {
+if («k» == «Kind».«XNew») then {
+pure (← «evCtor» «ds» «f» «env» «fuel» (← «text» «e») (← «tail» (← «kids» «e»)));
+} else {
+if («k» == «Kind».«XBin») then {
+pure (← «evBin» «ds» «f» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XUn») then {
+pure (← «evUn» «ds» «f» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XIf») then {
+pure (← «evIf» «ds» «f» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XMatch») then {
+pure (← «evMatch» «ds» «f» «env» «fuel» «e»);
+} else {
+if («k» == «Kind».«XBlock») then {
+pure (← «evBlock» «ds» «f» «env» «fuel» (← «kids» «e»));
+} else {
+if («k» == «Kind».«XWhile») then {
+pure (← «evWhile» «ds» «f» «env» «fuel» «e»);
+} else {
+let _ := (← «err» "not yet at compile time: an expression in".toUTF8 «f» «line»);
+pure («CRes».«CRes» «CVal».«CUnit» «env» «fuel»);
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+};
+}
+partial_fixpoint
+
+def «evArgs_loop0» («xs» : «Nodes») («fuel0» : Int) («env0» : «CEnv») («f» : ByteArray) («ds» : «Decls») (st' : («Nodes» × «CVals» × Int × «CEnv»)) : Option («Nodes» × «CVals» × Int × «CEnv») := do {
+if (← (fun ((«c», _, _, _) : («Nodes» × «CVals» × Int × «CEnv»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «evArgs_loop0» «xs» «fuel0» «env0» «f» «ds» (← (fun ((«c», «acc», «fuel», «env») : («Nodes» × «CVals» × Int × «CEnv»)) => (do {
+let mut «c» := «c»;
+let mut «acc» := «acc»;
+let mut «fuel» := «fuel»;
+let mut «env» := «env»;
+let «x» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «head» «c»)));
+«env» := (← «crEnv» «x»);
+«fuel» := (← «crFuel» «x»);
+«acc» := («CVals».«CCons» (← «crV» «x») «acc»);
+«c» := (← «tail» «c»);
+pure («c», «acc», «fuel», «env»)
+} : Option («Nodes» × «CVals» × Int × «CEnv»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evArgs» («ds» : «Decls») («f» : ByteArray) («env0» : «CEnv») («fuel0» : Int) («xs» : «Nodes») : Option «CArgs» := do {
+let mut «env» := «env0»;
+let mut «fuel» := «fuel0»;
+let mut «acc» := «CVals».«CNil»;
+let mut «c» := «xs»;
+let t_ ← «evArgs_loop0» «xs» «fuel0» «env0» «f» «ds» («c», «acc», «fuel», «env»);
+«c» := t_.1;
+«acc» := t_.2.1;
+«fuel» := t_.2.2.1;
+«env» := t_.2.2.2;
+pure («CArgs».«CArgs» (← «cvsRev» «acc» «CVals».«CNil») «env» «fuel»);
+}
+partial_fixpoint
+
+def «evCtor» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («c» : ByteArray) («args» : «Nodes») : Option «CRes» := do {
+let «a» ← (pure (← «evArgs» «ds» «f» «env» «fuel» «args»));
+pure («CRes».«CRes» («CVal».«CData» «c» (← «caVs» «a»)) (← «caEnv» «a») (← «caFuel» «a»));
+}
+partial_fixpoint
+
+def «evCall» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») («args» : «Nodes») : Option «CRes» := do {
+let «g» ← (pure (← «findDecl» «ds» «Kind».«DFn» (← «text» «e»)));
+if (!(← «found» «g»)) then {
+pure (← «evCtor» «ds» «f» «env» «fuel» (← «text» «e») «args»);
+} else {
+let «a» ← (pure (← «evArgs» «ds» «f» «env» (← «burn» «fuel» (← «text» «e») (← «lineOf» «e»)) «args»));
+if ((← «num» «g») == (1 : Int)) then {
+pure («CRes».«CRes» (← «evExtern» (← «text» «e») (← «caVs» «a») (← «lineOf» «e»)) (← «caEnv» «a») (← «caFuel» «a»));
+} else {
+if (← «isImpure» «ds» (← «text» «e»)) then {
+let _ := (← «err» "comptime call of a fn with effects:".toUTF8 (← «text» «e») (← «lineOf» «e»));
+} else {
+let _ := ();
+};
+let «body» ← (pure (← «evExpr» «ds» (← «text» «e») (← «bindParams» (← «kids» (← «kid» «g» (0 : Int))) (← «caVs» «a») «CEnv».«CEnvNil») (← «caFuel» «a») (← «kid» «g» (2 : Int))));
+pure («CRes».«CRes» (← «crV» «body») (← «caEnv» «a») (← «crFuel» «body»));
+};
+};
+}
+partial_fixpoint
+
+def «evBin» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let «op» ← (pure (← «text» «e»));
+let «line» ← (pure (← «lineOf» «e»));
+let «a» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «e» (0 : Int))));
+if (← (do {
+if (← «eqs» «op» "&&".toUTF8) then {
+pure (!(← «cvBool» (← «crV» «a») «op» «line»))
+} else {
+pure false
+}
+})) then {
+pure «a»;
+} else {
+if (← (do {
+if (← «eqs» «op» "||".toUTF8) then {
+pure (← «cvBool» (← «crV» «a») «op» «line»)
+} else {
+pure false
+}
+})) then {
+pure «a»;
+} else {
+let «b» ← (pure (← «evExpr» «ds» «f» (← «crEnv» «a») (← «crFuel» «a») (← «kid» «e» (1 : Int))));
+pure («CRes».«CRes» (← «evOp» «f» «op» (← «crV» «a») (← «crV» «b») «line») (← «crEnv» «b») (← «crFuel» «b»));
+};
+};
+}
+partial_fixpoint
+
+def «evUn» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let «a» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «e» (0 : Int))));
+let «v» ← (pure (← (do {
+if (← «eqs» (← «text» «e») "!".toUTF8) then {
+pure («CVal».«CBool» (!(← «cvBool» (← «crV» «a») "!".toUTF8 (← «lineOf» «e»))));
+} else {
+pure («CVal».«CInt» ((0 : Int) - (← «cvInt» (← «crV» «a») (← «text» «e») (← «lineOf» «e»))));
+};
+})));
+pure («CRes».«CRes» «v» (← «crEnv» «a») (← «crFuel» «a»));
+}
+partial_fixpoint
+
+def «evIf» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let «c» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «e» (0 : Int))));
+pure (← «evExpr» «ds» «f» (← «crEnv» «c») (← «crFuel» «c») (← «kid» «e» (← (do {
+if (← «cvBool» (← «crV» «c») "if".toUTF8 (← «lineOf» «e»)) then {
+pure (1 : Int);
+} else {
+pure (2 : Int);
+};
+}))));
+}
+partial_fixpoint
+
+def «evMatch_loop0» («c» : ByteArray) («s» : «CRes») («e» : «Node») («fuel» : Int) («env» : «CEnv») («f» : ByteArray) («ds» : «Decls») (st' : («Node» × «Nodes»)) : Option («Node» × «Nodes») := do {
+if (← (fun ((«arm», «arms») : («Node» × «Nodes»)) => (do {
+pure (← (do {
+if (!(← «found» «arm»)) then {
+pure (!(← «isNil» «arms»))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «evMatch_loop0» «c» «s» «e» «fuel» «env» «f» «ds» (← (fun ((«arm», «arms») : («Node» × «Nodes»)) => (do {
+let mut «arm» := «arm»;
+let mut «arms» := «arms»;
+if (← (do {
+if (← «eqs» (← «text» (← «head» «arms»)) «c») then {
+pure true
+} else {
+pure (← «eqs» (← «text» (← «head» «arms»)) "_".toUTF8)
+}
+})) then {
+«arm» := (← «head» «arms»);
+} else {
+let _ := ();
+};
+«arms» := (← «tail» «arms»);
+pure («arm», «arms»)
+} : Option («Node» × «Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evMatch» («ds» : «Decls») («f» : ByteArray) («env» : «CEnv») («fuel» : Int) («e» : «Node») : Option «CRes» := do {
+let «s» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «e» (0 : Int))));
+let «c» ← (pure (← «cvCase» (← «crV» «s»)));
+let mut «arms» := (← «tail» (← «kids» «e»));
+let mut «arm» := «Node».«NoNode»;
+let t_ ← «evMatch_loop0» «c» «s» «e» «fuel» «env» «f» «ds» («arm», «arms»);
+«arm» := t_.1;
+«arms» := t_.2;
+if (!(← «found» «arm»)) then {
+let _ := (← «err» "internal: no comptime match arm for".toUTF8 «c» (← «lineOf» «e»));
+} else {
+let _ := ();
+};
+let «env2» ← (pure (← «bindArm» (← «tail» (← «kids» «arm»)) (← «cvFields» (← «crV» «s»)) (← «crEnv» «s»)));
+let «b» ← (pure (← «evExpr» «ds» «f» «env2» (← «crFuel» «s») (← «kid» «arm» (0 : Int))));
+pure («CRes».«CRes» (← «crV» «b») (← «envDrop» (← «crEnv» «b») ((← «envLen» (← «crEnv» «b»)) - (← «envLen» (← «crEnv» «s»)))) (← «crFuel» «b»));
+}
+partial_fixpoint
+
+def «evBlock_loop0» («ss» : «Nodes») («fuel0» : Int) («env0» : «CEnv») («f» : ByteArray) («ds» : «Decls») (st' : («Nodes» × «CVal» × Int × «CEnv»)) : Option («Nodes» × «CVal» × Int × «CEnv») := do {
+if (← (fun ((«c», _, _, _) : («Nodes» × «CVal» × Int × «CEnv»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «evBlock_loop0» «ss» «fuel0» «env0» «f» «ds» (← (fun ((«c», «v», «fuel», «env») : («Nodes» × «CVal» × Int × «CEnv»)) => (do {
+let mut «c» := «c»;
+let mut «v» := «v»;
+let mut «fuel» := «fuel»;
+let mut «env» := «env»;
+let «s» ← (pure (← «head» «c»));
+if ((← «kind» «s») == «Kind».«SVal») then {
+let «x» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «s» (0 : Int))));
+«env» := («CEnv».«CBind» (← «text» «s») (← «crV» «x») (← «crEnv» «x»));
+«fuel» := (← «crFuel» «x»);
+«v» := «CVal».«CUnit»;
+} else {
+if ((← «kind» «s») == «Kind».«XAssign») then {
+let «x» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «s» (0 : Int))));
+«env» := (← «envSetC» (← «crEnv» «x») (← «text» «s») (← «crV» «x»));
+«fuel» := (← «crFuel» «x»);
+«v» := «CVal».«CUnit»;
+} else {
+let «x» ← (pure (← «evExpr» «ds» «f» «env» «fuel» «s»));
+«env» := (← «crEnv» «x»);
+«fuel» := (← «crFuel» «x»);
+«v» := (← «crV» «x»);
+};
+};
+«c» := (← «tail» «c»);
+pure («c», «v», «fuel», «env»)
+} : Option («Nodes» × «CVal» × Int × «CEnv»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evBlock» («ds» : «Decls») («f» : ByteArray) («env0» : «CEnv») («fuel0» : Int) («ss» : «Nodes») : Option «CRes» := do {
+let mut «env» := «env0»;
+let mut «fuel» := «fuel0»;
+let mut «v» := «CVal».«CUnit»;
+let mut «c» := «ss»;
+let t_ ← «evBlock_loop0» «ss» «fuel0» «env0» «f» «ds» («c», «v», «fuel», «env»);
+«c» := t_.1;
+«v» := t_.2.1;
+«fuel» := t_.2.2.1;
+«env» := t_.2.2.2;
+pure («CRes».«CRes» «v» (← «envDrop» «env» ((← «envLen» «env») - (← «envLen» «env0»))) «fuel»);
+}
+partial_fixpoint
+
+def «evWhile_loop0» («e» : «Node») («fuel0» : Int) («env0» : «CEnv») («f» : ByteArray) («ds» : «Decls») (st' : (Bool × Int × «CEnv»)) : Option (Bool × Int × «CEnv») := do {
+if (← (fun ((«go», _, _) : (Bool × Int × «CEnv»)) => (do {
+pure «go»
+} : Option Bool)) st') then «evWhile_loop0» «e» «fuel0» «env0» «f» «ds» (← (fun ((«go», «fuel», «env») : (Bool × Int × «CEnv»)) => (do {
+let mut «go» := «go»;
+let mut «fuel» := «fuel»;
+let mut «env» := «env»;
+let «c» ← (pure (← «evExpr» «ds» «f» «env» (← «burn» «fuel» «f» (← «lineOf» «e»)) (← «kid» «e» (0 : Int))));
+«env» := (← «crEnv» «c»);
+«fuel» := (← «crFuel» «c»);
+«go» := (← «cvBool» (← «crV» «c») "while".toUTF8 (← «lineOf» «e»));
+if «go» then {
+let «b» ← (pure (← «evExpr» «ds» «f» «env» «fuel» (← «kid» «e» (1 : Int))));
+«env» := (← «crEnv» «b»);
+«fuel» := (← «crFuel» «b»);
+} else {
+let _ := ();
+};
+pure («go», «fuel», «env»)
+} : Option (Bool × Int × «CEnv»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evWhile» («ds» : «Decls») («f» : ByteArray) («env0» : «CEnv») («fuel0» : Int) («e» : «Node») : Option «CRes» := do {
+let mut «env» := «env0»;
+let mut «fuel» := «fuel0»;
+let mut «go» := true;
+let t_ ← «evWhile_loop0» «e» «fuel0» «env0» «f» «ds» («go», «fuel», «env»);
+«go» := t_.1;
+«fuel» := t_.2.1;
+«env» := t_.2.2;
+pure («CRes».«CRes» «CVal».«CUnit» «env» «fuel»);
+}
+partial_fixpoint
+
+end
+
+mutual
+def «cvShow» («v» : «CVal») : Option Unit := do {
+match «v» with
+| «CVal».«CUnit» => {
+pure (← «say» "()".toUTF8);
+}
+| «CVal».«CInt» «n» => {
+pure (← «sayn» «n»);
+}
+| «CVal».«CBool» «b» => {
+pure (← «say» (← (do {
+if «b» then {
+pure "true".toUTF8;
+} else {
+pure "false".toUTF8;
+};
+})));
+}
+| «CVal».«CStr» «s» => {
+pure (← «say» «s»);
+}
+| «CVal».«CData» «c» «fs» => {
+let _ := (← «say» «c»);
+match «fs» with
+| «CVals».«CNil» => {
+pure ();
+}
+| «CVals».«CCons» _ _ => {
+let _ := (← «say» "(".toUTF8);
+let _ := (← «cvsShow» «fs»);
+pure (← «say» ")".toUTF8);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+def «cvsShow» («fs» : «CVals») : Option Unit := do {
+match «fs» with
+| «CVals».«CNil» => {
+pure ();
+}
+| «CVals».«CCons» «h» «t» => {
+let _ := (← «cvShow» «h»);
+match «t» with
+| «CVals».«CNil» => {
+pure ();
+}
+| «CVals».«CCons» _ _ => {
+let _ := (← «say» ", ".toUTF8);
+pure (← «cvsShow» «t»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
 def «isGeneric» («d» : «Node») : Option Bool := do {
 pure (← (do {
 if (← (do {
@@ -11557,6 +12414,59 @@ def «hashPrint» («ds» : «Decls») : Option Unit := do {
 let «hm» ← (pure (← «hashAll» «ds»));
 let mut «c» := (← «declList» «ds»);
 let t_ ← «hashPrint_loop0» «hm» «ds» «c»;
+«c» := t_;
+pure ()
+}
+
+def «evalPrint_loop0» («ds» : «Decls») («dd» : «Decls») («out» : «Nodes») (st' : («Nodes»)) : Option («Nodes») := do {
+if (← (fun («c» : («Nodes»)) => (do {
+pure (!(← «isNil» «c»))
+} : Option Bool)) st') then «evalPrint_loop0» «ds» «dd» «out» (← (fun («c» : («Nodes»)) => (do {
+let mut «c» := «c»;
+let «d» ← (pure (← «head» «c»));
+if (← (do {
+if (← (do {
+if (← (do {
+if (← (do {
+if ((← «kind» «d») == «Kind».«DFn») then {
+pure ((← «num» «d») != (1 : Int))
+} else {
+pure false
+}
+})) then {
+pure (← «isNil» (← «kids» (← «kid» «d» (0 : Int))))
+} else {
+pure false
+}
+})) then {
+pure (!(← «eqs» (← «text» «d») "main".toUTF8))
+} else {
+pure false
+}
+})) then {
+pure (!(← «isImpure» «ds» (← «text» «d»)))
+} else {
+pure false
+}
+})) then {
+let _ := (← «say» (← «text» «d»));
+let _ := (← «say» " ".toUTF8);
+let _ := (← «cvShow» (← «crV» (← «evExpr» «ds» (← «text» «d») «CEnv».«CEnvNil» (← «comptimeFuel») (← «kid» «d» (2 : Int)))));
+let _ := (← «say» "\n".toUTF8);
+} else {
+let _ := ();
+};
+«c» := (← «tail» «c»);
+pure «c»
+} : Option («Nodes»))) st') else pure st'
+}
+partial_fixpoint
+
+def «evalPrint» («out» : «Nodes») : Option Unit := do {
+let «dd» ← (pure (← «mkDecls» «out»));
+let «ds» ← (pure (← «declsCons» (← «impureDecl» «dd») «dd»));
+let mut «c» := «out»;
+let t_ ← «evalPrint_loop0» «ds» «dd» «out» «c»;
 «c» := t_;
 pure ()
 }

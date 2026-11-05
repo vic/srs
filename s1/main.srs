@@ -7,8 +7,10 @@ def main(): I64 =
   val hashing = rt_argc() > 1 && rt_str_eq(rt_arg(1), "--hash")
   // `s1 --store-check a.srs ...`: write each hashed decl to the store, read it back, compare (vic-uw3 H2)
   val storing = rt_argc() > 1 && rt_str_eq(rt_arg(1), "--store-check")
+  // `s1 --eval a.srs ...`: run each nullary pure def at compile time, print "name value" (vic-u2d.2)
+  val evaling = rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval")
   var ds = NNil
-  var i = if lean then 3 else if hashing || storing then 2 else 1
+  var i = if lean then 3 else if hashing || storing || evaling then 2 else 1
   while i < rt_argc() do
     val src = rt_read_file(rt_arg(i))
     if rt_str_len(src) < 0 then
@@ -20,5 +22,5 @@ def main(): I64 =
     ds = append(ds, parseFile(lex(src)))
     i = i + 1
   val ds2 = check(ds)
-  if lean then emitLean(mkDecls(expandTypes(mkDecls(ds))), rt_arg(2)) else if hashing then hashPrint(mkDecls(ds2)) else if storing then storeCheck(mkDecls(ds2)) else emitProgram(mkDecls(mono(mkDecls(ds2))))
+  if lean then emitLean(mkDecls(expandTypes(mkDecls(ds))), rt_arg(2)) else if hashing then hashPrint(mkDecls(ds2)) else if storing then storeCheck(mkDecls(ds2)) else if evaling then evalPrint(ds2) else emitProgram(mkDecls(mono(mkDecls(ds2))))
   0

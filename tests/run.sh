@@ -9,7 +9,7 @@ export SRS_STORE="$B/store-gate"
 CC="zig cc -std=gnu11 -O1 -w"
 # the compiler links static on Linux (musl): no dynamic loader per compile (vic-5r9: -13% instr on a small program)
 case "$(uname -s)" in Linux) CCS="$CC -static -target $(uname -m)-linux-musl";; *) CCS="$CC";; esac
-S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
+S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
 LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
 fail=0
 timeout 120 $CCS -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
@@ -45,6 +45,23 @@ for t in tests/hash/*.srs; do
     elif [ "$rel" = differ: ] && [ "$ha" = "$hb" ]; then bad="$bad $a==$b"; fi
   done < <(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t")
   if [ -n "$bad" ]; then echo "FAIL hash/$n$bad"; fail=1; else echo "ok hash/$n"; fi
+done
+# the comptime evaluator (vic-u2d.2): `s1 --eval` prints "name value" for each nullary pure def; each
+# "// eval: name value" line must be printed; a test whose first line is "// expect: msg" must be rejected with msg
+for t in tests/eval/*.srs; do
+  n=$(basename "$t" .srs); want=$(sed -n "1s|^// expect: ||p" "$t")
+  out=$(timeout 2 "$B/s2" --eval lib/prelude.srs "$t" 2>&1); code=$?
+  if [ -n "$want" ]; then
+    case "$out" in *"$want"*) [ $code -eq 1 ] && { echo "ok eval/$n"; continue; };; esac
+    echo "FAIL eval/$n exit=$code out=$out"; fail=1; continue
+  fi
+  bad=""; nrel=0
+  while read -r name val; do
+    nrel=$((nrel + 1))
+    printf '%s\n' "$out" | grep -Fxq "$name $val" || bad="$bad $name"
+  done < <(sed -n 's#^// eval: ##p' "$t")
+  [ $nrel -gt 0 ] || bad=" no-eval-lines"
+  if [ $code -ne 0 ] || [ -n "$bad" ]; then echo "FAIL eval/$n exit=$code$bad"; fail=1; else echo "ok eval/$n"; fi
 done
 # the store (vic-uw3 H2): cold writes every entry, warm writes none, a cut entry reads as bad (a miss)
 rm -rf "$SRS_STORE"

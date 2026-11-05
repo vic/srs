@@ -1,0 +1,339 @@
+// vic-u2d.2 U2: the comptime evaluator (vic/c/comptime-eval.md E3 E4): runs the checked form (e2) of pure defs.
+// fuel (vic Q-U2): 1 per call and 1 per loop turn, 1_000_000; fuel out, division by zero = reject (§17).
+// data at compile time has no Region (vic Q-U4): the compiler owns it.
+
+enum CVal:
+  case CUnit
+  case CInt(v: I64)
+  case CBool(b: Bool)
+  case CStr(s: Str)
+  case CData(c: Str, fs: CVals)
+
+enum CVals:
+  case CNil
+  case CCons(h: CVal, t: CVals)
+
+// locals, innermost first; an assignment replaces the value in place, so a block can drop what it bound
+enum CEnv:
+  case CEnvNil
+  case CBind(n: Str, v: CVal, t: CEnv)
+
+// a value, the env after it, the fuel left
+enum CRes:
+  case CRes(v: CVal, env: CEnv, fuel: I64)
+
+def comptimeFuel(): I64 = 1000000
+
+def crV(x: CRes): CVal = x match
+  case CRes(v, _, _) => v
+def crEnv(x: CRes): CEnv = x match
+  case CRes(_, e, _) => e
+def crFuel(x: CRes): I64 = x match
+  case CRes(_, _, f) => f
+
+def cvInt(v: CVal, what: Str, line: I64): I64 = v match
+  case CInt(n) => n
+  case _ =>
+    err("internal: comptime int expected in", what, line)
+    0
+def cvBool(v: CVal, what: Str, line: I64): Bool = v match
+  case CBool(b) => b
+  case _ =>
+    err("internal: comptime bool expected in", what, line)
+    false
+def cvStr(v: CVal, what: Str, line: I64): Str = v match
+  case CStr(s) => s
+  case _ =>
+    err("internal: comptime string expected in", what, line)
+    ""
+
+def cvEq(a: CVal, b: CVal): Bool = a match
+  case CUnit => true
+  case CInt(x) => cvInt(b, "==", 0) == x
+  case CBool(x) => cvBool(b, "==", 0) == x
+  case CStr(x) => eqs(cvStr(b, "==", 0), x)
+  case CData(c, fs) => b match
+    case CData(c2, fs2) => eqs(c, c2) && cvsEq(fs, fs2)
+    case _ => false
+
+def cvsEq(a: CVals, b: CVals): Bool = a match
+  case CNil => true
+  case CCons(x, xt) => b match
+    case CCons(y, yt) => cvEq(x, y) && cvsEq(xt, yt)
+    case CNil => false
+
+def envGetC(e: CEnv, n: Str): CEnv = e match
+  case CEnvNil => CEnvNil
+  case CBind(m, _, t) => if eqs(m, n) then e else envGetC(t, n)
+
+def envSetC {r: Region} (e: CEnv, n: Str, v: CVal): CEnv = e match
+  case CEnvNil => CEnvNil
+  case CBind(m, w, t) => if eqs(m, n) then CBind(m, v, t) else CBind(m, w, envSetC(t, n, v))
+
+def envLen(e: CEnv): I64 = e match
+  case CEnvNil => 0
+  case CBind(_, _, t) => 1 + envLen(t)
+
+def envDrop(e: CEnv, k: I64): CEnv = if k <= 0 then e else e match
+  case CEnvNil => CEnvNil
+  case CBind(_, _, t) => envDrop(t, k - 1)
+
+// one unit of fuel spent at fn f
+def burn(fuel: I64, f: Str, line: I64): I64 =
+  if fuel <= 0 then err("comptime evaluation ran out of fuel at", f, line) else ()
+  fuel - 1
+
+// e in env: f = the def being run (for messages)
+def evExpr {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node): CRes =
+  val k = kind(e)
+  val line = lineOf(e)
+  if k == XInt then CRes(CInt(num(e)), env, fuel)
+  else if k == XBool then CRes(CBool(num(e) == 1), env, fuel)
+  else if k == XUnit then CRes(CUnit, env, fuel)
+  else if k == XStr then evStr(env, fuel, e)
+  else if k == XName then evName(ds, env, fuel, e)
+  else if k == XCall then evCall(ds, f, env, fuel, e, kids(e))
+  else if k == XInst then evCall(ds, f, env, fuel, e, tail(kids(e)))
+  else if k == XNew then evCtor(ds, f, env, fuel, text(e), tail(kids(e)))
+  else if k == XBin then evBin(ds, f, env, fuel, e)
+  else if k == XUn then evUn(ds, f, env, fuel, e)
+  else if k == XIf then evIf(ds, f, env, fuel, e)
+  else if k == XMatch then evMatch(ds, f, env, fuel, e)
+  else if k == XBlock then evBlock(ds, f, env, fuel, kids(e))
+  else if k == XWhile then evWhile(ds, f, env, fuel, e)
+  else
+    err("not yet at compile time: an expression in", f, line)
+    CRes(CUnit, env, fuel)
+
+// a string without escapes is its raw text (an escape needs a new string: not yet)
+def evStr {r: Region} (env: CEnv, fuel: I64, e: Node): CRes =
+  var i = 0
+  val n = rt_str_len(text(e))
+  while i < n do
+    if rt_str_at(text(e), i) == 92 then err("not yet at compile time: a string escape in", text(e), lineOf(e)) else ()
+    i = i + 1
+  CRes(CStr(text(e)), env, fuel)
+
+// a local, else a nullary constructor
+def evName {r: Region} (ds: Decls, env: CEnv, fuel: I64, e: Node): CRes = envGetC(env, text(e)) match
+  case CBind(_, v, _) => CRes(v, env, fuel)
+  case CEnvNil =>
+    if !found(findDecl(ds, DCase, text(e))) then err("not a compile-time value:", text(e), lineOf(e)) else ()
+    CRes(CData(text(e), CNil), env, fuel)
+
+// the values of args (in order), the env and the fuel after them
+enum CArgs:
+  case CArgs(vs: CVals, env: CEnv, fuel: I64)
+
+def caVs(a: CArgs): CVals = a match
+  case CArgs(vs, _, _) => vs
+def caEnv(a: CArgs): CEnv = a match
+  case CArgs(_, e, _) => e
+def caFuel(a: CArgs): I64 = a match
+  case CArgs(_, _, f) => f
+
+// args left to right
+def evArgs {r: Region} (ds: Decls, f: Str, env0: CEnv, fuel0: I64, xs: Nodes): CArgs =
+  var env = env0
+  var fuel = fuel0
+  var acc = CNil
+  var c = xs
+  while !isNil(c) do
+    val x = evExpr(ds, f, env, fuel, head(c))
+    env = crEnv(x)
+    fuel = crFuel(x)
+    acc = CCons(crV(x), acc)
+    c = tail(c)
+  CArgs(cvsRev(acc, CNil), env, fuel)
+
+def cvsRev {r: Region} (a: CVals, out: CVals): CVals = a match
+  case CNil => out
+  case CCons(h, t) => cvsRev(t, CCons(h, out))
+
+// the fields of a constructed value (nothing for other values)
+def cvFields(v: CVal): CVals = v match
+  case CData(_, fs) => fs
+  case _ => CNil
+
+def cvCase(v: CVal): Str = v match
+  case CData(n, _) => n
+  case _ => ""
+
+def evCtor {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, c: Str, args: Nodes): CRes =
+  val a = evArgs(ds, f, env, fuel, args)
+  CRes(CData(c, caVs(a)), caEnv(a), caFuel(a))
+
+// a call: a constructor, a pure extern, or a pure def (its body in a new env of its params); 1 fuel
+def evCall {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node, args: Nodes): CRes =
+  val g = findDecl(ds, DFn, text(e))
+  if !found(g) then evCtor(ds, f, env, fuel, text(e), args)
+  else
+    val a = evArgs(ds, f, env, burn(fuel, text(e), lineOf(e)), args)
+    if num(g) == 1 then CRes(evExtern(text(e), caVs(a), lineOf(e)), caEnv(a), caFuel(a))
+    else
+      if isImpure(ds, text(e)) then err("comptime call of a fn with effects:", text(e), lineOf(e)) else ()
+      val body = evExpr(ds, text(e), bindParams(kids(kid(g, 0)), caVs(a), CEnvNil), caFuel(a), kid(g, 2))
+      CRes(crV(body), caEnv(a), crFuel(body))
+
+def bindParams {r: Region} (ps: Nodes, vs: CVals, acc: CEnv): CEnv =
+  if isNil(ps) then acc
+  else vs match
+    case CNil => acc
+    case CCons(v, t) => bindParams(tail(ps), t, CBind(text(head(ps)), v, acc))
+
+def cvNth(vs: CVals, i: I64): CVal = vs match
+  case CNil => CUnit
+  case CCons(h, t) => if i == 0 then h else cvNth(t, i - 1)
+
+// the pure externs (s1/check.srs isPureExtern)
+def evExtern {r: Region} (n: Str, vs: CVals, line: I64): CVal =
+  if eqs(n, "rt_str_len") then CInt(rt_str_len(cvStr(cvNth(vs, 0), n, line)))
+  else if eqs(n, "rt_str_at") then CInt(rt_str_at(cvStr(cvNth(vs, 0), n, line), cvInt(cvNth(vs, 1), n, line)))
+  else if eqs(n, "rt_str_slice") then CStr(rt_str_slice(cvStr(cvNth(vs, 0), n, line), cvInt(cvNth(vs, 1), n, line), cvInt(cvNth(vs, 2), n, line)))
+  else if eqs(n, "rt_str_eq") then CBool(eqs(cvStr(cvNth(vs, 0), n, line), cvStr(cvNth(vs, 1), n, line)))
+  else
+    err("comptime call of a fn with effects:", n, line)
+    CUnit
+
+def evBin {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node): CRes =
+  val op = text(e)
+  val line = lineOf(e)
+  val a = evExpr(ds, f, env, fuel, kid(e, 0))
+  // && and || do not evaluate their right side when the left decides
+  if eqs(op, "&&") && !cvBool(crV(a), op, line) then a
+  else if eqs(op, "||") && cvBool(crV(a), op, line) then a
+  else
+    val b = evExpr(ds, f, crEnv(a), crFuel(a), kid(e, 1))
+    CRes(evOp(f, op, crV(a), crV(b), line), crEnv(b), crFuel(b))
+
+def evOp {r: Region} (f: Str, op: Str, a: CVal, b: CVal, line: I64): CVal =
+  if eqs(op, "&&") || eqs(op, "||") then b
+  else if eqs(op, "==") then CBool(cvEq(a, b))
+  else if eqs(op, "!=") then CBool(!cvEq(a, b))
+  else
+    val x = cvInt(a, op, line)
+    val y = cvInt(b, op, line)
+    if (eqs(op, "/") || eqs(op, "%")) && y == 0 then err("comptime division by zero in", f, line) else ()
+    if eqs(op, "+") then CInt(x + y)
+    else if eqs(op, "-") then CInt(x - y)
+    else if eqs(op, "*") then CInt(x * y)
+    else if eqs(op, "/") then CInt(x / y)
+    else if eqs(op, "%") then CInt(x % y)
+    else if eqs(op, "<") then CBool(x < y)
+    else if eqs(op, "<=") then CBool(x <= y)
+    else if eqs(op, ">") then CBool(x > y)
+    else if eqs(op, ">=") then CBool(x >= y)
+    else
+      err("not yet at compile time: operator", op, line)
+      CUnit
+
+def evUn {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node): CRes =
+  val a = evExpr(ds, f, env, fuel, kid(e, 0))
+  val v = if eqs(text(e), "!") then CBool(!cvBool(crV(a), "!", lineOf(e))) else CInt(0 - cvInt(crV(a), text(e), lineOf(e)))
+  CRes(v, crEnv(a), crFuel(a))
+
+def evIf {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node): CRes =
+  val c = evExpr(ds, f, env, fuel, kid(e, 0))
+  evExpr(ds, f, crEnv(c), crFuel(c), kid(e, if cvBool(crV(c), "if", lineOf(e)) then 1 else 2))
+
+// the arm of the scrutinee's case (or _): its binds name the fields in order
+def evMatch {r: Region} (ds: Decls, f: Str, env: CEnv, fuel: I64, e: Node): CRes =
+  val s = evExpr(ds, f, env, fuel, kid(e, 0))
+  val c = cvCase(crV(s))
+  var arms = tail(kids(e))
+  var arm = NoNode
+  while !found(arm) && !isNil(arms) do
+    if eqs(text(head(arms)), c) || eqs(text(head(arms)), "_") then arm = head(arms) else ()
+    arms = tail(arms)
+  if !found(arm) then err("internal: no comptime match arm for", c, lineOf(e)) else ()
+  val env2 = bindArm(tail(kids(arm)), cvFields(crV(s)), crEnv(s))
+  val b = evExpr(ds, f, env2, crFuel(s), kid(arm, 0))
+  CRes(crV(b), envDrop(crEnv(b), envLen(crEnv(b)) - envLen(crEnv(s))), crFuel(b))
+
+def bindArm {r: Region} (bs: Nodes, vs: CVals, acc: CEnv): CEnv =
+  if isNil(bs) then acc
+  else vs match
+    case CNil => acc
+    case CCons(v, t) => bindArm(tail(bs), t, if eqs(text(head(bs)), "_") then acc else CBind(text(head(bs)), v, acc))
+
+// statements in order; the value is the last one's; what the block bound is dropped at its end
+def evBlock {r: Region} (ds: Decls, f: Str, env0: CEnv, fuel0: I64, ss: Nodes): CRes =
+  var env = env0
+  var fuel = fuel0
+  var v = CUnit
+  var c = ss
+  while !isNil(c) do
+    val s = head(c)
+    if kind(s) == SVal then
+      val x = evExpr(ds, f, env, fuel, kid(s, 0))
+      env = CBind(text(s), crV(x), crEnv(x))
+      fuel = crFuel(x)
+      v = CUnit
+    else if kind(s) == XAssign then
+      val x = evExpr(ds, f, env, fuel, kid(s, 0))
+      env = envSetC(crEnv(x), text(s), crV(x))
+      fuel = crFuel(x)
+      v = CUnit
+    else
+      val x = evExpr(ds, f, env, fuel, s)
+      env = crEnv(x)
+      fuel = crFuel(x)
+      v = crV(x)
+    c = tail(c)
+  CRes(v, envDrop(env, envLen(env) - envLen(env0)), fuel)
+
+// each turn costs 1 fuel
+def evWhile {r: Region} (ds: Decls, f: Str, env0: CEnv, fuel0: I64, e: Node): CRes =
+  var env = env0
+  var fuel = fuel0
+  var go = true
+  while go do
+    val c = evExpr(ds, f, env, burn(fuel, f, lineOf(e)), kid(e, 0))
+    env = crEnv(c)
+    fuel = crFuel(c)
+    go = cvBool(crV(c), "while", lineOf(e))
+    if go then
+      val b = evExpr(ds, f, env, fuel, kid(e, 1))
+      env = crEnv(b)
+      fuel = crFuel(b)
+    else ()
+  CRes(CUnit, env, fuel)
+
+def cvShow(v: CVal): Unit = v match
+  case CUnit => say("()")
+  case CInt(n) => sayn(n)
+  case CBool(b) => say(if b then "true" else "false")
+  case CStr(s) => say(s)
+  case CData(c, fs) =>
+    say(c)
+    fs match
+      case CNil => ()
+      case CCons(_, _) =>
+        say("(")
+        cvsShow(fs)
+        say(")")
+
+def cvsShow(fs: CVals): Unit = fs match
+  case CNil => ()
+  case CCons(h, t) =>
+    cvShow(h)
+    t match
+      case CNil => ()
+      case CCons(_, _) =>
+        say(", ")
+        cvsShow(t)
+
+// `s1 --eval`: "name value" for every nullary pure def and spec def but main, run at compile time
+def evalPrint {r: Region} (out: Nodes): Unit =
+  val dd = mkDecls(out)
+  val ds = declsCons(impureDecl(dd), dd)
+  var c = out
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == DFn && num(d) != 1 && isNil(kids(kid(d, 0))) && !eqs(text(d), "main") && !isImpure(ds, text(d)) then
+      say(text(d))
+      say(" ")
+      cvShow(crV(evExpr(ds, text(d), CEnvNil, comptimeFuel(), kid(d, 2))))
+      say("\n")
+    else ()
+    c = tail(c)
