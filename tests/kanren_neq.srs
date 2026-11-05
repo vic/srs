@@ -1,0 +1,76 @@
+// pass: Kanren K3 disequality (lib/kanren.srs): =/= before and after ==, partial store kept, var-var, never-equal dropped
+def c0(r: Region, f: Str): Term = TCon(f, TNil)
+def c1(r: Region, f: Str, a: Term): Term = TCon(f, TCons(a, TNil))
+def c2(r: Region, f: Str, a: Term, b: Term): Term = TCon(f, TCons(a, TCons(b, TNil)))
+def both(r: Region, g: Goal, h: Goal): Goal = GConj(g, h)
+
+// each answer: the walked query variables, then the disequalities left, as {v=t,...} (not all of them may hold)
+def show(r: Region, run: Run, nv: I64): Unit = run match
+  case Run(ans, _) =>
+    showAnswers(r, ans, nv)
+    rt_print("--\n")
+
+def showAnswers(r: Region, ans: Answers, nv: I64): Unit = ans match
+  case ANil => ()
+  case ACons(st, t) =>
+    var i = 0
+    while i < nv do
+      if i > 0 then rt_print(" ; ") else ()
+      showTerm(walkAll(r, substOf(st), TVar(i)))
+      i = i + 1
+    st match
+      case State(_, ns, _) => showNeqs(ns)
+    rt_print("\n")
+    showAnswers(r, t, nv)
+
+def showNeqs(ns: Neqs): Unit = ns match
+  case NeqNil => ()
+  case NeqCons(p, t) =>
+    rt_print(" {")
+    showBinds(p)
+    rt_print("}")
+    showNeqs(t)
+
+def showBinds(p: Subst): Unit = p match
+  case SNil => ()
+  case SBind(v, t, rest) =>
+    rt_print("_")
+    rt_print_i64(v)
+    rt_print("=")
+    showTerm(t)
+    rest match
+      case SNil => ()
+      case SBind(_, _, _) =>
+        rt_print(",")
+        showBinds(rest)
+
+def main(): I64 =
+  handle r = Arena()
+  val x = TVar(0)
+  val y = TVar(1)
+  val a = c0(r, "a")
+  val b = c0(r, "b")
+  // X =/= a, X == a  =>  none
+  show(r, solve(r, RNil, both(r, GNeq(x, a), GEq(x, a)), 1, 100, 10), 1)
+  // X == a, X =/= a  =>  none
+  show(r, solve(r, RNil, both(r, GEq(x, a), GNeq(x, a)), 1, 100, 10), 1)
+  // X =/= a, X == b  =>  b, store empty
+  show(r, solve(r, RNil, both(r, GNeq(x, a), GEq(x, b)), 1, 100, 10), 1)
+  // f(X, Y) =/= f(a, b), X == a  =>  a ; _1 {_1=b}
+  val fxy = c2(r, "f", x, y)
+  val fab = c2(r, "f", a, b)
+  show(r, solve(r, RNil, both(r, GNeq(fxy, fab), GEq(x, a)), 2, 100, 10), 2)
+  // same, then Y == b  =>  none
+  show(r, solve(r, RNil, both(r, both(r, GNeq(fxy, fab), GEq(x, a)), GEq(y, b)), 2, 100, 10), 2)
+  // (X == a ; X == b), X =/= a  =>  b
+  show(r, solve(r, RNil, both(r, GDisj(GEq(x, a), GEq(x, b)), GNeq(x, a)), 1, 100, 10), 1)
+  // X =/= Y, X == Y  =>  none
+  show(r, solve(r, RNil, both(r, GNeq(x, y), GEq(x, y)), 2, 100, 10), 2)
+  // X =/= Y, X == a, Y == b  =>  a ; b
+  show(r, solve(r, RNil, both(r, both(r, GNeq(x, y), GEq(x, a)), GEq(y, b)), 2, 100, 10), 2)
+  // f(X) =/= g(X)  =>  never equal, dropped: _0, store empty
+  show(r, solve(r, RNil, GNeq(c1(r, "f", x), c1(r, "g", x)), 1, 100, 10), 1)
+  // X == a, f(X, Y) =/= f(a, b)  =>  store holds only what equality still needs: {_1=b}
+  show(r, solve(r, RNil, both(r, GEq(x, a), GNeq(fxy, fab)), 2, 100, 10), 2)
+  r.free()
+  0

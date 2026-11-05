@@ -29,6 +29,7 @@ inductive «Goal» where
   | «GEqAll» («as» : «Terms») («bs» : «Terms»)
   | «GConj» («g» : «Goal») («h» : «Goal»)
   | «GDisj» («g» : «Goal») («h» : «Goal»)
+  | «GNeq» («a» : «Term») («b» : «Term»)
   | «GCall» («rel» : ByteArray) («args» : «Terms»)
 inductive «Goals» where
   | «GNil»
@@ -38,19 +39,27 @@ inductive «Rule» where
 inductive «Rules» where
   | «RNil»
   | «RCons» («h» : «Rule») («t» : «Rules»)
+inductive «Neqs» where
+  | «NeqNil»
+  | «NeqCons» («p» : «Subst») («t» : «Neqs»)
+inductive «State» where
+  | «State» («s» : «Subst») («neq» : «Neqs») («next» : Int)
+inductive «Checked» where
+  | «Bad»
+  | «Good» («st» : «State»)
 inductive «Branch» where
-  | «Branch» («s» : «Subst») («next» : Int) («gs» : «Goals»)
+  | «Branch» («st» : «State») («gs» : «Goals»)
 inductive «Queue» where
   | «QNil»
   | «QCons» («h» : «Branch») («t» : «Queue»)
 inductive «Step» where
-  | «Done» («s» : «Subst»)
+  | «Done» («st» : «State»)
   | «Dead»
   | «More» («b» : «Branch»)
   | «Split» («bs» : «Queue») («cost» : Int)
 inductive «Answers» where
   | «ANil»
-  | «ACons» («s» : «Subst») («t» : «Answers»)
+  | «ACons» («st» : «State») («t» : «Answers»)
 inductive «Run» where
   | «Run» («answers» : «Answers») («status» : «Status»)
 inductive «Picked» where
@@ -320,6 +329,9 @@ pure («Goal».«GConj» (← «shiftGoal» «x» «k») (← «shiftGoal» «y�
 | «Goal».«GDisj» «x» «y» => {
 pure («Goal».«GDisj» (← «shiftGoal» «x» «k») (← «shiftGoal» «y» «k»));
 }
+| «Goal».«GNeq» «a» «b» => {
+pure («Goal».«GNeq» (← «shift» «a» «k») (← «shift» «b» «k»));
+}
 | «Goal».«GCall» «f» «args» => {
 pure («Goal».«GCall» «f» (← «shiftAll» «args» «k»));
 }
@@ -330,18 +342,158 @@ partial_fixpoint
 end
 
 mutual
-def «picks» («rules» : «Rules») («rel» : ByteArray) («args» : «Terms») («s» : «Subst») («nx» : Int) («rest» : «Goals») : Option «Picked» := do {
+def «size» («s» : «Subst») : Option Int := do {
+match «s» with
+| «Subst».«SNil» => {
+pure (0 : Int);
+}
+| «Subst».«SBind» _ _ «rest» => {
+pure ((1 : Int) + (← «size» «rest»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «newest» («s» : «Subst») («n» : Int) : Option «Subst» := do {
+if (decide («n» <= (0 : Int))) then {
+pure «Subst».«SNil»;
+} else {
+match «s» with
+| «Subst».«SNil» => {
+pure «Subst».«SNil»;
+}
+| «Subst».«SBind» «v» «t» «rest» => {
+pure («Subst».«SBind» «v» «t» (← «newest» «rest» («n» - (1 : Int))));
+}
+;
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «unifyBinds» («s» : «Subst») («p» : «Subst») : Option «Unified» := do {
+match «p» with
+| «Subst».«SNil» => {
+pure («Unified».«Ok» «s»);
+}
+| «Subst».«SBind» «v» «t» «rest» => {
+match (← «unify» «s» («Term».«TVar» «v») «t») with
+| «Unified».«Fail» => {
+pure «Unified».«Fail»;
+}
+| «Unified».«Ok» «s2» => {
+pure (← «unifyBinds» «s2» «rest»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «addNeq» («st» : «State») («a» : «Term») («b» : «Term») : Option «Checked» := do {
+match «st» with
+| «State».«State» «s» «ns» «nx» => {
+match (← «unify» «s» «a» «b») with
+| «Unified».«Fail» => {
+pure («Checked».«Good» «st»);
+}
+| «Unified».«Ok» «s2» => {
+let «n» ← (pure ((← «size» «s2») - (← «size» «s»)));
+if («n» == (0 : Int)) then {
+pure «Checked».«Bad»;
+} else {
+pure («Checked».«Good» («State».«State» «s» («Neqs».«NeqCons» (← «newest» «s2» «n») «ns») «nx»));
+};
+}
+;
+}
+;
+}
+
+mutual
+def «recheck» («s» : «Subst») («ns» : «Neqs») («nx» : Int) : Option «Checked» := do {
+match «ns» with
+| «Neqs».«NeqNil» => {
+pure («Checked».«Good» («State».«State» «s» «Neqs».«NeqNil» «nx»));
+}
+| «Neqs».«NeqCons» «p» «t» => {
+match (← «recheck» «s» «t» «nx») with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st» => {
+match «st» with
+| «State».«State» _ «kept» _ => {
+match (← «unifyBinds» «s» «p») with
+| «Unified».«Fail» => {
+pure («Checked».«Good» «st»);
+}
+| «Unified».«Ok» «s2» => {
+let «n» ← (pure ((← «size» «s2») - (← «size» «s»)));
+if («n» == (0 : Int)) then {
+pure «Checked».«Bad»;
+} else {
+pure («Checked».«Good» («State».«State» «s» («Neqs».«NeqCons» (← «newest» «s2» «n») «kept») «nx»));
+};
+}
+;
+}
+;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «post» («st» : «State») («u» : «Unified») : Option «Checked» := do {
+match «u» with
+| «Unified».«Fail» => {
+pure «Checked».«Bad»;
+}
+| «Unified».«Ok» «s2» => {
+match «st» with
+| «State».«State» _ «ns» «nx» => {
+pure (← «recheck» «s2» «ns» «nx»);
+}
+;
+}
+;
+}
+
+def «onward» («c» : «Checked») («rest» : «Goals») : Option «Step» := do {
+match «c» with
+| «Checked».«Bad» => {
+pure «Step».«Dead»;
+}
+| «Checked».«Good» «st» => {
+pure («Step».«More» («Branch».«Branch» «st» «rest»));
+}
+;
+}
+
+mutual
+def «picks» («rules» : «Rules») («rel» : ByteArray) («args» : «Terms») («s» : «Subst») («ns» : «Neqs») («nx» : Int) («rest» : «Goals») : Option «Picked» := do {
 match «rules» with
 | «Rules».«RNil» => {
 pure («Picked».«Picked» «Queue».«QNil» (0 : Int));
 }
 | «Rules».«RCons» «h» «t» => {
-match (← «picks» «t» «rel» «args» «s» «nx» «rest») with
+match (← «picks» «t» «rel» «args» «s» «ns» «nx» «rest») with
 | «Picked».«Picked» «bs» «cost» => {
 match «h» with
 | «Rule».«Rule» «f» «head» «body» «nv» => {
 if (← «rt_str_eq» «f» «rel») then {
-let «b» ← (pure («Branch».«Branch» «s» («nx» + «nv») («Goals».«GCons» («Goal».«GEqAll» (← «shiftAll» «head» «nx») «args») («Goals».«GCons» (← «shiftGoal» «body» «nx») «rest»))));
+let «b» ← (pure («Branch».«Branch» («State».«State» «s» «ns» («nx» + «nv»)) («Goals».«GCons» («Goal».«GEqAll» (← «shiftAll» «head» «nx») «args») («Goals».«GCons» (← «shiftGoal» «body» «nx») «rest»))));
 pure («Picked».«Picked» («Queue».«QCons» «b» «bs») («cost» + (1 : Int)));
 } else {
 pure («Picked».«Picked» «bs» «cost»);
@@ -359,46 +511,39 @@ end
 
 def «step» («rules» : «Rules») («b» : «Branch») : Option «Step» := do {
 match «b» with
-| «Branch».«Branch» «s» «nx» «gs» => {
+| «Branch».«Branch» «st» «gs» => {
 match «gs» with
 | «Goals».«GNil» => {
-pure («Step».«Done» «s»);
+pure («Step».«Done» «st»);
 }
 | «Goals».«GCons» «g» «rest» => {
+match «st» with
+| «State».«State» «s» «ns» «nx» => {
 match «g» with
 | «Goal».«GTrue» => {
-pure («Step».«More» («Branch».«Branch» «s» «nx» «rest»));
+pure («Step».«More» («Branch».«Branch» «st» «rest»));
 }
 | «Goal».«GEq» «a» «c» => {
-match (← «unify» «s» «a» «c») with
-| «Unified».«Fail» => {
-pure «Step».«Dead»;
-}
-| «Unified».«Ok» «s2» => {
-pure («Step».«More» («Branch».«Branch» «s2» «nx» «rest»));
-}
-;
+pure (← «onward» (← «post» «st» (← «unify» «s» «a» «c»)) «rest»);
 }
 | «Goal».«GEqAll» «as» «cs» => {
-match (← «unifyAll» «s» «as» «cs») with
-| «Unified».«Fail» => {
-pure «Step».«Dead»;
+pure (← «onward» (← «post» «st» (← «unifyAll» «s» «as» «cs»)) «rest»);
 }
-| «Unified».«Ok» «s2» => {
-pure («Step».«More» («Branch».«Branch» «s2» «nx» «rest»));
-}
-;
+| «Goal».«GNeq» «a» «c» => {
+pure (← «onward» (← «addNeq» «st» «a» «c») «rest»);
 }
 | «Goal».«GConj» «x» «y» => {
-pure («Step».«More» («Branch».«Branch» «s» «nx» («Goals».«GCons» «x» («Goals».«GCons» «y» «rest»))));
+pure («Step».«More» («Branch».«Branch» «st» («Goals».«GCons» «x» («Goals».«GCons» «y» «rest»))));
 }
 | «Goal».«GDisj» «x» «y» => {
-pure («Step».«Split» («Queue».«QCons» («Branch».«Branch» «s» «nx» («Goals».«GCons» «x» «rest»)) («Queue».«QCons» («Branch».«Branch» «s» «nx» («Goals».«GCons» «y» «rest»)) «Queue».«QNil»)) (1 : Int));
+pure («Step».«Split» («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» «x» «rest»)) («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» «y» «rest»)) «Queue».«QNil»)) (1 : Int));
 }
 | «Goal».«GCall» «f» «args» => {
-match (← «picks» «rules» «f» «args» «s» «nx» «rest») with
+match (← «picks» «rules» «f» «args» «s» «ns» «nx» «rest») with
 | «Picked».«Picked» «bs» «cost» => {
 pure («Step».«Split» «bs» «cost»);
+}
+;
 }
 ;
 }
@@ -456,8 +601,8 @@ match «q» with
 | «Queue».«QCons» «b» «t» => {
 «q» := «t»;
 match (← «step» «rules» «b») with
-| «Step».«Done» «s» => {
-«found» := («Answers».«ACons» «s» «found»);
+| «Step».«Done» «st» => {
+«found» := («Answers».«ACons» «st» «found»);
 «n» := («n» + (1 : Int));
 }
 | «Step».«Dead» => {
@@ -496,7 +641,7 @@ pure («go», «status», «n», «found», «left», «q»)
 partial_fixpoint
 
 def «solve» («rules» : «Rules») («g» : «Goal») («nvars» : Int) («fuel» : Int) («limit» : Int) : Option «Run» := do {
-let mut «q» := («Queue».«QCons» («Branch».«Branch» «Subst».«SNil» «nvars» («Goals».«GCons» «g» «Goals».«GNil»)) «Queue».«QNil»);
+let mut «q» := («Queue».«QCons» («Branch».«Branch» («State».«State» «Subst».«SNil» «Neqs».«NeqNil» «nvars») («Goals».«GCons» «g» «Goals».«GNil»)) «Queue».«QNil»);
 let mut «left» := «fuel»;
 let mut «found» := «Answers».«ANil»;
 let mut «n» := (0 : Int);
@@ -510,6 +655,14 @@ let t_ ← «solve_loop0» «limit» «fuel» «nvars» «g» «rules» («go»,
 «left» := t_.2.2.2.2.1;
 «q» := t_.2.2.2.2.2;
 pure («Run».«Run» (← «revAnswers» «found» «Answers».«ANil») «status»);
+}
+
+def «substOf» («st» : «State») : Option «Subst» := do {
+match «st» with
+| «State».«State» «s» _ _ => {
+pure «s»;
+}
+;
 }
 
 end Srs.Kanren

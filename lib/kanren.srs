@@ -100,6 +100,7 @@ enum Goal:
   case GEqAll(as: Terms, bs: Terms)
   case GConj(g: Goal, h: Goal)
   case GDisj(g: Goal, h: Goal)
+  case GNeq(a: Term, b: Term)
   case GCall(rel: Str, args: Terms)
 
 enum Goals:
@@ -113,9 +114,23 @@ enum Rules:
   case RNil
   case RCons(h: Rule, t: Rules)
 
-// one search branch: substitution, next fresh variable, goals left to prove
+// disequalities: each is the bindings that would make its two sides equal; it is violated when all of them hold
+enum Neqs:
+  case NeqNil
+  case NeqCons(p: Subst, t: Neqs)
+
+// what a branch knows: substitution, disequality store, next fresh variable
+enum State:
+  case State(s: Subst, neq: Neqs, next: I64)
+
+// a state after a new constraint: still consistent, or not
+enum Checked:
+  case Bad
+  case Good(st: State)
+
+// one search branch: what it knows, goals left to prove
 enum Branch:
-  case Branch(s: Subst, next: I64, gs: Goals)
+  case Branch(st: State, gs: Goals)
 
 enum Queue:
   case QNil
@@ -123,14 +138,14 @@ enum Queue:
 
 // one step of a branch: an answer, a dead end, the same branch further on, or a choice that costs fuel
 enum Step:
-  case Done(s: Subst)
+  case Done(st: State)
   case Dead
   case More(b: Branch)
   case Split(bs: Queue, cost: I64)
 
 enum Answers:
   case ANil
-  case ACons(s: Subst, t: Answers)
+  case ACons(st: State, t: Answers)
 
 // why a run stopped: every branch ended, `limit` answers found, or the next choice needed more fuel
 enum Status:
@@ -156,37 +171,82 @@ def shiftGoal(r: Region, g: Goal, k: I64): Goal = g match
   case GEqAll(as, bs) => GEqAll(shiftAll(r, as, k), shiftAll(r, bs, k))
   case GConj(x, y) => GConj(shiftGoal(r, x, k), shiftGoal(r, y, k))
   case GDisj(x, y) => GDisj(shiftGoal(r, x, k), shiftGoal(r, y, k))
+  case GNeq(a, b) => GNeq(shift(r, a, k), shift(r, b, k))
   case GCall(f, args) => GCall(f, shiftAll(r, args, k))
+
+def size(s: Subst): I64 = s match
+  case SNil => 0
+  case SBind(_, _, rest) => 1 + size(rest)
+
+// the first n bindings of s: what unify added on top of the substitution it started from
+def newest(r: Region, s: Subst, n: I64): Subst = if n <= 0 then SNil else s match
+  case SNil => SNil
+  case SBind(v, t, rest) => SBind(v, t, newest(r, rest, n - 1))
+
+// s extended with every binding of p
+def unifyBinds(r: Region, s: Subst, p: Subst): Unified = p match
+  case SNil => Ok(s)
+  case SBind(v, t, rest) => unify(r, s, TVar(v), t) match
+    case Fail => Fail
+    case Ok(s2) => unifyBinds(r, s2, rest)
+
+// a =/= b: drop it when they can never unify, Bad when they already are equal, else store what equality needs
+def addNeq(r: Region, st: State, a: Term, b: Term): Checked = st match
+  case State(s, ns, nx) => unify(r, s, a, b) match
+    case Fail => Good(st)
+    case Ok(s2) =>
+      val n = size(s2) - size(s)
+      if n == 0 then Bad else Good(State(s, NeqCons(newest(r, s2, n), ns), nx))
+
+// the store under a new substitution s: each disequality checked again (as addNeq)
+def recheck(r: Region, s: Subst, ns: Neqs, nx: I64): Checked = ns match
+  case NeqNil => Good(State(s, NeqNil, nx))
+  case NeqCons(p, t) => recheck(r, s, t, nx) match
+    case Bad => Bad
+    case Good(st) => st match
+      case State(_, kept, _) => unifyBinds(r, s, p) match
+        case Fail => Good(st)
+        case Ok(s2) =>
+          val n = size(s2) - size(s)
+          if n == 0 then Bad else Good(State(s, NeqCons(newest(r, s2, n), kept), nx))
+
+// the state after unify gave u: dead on Fail or a violated disequality
+def post(r: Region, st: State, u: Unified): Checked = u match
+  case Fail => Bad
+  case Ok(s2) => st match
+    case State(_, ns, nx) => recheck(r, s2, ns, nx)
+
+def onward(r: Region, c: Checked, rest: Goals): Step = c match
+  case Bad => Dead
+  case Good(st) => More(Branch(st, rest))
 
 // one branch per rule of rel, in rule order; each pick costs 1 fuel (vic B1)
 enum Picked:
   case Picked(bs: Queue, cost: I64)
 
-def picks(r: Region, rules: Rules, rel: Str, args: Terms, s: Subst, nx: I64, rest: Goals): Picked = rules match
+def picks(r: Region, rules: Rules, rel: Str, args: Terms, s: Subst, ns: Neqs, nx: I64, rest: Goals): Picked = rules match
   case RNil => Picked(QNil, 0)
-  case RCons(h, t) => picks(r, t, rel, args, s, nx, rest) match
+  case RCons(h, t) => picks(r, t, rel, args, s, ns, nx, rest) match
     case Picked(bs, cost) => h match
       case Rule(f, head, body, nv) =>
         if rt_str_eq(f, rel) then
-          val b = Branch(s, nx + nv, GCons(GEqAll(shiftAll(r, head, nx), args), GCons(shiftGoal(r, body, nx), rest)))
+          val b = Branch(State(s, ns, nx + nv), GCons(GEqAll(shiftAll(r, head, nx), args), GCons(shiftGoal(r, body, nx), rest)))
           Picked(QCons(b, bs), cost + 1)
         else Picked(bs, cost)
 
 def step(r: Region, rules: Rules, b: Branch): Step = b match
-  case Branch(s, nx, gs) => gs match
-    case GNil => Done(s)
-    case GCons(g, rest) => g match
-      case GTrue => More(Branch(s, nx, rest))
-      case GEq(a, c) => unify(r, s, a, c) match
-        case Fail => Dead
-        case Ok(s2) => More(Branch(s2, nx, rest))
-      case GEqAll(as, cs) => unifyAll(r, s, as, cs) match
-        case Fail => Dead
-        case Ok(s2) => More(Branch(s2, nx, rest))
-      case GConj(x, y) => More(Branch(s, nx, GCons(x, GCons(y, rest))))
-      case GDisj(x, y) => Split(QCons(Branch(s, nx, GCons(x, rest)), QCons(Branch(s, nx, GCons(y, rest)), QNil)), 1)
-      case GCall(f, args) => picks(r, rules, f, args, s, nx, rest) match
-        case Picked(bs, cost) => Split(bs, cost)
+  case Branch(st, gs) => gs match
+    case GNil => Done(st)
+    case GCons(g, rest) => st match
+      case State(s, ns, nx) => g match
+        case GTrue => More(Branch(st, rest))
+        case GEq(a, c) => onward(r, post(r, st, unify(r, s, a, c)), rest)
+        case GEqAll(as, cs) => onward(r, post(r, st, unifyAll(r, s, as, cs)), rest)
+        case GNeq(a, c) => onward(r, addNeq(r, st, a, c), rest)
+        case GConj(x, y) => More(Branch(st, GCons(x, GCons(y, rest))))
+        case GDisj(x, y) => Split(QCons(Branch(st, GCons(x, rest)), QCons(Branch(st, GCons(y, rest)), QNil)), 1)
+        case GCall(f, args) => picks(r, rules, f, args, s, ns, nx, rest) match
+          case Picked(bs, cost) => Split(bs, cost)
 
 def enqueue(r: Region, q: Queue, bs: Queue): Queue = q match
   case QNil => bs
@@ -199,7 +259,7 @@ def revAnswers(r: Region, xs: Answers, acc: Answers): Answers = xs match
 // prove g (variables 0..nvars-1) over rules. Deterministic: a branch runs until a choice, the choice's branches
 // go to the back of the queue (fair, so complete). Every infinite path makes choices, so fuel bounds the run (§17).
 def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): Run =
-  var q = QCons(Branch(SNil, nvars, GCons(g, GNil)), QNil)
+  var q = QCons(Branch(State(SNil, NeqNil, nvars), GCons(g, GNil)), QNil)
   var left = fuel
   var found = ANil
   var n = 0
@@ -211,8 +271,8 @@ def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): 
       case QCons(b, t) =>
         q = t
         step(r, rules, b) match
-          case Done(s) =>
-            found = ACons(s, found)
+          case Done(st) =>
+            found = ACons(st, found)
             n = n + 1
           case Dead => ()
           case More(b2) => q = QCons(b2, q)
@@ -228,3 +288,7 @@ def solve(r: Region, rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64): 
       go = false
     else ()
   Run(revAnswers(r, found, ANil), status)
+
+// the substitution of a state (answers are states)
+def substOf(st: State): Subst = st match
+  case State(s, _, _) => s

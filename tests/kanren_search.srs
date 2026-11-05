@@ -33,11 +33,11 @@ def show(r: Region, run: Run, nv: I64): Unit = run match
 
 def showAnswers(r: Region, ans: Answers, nv: I64): Unit = ans match
   case ANil => ()
-  case ACons(s, t) =>
+  case ACons(st, t) =>
     var i = 0
     while i < nv do
       if i > 0 then rt_print(" ; ") else ()
-      showTerm(walkAll(r, s, TVar(i)))
+      showTerm(walkAll(r, substOf(st), TVar(i)))
       i = i + 1
     rt_print("\n")
     showAnswers(r, t, nv)
