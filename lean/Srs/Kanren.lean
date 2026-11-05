@@ -19,7 +19,7 @@ mutual
 inductive «Term» where
   | «TVar» («n» : Int)
   | «TCon» («f» : ByteArray) («args» : «Terms»)
-  | «TInt» («v» : Int)
+  | «KInt» («v» : Int)
 inductive «Terms» where
   | «TNil»
   | «TCons» («h» : «Term») («t» : «Terms»)
@@ -131,7 +131,7 @@ pure (← «lookup» «s» «s» «n» «t»);
 | «Term».«TCon» _ _ => {
 pure «t»;
 }
-| «Term».«TInt» _ => {
+| «Term».«KInt» _ => {
 pure «t»;
 }
 ;
@@ -165,7 +165,7 @@ pure («m» == «n»);
 | «Term».«TCon» _ «args» => {
 pure (← «occursIn» «s» «n» «args»);
 }
-| «Term».«TInt» _ => {
+| «Term».«KInt» _ => {
 pure false;
 }
 ;
@@ -208,7 +208,7 @@ pure «Unified».«Fail»;
 pure («Unified».«Ok» («Subst».«SBind» «n» «t» «s»));
 };
 }
-| «Term».«TInt» _ => {
+| «Term».«KInt» _ => {
 pure («Unified».«Ok» («Subst».«SBind» «n» «t» «s»));
 }
 ;
@@ -234,17 +234,17 @@ pure (← «unifyAll» «s» «xs» «ys»);
 pure «Unified».«Fail»;
 };
 }
-| «Term».«TInt» _ => {
+| «Term».«KInt» _ => {
 pure «Unified».«Fail»;
 }
 ;
 }
-| «Term».«TInt» «v» => {
+| «Term».«KInt» «v» => {
 match «y» with
 | «Term».«TVar» «m» => {
 pure (← «bind» «s» «m» «x»);
 }
-| «Term».«TInt» «w» => {
+| «Term».«KInt» «w» => {
 if («v» == «w») then {
 pure («Unified».«Ok» «s»);
 } else {
@@ -304,8 +304,8 @@ pure («Term».«TVar» «n»);
 | «Term».«TCon» «f» «args» => {
 pure («Term».«TCon» «f» (← «walkEach» «s» «args»));
 }
-| «Term».«TInt» «v» => {
-pure («Term».«TInt» «v»);
+| «Term».«KInt» «v» => {
+pure («Term».«KInt» «v»);
 }
 ;
 }
@@ -345,7 +345,7 @@ pure (← «rt_print» ")".toUTF8);
 }
 ;
 }
-| «Term».«TInt» «v» => {
+| «Term».«KInt» «v» => {
 pure (← «rt_print_i64» «v»);
 }
 ;
@@ -384,8 +384,8 @@ pure («Term».«TVar» («n» + «k»));
 | «Term».«TCon» «f» «args» => {
 pure («Term».«TCon» «f» (← «shiftAll» «args» «k»));
 }
-| «Term».«TInt» «v» => {
-pure («Term».«TInt» «v»);
+| «Term».«KInt» «v» => {
+pure («Term».«KInt» «v»);
 }
 ;
 }
@@ -661,16 +661,16 @@ partial_fixpoint
 end
 
 mutual
-def «without» («xs» : «Ints») («v» : Int) : Option «Ints» := do {
+def «kwithout» («xs» : «Ints») («v» : Int) : Option «Ints» := do {
 match «xs» with
 | «Ints».«INil» => {
 pure «Ints».«INil»;
 }
 | «Ints».«ICons» «h» «t» => {
 if («h» == «v») then {
-pure (← «without» «t» «v»);
+pure (← «kwithout» «t» «v»);
 } else {
-pure («Ints».«ICons» «h» (← «without» «t» «v»));
+pure («Ints».«ICons» «h» (← «kwithout» «t» «v»));
 };
 }
 ;
@@ -743,7 +743,7 @@ match (← «walk» «s» «t») with
 | «Term».«TVar» «n» => {
 pure (← «lookupDom» «ds» «n»);
 }
-| «Term».«TInt» «v» => {
+| «Term».«KInt» «v» => {
 pure («DomOf».«Has» («Dom».«Dom» «v» «Ints».«INil»));
 }
 | «Term».«TCon» _ _ => {
@@ -763,7 +763,7 @@ pure «Checked».«Bad»;
 }
 | «Ints».«ICons» «h» «rest» => {
 match (← «walk» «s» «t») with
-| «Term».«TInt» «v» => {
+| «Term».«KInt» «v» => {
 if (← «member» «v» «xs») then {
 pure («Checked».«Good» «st»);
 } else {
@@ -776,7 +776,7 @@ pure «Checked».«Bad»;
 | «Term».«TVar» «n» => {
 match «rest» with
 | «Ints».«INil» => {
-match (← «unify» «s» («Term».«TVar» «n») («Term».«TInt» «h»)) with
+match (← «unify» «s» («Term».«TVar» «n») («Term».«KInt» «h»)) with
 | «Unified».«Fail» => {
 pure «Checked».«Bad»;
 }
@@ -859,10 +859,10 @@ pure («Checked».«Good» «st»);
 };
 } else {
 if ((← «domSize» «dx») == (1 : Int)) then {
-pure (← «setDom» «st» «y» (← «without» (← «ints» «dy») (← «lo» «dx»)));
+pure (← «setDom» «st» «y» (← «kwithout» (← «ints» «dy») (← «lo» «dx»)));
 } else {
 if ((← «domSize» «dy») == (1 : Int)) then {
-pure (← «setDom» «st» «x» (← «without» (← «ints» «dx») (← «lo» «dy»)));
+pure (← «setDom» «st» «x» (← «kwithout» (← «ints» «dx») (← «lo» «dy»)));
 } else {
 pure («Checked».«Good» «st»);
 };
@@ -1058,7 +1058,7 @@ match «vs» with
 pure «Queue».«QNil»;
 }
 | «Ints».«ICons» «v» «more» => {
-pure («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» («Goal».«GEq» «t» («Term».«TInt» «v»)) «after»)) (← «labelBranches» «st» «t» «more» «after»));
+pure («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» («Goal».«GEq» «t» («Term».«KInt» «v»)) «after»)) (← «labelBranches» «st» «t» «more» «after»));
 }
 ;
 }
@@ -1308,7 +1308,7 @@ pure (← «settle» «st»);
 ;
 }
 
-def «step» («rules» : «Rules») («b» : «Branch») : Option «Step» := do {
+def «kstep» («rules» : «Rules») («b» : «Branch») : Option «Step» := do {
 match «b» with
 | «Branch».«Branch» «st» «gs» => {
 match «gs» with
@@ -1385,7 +1385,7 @@ match «q» with
 }
 | «Queue».«QCons» «b» «t» => {
 «q» := «t»;
-match (← «step» «rules» «b») with
+match (← «kstep» «rules» «b») with
 | «Step».«Done» «st» => {
 «found» := («Answers».«ACons» «st» «found»);
 «n» := («n» + (1 : Int));

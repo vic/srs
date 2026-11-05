@@ -5,6 +5,16 @@ set_option autoImplicit false
 namespace Srs.Impl
 open Srs.Rt
 
+inductive «Bin» where
+  | «BLe»
+  | «BLt»
+  | «BNeq»
+  deriving DecidableEq
+inductive «Status» where
+  | «Ended»
+  | «Limit»
+  | «NoFuel»
+  deriving DecidableEq
 inductive «Kind» where
   | «TIdent»
   | «TInt»
@@ -69,6 +79,87 @@ inductive «Kind» where
   | «TyVals»
   deriving DecidableEq
 mutual
+inductive «Term» where
+  | «TVar» («n» : Int)
+  | «TCon» («f» : ByteArray) («args» : «Terms»)
+  | «KInt» («v» : Int)
+inductive «Terms» where
+  | «TNil»
+  | «TCons» («h» : «Term») («t» : «Terms»)
+inductive «Subst» where
+  | «SNil»
+  | «SBind» («v» : Int) («t» : «Term») («rest» : «Subst»)
+inductive «Unified» where
+  | «Fail»
+  | «Ok» («s» : «Subst»)
+inductive «Goal» where
+  | «GTrue»
+  | «GEq» («a» : «Term») («b» : «Term»)
+  | «GEqAll» («as» : «Terms») («bs» : «Terms»)
+  | «GConj» («g» : «Goal») («h» : «Goal»)
+  | «GDisj» («g» : «Goal») («h» : «Goal»)
+  | «GNeq» («a» : «Term») («b» : «Term»)
+  | «GDom» («x» : «Term») («d» : «Ints»)
+  | «GFd» («c» : «Fd»)
+  | «GLabel» («xs» : «Terms»)
+  | «GCall» («rel» : ByteArray) («args» : «Terms»)
+inductive «Goals» where
+  | «GNil»
+  | «GCons» («h» : «Goal») («t» : «Goals»)
+inductive «Rule» where
+  | «Rule» («rel» : ByteArray) («head» : «Terms») («body» : «Goal») («nvars» : Int)
+inductive «Rules» where
+  | «RNil»
+  | «RCons» («h» : «Rule») («t» : «Rules»)
+inductive «Neqs» where
+  | «NeqNil»
+  | «NeqCons» («p» : «Subst») («t» : «Neqs»)
+inductive «Ints» where
+  | «INil»
+  | «ICons» («h» : Int) («t» : «Ints»)
+inductive «Dom» where
+  | «Dom» («h» : Int) («t» : «Ints»)
+inductive «Doms» where
+  | «DNil»
+  | «DCons» («v» : Int) («d» : «Dom») («t» : «Doms»)
+inductive «Fd» where
+  | «FBin» («op» : «Bin») («x» : «Term») («y» : «Term»)
+  | «FPlus» («x» : «Term») («y» : «Term») («z» : «Term»)
+inductive «Fds» where
+  | «FNil»
+  | «FCons» («c» : «Fd») («t» : «Fds»)
+inductive «State» where
+  | «State» («s» : «Subst») («neq» : «Neqs») («dom» : «Doms») («fdc» : «Fds») («next» : Int)
+inductive «Checked» where
+  | «Bad»
+  | «Good» («st» : «State»)
+inductive «Branch» where
+  | «Branch» («st» : «State») («gs» : «Goals»)
+inductive «Queue» where
+  | «QNil»
+  | «QCons» («h» : «Branch») («t» : «Queue»)
+inductive «Step» where
+  | «Done» («st» : «State»)
+  | «Dead»
+  | «More» («b» : «Branch»)
+  | «Split» («bs» : «Queue») («cost» : Int)
+inductive «Answers» where
+  | «ANil»
+  | «ACons» («st» : «State») («t» : «Answers»)
+inductive «Run» where
+  | «Run» («answers» : «Answers») («status» : «Status»)
+inductive «NeqsR» where
+  | «Violated»
+  | «Kept» («ns» : «Neqs»)
+inductive «DomOf» where
+  | «NoDom»
+  | «Has» («d» : «Dom»)
+  | «NotInt»
+inductive «Pick» where
+  | «NoPick»
+  | «Pick» («t» : «Term») («d» : «Dom»)
+inductive «Picked» where
+  | «Picked» («bs» : «Queue») («cost» : Int)
 inductive «Val» where
   | «VSym» («s» : ByteArray)
   | «VInt» («v» : Int)
@@ -305,6 +396,1030 @@ let t_ ← «strHash_loop0» «n» «s» («i», «h»);
 «i» := t_.1;
 «h» := t_.2;
 pure «h»;
+}
+
+mutual
+def «walk» («s» : «Subst») («t» : «Term») : Option «Term» := do {
+match «t» with
+| «Term».«TVar» «n» => {
+pure (← «lookup» «s» «s» «n» «t»);
+}
+| «Term».«TCon» _ _ => {
+pure «t»;
+}
+| «Term».«KInt» _ => {
+pure «t»;
+}
+;
+}
+partial_fixpoint
+
+def «lookup» («all» : «Subst») («s» : «Subst») («n» : Int) («t» : «Term») : Option «Term» := do {
+match «s» with
+| «Subst».«SNil» => {
+pure «t»;
+}
+| «Subst».«SBind» «v» «u» «rest» => {
+if («v» == «n») then {
+pure (← «walk» «all» «u»);
+} else {
+pure (← «lookup» «all» «rest» «n» «t»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «occurs» («s» : «Subst») («n» : Int) («t» : «Term») : Option Bool := do {
+match (← «walk» «s» «t») with
+| «Term».«TVar» «m» => {
+pure («m» == «n»);
+}
+| «Term».«TCon» _ «args» => {
+pure (← «occursIn» «s» «n» «args»);
+}
+| «Term».«KInt» _ => {
+pure false;
+}
+;
+}
+partial_fixpoint
+
+def «occursIn» («s» : «Subst») («n» : Int) («ts» : «Terms») : Option Bool := do {
+match «ts» with
+| «Terms».«TNil» => {
+pure false;
+}
+| «Terms».«TCons» «h» «t» => {
+pure (← (do {
+if (← «occurs» «s» «n» «h») then {
+pure true
+} else {
+pure (← «occursIn» «s» «n» «t»)
+}
+}));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «bind» («s» : «Subst») («n» : Int) («t» : «Term») : Option «Unified» := do {
+match «t» with
+| «Term».«TVar» «m» => {
+if («m» == «n») then {
+pure («Unified».«Ok» «s»);
+} else {
+pure («Unified».«Ok» («Subst».«SBind» «n» «t» «s»));
+};
+}
+| «Term».«TCon» _ _ => {
+if (← «occurs» «s» «n» «t») then {
+pure «Unified».«Fail»;
+} else {
+pure («Unified».«Ok» («Subst».«SBind» «n» «t» «s»));
+};
+}
+| «Term».«KInt» _ => {
+pure («Unified».«Ok» («Subst».«SBind» «n» «t» «s»));
+}
+;
+}
+
+mutual
+def «unify» («s» : «Subst») («a» : «Term») («b» : «Term») : Option «Unified» := do {
+let «x» ← (pure (← «walk» «s» «a»));
+let «y» ← (pure (← «walk» «s» «b»));
+match «x» with
+| «Term».«TVar» «n» => {
+pure (← «bind» «s» «n» «y»);
+}
+| «Term».«TCon» «f» «xs» => {
+match «y» with
+| «Term».«TVar» «m» => {
+pure (← «bind» «s» «m» «x»);
+}
+| «Term».«TCon» «g» «ys» => {
+if (← «rt_str_eq» «f» «g») then {
+pure (← «unifyAll» «s» «xs» «ys»);
+} else {
+pure «Unified».«Fail»;
+};
+}
+| «Term».«KInt» _ => {
+pure «Unified».«Fail»;
+}
+;
+}
+| «Term».«KInt» «v» => {
+match «y» with
+| «Term».«TVar» «m» => {
+pure (← «bind» «s» «m» «x»);
+}
+| «Term».«KInt» «w» => {
+if («v» == «w») then {
+pure («Unified».«Ok» «s»);
+} else {
+pure «Unified».«Fail»;
+};
+}
+| «Term».«TCon» _ _ => {
+pure «Unified».«Fail»;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+def «unifyAll» («s» : «Subst») («xs» : «Terms») («ys» : «Terms») : Option «Unified» := do {
+match «xs» with
+| «Terms».«TNil» => {
+match «ys» with
+| «Terms».«TNil» => {
+pure («Unified».«Ok» «s»);
+}
+| «Terms».«TCons» _ _ => {
+pure «Unified».«Fail»;
+}
+;
+}
+| «Terms».«TCons» «x» «xt» => {
+match «ys» with
+| «Terms».«TNil» => {
+pure «Unified».«Fail»;
+}
+| «Terms».«TCons» «y» «yt» => {
+match (← «unify» «s» «x» «y») with
+| «Unified».«Fail» => {
+pure «Unified».«Fail»;
+}
+| «Unified».«Ok» «s2» => {
+pure (← «unifyAll» «s2» «xt» «yt»);
+}
+;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «walkAll» («s» : «Subst») («t» : «Term») : Option «Term» := do {
+match (← «walk» «s» «t») with
+| «Term».«TVar» «n» => {
+pure («Term».«TVar» «n»);
+}
+| «Term».«TCon» «f» «args» => {
+pure («Term».«TCon» «f» (← «walkEach» «s» «args»));
+}
+| «Term».«KInt» «v» => {
+pure («Term».«KInt» «v»);
+}
+;
+}
+partial_fixpoint
+
+def «walkEach» («s» : «Subst») («ts» : «Terms») : Option «Terms» := do {
+match «ts» with
+| «Terms».«TNil» => {
+pure «Terms».«TNil»;
+}
+| «Terms».«TCons» «h» «t» => {
+pure («Terms».«TCons» (← «walkAll» «s» «h») (← «walkEach» «s» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «showTerm» («t» : «Term») : Option Unit := do {
+match «t» with
+| «Term».«TVar» «n» => {
+let _ := (← «rt_print» "_".toUTF8);
+pure (← «rt_print_i64» «n»);
+}
+| «Term».«TCon» «f» «args» => {
+let _ := (← «rt_print» «f»);
+match «args» with
+| «Terms».«TNil» => {
+pure ();
+}
+| «Terms».«TCons» _ _ => {
+let _ := (← «rt_print» "(".toUTF8);
+let _ := (← «showTerms» «args»);
+pure (← «rt_print» ")".toUTF8);
+}
+;
+}
+| «Term».«KInt» «v» => {
+pure (← «rt_print_i64» «v»);
+}
+;
+}
+partial_fixpoint
+
+def «showTerms» («ts» : «Terms») : Option Unit := do {
+match «ts» with
+| «Terms».«TNil» => {
+pure ();
+}
+| «Terms».«TCons» «h» «t» => {
+let _ := (← «showTerm» «h»);
+match «t» with
+| «Terms».«TNil» => {
+pure ();
+}
+| «Terms».«TCons» _ _ => {
+let _ := (← «rt_print» ", ".toUTF8);
+pure (← «showTerms» «t»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «shift» («t» : «Term») («k» : Int) : Option «Term» := do {
+match «t» with
+| «Term».«TVar» «n» => {
+pure («Term».«TVar» («n» + «k»));
+}
+| «Term».«TCon» «f» «args» => {
+pure («Term».«TCon» «f» (← «shiftAll» «args» «k»));
+}
+| «Term».«KInt» «v» => {
+pure («Term».«KInt» «v»);
+}
+;
+}
+partial_fixpoint
+
+def «shiftAll» («ts» : «Terms») («k» : Int) : Option «Terms» := do {
+match «ts» with
+| «Terms».«TNil» => {
+pure «Terms».«TNil»;
+}
+| «Terms».«TCons» «h» «t» => {
+pure («Terms».«TCons» (← «shift» «h» «k») (← «shiftAll» «t» «k»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «shiftFd» («c» : «Fd») («k» : Int) : Option «Fd» := do {
+match «c» with
+| «Fd».«FBin» «op» «x» «y» => {
+pure («Fd».«FBin» «op» (← «shift» «x» «k») (← «shift» «y» «k»));
+}
+| «Fd».«FPlus» «x» «y» «z» => {
+pure («Fd».«FPlus» (← «shift» «x» «k») (← «shift» «y» «k») (← «shift» «z» «k»));
+}
+;
+}
+
+mutual
+def «substSize» («s» : «Subst») : Option Int := do {
+match «s» with
+| «Subst».«SNil» => {
+pure (0 : Int);
+}
+| «Subst».«SBind» _ _ «rest» => {
+pure ((1 : Int) + (← «substSize» «rest»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «newest» («s» : «Subst») («n» : Int) : Option «Subst» := do {
+if (decide («n» <= (0 : Int))) then {
+pure «Subst».«SNil»;
+} else {
+match «s» with
+| «Subst».«SNil» => {
+pure «Subst».«SNil»;
+}
+| «Subst».«SBind» «v» «t» «rest» => {
+pure («Subst».«SBind» «v» «t» (← «newest» «rest» («n» - (1 : Int))));
+}
+;
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «unifyBinds» («s» : «Subst») («p» : «Subst») : Option «Unified» := do {
+match «p» with
+| «Subst».«SNil» => {
+pure («Unified».«Ok» «s»);
+}
+| «Subst».«SBind» «v» «t» «rest» => {
+match (← «unify» «s» («Term».«TVar» «v») «t») with
+| «Unified».«Fail» => {
+pure «Unified».«Fail»;
+}
+| «Unified».«Ok» «s2» => {
+pure (← «unifyBinds» «s2» «rest»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «addNeq» («st» : «State») («a» : «Term») («b» : «Term») : Option «Checked» := do {
+match «st» with
+| «State».«State» «s» «ns» «ds» «fs» «nx» => {
+match (← «unify» «s» «a» «b») with
+| «Unified».«Fail» => {
+pure («Checked».«Good» «st»);
+}
+| «Unified».«Ok» «s2» => {
+let «n» ← (pure ((← «substSize» «s2») - (← «substSize» «s»)));
+if («n» == (0 : Int)) then {
+pure «Checked».«Bad»;
+} else {
+pure («Checked».«Good» («State».«State» «s» («Neqs».«NeqCons» (← «newest» «s2» «n») «ns») «ds» «fs» «nx»));
+};
+}
+;
+}
+;
+}
+
+mutual
+def «recheck» («s» : «Subst») («ns» : «Neqs») : Option «NeqsR» := do {
+match «ns» with
+| «Neqs».«NeqNil» => {
+pure («NeqsR».«Kept» «Neqs».«NeqNil»);
+}
+| «Neqs».«NeqCons» «p» «t» => {
+match (← «recheck» «s» «t») with
+| «NeqsR».«Violated» => {
+pure «NeqsR».«Violated»;
+}
+| «NeqsR».«Kept» «kept» => {
+match (← «unifyBinds» «s» «p») with
+| «Unified».«Fail» => {
+pure («NeqsR».«Kept» «kept»);
+}
+| «Unified».«Ok» «s2» => {
+let «n» ← (pure ((← «substSize» «s2») - (← «substSize» «s»)));
+if («n» == (0 : Int)) then {
+pure «NeqsR».«Violated»;
+} else {
+pure («NeqsR».«Kept» («Neqs».«NeqCons» (← «newest» «s2» «n») «kept»));
+};
+}
+;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «member» («v» : Int) («xs» : «Ints») : Option Bool := do {
+match «xs» with
+| «Ints».«INil» => {
+pure false;
+}
+| «Ints».«ICons» «h» «t» => {
+pure (← (do {
+if («h» == «v») then {
+pure true
+} else {
+pure (← «member» «v» «t»)
+}
+}));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «inDom» («v» : Int) («d» : «Dom») : Option Bool := do {
+match «d» with
+| «Dom».«Dom» «h» «t» => {
+pure (← (do {
+if («h» == «v») then {
+pure true
+} else {
+pure (← «member» «v» «t»)
+}
+}));
+}
+;
+}
+
+def «ints» («d» : «Dom») : Option «Ints» := do {
+match «d» with
+| «Dom».«Dom» «h» «t» => {
+pure («Ints».«ICons» «h» «t»);
+}
+;
+}
+
+mutual
+def «lastOf» («h» : Int) («t» : «Ints») : Option Int := do {
+match «t» with
+| «Ints».«INil» => {
+pure «h»;
+}
+| «Ints».«ICons» «h2» «t2» => {
+pure (← «lastOf» «h2» «t2»);
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «lo» («d» : «Dom») : Option Int := do {
+match «d» with
+| «Dom».«Dom» «h» _ => {
+pure «h»;
+}
+;
+}
+
+def «hi» («d» : «Dom») : Option Int := do {
+match «d» with
+| «Dom».«Dom» «h» «t» => {
+pure (← «lastOf» «h» «t»);
+}
+;
+}
+
+mutual
+def «intsSize» («xs» : «Ints») : Option Int := do {
+match «xs» with
+| «Ints».«INil» => {
+pure (0 : Int);
+}
+| «Ints».«ICons» _ «t» => {
+pure ((1 : Int) + (← «intsSize» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «domSize» («d» : «Dom») : Option Int := do {
+match «d» with
+| «Dom».«Dom» _ «t» => {
+pure ((1 : Int) + (← «intsSize» «t»));
+}
+;
+}
+
+mutual
+def «range» («a» : Int) («b» : Int) : Option «Ints» := do {
+if (decide («a» > «b»)) then {
+pure «Ints».«INil»;
+} else {
+pure («Ints».«ICons» «a» (← «range» («a» + (1 : Int)) «b»));
+};
+}
+partial_fixpoint
+
+end
+
+mutual
+def «between» («xs» : «Ints») («a» : Int) («b» : Int) : Option «Ints» := do {
+match «xs» with
+| «Ints».«INil» => {
+pure «Ints».«INil»;
+}
+| «Ints».«ICons» «h» «t» => {
+if (← (do {
+if (decide («h» >= «a»)) then {
+pure (decide («h» <= «b»))
+} else {
+pure false
+}
+})) then {
+pure («Ints».«ICons» «h» (← «between» «t» «a» «b»));
+} else {
+pure (← «between» «t» «a» «b»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «kwithout» («xs» : «Ints») («v» : Int) : Option «Ints» := do {
+match «xs» with
+| «Ints».«INil» => {
+pure «Ints».«INil»;
+}
+| «Ints».«ICons» «h» «t» => {
+if («h» == «v») then {
+pure (← «kwithout» «t» «v»);
+} else {
+pure («Ints».«ICons» «h» (← «kwithout» «t» «v»));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «meetInts» («xs» : «Ints») («d» : «Dom») : Option «Ints» := do {
+match «xs» with
+| «Ints».«INil» => {
+pure «Ints».«INil»;
+}
+| «Ints».«ICons» «h» «t» => {
+if (← «inDom» «h» «d») then {
+pure («Ints».«ICons» «h» (← «meetInts» «t» «d»));
+} else {
+pure (← «meetInts» «t» «d»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «lookupDom» («ds» : «Doms») («n» : Int) : Option «DomOf» := do {
+match «ds» with
+| «Doms».«DNil» => {
+pure «DomOf».«NoDom»;
+}
+| «Doms».«DCons» «v» «d» «t» => {
+if («v» == «n») then {
+pure («DomOf».«Has» «d»);
+} else {
+pure (← «lookupDom» «t» «n»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «dropDom» («ds» : «Doms») («n» : Int) : Option «Doms» := do {
+match «ds» with
+| «Doms».«DNil» => {
+pure «Doms».«DNil»;
+}
+| «Doms».«DCons» «v» «d» «t» => {
+if («v» == «n») then {
+pure (← «dropDom» «t» «n»);
+} else {
+pure («Doms».«DCons» «v» «d» (← «dropDom» «t» «n»));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «domOf» («st» : «State») («t» : «Term») : Option «DomOf» := do {
+match «st» with
+| «State».«State» «s» _ «ds» _ _ => {
+match (← «walk» «s» «t») with
+| «Term».«TVar» «n» => {
+pure (← «lookupDom» «ds» «n»);
+}
+| «Term».«KInt» «v» => {
+pure («DomOf».«Has» («Dom».«Dom» «v» «Ints».«INil»));
+}
+| «Term».«TCon» _ _ => {
+pure «DomOf».«NotInt»;
+}
+;
+}
+;
+}
+
+def «setDom» («st» : «State») («t» : «Term») («xs» : «Ints») : Option «Checked» := do {
+match «st» with
+| «State».«State» «s» «ns» «ds» «fs» «nx» => {
+match «xs» with
+| «Ints».«INil» => {
+pure «Checked».«Bad»;
+}
+| «Ints».«ICons» «h» «rest» => {
+match (← «walk» «s» «t») with
+| «Term».«KInt» «v» => {
+if (← «member» «v» «xs») then {
+pure («Checked».«Good» «st»);
+} else {
+pure «Checked».«Bad»;
+};
+}
+| «Term».«TCon» _ _ => {
+pure «Checked».«Bad»;
+}
+| «Term».«TVar» «n» => {
+match «rest» with
+| «Ints».«INil» => {
+match (← «unify» «s» («Term».«TVar» «n») («Term».«KInt» «h»)) with
+| «Unified».«Fail» => {
+pure «Checked».«Bad»;
+}
+| «Unified».«Ok» «s2» => {
+pure («Checked».«Good» («State».«State» «s2» «ns» (← «dropDom» «ds» «n») «fs» «nx»));
+}
+;
+}
+| «Ints».«ICons» _ _ => {
+pure («Checked».«Good» («State».«State» «s» «ns» («Doms».«DCons» «n» («Dom».«Dom» «h» «rest») (← «dropDom» «ds» «n»)) «fs» «nx»));
+}
+;
+}
+;
+}
+;
+}
+;
+}
+
+def «meet» («st» : «State») («t» : «Term») («xs» : «Ints») : Option «Checked» := do {
+match (← «domOf» «st» «t») with
+| «DomOf».«NoDom» => {
+pure (← «setDom» «st» «t» «xs»);
+}
+| «DomOf».«Has» «d» => {
+pure (← «setDom» «st» «t» (← «meetInts» «xs» «d»));
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+;
+}
+
+mutual
+def «redom» («st» : «State») («ds» : «Doms») : Option «Checked» := do {
+match «ds» with
+| «Doms».«DNil» => {
+pure («Checked».«Good» «st»);
+}
+| «Doms».«DCons» «n» «d» «t» => {
+match (← «redom» «st» «t») with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+pure (← «meet» «st2» («Term».«TVar» «n») (← «ints» «d»));
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «leAt» («st» : «State») («x» : «Term») («y» : «Term») («dx» : «Dom») («dy» : «Dom») («k» : Int) : Option «Checked» := do {
+match (← «setDom» «st» «x» (← «between» (← «ints» «dx») (← «lo» «dx») ((← «hi» «dy») - «k»))) with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+pure (← «setDom» «st2» «y» (← «between» (← «ints» «dy») ((← «lo» «dx») + «k») (← «hi» «dy»)));
+}
+;
+}
+
+def «neqAt» («st» : «State») («x» : «Term») («y» : «Term») («dx» : «Dom») («dy» : «Dom») : Option «Checked» := do {
+if (← (do {
+if ((← «domSize» «dx») == (1 : Int)) then {
+pure ((← «domSize» «dy») == (1 : Int))
+} else {
+pure false
+}
+})) then {
+if ((← «lo» «dx») == (← «lo» «dy»)) then {
+pure «Checked».«Bad»;
+} else {
+pure («Checked».«Good» «st»);
+};
+} else {
+if ((← «domSize» «dx») == (1 : Int)) then {
+pure (← «setDom» «st» «y» (← «kwithout» (← «ints» «dy») (← «lo» «dx»)));
+} else {
+if ((← «domSize» «dy») == (1 : Int)) then {
+pure (← «setDom» «st» «x» (← «kwithout» (← «ints» «dx») (← «lo» «dy»)));
+} else {
+pure («Checked».«Good» «st»);
+};
+};
+};
+}
+
+def «binAt» («st» : «State») («op» : «Bin») («x» : «Term») («y» : «Term») («dx» : «Dom») («dy» : «Dom») : Option «Checked» := do {
+match «op» with
+| «Bin».«BLe» => {
+pure (← «leAt» «st» «x» «y» «dx» «dy» (0 : Int));
+}
+| «Bin».«BLt» => {
+pure (← «leAt» «st» «x» «y» «dx» «dy» (1 : Int));
+}
+| «Bin».«BNeq» => {
+pure (← «neqAt» «st» «x» «y» «dx» «dy»);
+}
+;
+}
+
+def «plusAt» («st» : «State») («x» : «Term») («y» : «Term») («z» : «Term») («dx» : «Dom») («dy» : «Dom») («dz» : «Dom») : Option «Checked» := do {
+match (← «setDom» «st» «z» (← «between» (← «ints» «dz») ((← «lo» «dx») + (← «lo» «dy»)) ((← «hi» «dx») + (← «hi» «dy»)))) with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st1» => {
+match (← «setDom» «st1» «x» (← «between» (← «ints» «dx») ((← «lo» «dz») - (← «hi» «dy»)) ((← «hi» «dz») - (← «lo» «dy»)))) with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+pure (← «setDom» «st2» «y» (← «between» (← «ints» «dy») ((← «lo» «dz») - (← «hi» «dx»)) ((← «hi» «dz») - (← «lo» «dx»))));
+}
+;
+}
+;
+}
+
+def «fire» («st» : «State») («c» : «Fd») : Option «Checked» := do {
+match «c» with
+| «Fd».«FBin» «op» «x» «y» => {
+match (← «domOf» «st» «x») with
+| «DomOf».«NoDom» => {
+pure («Checked».«Good» «st»);
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+| «DomOf».«Has» «dx» => {
+match (← «domOf» «st» «y») with
+| «DomOf».«NoDom» => {
+pure («Checked».«Good» «st»);
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+| «DomOf».«Has» «dy» => {
+pure (← «binAt» «st» «op» «x» «y» «dx» «dy»);
+}
+;
+}
+;
+}
+| «Fd».«FPlus» «x» «y» «z» => {
+match (← «domOf» «st» «x») with
+| «DomOf».«NoDom» => {
+pure («Checked».«Good» «st»);
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+| «DomOf».«Has» «dx» => {
+match (← «domOf» «st» «y») with
+| «DomOf».«NoDom» => {
+pure («Checked».«Good» «st»);
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+| «DomOf».«Has» «dy» => {
+match (← «domOf» «st» «z») with
+| «DomOf».«NoDom» => {
+pure («Checked».«Good» «st»);
+}
+| «DomOf».«NotInt» => {
+pure «Checked».«Bad»;
+}
+| «DomOf».«Has» «dz» => {
+pure (← «plusAt» «st» «x» «y» «z» «dx» «dy» «dz»);
+}
+;
+}
+;
+}
+;
+}
+;
+}
+
+mutual
+def «fireAll» («st» : «State») («fs» : «Fds») : Option «Checked» := do {
+match «fs» with
+| «Fds».«FNil» => {
+pure («Checked».«Good» «st»);
+}
+| «Fds».«FCons» «c» «t» => {
+match (← «fire» «st» «c») with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+pure (← «fireAll» «st2» «t»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «domTotal» («ds» : «Doms») : Option Int := do {
+match «ds» with
+| «Doms».«DNil» => {
+pure (0 : Int);
+}
+| «Doms».«DCons» _ «d» «t» => {
+pure (((1 : Int) + (← «domSize» «d»)) + (← «domTotal» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «round» («st» : «State») : Option «Checked» := do {
+match «st» with
+| «State».«State» «s» «ns» «ds» «fs» «nx» => {
+match (← «recheck» «s» «ns») with
+| «NeqsR».«Violated» => {
+pure «Checked».«Bad»;
+}
+| «NeqsR».«Kept» «ns2» => {
+match (← «redom» («State».«State» «s» «ns2» «Doms».«DNil» «fs» «nx») «ds») with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+pure (← «fireAll» «st2» «fs»);
+}
+;
+}
+;
+}
+;
+}
+
+def «same» («a» : «State») («b» : «State») : Option Bool := do {
+match «a» with
+| «State».«State» «sa» _ «da» _ _ => {
+match «b» with
+| «State».«State» «sb» _ «db» _ _ => {
+pure (← (do {
+if ((← «substSize» «sa») == (← «substSize» «sb»)) then {
+pure ((← «domTotal» «da») == (← «domTotal» «db»))
+} else {
+pure false
+}
+}));
+}
+;
+}
+;
+}
+
+def «smaller» («d» : «Dom») («best» : «Pick») : Option Bool := do {
+match «best» with
+| «Pick».«NoPick» => {
+pure true;
+}
+| «Pick».«Pick» _ «e» => {
+pure (decide ((← «domSize» «d») < (← «domSize» «e»)));
+}
+;
+}
+
+mutual
+def «labelBranches» («st» : «State») («t» : «Term») («vs» : «Ints») («after» : «Goals») : Option «Queue» := do {
+match «vs» with
+| «Ints».«INil» => {
+pure «Queue».«QNil»;
+}
+| «Ints».«ICons» «v» «more» => {
+pure («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» («Goal».«GEq» «t» («Term».«KInt» «v»)) «after»)) (← «labelBranches» «st» «t» «more» «after»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «neqEach» («x» : «Term») («ys» : «Terms») : Option «Goal» := do {
+match «ys» with
+| «Terms».«TNil» => {
+pure «Goal».«GTrue»;
+}
+| «Terms».«TCons» «y» «t» => {
+pure («Goal».«GConj» («Goal».«GFd» («Fd».«FBin» «Bin».«BNeq» «x» «y»)) (← «neqEach» «x» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «onward» («c» : «Checked») («rest» : «Goals») : Option «Step» := do {
+match «c» with
+| «Checked».«Bad» => {
+pure «Step».«Dead»;
+}
+| «Checked».«Good» «st» => {
+pure («Step».«More» («Branch».«Branch» «st» «rest»));
+}
+;
+}
+
+mutual
+def «enqueue» («q» : «Queue») («bs» : «Queue») : Option «Queue» := do {
+match «q» with
+| «Queue».«QNil» => {
+pure «bs»;
+}
+| «Queue».«QCons» «h» «t» => {
+pure («Queue».«QCons» «h» (← «enqueue» «t» «bs»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «revAnswers» («xs» : «Answers») («acc» : «Answers») : Option «Answers» := do {
+match «xs» with
+| «Answers».«ANil» => {
+pure «acc»;
+}
+| «Answers».«ACons» «h» «t» => {
+pure (← «revAnswers» «t» («Answers».«ACons» «h» «acc»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «substOf» («st» : «State») : Option «Subst» := do {
+match «st» with
+| «State».«State» «s» _ _ _ _ => {
+pure «s»;
+}
+;
+}
+
+def «withNext» («st» : «State») («nx» : Int) : Option «State» := do {
+match «st» with
+| «State».«State» «s» «ns» «ds» «fs» _ => {
+pure («State».«State» «s» «ns» «ds» «fs» «nx»);
+}
+;
+}
+
+def «withFds» («st» : «State») («fs» : «Fds») : Option «State» := do {
+match «st» with
+| «State».«State» «s» «ns» «ds» _ «nx» => {
+pure («State».«State» «s» «ns» «ds» «fs» «nx»);
+}
+;
 }
 
 def «valEq» («a» : «Val») («b» : «Val») : Option Bool := do {
@@ -9781,6 +10896,142 @@ pure «hit»;
 }
 
 mutual
+def «shiftGoal» («g» : «Goal») («k» : Int) : Option «Goal» := do {
+match «g» with
+| «Goal».«GTrue» => {
+pure «Goal».«GTrue»;
+}
+| «Goal».«GEq» «a» «b» => {
+pure («Goal».«GEq» (← «shift» «a» «k») (← «shift» «b» «k»));
+}
+| «Goal».«GEqAll» «as» «bs» => {
+pure («Goal».«GEqAll» (← «shiftAll» «as» «k») (← «shiftAll» «bs» «k»));
+}
+| «Goal».«GConj» «x» «y» => {
+pure («Goal».«GConj» (← «shiftGoal» «x» «k») (← «shiftGoal» «y» «k»));
+}
+| «Goal».«GDisj» «x» «y» => {
+pure («Goal».«GDisj» (← «shiftGoal» «x» «k») (← «shiftGoal» «y» «k»));
+}
+| «Goal».«GNeq» «a» «b» => {
+pure («Goal».«GNeq» (← «shift» «a» «k») (← «shift» «b» «k»));
+}
+| «Goal».«GDom» «x» «d» => {
+pure («Goal».«GDom» (← «shift» «x» «k») «d»);
+}
+| «Goal».«GFd» «c» => {
+pure («Goal».«GFd» (← «shiftFd» «c» «k»));
+}
+| «Goal».«GLabel» «xs» => {
+pure («Goal».«GLabel» (← «shiftAll» «xs» «k»));
+}
+| «Goal».«GCall» «f» «args» => {
+pure («Goal».«GCall» «f» (← «shiftAll» «args» «k»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «settle» («st» : «State») : Option «Checked» := do {
+match (← «round» «st») with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st2» => {
+if (← «same» «st» «st2») then {
+pure («Checked».«Good» «st2»);
+} else {
+pure (← «settle» «st2»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «pickVar» («st» : «State») («xs» : «Terms») («best» : «Pick») : Option «Pick» := do {
+match «xs» with
+| «Terms».«TNil» => {
+pure «best»;
+}
+| «Terms».«TCons» «h» «t» => {
+match (← «domOf» «st» «h») with
+| «DomOf».«Has» «d» => {
+if (← (do {
+if (decide ((← «domSize» «d») > (1 : Int))) then {
+pure (← «smaller» «d» «best»)
+} else {
+pure false
+}
+})) then {
+pure (← «pickVar» «st» «t» («Pick».«Pick» «h» «d»));
+} else {
+pure (← «pickVar» «st» «t» «best»);
+};
+}
+| «DomOf».«NoDom» => {
+pure (← «pickVar» «st» «t» «best»);
+}
+| «DomOf».«NotInt» => {
+pure (← «pickVar» «st» «t» «best»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «distinct» («xs» : «Terms») : Option «Goal» := do {
+match «xs» with
+| «Terms».«TNil» => {
+pure «Goal».«GTrue»;
+}
+| «Terms».«TCons» «h» «t» => {
+pure («Goal».«GConj» (← «neqEach» «h» «t») (← «distinct» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «picks» («rules» : «Rules») («rel» : ByteArray) («args» : «Terms») («st» : «State») («nx» : Int) («rest» : «Goals») : Option «Picked» := do {
+match «rules» with
+| «Rules».«RNil» => {
+pure («Picked».«Picked» «Queue».«QNil» (0 : Int));
+}
+| «Rules».«RCons» «h» «t» => {
+match (← «picks» «t» «rel» «args» «st» «nx» «rest») with
+| «Picked».«Picked» «bs» «cost» => {
+match «h» with
+| «Rule».«Rule» «f» «head» «body» «nv» => {
+if (← «rt_str_eq» «f» «rel») then {
+let «b» ← (pure («Branch».«Branch» (← «withNext» «st» («nx» + «nv»)) («Goals».«GCons» («Goal».«GEqAll» (← «shiftAll» «head» «nx») «args») («Goals».«GCons» (← «shiftGoal» «body» «nx») «rest»))));
+pure («Picked».«Picked» («Queue».«QCons» «b» «bs») («cost» + (1 : Int)));
+} else {
+pure («Picked».«Picked» «bs» «cost»);
+};
+}
+;
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
 def «matchArgs» («e» : «Env») («args» : «Args») («vals» : «Vals») : Option «Envs» := do {
 match «args» with
 | «Args».«ArgNil» => {
@@ -12054,6 +13305,166 @@ pure (!(← «selfCalls» (← «kid» «s» (2 : Int)) (← «text» «s»)))
 pure false
 }
 }));
+}
+
+def «post» («st» : «State») («u» : «Unified») : Option «Checked» := do {
+match «u» with
+| «Unified».«Fail» => {
+pure «Checked».«Bad»;
+}
+| «Unified».«Ok» «s2» => {
+match «st» with
+| «State».«State» _ «ns» «ds» «fs» «nx» => {
+pure (← «settle» («State».«State» «s2» «ns» «ds» «fs» «nx»));
+}
+;
+}
+;
+}
+
+def «settled» («c» : «Checked») : Option «Checked» := do {
+match «c» with
+| «Checked».«Bad» => {
+pure «Checked».«Bad»;
+}
+| «Checked».«Good» «st» => {
+pure (← «settle» «st»);
+}
+;
+}
+
+def «kstep» («rules» : «Rules») («b» : «Branch») : Option «Step» := do {
+match «b» with
+| «Branch».«Branch» «st» «gs» => {
+match «gs» with
+| «Goals».«GNil» => {
+pure («Step».«Done» «st»);
+}
+| «Goals».«GCons» «g» «rest» => {
+match «st» with
+| «State».«State» «s» _ _ «fs» «nx» => {
+match «g» with
+| «Goal».«GTrue» => {
+pure («Step».«More» («Branch».«Branch» «st» «rest»));
+}
+| «Goal».«GEq» «a» «c» => {
+pure (← «onward» (← «post» «st» (← «unify» «s» «a» «c»)) «rest»);
+}
+| «Goal».«GEqAll» «as» «cs» => {
+pure (← «onward» (← «post» «st» (← «unifyAll» «s» «as» «cs»)) «rest»);
+}
+| «Goal».«GNeq» «a» «c» => {
+pure (← «onward» (← «addNeq» «st» «a» «c») «rest»);
+}
+| «Goal».«GConj» «x» «y» => {
+pure («Step».«More» («Branch».«Branch» «st» («Goals».«GCons» «x» («Goals».«GCons» «y» «rest»))));
+}
+| «Goal».«GDisj» «x» «y» => {
+pure («Step».«Split» («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» «x» «rest»)) («Queue».«QCons» («Branch».«Branch» «st» («Goals».«GCons» «y» «rest»)) «Queue».«QNil»)) (1 : Int));
+}
+| «Goal».«GDom» «x» «xs» => {
+pure (← «onward» (← «settled» (← «meet» «st» «x» «xs»)) «rest»);
+}
+| «Goal».«GFd» «c» => {
+pure (← «onward» (← «settle» (← «withFds» «st» («Fds».«FCons» «c» «fs»))) «rest»);
+}
+| «Goal».«GLabel» «xs» => {
+match (← «pickVar» «st» «xs» «Pick».«NoPick») with
+| «Pick».«NoPick» => {
+pure («Step».«More» («Branch».«Branch» «st» «rest»));
+}
+| «Pick».«Pick» «t» «d» => {
+pure («Step».«Split» (← «labelBranches» «st» «t» (← «ints» «d») «gs») (← «domSize» «d»));
+}
+;
+}
+| «Goal».«GCall» «f» «args» => {
+match (← «picks» «rules» «f» «args» «st» «nx» «rest») with
+| «Picked».«Picked» «bs» «cost» => {
+pure («Step».«Split» «bs» «cost»);
+}
+;
+}
+;
+}
+;
+}
+;
+}
+;
+}
+
+def «solve_loop0» («limit» : Int) («fuel» : Int) («nvars» : Int) («g» : «Goal») («rules» : «Rules») (st' : (Bool × «Status» × Int × «Answers» × Int × «Queue»)) : Option (Bool × «Status» × Int × «Answers» × Int × «Queue») := do {
+if (← (fun ((«go», _, _, _, _, _) : (Bool × «Status» × Int × «Answers» × Int × «Queue»)) => (do {
+pure «go»
+} : Option Bool)) st') then «solve_loop0» «limit» «fuel» «nvars» «g» «rules» (← (fun ((«go», «status», «n», «found», «left», «q») : (Bool × «Status» × Int × «Answers» × Int × «Queue»)) => (do {
+let mut «go» := «go»;
+let mut «status» := «status»;
+let mut «n» := «n»;
+let mut «found» := «found»;
+let mut «left» := «left»;
+let mut «q» := «q»;
+match «q» with
+| «Queue».«QNil» => {
+«go» := false;
+}
+| «Queue».«QCons» «b» «t» => {
+«q» := «t»;
+match (← «kstep» «rules» «b») with
+| «Step».«Done» «st» => {
+«found» := («Answers».«ACons» «st» «found»);
+«n» := («n» + (1 : Int));
+}
+| «Step».«Dead» => {
+let _ := ();
+}
+| «Step».«More» «b2» => {
+«q» := («Queue».«QCons» «b2» «q»);
+}
+| «Step».«Split» «bs» «cost» => {
+if (decide («cost» > «left»)) then {
+«status» := «Status».«NoFuel»;
+«go» := false;
+} else {
+«left» := («left» - «cost»);
+«q» := (← «enqueue» «q» «bs»);
+};
+}
+;
+}
+;
+if (← (do {
+if «go» then {
+pure (decide («n» >= «limit»))
+} else {
+pure false
+}
+})) then {
+«status» := «Status».«Limit»;
+«go» := false;
+} else {
+let _ := ();
+};
+pure («go», «status», «n», «found», «left», «q»)
+} : Option (Bool × «Status» × Int × «Answers» × Int × «Queue»))) st') else pure st'
+}
+partial_fixpoint
+
+def «solve» («rules» : «Rules») («g» : «Goal») («nvars» : Int) («fuel» : Int) («limit» : Int) : Option «Run» := do {
+let mut «q» := («Queue».«QCons» («Branch».«Branch» («State».«State» «Subst».«SNil» «Neqs».«NeqNil» «Doms».«DNil» «Fds».«FNil» «nvars») («Goals».«GCons» «g» «Goals».«GNil»)) «Queue».«QNil»);
+let mut «left» := «fuel»;
+let mut «found» := «Answers».«ANil»;
+let mut «n» := (0 : Int);
+let mut «status» := «Status».«Ended»;
+let mut «go» := true;
+let t_ ← «solve_loop0» «limit» «fuel» «nvars» «g» «rules» («go», «status», «n», «found», «left», «q»);
+«go» := t_.1;
+«status» := t_.2.1;
+«n» := t_.2.2.1;
+«found» := t_.2.2.2.1;
+«left» := t_.2.2.2.2.1;
+«q» := t_.2.2.2.2.2;
+pure («Run».«Run» (← «revAnswers» «found» «Answers».«ANil») «status»);
 }
 
 def «derive» («c» : «Clause») («i» : Int) («db» : «Facts») («acc» : «Facts») : Option «Facts» := do {

@@ -4,7 +4,7 @@
 enum Term:
   case TVar(n: I64)
   case TCon(f: Str, args: Terms)
-  case TInt(v: I64)
+  case KInt(v: I64)
 
 enum Terms:
   case TNil
@@ -22,7 +22,7 @@ enum Unified:
 def walk(s: Subst, t: Term): Term = t match
   case TVar(n) => lookup(s, s, n, t)
   case TCon(_, _) => t
-  case TInt(_) => t
+  case KInt(_) => t
 
 def lookup(all: Subst, s: Subst, n: I64, t: Term): Term = s match
   case SNil => t
@@ -32,7 +32,7 @@ def lookup(all: Subst, s: Subst, n: I64, t: Term): Term = s match
 def occurs(s: Subst, n: I64, t: Term): Bool = walk(s, t) match
   case TVar(m) => m == n
   case TCon(_, args) => occursIn(s, n, args)
-  case TInt(_) => false
+  case KInt(_) => false
 
 def occursIn(s: Subst, n: I64, ts: Terms): Bool = ts match
   case TNil => false
@@ -47,16 +47,16 @@ def unify {r: Region} (s: Subst, a: Term, b: Term): Unified =
     case TCon(f, xs) => y match
       case TVar(m) => bind(s, m, x)
       case TCon(g, ys) => if rt_str_eq(f, g) then unifyAll(s, xs, ys) else Fail
-      case TInt(_) => Fail
-    case TInt(v) => y match
+      case KInt(_) => Fail
+    case KInt(v) => y match
       case TVar(m) => bind(s, m, x)
-      case TInt(w) => if v == w then Ok(s) else Fail
+      case KInt(w) => if v == w then Ok(s) else Fail
       case TCon(_, _) => Fail
 
 def bind {r: Region} (s: Subst, n: I64, t: Term): Unified = t match
   case TVar(m) => if m == n then Ok(s) else Ok(SBind(n, t, s))
   case TCon(_, _) => if occurs(s, n, t) then Fail else Ok(SBind(n, t, s))
-  case TInt(_) => Ok(SBind(n, t, s))
+  case KInt(_) => Ok(SBind(n, t, s))
 
 def unifyAll {r: Region} (s: Subst, xs: Terms, ys: Terms): Unified = xs match
   case TNil => ys match
@@ -72,7 +72,7 @@ def unifyAll {r: Region} (s: Subst, xs: Terms, ys: Terms): Unified = xs match
 def walkAll {r: Region} (s: Subst, t: Term): Term = walk(s, t) match
   case TVar(n) => TVar(n)
   case TCon(f, args) => TCon(f, walkEach(s, args))
-  case TInt(v) => TInt(v)
+  case KInt(v) => KInt(v)
 
 def walkEach {r: Region} (s: Subst, ts: Terms): Terms = ts match
   case TNil => TNil
@@ -90,7 +90,7 @@ def showTerm(t: Term): Unit = t match
         rt_print("(")
         showTerms(args)
         rt_print(")")
-  case TInt(v) => rt_print_i64(v)
+  case KInt(v) => rt_print_i64(v)
 
 def showTerms(ts: Terms): Unit = ts match
   case TNil => ()
@@ -202,7 +202,7 @@ enum Run:
 def shift {r: Region} (t: Term, k: I64): Term = t match
   case TVar(n) => TVar(n + k)
   case TCon(f, args) => TCon(f, shiftAll(args, k))
-  case TInt(v) => TInt(v)
+  case KInt(v) => KInt(v)
 
 def shiftAll {r: Region} (ts: Terms, k: I64): Terms = ts match
   case TNil => TNil
@@ -309,9 +309,9 @@ def between {r: Region} (xs: Ints, a: I64, b: I64): Ints = xs match
   case INil => INil
   case ICons(h, t) => if h >= a && h <= b then ICons(h, between(t, a, b)) else between(t, a, b)
 
-def without {r: Region} (xs: Ints, v: I64): Ints = xs match
+def kwithout {r: Region} (xs: Ints, v: I64): Ints = xs match
   case INil => INil
-  case ICons(h, t) => if h == v then without(t, v) else ICons(h, without(t, v))
+  case ICons(h, t) => if h == v then kwithout(t, v) else ICons(h, kwithout(t, v))
 
 def meetInts {r: Region} (xs: Ints, d: Dom): Ints = xs match
   case INil => INil
@@ -334,7 +334,7 @@ def dropDom {r: Region} (ds: Doms, n: I64): Doms = ds match
 def domOf {r: Region} (st: State, t: Term): DomOf = st match
   case State(s, _, ds, _, _) => walk(s, t) match
     case TVar(n) => lookupDom(ds, n)
-    case TInt(v) => Has(Dom(v, INil))
+    case KInt(v) => Has(Dom(v, INil))
     case TCon(_, _) => NotInt
 
 // t takes a value of xs (ascending): Bad when none is left, bound when one is left
@@ -342,10 +342,10 @@ def setDom {r: Region} (st: State, t: Term, xs: Ints): Checked = st match
   case State(s, ns, ds, fs, nx) => xs match
     case INil => Bad
     case ICons(h, rest) => walk(s, t) match
-      case TInt(v) => if member(v, xs) then Good(st) else Bad
+      case KInt(v) => if member(v, xs) then Good(st) else Bad
       case TCon(_, _) => Bad
       case TVar(n) => rest match
-        case INil => unify(s, TVar(n), TInt(h)) match
+        case INil => unify(s, TVar(n), KInt(h)) match
           case Fail => Bad
           case Ok(s2) => Good(State(s2, ns, dropDom(ds, n), fs, nx))
         case ICons(_, _) => Good(State(s, ns, DCons(n, Dom(h, rest), dropDom(ds, n)), fs, nx))
@@ -372,8 +372,8 @@ def leAt {r: Region} (st: State, x: Term, y: Term, dx: Dom, dy: Dom, k: I64): Ch
 
 def neqAt {r: Region} (st: State, x: Term, y: Term, dx: Dom, dy: Dom): Checked =
   if domSize(dx) == 1 && domSize(dy) == 1 then (if lo(dx) == lo(dy) then Bad else Good(st))
-  else if domSize(dx) == 1 then setDom(st, y, without(ints(dy), lo(dx)))
-  else if domSize(dy) == 1 then setDom(st, x, without(ints(dx), lo(dy)))
+  else if domSize(dx) == 1 then setDom(st, y, kwithout(ints(dy), lo(dx)))
+  else if domSize(dy) == 1 then setDom(st, x, kwithout(ints(dx), lo(dy)))
   else Good(st)
 
 def binAt {r: Region} (st: State, op: Bin, x: Term, y: Term, dx: Dom, dy: Dom): Checked = op match
@@ -455,7 +455,7 @@ def smaller(d: Dom, best: Pick): Bool = best match
 
 def labelBranches {r: Region} (st: State, t: Term, vs: Ints, after: Goals): Queue = vs match
   case INil => QNil
-  case ICons(v, more) => QCons(Branch(st, GCons(GEq(t, TInt(v)), after)), labelBranches(st, t, more, after))
+  case ICons(v, more) => QCons(Branch(st, GCons(GEq(t, KInt(v)), after)), labelBranches(st, t, more, after))
 
 // every two of xs differ
 def distinct {r: Region} (xs: Terms): Goal = xs match
@@ -484,7 +484,7 @@ def picks {r: Region} (rules: Rules, rel: Str, args: Terms, st: State, nx: I64, 
           Picked(QCons(b, bs), cost + 1)
         else Picked(bs, cost)
 
-def step {r: Region} (rules: Rules, b: Branch): Step = b match
+def kstep {r: Region} (rules: Rules, b: Branch): Step = b match
   case Branch(st, gs) => gs match
     case GNil => Done(st)
     case GCons(g, rest) => st match
@@ -525,7 +525,7 @@ def solve {r: Region} (rules: Rules, g: Goal, nvars: I64, fuel: I64, limit: I64)
       case QNil => go = false
       case QCons(b, t) =>
         q = t
-        step(rules, b) match
+        kstep(rules, b) match
           case Done(st) =>
             found = ACons(st, found)
             n = n + 1

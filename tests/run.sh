@@ -9,7 +9,7 @@ export SRS_STORE="$B/store-gate"
 CC="zig cc -std=gnu11 -O1 -w"
 # the compiler links static on Linux (musl): no dynamic loader per compile (vic-5r9: -13% instr on a small program)
 case "$(uname -s)" in Linux) CCS="$CC -static -target $(uname -m)-linux-musl";; *) CCS="$CC";; esac
-S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
+S1SRC="lib/prelude.srs lib/kanren.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
 LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
 fail=0
 timeout 120 $CCS -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
