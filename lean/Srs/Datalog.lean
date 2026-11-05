@@ -33,9 +33,15 @@ inductive «Clauses» where
   | «ClCons» («h» : «Clause») («t» : «Clauses»)
 inductive «Fact» where
   | «Fact» («rel» : ByteArray) («vals» : «Vals»)
+inductive «Edb» where
+  | «EdbNil»
+  | «EdbCons» («h» : «Fact») («t» : «Edb»)
+inductive «Source» where
+  | «Given»
+  | «ByRule» («i» : Int) («e» : «Env»)
 inductive «Facts» where
   | «FactNil»
-  | «FactCons» («h» : «Fact») («t» : «Facts»)
+  | «FactCons» («h» : «Fact») («src» : «Source») («t» : «Facts»)
 inductive «Env» where
   | «EnvNil»
   | «EnvBind» («n» : Int) («v» : «Val») («t» : «Env»)
@@ -52,6 +58,12 @@ inductive «Model» where
 inductive «Safety» where
   | «AllSafe»
   | «UnsafeIn» («rel» : ByteArray)
+inductive «Verdict» where
+  | «Valid»
+  | «Invalid» («f» : «Fact»)
+inductive «ClauseAt» where
+  | «NoClause»
+  | «ClauseAt» («c» : «Clause»)
 end
 
 def «valEq» («a» : «Val») («b» : «Val») : Option Bool := do {
@@ -138,7 +150,7 @@ match «db» with
 | «Facts».«FactNil» => {
 pure false;
 }
-| «Facts».«FactCons» «h» «t» => {
+| «Facts».«FactCons» «h» _ «t» => {
 pure (← (do {
 if (← «factEq» «h» «f») then {
 pure true
@@ -611,13 +623,13 @@ partial_fixpoint
 end
 
 mutual
-def «factAppend» («db» : «Facts») («f» : «Fact») : Option «Facts» := do {
+def «factAppend» («db» : «Facts») («f» : «Fact») («src» : «Source») : Option «Facts» := do {
 match «db» with
 | «Facts».«FactNil» => {
-pure («Facts».«FactCons» «f» «Facts».«FactNil»);
+pure («Facts».«FactCons» «f» «src» «Facts».«FactNil»);
 }
-| «Facts».«FactCons» «h» «t» => {
-pure («Facts».«FactCons» «h» (← «factAppend» «t» «f»));
+| «Facts».«FactCons» «h» «s» «t» => {
+pure («Facts».«FactCons» «h» «s» (← «factAppend» «t» «f» «src»));
 }
 ;
 }
@@ -631,7 +643,7 @@ match «db» with
 | «Facts».«FactNil» => {
 pure (0 : Int);
 }
-| «Facts».«FactCons» _ «t» => {
+| «Facts».«FactCons» _ _ «t» => {
 pure ((1 : Int) + (← «factCount» «t»));
 }
 ;
@@ -655,6 +667,189 @@ match «c» with
 pure («Safety».«UnsafeIn» (← «relOf» «h»));
 }
 ;
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «given» («edb» : «Edb») : Option «Facts» := do {
+match «edb» with
+| «Edb».«EdbNil» => {
+pure «Facts».«FactNil»;
+}
+| «Edb».«EdbCons» «f» «t» => {
+pure («Facts».«FactCons» «f» «Source».«Given» (← «given» «t»));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «clauseAt» («cs» : «Clauses») («i» : Int) : Option «ClauseAt» := do {
+match «cs» with
+| «Clauses».«ClNil» => {
+pure «ClauseAt».«NoClause»;
+}
+| «Clauses».«ClCons» «c» «t» => {
+if («i» == (0 : Int)) then {
+pure («ClauseAt».«ClauseAt» «c»);
+} else {
+pure (← «clauseAt» «t» («i» - (1 : Int)));
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «edbHas» («edb» : «Edb») («f» : «Fact») : Option Bool := do {
+match «edb» with
+| «Edb».«EdbNil» => {
+pure false;
+}
+| «Edb».«EdbCons» «h» «t» => {
+pure (← (do {
+if (← «factEq» «h» «f») then {
+pure true
+} else {
+pure (← «edbHas» «t» «f»)
+}
+}));
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «posIn» («e» : «Env») («body» : «Lits») («seen» : «Facts») : Option Bool := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure true;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» «a» => {
+pure (← (do {
+if (← «hasFact» «seen» (← «factOf» «e» «a»)) then {
+pure (← «posIn» «e» «t» «seen»)
+} else {
+pure false
+}
+}));
+}
+| «Lit».«Neg» _ => {
+pure (← «posIn» «e» «t» «seen»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «negOut» («e» : «Env») («body» : «Lits») («model» : «Facts») : Option Bool := do {
+match «body» with
+| «Lits».«LitNil» => {
+pure true;
+}
+| «Lits».«LitCons» «l» «t» => {
+match «l» with
+| «Lit».«Pos» _ => {
+pure (← «negOut» «e» «t» «model»);
+}
+| «Lit».«Neg» «a» => {
+pure (← (do {
+if (!(← «hasFact» «model» (← «factOf» «e» «a»))) then {
+pure (← «negOut» «e» «t» «model»)
+} else {
+pure false
+}
+}));
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «supported» («cs» : «Clauses») («edb» : «Edb») («model» : «Facts») («f» : «Fact») («src» : «Source») («seen» : «Facts») : Option Bool := do {
+match «src» with
+| «Source».«Given» => {
+pure (← «edbHas» «edb» «f»);
+}
+| «Source».«ByRule» «i» «e» => {
+match (← «clauseAt» «cs» «i») with
+| «ClauseAt».«NoClause» => {
+pure false;
+}
+| «ClauseAt».«ClauseAt» «c» => {
+match «c» with
+| «Clause».«Clause» «h» «body» => {
+pure (← (do {
+if (← (do {
+if (← «factEq» (← «factOf» «e» «h») «f») then {
+pure (← «posIn» «e» «body» «seen»)
+} else {
+pure false
+}
+})) then {
+pure (← «negOut» «e» «body» «model»)
+} else {
+pure false
+}
+}));
+}
+;
+}
+;
+}
+;
+}
+
+mutual
+def «checkFrom» («cs» : «Clauses») («edb» : «Edb») («model» : «Facts») («rest» : «Facts») («seen» : «Facts») : Option «Verdict» := do {
+match «rest» with
+| «Facts».«FactNil» => {
+pure «Verdict».«Valid»;
+}
+| «Facts».«FactCons» «f» «src» «t» => {
+if (← «supported» «cs» «edb» «model» «f» «src» «seen») then {
+pure (← «checkFrom» «cs» «edb» «model» «t» (← «factAppend» «seen» «f» «src»));
+} else {
+pure («Verdict».«Invalid» «f»);
+};
+}
+;
+}
+partial_fixpoint
+
+end
+
+mutual
+def «missing» («more» : «Facts») («model» : «Facts») : Option «Verdict» := do {
+match «more» with
+| «Facts».«FactNil» => {
+pure «Verdict».«Valid»;
+}
+| «Facts».«FactCons» «f» _ «t» => {
+if (← «hasFact» «model» «f») then {
+pure (← «missing» «t» «model»);
+} else {
+pure («Verdict».«Invalid» «f»);
 };
 }
 ;
@@ -705,7 +900,7 @@ match «db» with
 | «Facts».«FactNil» => {
 pure «Envs».«EnvsNil»;
 }
-| «Facts».«FactCons» «f» «t» => {
+| «Facts».«FactCons» «f» _ «t» => {
 match «a» with
 | «Atom».«Atom» «p» «args» => {
 match «f» with
@@ -787,18 +982,18 @@ partial_fixpoint
 end
 
 mutual
-def «addAll» («es» : «Envs») («h» : «Atom») («acc» : «Facts») : Option «Facts» := do {
+def «addAll» («es» : «Envs») («h» : «Atom») («i» : Int) («acc» : «Facts») : Option «Facts» := do {
 match «es» with
 | «Envs».«EnvsNil» => {
 pure «acc»;
 }
 | «Envs».«EnvsCons» «e» «t» => {
 let «f» ← (pure (← «factOf» «e» «h»));
-pure (← «addAll» «t» «h» (← (do {
+pure (← «addAll» «t» «h» «i» (← (do {
 if (← «hasFact» «acc» «f») then {
 pure «acc»;
 } else {
-pure (← «factAppend» «acc» «f»);
+pure (← «factAppend» «acc» «f» («Source».«ByRule» «i» «e»));
 };
 })));
 }
@@ -808,16 +1003,16 @@ partial_fixpoint
 
 end
 
-def «derive» («c» : «Clause») («db» : «Facts») («acc» : «Facts») : Option «Facts» := do {
+def «derive» («c» : «Clause») («i» : Int) («db» : «Facts») («acc» : «Facts») : Option «Facts» := do {
 match «c» with
 | «Clause».«Clause» «h» «body» => {
-pure (← «addAll» (← «dropNeg» (← «joinPos» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «db») «body» «db») «h» «acc»);
+pure (← «addAll» (← «dropNeg» (← «joinPos» («Envs».«EnvsCons» «Env».«EnvNil» «Envs».«EnvsNil») «body» «db») «body» «db») «h» «i» «acc»);
 }
 ;
 }
 
 mutual
-def «pass» («st» : «Strata») («cs» : «Clauses») («k» : Int) («db» : «Facts») : Option «Facts» := do {
+def «pass» («st» : «Strata») («cs» : «Clauses») («i» : Int) («k» : Int) («db» : «Facts») : Option «Facts» := do {
 match «cs» with
 | «Clauses».«ClNil» => {
 pure «db»;
@@ -825,9 +1020,9 @@ pure «db»;
 | «Clauses».«ClCons» «c» «t» => {
 match «c» with
 | «Clause».«Clause» «h» _ => {
-pure (← «pass» «st» «t» «k» (← (do {
+pure (← «pass» «st» «t» («i» + (1 : Int)) «k» (← (do {
 if ((← «stratum» «st» (← «relOf» «h»)) == «k») then {
-pure (← «derive» «c» «db» «db»);
+pure (← «derive» «c» «i» «db» «db»);
 } else {
 pure «db»;
 };
@@ -843,7 +1038,7 @@ end
 
 mutual
 def «fix» («st» : «Strata») («cs» : «Clauses») («k» : Int) («db» : «Facts») : Option «Facts» := do {
-let «db2» ← (pure (← «pass» «st» «cs» «k» «db»));
+let «db2» ← (pure (← «pass» «st» «cs» (0 : Int) «k» «db»));
 if ((← «factCount» «db2») == (← «factCount» «db»)) then {
 pure «db»;
 } else {
@@ -854,10 +1049,10 @@ partial_fixpoint
 
 end
 
-def «evalDatalog_loop0» («n» : Int) («db» : «Facts») («cs» : «Clauses») (st' : (Bool × «Strata»)) : Option (Bool × «Strata») := do {
+def «evalDatalog_loop0» («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Bool × «Strata»)) : Option (Bool × «Strata») := do {
 if (← (fun ((«go», _) : (Bool × «Strata»)) => (do {
 pure «go»
-} : Option Bool)) st') then «evalDatalog_loop0» «n» «db» «cs» (← (fun ((«go», «st») : (Bool × «Strata»)) => (do {
+} : Option Bool)) st') then «evalDatalog_loop0» «n» «edb» «cs» (← (fun ((«go», «st») : (Bool × «Strata»)) => (do {
 let mut «go» := «go»;
 let mut «st» := «st»;
 let «st2» ← (pure (← «raise» «st» «cs»));
@@ -874,10 +1069,10 @@ pure («go», «st»)
 }
 partial_fixpoint
 
-def «evalDatalog_loop1» («go» : Bool) («st» : «Strata») («n» : Int) («db» : «Facts») («cs» : «Clauses») (st' : (Int × «Facts»)) : Option (Int × «Facts») := do {
+def «evalDatalog_loop1» («go» : Bool) («st» : «Strata») («n» : Int) («edb» : «Edb») («cs» : «Clauses») (st' : (Int × «Facts»)) : Option (Int × «Facts») := do {
 if (← (fun ((«k», _) : (Int × «Facts»)) => (do {
 pure (decide («k» <= (← «topStratum» «st» (0 : Int))))
-} : Option Bool)) st') then «evalDatalog_loop1» «go» «st» «n» «db» «cs» (← (fun ((«k», «out») : (Int × «Facts»)) => (do {
+} : Option Bool)) st') then «evalDatalog_loop1» «go» «st» «n» «edb» «cs» (← (fun ((«k», «out») : (Int × «Facts»)) => (do {
 let mut «k» := «k»;
 let mut «out» := «out»;
 «out» := (← «fix» «st» «cs» «k» «out»);
@@ -887,7 +1082,7 @@ pure («k», «out»)
 }
 partial_fixpoint
 
-def «evalDatalog» («cs» : «Clauses») («db» : «Facts») : Option «Model» := do {
+def «evalDatalog» («cs» : «Clauses») («edb» : «Edb») : Option «Model» := do {
 match (← «safety» «cs») with
 | «Safety».«UnsafeIn» «p» => {
 pure («Model».«Unsafe» «p»);
@@ -896,19 +1091,53 @@ pure («Model».«Unsafe» «p»);
 let «n» ← (pure (← «clauseCount» «cs»));
 let mut «st» := «Strata».«StNil»;
 let mut «go» := true;
-let t_ ← «evalDatalog_loop0» «n» «db» «cs» («go», «st»);
+let t_ ← «evalDatalog_loop0» «n» «edb» «cs» («go», «st»);
 «go» := t_.1;
 «st» := t_.2;
 if (decide ((← «topStratum» «st» (0 : Int)) > «n»)) then {
 pure («Model».«NegCycle» (← «overRel» «st» «n»));
 } else {
-let mut «out» := «db»;
+let mut «out» := (← «given» «edb»);
 let mut «k» := (0 : Int);
-let t_ ← «evalDatalog_loop1» «go» «st» «n» «db» «cs» («k», «out»);
+let t_ ← «evalDatalog_loop1» «go» «st» «n» «edb» «cs» («k», «out»);
 «k» := t_.1;
 «out» := t_.2;
 pure («Model».«Model» «out»);
 };
+}
+;
+}
+
+mutual
+def «closed» («cs» : «Clauses») («i» : Int) («model» : «Facts») : Option «Verdict» := do {
+match «cs» with
+| «Clauses».«ClNil» => {
+pure «Verdict».«Valid»;
+}
+| «Clauses».«ClCons» «c» «t» => {
+let «more» ← (pure (← «derive» «c» «i» «model» «model»));
+match (← «missing» «more» «model») with
+| «Verdict».«Valid» => {
+pure (← «closed» «t» («i» + (1 : Int)) «model»);
+}
+| «Verdict».«Invalid» «f» => {
+pure («Verdict».«Invalid» «f»);
+}
+;
+}
+;
+}
+partial_fixpoint
+
+end
+
+def «checkModel» («cs» : «Clauses») («edb» : «Edb») («model» : «Facts») : Option «Verdict» := do {
+match (← «checkFrom» «cs» «edb» «model» «model» «Facts».«FactNil») with
+| «Verdict».«Invalid» «f» => {
+pure («Verdict».«Invalid» «f»);
+}
+| «Verdict».«Valid» => {
+pure (← «closed» «cs» (0 : Int) «model»);
 }
 ;
 }

@@ -40,9 +40,20 @@ enum Clauses:
 enum Fact:
   case Fact(rel: Str, vals: Vals)
 
+// the input facts of a program
+enum Edb:
+  case EdbNil
+  case EdbCons(h: Fact, t: Edb)
+
+// why a fact of a model holds: it was given, or clause i (0-based) fired under env e
+enum Source:
+  case Given
+  case ByRule(i: I64, e: Env)
+
+// a model, in derivation order: each derived fact comes after the facts its clause used
 enum Facts:
   case FactNil
-  case FactCons(h: Fact, t: Facts)
+  case FactCons(h: Fact, src: Source, t: Facts)
 
 enum Env:
   case EnvNil
@@ -86,7 +97,7 @@ def factEq(a: Fact, b: Fact): Bool = a match
 
 def hasFact(db: Facts, f: Fact): Bool = db match
   case FactNil => false
-  case FactCons(h, t) => factEq(h, f) || hasFact(t, f)
+  case FactCons(h, _, t) => factEq(h, f) || hasFact(t, f)
 
 // ── matching ──
 def envGet(r: Region, e: Env, n: I64): Arg = e match
@@ -113,7 +124,7 @@ def matchArg(r: Region, e: Env, a: Arg, v: Val): Envs = a match
 // every extension of e that matches atom a against a fact of db, in db order
 def matchFacts(r: Region, e: Env, a: Atom, db: Facts): Envs = db match
   case FactNil => EnvsNil
-  case FactCons(f, t) => a match
+  case FactCons(f, _, t) => a match
     case Atom(p, args) => f match
       case Fact(q, vals) =>
         val rest = matchFacts(r, e, a, t)
@@ -240,32 +251,32 @@ def overRel(st: Strata, n: I64): Str = st match
 
 // ── evaluation ──
 // facts of db plus the new facts rule c derives from db
-def derive(r: Region, c: Clause, db: Facts, acc: Facts): Facts = c match
-  case Clause(h, body) => addAll(r, dropNeg(r, joinPos(r, EnvsCons(EnvNil, EnvsNil), body, db), body, db), h, acc)
+def derive(r: Region, c: Clause, i: I64, db: Facts, acc: Facts): Facts = c match
+  case Clause(h, body) => addAll(r, dropNeg(r, joinPos(r, EnvsCons(EnvNil, EnvsNil), body, db), body, db), h, i, acc)
 
-def addAll(r: Region, es: Envs, h: Atom, acc: Facts): Facts = es match
+def addAll(r: Region, es: Envs, h: Atom, i: I64, acc: Facts): Facts = es match
   case EnvsNil => acc
   case EnvsCons(e, t) =>
     val f = factOf(r, e, h)
-    addAll(r, t, h, if hasFact(acc, f) then acc else factAppend(r, acc, f))
+    addAll(r, t, h, i, if hasFact(acc, f) then acc else factAppend(r, acc, f, ByRule(i, e)))
 
-def factAppend(r: Region, db: Facts, f: Fact): Facts = db match
-  case FactNil => FactCons(f, FactNil)
-  case FactCons(h, t) => FactCons(h, factAppend(r, t, f))
+def factAppend(r: Region, db: Facts, f: Fact, src: Source): Facts = db match
+  case FactNil => FactCons(f, src, FactNil)
+  case FactCons(h, s, t) => FactCons(h, s, factAppend(r, t, f, src))
 
 def factCount(db: Facts): I64 = db match
   case FactNil => 0
-  case FactCons(_, t) => 1 + factCount(t)
+  case FactCons(_, _, t) => 1 + factCount(t)
 
 // one pass of every clause of stratum k
-def pass(r: Region, st: Strata, cs: Clauses, k: I64, db: Facts): Facts = cs match
+def pass(r: Region, st: Strata, cs: Clauses, i: I64, k: I64, db: Facts): Facts = cs match
   case ClNil => db
   case ClCons(c, t) => c match
-    case Clause(h, _) => pass(r, st, t, k, if stratum(st, relOf(h)) == k then derive(r, c, db, db) else db)
+    case Clause(h, _) => pass(r, st, t, i + 1, k, if stratum(st, relOf(h)) == k then derive(r, c, i, db, db) else db)
 
 // stratum k to its fixpoint: facts only grow and are finite, so it ends
 def fix(r: Region, st: Strata, cs: Clauses, k: I64, db: Facts): Facts =
-  val db2 = pass(r, st, cs, k, db)
+  val db2 = pass(r, st, cs, 0, k, db)
   if factCount(db2) == factCount(db) then db else fix(r, st, cs, k, db2)
 
 enum Safety:
@@ -278,7 +289,7 @@ def safety(r: Region, cs: Clauses): Safety = cs match
     case Clause(h, _) => UnsafeIn(relOf(h))
 
 // the model of rules cs over facts db, strata in order
-def evalDatalog(r: Region, cs: Clauses, db: Facts): Model = safety(r, cs) match
+def evalDatalog(r: Region, cs: Clauses, edb: Edb): Model = safety(r, cs) match
   case UnsafeIn(p) => Unsafe(p)
   case AllSafe =>
     // a stratum is at most the clause count unless a relation depends on itself through negation
@@ -291,9 +302,75 @@ def evalDatalog(r: Region, cs: Clauses, db: Facts): Model = safety(r, cs) match
       st = st2
     if topStratum(st, 0) > n then NegCycle(overRel(st, n))
     else
-      var out = db
+      var out = given(r, edb)
       var k = 0
       while k <= topStratum(st, 0) do
         out = fix(r, st, cs, k, out)
         k = k + 1
       Model(out)
+
+def given(r: Region, edb: Edb): Facts = edb match
+  case EdbNil => FactNil
+  case EdbCons(f, t) => FactCons(f, Given, given(r, t))
+
+// ── certificate check ──
+// A model checks when every fact is supported (given, or its clause fires under its env on facts before it, with
+// each negative atom absent from the model) and no clause derives a fact outside it. Supported in that order + closed
+// = a stable model (Gelfond, Lifschitz 1988); a stratified program has exactly one, so the model is the program's.
+enum Verdict:
+  case Valid
+  case Invalid(f: Fact)
+
+enum ClauseAt:
+  case NoClause
+  case ClauseAt(c: Clause)
+
+def clauseAt(r: Region, cs: Clauses, i: I64): ClauseAt = cs match
+  case ClNil => NoClause
+  case ClCons(c, t) => if i == 0 then ClauseAt(c) else clauseAt(r, t, i - 1)
+
+def edbHas(edb: Edb, f: Fact): Bool = edb match
+  case EdbNil => false
+  case EdbCons(h, t) => factEq(h, f) || edbHas(t, f)
+
+def posIn(r: Region, e: Env, body: Lits, seen: Facts): Bool = body match
+  case LitNil => true
+  case LitCons(l, t) => l match
+    case Pos(a) => hasFact(seen, factOf(r, e, a)) && posIn(r, e, t, seen)
+    case Neg(_) => posIn(r, e, t, seen)
+
+def negOut(r: Region, e: Env, body: Lits, model: Facts): Bool = body match
+  case LitNil => true
+  case LitCons(l, t) => l match
+    case Pos(_) => negOut(r, e, t, model)
+    case Neg(a) => !hasFact(model, factOf(r, e, a)) && negOut(r, e, t, model)
+
+def supported(r: Region, cs: Clauses, edb: Edb, model: Facts, f: Fact, src: Source, seen: Facts): Bool = src match
+  case Given => edbHas(edb, f)
+  case ByRule(i, e) => clauseAt(r, cs, i) match
+    case NoClause => false
+    case ClauseAt(c) => c match
+      case Clause(h, body) => factEq(factOf(r, e, h), f) && posIn(r, e, body, seen) && negOut(r, e, body, model)
+
+def checkFrom(r: Region, cs: Clauses, edb: Edb, model: Facts, rest: Facts, seen: Facts): Verdict = rest match
+  case FactNil => Valid
+  case FactCons(f, src, t) =>
+    if supported(r, cs, edb, model, f, src, seen) then checkFrom(r, cs, edb, model, t, factAppend(r, seen, f, src))
+    else Invalid(f)
+
+// the first fact some clause derives from the model that the model lacks
+def closed(r: Region, cs: Clauses, i: I64, model: Facts): Verdict = cs match
+  case ClNil => Valid
+  case ClCons(c, t) =>
+    val more = derive(r, c, i, model, model)
+    missing(r, more, model) match
+      case Valid => closed(r, t, i + 1, model)
+      case Invalid(f) => Invalid(f)
+
+def checkModel(r: Region, cs: Clauses, edb: Edb, model: Facts): Verdict = checkFrom(r, cs, edb, model, model, FactNil) match
+  case Invalid(f) => Invalid(f)
+  case Valid => closed(r, cs, 0, model)
+
+def missing(r: Region, more: Facts, model: Facts): Verdict = more match
+  case FactNil => Valid
+  case FactCons(f, _, t) => if hasFact(model, f) then missing(r, t, model) else Invalid(f)

@@ -10,7 +10,7 @@ def body1(r: Region, a: Lit): Lits = LitCons(a, LitNil)
 def body2(r: Region, a: Lit, b: Lit): Lits = LitCons(a, LitCons(b, LitNil))
 def rule(r: Region, p: Str, args: Args, body: Lits): Clause = Clause(Atom(p, args), body)
 def cl(r: Region, c: Clause, t: Clauses): Clauses = ClCons(c, t)
-def fc(r: Region, f: Fact, t: Facts): Facts = FactCons(f, t)
+def fc(r: Region, f: Fact, t: Edb): Edb = EdbCons(f, t)
 
 def showVal(v: Val): Unit = v match
   case VSym(s) => rt_print(s)
@@ -29,7 +29,7 @@ def showVals(vs: Vals): Unit = vs match
 // the facts of relation p, in model order
 def showRel(db: Facts, p: Str): Unit = db match
   case FactNil => ()
-  case FactCons(f, t) =>
+  case FactCons(f, _, t) =>
     f match
       case Fact(q, vs) =>
         if rt_str_eq(p, q) then
@@ -56,7 +56,7 @@ def main(): I64 =
   val x = AVar(0)
   val y = AVar(1)
   val z = AVar(2)
-  val edges = fc(r, f2(r, "edge", "a", "b"), fc(r, f2(r, "edge", "b", "c"), fc(r, f2(r, "edge", "c", "d"), FactNil)))
+  val edges = fc(r, f2(r, "edge", "a", "b"), fc(r, f2(r, "edge", "b", "c"), fc(r, f2(r, "edge", "c", "d"), EdbNil)))
   // path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).
   val tc = cl(r, rule(r, "path", a2(r, x, y), body1(r, pos(r, "edge", a2(r, x, y)))), cl(r, rule(r, "path", a2(r, x, z), body2(r, pos(r, "edge", a2(r, x, y)), pos(r, "path", a2(r, y, z)))), ClNil))
   show(evalDatalog(r, tc, edges), "path")
@@ -79,7 +79,57 @@ def main(): I64 =
   show(m, "self")
   show(m, "from_a")
   // big(X) :- num(X), not small(X).  num(1) num(2) small(1)  =>  big(2)
-  val nums = fc(r, f1(r, "num", VInt(1)), fc(r, f1(r, "num", VInt(2)), fc(r, f1(r, "small", VInt(1)), FactNil)))
+  val nums = fc(r, f1(r, "num", VInt(1)), fc(r, f1(r, "num", VInt(2)), fc(r, f1(r, "small", VInt(1)), EdbNil)))
   show(evalDatalog(r, cl(r, rule(r, "big", a1(r, x), body2(r, pos(r, "num", a1(r, x)), neg(r, "small", a1(r, x)))), ClNil), nums), "big")
+  // certificates: each real model checks; forged ones are refused at the forged fact
+  check(r, tc, edges, evalDatalog(r, tc, edges))
+  check(r, un, db, evalDatalog(r, un, db))
+  evalDatalog(r, tc, edges) match
+    case Model(pm) =>
+      // given, but not an input fact
+      verdict(checkModel(r, tc, edges, FactCons(f2(r, "edge", "x", "y"), Given, pm)))
+      // clause 0 under X=a, Y=d needs edge(a, d): body not supported
+      verdict(checkModel(r, tc, edges, FactCons(f2(r, "path", "a", "d"), ByRule(0, EnvBind(0, VSym("a"), EnvBind(1, VSym("d"), EnvNil))), pm)))
+      // last fact dropped: clause 1 derives it again, model not closed
+      verdict(checkModel(r, tc, edges, dropLast(r, pm)))
+      // a clause index that does not exist
+      verdict(checkModel(r, tc, edges, FactCons(f2(r, "path", "a", "b"), ByRule(7, EnvNil), pm)))
+      // clause 0 under X=a, Y=b derives path(a, b), not path(c, a): head mismatch
+      verdict(checkModel(r, tc, edges, factAppend(r, pm, f2(r, "path", "c", "a"), ByRule(0, EnvBind(0, VSym("a"), EnvBind(1, VSym("b"), EnvNil))))))
+    case Unsafe(_) => ()
+    case NegCycle(_) => ()
+  evalDatalog(r, un, db) match
+    case Model(um) =>
+      // unreach(a) by clause 0 needs not reach(a), but reach(a) is in the model
+      verdict(checkModel(r, un, db, factAppend(r, um, f1(r, "unreach", VSym("a")), ByRule(0, EnvBind(0, VSym("a"), EnvNil)))))
+    case Unsafe(_) => ()
+    case NegCycle(_) => ()
+  // p(X) :- p(X). a forged p(a) supported only by itself: support must come from facts before it
+  val selfp = cl(r, rule(r, "p", a1(r, x), body1(r, pos(r, "p", a1(r, x)))), ClNil)
+  verdict(checkModel(r, selfp, EdbNil, FactCons(f1(r, "p", VSym("a")), ByRule(0, EnvBind(0, VSym("a"), EnvNil)), FactNil)))
   r.free()
   0
+
+def verdict(v: Verdict): Unit =
+  v match
+    case Valid => rt_print("valid")
+    case Invalid(f) =>
+      rt_print("invalid ")
+      f match
+        case Fact(p, vs) =>
+          rt_print(p)
+          rt_print("(")
+          showVals(vs)
+          rt_print(")")
+  rt_print("\n")
+
+def check(r: Region, cs: Clauses, edb: Edb, m: Model): Unit = m match
+  case Model(db) => verdict(checkModel(r, cs, edb, db))
+  case Unsafe(_) => rt_print("no model\n")
+  case NegCycle(_) => rt_print("no model\n")
+
+def dropLast(r: Region, db: Facts): Facts = db match
+  case FactNil => FactNil
+  case FactCons(f, s, t) => t match
+    case FactNil => FactNil
+    case FactCons(_, _, _) => FactCons(f, s, dropLast(r, t))
