@@ -270,7 +270,7 @@ def uniqueNames {r: Region} (ds: Nodes): Unit =
       if has(vals, text(d)) then err("duplicate name:", text(d), lineOf(d)) else ()
       vals = NCons(d, vals)
     else ()
-    if k == DEnum || k == DProto || k == DTrait || k == DHandler then
+    if k == DEnum || k == DProto || k == DTrait || k == DHandler || k == DType then
       if has(tys, text(d)) then err("duplicate type name:", text(d), lineOf(d)) else ()
       tys = NCons(d, tys)
     else ()
@@ -284,7 +284,9 @@ def uniqueNames {r: Region} (ds: Nodes): Unit =
     c = tail(c)
 
 // the program checked: decls with fn bodies expanded (e2), for the C emitter
-def check {r: Region} (ds: Nodes): Nodes =
+def check {r: Region} (ds0: Nodes): Nodes =
+  // type lambdas applied, match types reduced (s1/types.srs)
+  val ds = expandTypes(ds0)
   uniqueNames(ds)
   var c = ds
   var out = NNil

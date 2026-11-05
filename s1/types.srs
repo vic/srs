@@ -1,0 +1,72 @@
+// Type lambdas and match types (vic S18, Scala3; vic-9l7.9 BD6). type F = [A: Type] =>> T: F[X] is T with A := X.
+// a match type reduces by its first case whose pattern is the scrutinee (concrete patterns). Expansion runs before
+// checking, over every Ty of the program; each reduction step costs fuel (as givens, vic Q-R4b): a loop is a reject.
+
+def typeFuel(): I64 = 1000
+
+// the program with every type lambda applied and every match type reduced
+def expandTypes {r: Region} (ds: Nodes): Nodes =
+  var out = NNil
+  var c = ds
+  while !isNil(c) do
+    val d = head(c)
+    if kind(d) == DType then checkTypeDecl(d) else ()
+    out = NCons(if kind(d) == DType then d else expandIn(ds, d), out)
+    c = tail(c)
+  rev(out)
+
+// e with each Ty normalized
+def expandIn {r: Region} (ds: Nodes, e: Node): Node =
+  if kind(e) == Ty then normTy(ds, e, typeFuel())
+  else
+    var out = NNil
+    var c = kids(e)
+    while !isNil(c) do
+      out = NCons(expandIn(ds, head(c)), out)
+      c = tail(c)
+    withKids(e, rev(out))
+
+// t with its args normalized and, if it names a type decl, applied (and its match reduced); the use keeps its caps
+def normTy {r: Region} (ds: Nodes, t: Node, fuel: I64): Node =
+  if fuel <= 0 then errTy("type reduction ran out of fuel at", t, lineOf(t)) else ()
+  var args = NNil
+  var c = tyArgs(t)
+  while !isNil(c) do
+    args = NCons(normTy(ds, head(c), fuel - 1), args)
+    c = tail(c)
+  val t1 = Node(Ty, text(t), text2(t), num(t), lineOf(t), NCons(Node(TyTo, tyTo(t), "", 0, 0, rev(args)), tyCaps(t)))
+  val d = find(ds, DType, text(t))
+  if !found(d) then t1
+  else
+    val tps = groupBinders(kids(kid(d, 0)))
+    if len(tyArgs(t1)) != len(tps) then err("wrong number of type args for", text(t), lineOf(t)) else ()
+    val sub = zipBind(tps, tyArgs(t1))
+    val body = applyTy(sub, kid(d, 1))
+    val res = if num(d) == 1 then reduceMatch(ds, d, normTy(ds, body, fuel - 1), sub, lineOf(t)) else body
+    withCaps(normTy(ds, res, fuel - 1), t)
+
+// res at the use t: t's caps, annotation flag and line
+def withCaps {r: Region} (res: Node, t: Node): Node = Node(Ty, text(res), text2(res), num(t), lineOf(t), NCons(head(kids(res)), tyCaps(t)))
+
+// the result of the first case of match type d whose pattern is s; s must be a concrete type
+def reduceMatch {r: Region} (ds: Nodes, d: Node, s: Node, sub: Nodes, line: I64): Node =
+  if !isBuiltin(text(s)) && !isEnum(ds, text(s)) && !isProto(ds, text(s)) then errTy("match type needs a concrete type, not", s, line) else ()
+  var res = NoNode
+  var c = tail(tail(kids(d)))
+  while !found(res) && !isNil(c) do
+    if tyEq(applyTy(sub, kid(head(c), 0)), s) then res = applyTy(sub, kid(head(c), 1)) else ()
+    c = tail(c)
+  if !found(res) then errTy("no case of the match type matches", s, line) else ()
+  res
+
+// [A: Type] binders only
+def checkTypeDecl {r: Region} (d: Node): Unit =
+  var gs = kids(kid(d, 0))
+  while !isNil(gs) do
+    if !eqs(text(head(gs)), "[") then err("not yet: binder group on a type", text(head(gs)), lineOf(head(gs))) else ()
+    var bs = kids(head(gs))
+    while !isNil(bs) do
+      val k = kid(head(bs), 0)
+      if !eqs(text(k), "Type") || !isNil(kids(k)) then err("not yet: [] binder of kind", text(k), lineOf(head(bs))) else ()
+      bs = tail(bs)
+    gs = tail(gs)

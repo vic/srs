@@ -62,6 +62,7 @@ def decl {r: Region} (ts: Nodes): PR =
   else if isT(ts, "protocol") then protoDecl(tail(ts))
   else if isT(ts, "handler") then handlerDecl(tail(ts))
   else if isT(ts, "trait") then traitDecl(tail(ts))
+  else if isT(ts, "type") then typeDecl(tail(ts))
   else if isT(ts, "given") then givenDecl(tail(ts))
   else
     perr(ts, "declaration")
@@ -290,6 +291,29 @@ def names {r: Region} (ts0: Nodes): PR =
     xs = NCons(leaf(Name, needIdent(tail(ts)), at(ts)), xs)
     ts = drop(ts, 2)
   PR(list(Names, at(ts0), rev(xs)), ts)
+
+// type F = [A: Type] =>> T, or a match type: =>> A match / case P => T ... (vic S18, Scala3; vic-9l7.9 BD6)
+// DType s = name, n 1 = match, a = [Groups, body Ty (the scrutinee of a match), DTCase(a = [pattern, result])...]
+def typeDecl {r: Region} (ts0: Nodes): PR =
+  val line = at(ts0)
+  val name = needIdent(ts0)
+  val g = groups(expect(tail(ts0), "="), NNil)
+  val gs = list(Groups, line, rev(kids(pn(g))))
+  var ts = pr(g)
+  if !isNil(kids(gs)) then ts = expect(expect(ts, "=>"), ">") else ()
+  val b = ty(ts)
+  ts = pr(b)
+  if isT(ts, "match") then
+    ts = expectK(expectK(tail(ts), TNl, "newline"), TIndent, "indent")
+    var cs = NNil
+    while !isK(ts, TDedent) do
+      val cl = at(ts)
+      val p = ty(expect(ts, "case"))
+      val t = ty(expect(pr(p), "=>"))
+      cs = NCons(Node(DTCase, "", "", 0, cl, NCons(pn(p), one(pn(t)))), cs)
+      ts = endLine(pr(t))
+    PR(Node(DType, name, "", 1, line, NCons(gs, NCons(pn(b), rev(cs)))), tail(ts))
+  else PR(Node(DType, name, "", 0, line, NCons(gs, one(pn(b)))), ts)
 
 // trait Show [A: Type]: indented `def` signatures (no bodies) (vic-9l7.6 BD4a)
 def traitDecl {r: Region} (ts0: Nodes): PR =
