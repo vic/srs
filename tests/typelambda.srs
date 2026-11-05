@@ -1,13 +1,13 @@
-// pass: BD6 type lambdas + match types (vic S18, vic-9l7.9): F[X] is the body with A := X; a match type reduces by
-// its first matching case; aliases of generic enums; lambdas inside lambdas
+// pass: BD6 type telescopes + match types (vic S18, vic-9l7.9): F[X] is the body with A := X; a match type reduces by
+// its first matching case; aliases of generic enums; types inside types
 enum Box [A: Type]:
   case Box(v: A)
 
-type Id = [A: Type] =>> A
-type Wide = [A: Type] =>> A match
+type Id [A: Type] = A
+type Wide [A: Type] = A match
   case Bool => I64
   case I64 => I64
-type Boxed = [A: Type] =>> Box[Id[A]]
+type Boxed [A: Type] = Box[Id[A]]
 type Num = I64
 
 def widen(b: Bool): Wide[Bool] = if b then 1 else 0

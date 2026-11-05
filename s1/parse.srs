@@ -292,15 +292,14 @@ def names {r: Region} (ts0: Nodes): PR =
     ts = drop(ts, 2)
   PR(list(Names, at(ts0), rev(xs)), ts)
 
-// type F = [A: Type] =>> T, or a match type: =>> A match / case P => T ... (vic S18, Scala3; vic-9l7.9 BD6)
+// type F [A: Type] = T, or a match type: type F [A: Type] = A match / case P => T ... (vic S18 + telescopes, vic-9l7.9 BD6)
 // DType s = name, n 1 = match, a = [Groups, body Ty (the scrutinee of a match), DTCase(a = [pattern, result])...]
 def typeDecl {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
   val name = needIdent(ts0)
-  val g = groups(expect(tail(ts0), "="), NNil)
+  val g = groups(tail(ts0), NNil)
   val gs = list(Groups, line, rev(kids(pn(g))))
-  var ts = pr(g)
-  if !isNil(kids(gs)) then ts = expect(expect(ts, "=>"), ">") else ()
+  var ts = expect(pr(g), "=")
   val b = ty(ts)
   ts = pr(b)
   if isT(ts, "match") then

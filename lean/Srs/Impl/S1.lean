@@ -8903,14 +8903,9 @@ partial_fixpoint
 def «typeDecl» («ts0» : «Nodes») : Option «PR» := do {
 let «line» ← (pure (← «at» «ts0»));
 let «name» ← (pure (← «needIdent» «ts0»));
-let «g» ← (pure (← «groups» (← «expect» (← «tail» «ts0») "=".toUTF8) «Nodes».«NNil»));
+let «g» ← (pure (← «groups» (← «tail» «ts0») «Nodes».«NNil»));
 let «gs» ← (pure (← «list» «Kind».«Groups» «line» (← «rev» (← «kids» (← «pn» «g»)))));
-let mut «ts» := (← «pr» «g»);
-if (!(← «isNil» (← «kids» «gs»))) then {
-«ts» := (← «expect» (← «expect» «ts» "=>".toUTF8) ">".toUTF8);
-} else {
-let _ := ();
-};
+let mut «ts» := (← «expect» (← «pr» «g») "=".toUTF8);
 let «b» ← (pure (← «ty» «ts»));
 «ts» := (← «pr» «b»);
 if (← «isT» «ts» "match".toUTF8) then {
