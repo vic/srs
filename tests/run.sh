@@ -4,13 +4,17 @@
 # S0 (zig) only when the seed cannot build the src: s0-bootstrap.
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"
+# tests never touch the user store (vic 2026-11-06): the store of this run lives under $B
+export SRS_STORE="$B/store-gate"
 CC="zig cc -std=gnu11 -O1 -w"
-S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/main.srs"
+# the compiler links static on Linux (musl): no dynamic loader per compile (vic-5r9: -13% instr on a small program)
+case "$(uname -s)" in Linux) CCS="$CC -static -target $(uname -m)-linux-musl";; *) CCS="$CC";; esac
+S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
 LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
 fail=0
-timeout 120 $CC -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
-timeout 10 "$B/seed" $S1SRC > "$B/s1.c" && timeout 120 $CC -o "$B/s1" "$B/s1.c" rt/srs_rt.c || exit 1
-timeout 10 "$B/s1" $S1SRC > "$B/s2.c" && timeout 120 $CC -o "$B/s2" "$B/s2.c" rt/srs_rt.c || exit 1
+timeout 120 $CCS -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
+timeout 10 "$B/seed" $S1SRC > "$B/s1.c" && timeout 120 $CCS -o "$B/s1" "$B/s1.c" rt/srs_rt.c || exit 1
+timeout 10 "$B/s1" $S1SRC > "$B/s2.c" && timeout 120 $CCS -o "$B/s2" "$B/s2.c" rt/srs_rt.c || exit 1
 timeout 10 "$B/s2" $S1SRC > "$B/s3.c" || exit 1
 if cmp -s "$B/s2.c" "$B/s3.c"; then echo "ok fixpoint s2.c == s3.c"; else echo "FAIL fixpoint"; fail=1; fi
 if cmp -s bootstrap/seed.c "$B/s2.c"; then echo "ok seed == s2.c"; else echo "FAIL seed stale: seed-update"; fail=1; fi
@@ -42,4 +46,18 @@ for t in tests/hash/*.srs; do
   done < <(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t")
   if [ -n "$bad" ]; then echo "FAIL hash/$n$bad"; fail=1; else echo "ok hash/$n"; fi
 done
+# the store (vic-uw3 H2): cold writes every entry, warm writes none, a cut entry reads as bad (a miss)
+rm -rf "$SRS_STORE"
+st() { timeout 2 "$B/s2" --store-check lib/prelude.srs tests/hash/basic.srs 2>&1; }
+cold=$(st); warm=$(st)
+e=$(grep -rl I64 "$SRS_STORE" | head -1); cp "$e" "$B/store.keep"
+head -c 30 "$B/store.keep" > "$e"; cut=$(st)
+# a byte of a name changed (still parses, not equal); bytes after the node (not one whole entry)
+sed '0,/I64/s//I65/' "$B/store.keep" > "$e"; flip=$(st)
+{ cat "$B/store.keep"; printf 'x'; } > "$e"; trail=$(st)
+case "$cold" in "store: wrote "[1-9]*", read equal "[1-9]*", bad 0") ok1=1;; *) ok1=0;; esac
+case "$warm" in "store: wrote 0, read equal "[1-9]*", bad 0") ok2=1;; *) ok2=0;; esac
+case "$cut$flip$trail" in *", bad 1"*", bad 1"*", bad 1") ok3=1;; *) ok3=0;; esac
+if [ $ok1 = 1 ] && [ $ok2 = 1 ] && [ $ok3 = 1 ] && ! cmp -s "$e" "$B/store.keep"; then echo "ok store cold/warm/cut/flip/trail"
+else echo "FAIL store cold=[$cold] warm=[$warm] cut=[$cut] flip=[$flip] trail=[$trail]"; fail=1; fi
 exit $fail

@@ -9,6 +9,8 @@
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}
 C=bench/corpus
+# benchmarks never touch the user store (vic 2026-11-06)
+export SRS_STORE="$B/store-bench"
 S1SRC=$(sed -n 's/^S1SRC="\(.*\)"$/\1/p' tests/run.sh)
 LIBS=$(sed -n 's/^LIBS="\(.*\)"$/\1/p' tests/run.sh)
 # the corpus has the S1 file list of its own time: every lib/ and s1/ file it holds, in the order of S1SRC

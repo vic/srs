@@ -9,6 +9,8 @@ let
   # the build dir of tests/run.sh
   build = ''B=''${B:-''${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"'';
   cc = "zig cc -std=gnu11 -O1 -w";
+  # the compiler links static on Linux (musl): no dynamic loader per compile (vic-5r9)
+  ccs = ''$(case "$(uname -s)" in Linux) echo "-static -target $(uname -m)-linux-musl";; esac)'';
 in
 {
   yen.aspects.srs-commands = {
@@ -16,7 +18,7 @@ in
     commands = [
       (cmd "srs" "srs-build" "build the srs compiler from bootstrap/seed.c to $B/srs" ''
         ${build}
-        ${cc} -o "$B/srs" bootstrap/seed.c rt/srs_rt.c
+        ${cc} ${ccs} -o "$B/srs" bootstrap/seed.c rt/srs_rt.c
         echo "$B/srs"
       '')
       (cmd "srs" "srs-run"
@@ -74,7 +76,7 @@ in
         ${build}
         timeout 120 zig test s0/main.zig
         timeout 120 zig build-exe s0/main.zig -femit-bin="$B/s0"
-        S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/main.srs"
+        S1SRC="lib/prelude.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/store.srs s1/main.srs"
         "$B/s0" $S1SRC > "$B/s1.c"
         ${cc} -o "$B/s1" "$B/s1.c" rt/srs_rt.c
         "$B/s1" $S1SRC > bootstrap/seed.c

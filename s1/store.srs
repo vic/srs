@@ -1,0 +1,185 @@
+// vic-uw3 H2: the store (vic 2026-11-06: Nix-like, content addressed; "go a": an entry is written through a protocol).
+// an entry = one checked decl, keyed by its content hash (s1/hash.srs). this file is an IO driver like s1/main.srs:
+// not in the Lean model (nix/commands.nix lean-check list).
+
+extern def rt_store_dir(): Str
+extern def rt_out_new(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr
+extern def rt_out_str(self: Ptr, s: Str): Unit
+extern def rt_out_i64(self: Ptr, n: I64): Unit
+extern def rt_out_commit(self: Ptr): Unit
+extern def rt_store_read(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
+
+// an entry is open until commit renames it into place: a def that opens one must commit it (end Done)
+protocol StoreOut:
+  state Writing, Done
+  start Writing
+  end Done
+  op put(s: Str): Unit : Writing -> Writing
+  op num(n: I64): Unit : Writing -> Writing
+  op commit(): Unit : Writing -> Done
+
+handler StoreFile for StoreOut:
+  def init(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr = rt_out_new(dir, a, b, c, d)
+  def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
+  def num(self: Ptr, n: I64): Unit = rt_out_i64(self, n)
+  def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// a node: "kind n line " then s and t as "len:bytes", then "kids " and the kids
+def putNode {o: StoreOut} (x: Node): Unit =
+  o.num(kindCode(kind(x)))
+  o.put(" ")
+  o.num(num(x))
+  o.put(" ")
+  o.num(lineOf(x))
+  o.put(" ")
+  o.num(rt_str_len(text(x)))
+  o.put(":")
+  o.put(text(x))
+  o.num(rt_str_len(text2(x)))
+  o.put(":")
+  o.put(text2(x))
+  o.num(len(kids(x)))
+  o.put(" ")
+  var c = kids(x)
+  while !isNil(c) do
+    putNode(head(c))
+    c = tail(c)
+
+def storeWrite {r: Region} (dir: Str, g: Digest, x: Node): Unit = g match
+  case Digest(a, b, c, d) =>
+    handle o = StoreFile(dir, a, b, c, d)
+    putNode(x)
+    o.commit()
+
+def storeRead {r: Region} (dir: Str, g: Digest): Str = g match
+  case Digest(a, b, c, d) => rt_store_read(dir, a, b, c, d)
+
+// ── the reader: every result type is closed; a bad or short entry is a miss, never a partial node
+enum IntRead:
+  case IRBad
+  case IROk(v: I64, at: I64)
+
+enum StrRead:
+  case SRBad
+  case SROk(v: Str, at: I64)
+
+enum NodeRead:
+  case NRBad
+  case NROk(x: Node, at: I64)
+
+enum KidsRead:
+  case KRBad
+  case KROk(ks: Nodes, at: I64)
+
+
+// a decimal (optional -) ended by the char stop; at most 17 digits (no I64 overflow)
+def readInt {r: Region} (s: Str, at: I64, stop: I64): IntRead =
+  val neg = rt_str_at(s, at) == 45
+  var i = if neg then at + 1 else at
+  val first = i
+  var v = 0
+  while isDigit(rt_str_at(s, i)) && i - first < 17 do
+    v = v * 10 + rt_str_at(s, i) - 48
+    i = i + 1
+  if i > first && rt_str_at(s, i) == stop then IROk(if neg then 0 - v else v, i + 1) else IRBad
+
+def readStr {r: Region} (s: Str, at: I64): StrRead = readInt(s, at, 58) match
+  case IRBad => SRBad
+  case IROk(n, i) => if n < 0 || i + n > rt_str_len(s) then SRBad else SROk(rt_str_slice(s, i, i + n), i + n)
+
+def readNode {r: Region} (s: Str, at: I64): NodeRead = readInt(s, at, 32) match
+  case IRBad => NRBad
+  case IROk(k, i) => if k < 0 || k > kindCode(GVar) then NRBad else readNode2(s, codeKind(k), i)
+
+def readNode2 {r: Region} (s: Str, k: Kind, at: I64): NodeRead = readInt(s, at, 32) match
+  case IRBad => NRBad
+  case IROk(n, i) => readInt(s, i, 32) match
+    case IRBad => NRBad
+    case IROk(line, j) => readNode3(s, k, n, line, j)
+
+def readNode3 {r: Region} (s: Str, k: Kind, n: I64, line: I64, at: I64): NodeRead = readStr(s, at) match
+  case SRBad => NRBad
+  case SROk(t1, i) => readStr(s, i) match
+    case SRBad => NRBad
+    case SROk(t2, j) => readInt(s, j, 32) match
+      case IRBad => NRBad
+      case IROk(nk, m) => readKids(s, nk, m, NNil) match
+        case KRBad => NRBad
+        case KROk(ks, e) => NROk(Node(k, t1, t2, n, line, ks), e)
+
+def readKids {r: Region} (s: Str, n: I64, at: I64, acc: Nodes): KidsRead =
+  if n < 0 then KRBad
+  else if n == 0 then KROk(rev(acc), at)
+  else readNode(s, at) match
+    case NRBad => KRBad
+    case NROk(x, i) => readKids(s, n - 1, i, NCons(x, acc))
+
+// a whole entry: one node and nothing after it
+def readEntry {r: Region} (s: Str): NodeRead =
+  if rt_str_len(s) < 0 then NRBad
+  else readNode(s, 0) match
+    case NRBad => NRBad
+    case NROk(x, i) => if i == rt_str_len(s) then NROk(x, i) else NRBad
+
+def nodeEq(a: Node, b: Node): Bool =
+  if kind(a) != kind(b) || !eqs(text(a), text(b)) || !eqs(text2(a), text2(b)) || num(a) != num(b) || lineOf(a) != lineOf(b) || len(kids(a)) != len(kids(b)) then false
+  else nodesEq(kids(a), kids(b))
+
+def nodesEq(a: Nodes, b: Nodes): Bool =
+  var x = a
+  var y = b
+  var ok = true
+  while ok && !isNil(x) do
+    ok = nodeEq(head(x), head(y))
+    x = tail(x)
+    y = tail(y)
+  ok
+
+enum Seen:
+  case SeenNil
+  case SeenCons(g: Digest, t: Seen)
+
+def seenHas(s: Seen, g: Digest): Bool = s match
+  case SeenNil => false
+  case SeenCons(h, t) => dgEq(h, g) || seenHas(t, g)
+
+// `s1 --store-check`: write every hashed decl to the store, read each back, compare (vic-uw3 H2 oracle)
+def storeCheck {r: Region} (ds: Decls): Unit =
+  val hm = hashAll(ds)
+  val dir = rt_store_dir()
+  var wrote = 0
+  var same = 0
+  var shared = 0
+  var bad = 0
+  // the hashes met in this run: a later decl with a met hash shares the entry (names are metadata)
+  var seen = SeenNil
+  var c = declList(ds)
+  while !isNil(c) do
+    val d = head(c)
+    if (kind(d) == DFn && num(d) != 1) || kind(d) == DEnum then
+      hmGet(hm, text(d)) match
+        case HSome(g) =>
+          if rt_str_len(storeRead(dir, g)) < 0 then
+            storeWrite(dir, g, d)
+            wrote = wrote + 1
+          else ()
+          val first = !seenHas(seen, g)
+          seen = SeenCons(g, seen)
+          readEntry(storeRead(dir, g)) match
+            case NROk(x, _) =>
+              if !first then shared = shared + 1 else if nodeEq(x, d) then same = same + 1 else bad = bad + 1
+            case NRBad => bad = bad + 1
+        case HNone => ()
+    else ()
+    c = tail(c)
+  say("store: wrote ")
+  sayn(wrote)
+  say(", read equal ")
+  sayn(same)
+  say(", shared ")
+  sayn(shared)
+  say(", bad ")
+  sayn(bad)
+  say("\n")
+// the kind of a code (inverse of kindCode); a code out of range is checked by the reader first
+def codeKind(i: I64): Kind = if i == 0 then TIdent else if i == 1 then TInt else if i == 2 then TStr else if i == 3 then TChar else if i == 4 then TOp else if i == 5 then TNl else if i == 6 then TIndent else if i == 7 then TDedent else if i == 8 then TEof else if i == 9 then Ty else if i == 10 then TyTo else if i == 11 then TyCap else if i == 12 then DFn else if i == 13 then DEnum else if i == 14 then DCase else if i == 15 then DProto else if i == 16 then DRule else if i == 17 then DType else if i == 18 then DTCase else if i == 19 then DOp else if i == 20 then DTrans else if i == 21 then DHandler else if i == 22 then DTrait else if i == 23 then DGiven else if i == 24 then Params else if i == 25 then Param else if i == 26 then Groups else if i == 27 then Group else if i == 28 then Binder else if i == 29 then TTerm else if i == 30 then Names else if i == 31 then Name else if i == 32 then XInt else if i == 33 then XBool else if i == 34 then XStr else if i == 35 then XUnit else if i == 36 then XName else if i == 37 then XCall else if i == 38 then XCallG else if i == 39 then XInst else if i == 40 then XNew else if i == 41 then XEv else if i == 42 then XMethod else if i == 43 then XBin else if i == 44 then XUn else if i == 45 then XIf else if i == 46 then XMatch else if i == 47 then XForall else if i == 48 then XExists else if i == 49 then XArm else if i == 50 then XBlock else if i == 51 then XWhile else if i == 52 then XAssign else if i == 53 then SVal else if i == 54 then SHandle else if i == 55 then SClause else if i == 56 then BVar else if i == 57 then BCap else if i == 58 then GState else GVar

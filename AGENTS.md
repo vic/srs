@@ -109,6 +109,12 @@ Lists you must keep in sync:
 - S1 reads decls through `Decls` (s1/node.srs): `findDecl(ds, k, name)` is a hash lookup whose bucket keeps the
   list order, so it finds what a linear `find` finds. Enum cases are in the index (`findDecl(ds, DCase, c)`).
   A fn whose proved contract reads ds as a list keeps `ds: Nodes`; callers pass `declList(ds)`.
+- The store (vic-uw3): `SRS_STORE`, else `$HOME/.srs/store`. `tests/run.sh` and `tests/bench.sh` export it under
+  `$B`: a test never touches the user store (vic 2026-11-06). An entry is written only through protocol `StoreOut`
+  (`s1/store.srs`), so a write that does not commit does not compile. `s1/store.srs` and `s1/main.srs` are IO
+  drivers: they are not in the Lean model (the lean-check gen list).
+- The compiler binaries (seed, s1, s2, `srs-build`) link static on Linux (musl): no dynamic loader per compile
+  (vic-5r9). Test programs keep the default link.
 - No xor or shift on I64: hashes use `%` with products below 2^63 (`strHash` in `lib/prelude.srs`).
 - A change to a lib changes the C of every test. The refactor oracle compiles the tests with the old libs and the
   old prelude, and compares that C byte for byte.

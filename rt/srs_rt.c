@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 typedef struct { const uint8_t* p; int64_t n; } srs_str;
 
@@ -73,6 +75,52 @@ srs_str rt_read_file(srs_str path) {
   if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n) { fclose(f); return (srs_str){(const uint8_t*)"", -1}; }
   fclose(f);
   return (srs_str){buf, n}; // program-lifetime: never freed
+}
+
+// ── the store (vic-uw3 H2): $SRS_STORE, else $HOME/.srs/store; an entry = file <dir>/<a>.<b>.<c>.<d> (hash lanes)
+srs_str rt_store_dir(void) {
+  static char buf[4096];
+  const char* s = getenv("SRS_STORE");
+  if (s && *s) snprintf(buf, sizeof buf, "%s", s);
+  else { const char* h = getenv("HOME"); snprintf(buf, sizeof buf, "%s/.srs/store", h ? h : "."); }
+  return (srs_str){(const uint8_t*)buf, (int64_t)strlen(buf)};
+}
+static void store_path(char* out, size_t n, srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
+  snprintf(out, n, "%.*s/%lld.%lld.%lld.%lld", (int)dir.n, (const char*)dir.p, (long long)a, (long long)b, (long long)c, (long long)d);
+}
+static void mkdirs(const char* d) {
+  char p[4096];
+  snprintf(p, sizeof p, "%s", d);
+  for (char* q = p + 1; *q; q++) if (*q == '/') { *q = 0; mkdir(p, 0755); *q = '/'; }
+  mkdir(p, 0755);
+}
+// an entry is written to a temp file, then renamed: a reader sees a whole entry or none
+typedef struct { FILE* f; char tmp[4200]; char dst[4200]; } store_out;
+void* rt_out_new(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
+  store_out* o = malloc(sizeof *o);
+  char dn[4096];
+  if (!o || dir.n >= (int64_t)sizeof dn) { fputs("srs: store path too long\n", stderr); exit(70); }
+  memcpy(dn, dir.p, (size_t)dir.n); dn[dir.n] = 0;
+  mkdirs(dn);
+  store_path(o->dst, sizeof o->dst, dir, a, b, c, d);
+  snprintf(o->tmp, sizeof o->tmp, "%s.tmp%ld", o->dst, (long)getpid());
+  o->f = fopen(o->tmp, "wb");
+  if (!o->f) { fprintf(stderr, "srs: cannot write %s\n", o->tmp); exit(70); }
+  return o;
+}
+int64_t rt_out_str(void* self, srs_str s) { fwrite(s.p, 1, (size_t)s.n, ((store_out*)self)->f); return 0; }
+int64_t rt_out_i64(void* self, int64_t v) { fprintf(((store_out*)self)->f, "%lld", (long long)v); return 0; }
+int64_t rt_out_commit(void* self) {
+  store_out* o = self;
+  if (fclose(o->f) != 0 || rename(o->tmp, o->dst) != 0) { fprintf(stderr, "srs: cannot commit %s\n", o->dst); exit(70); }
+  free(o);
+  return 0;
+}
+// the entry of a hash: its bytes, or length -1 when absent
+srs_str rt_store_read(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
+  char name[4200];
+  store_path(name, sizeof name, dir, a, b, c, d);
+  return rt_read_file((srs_str){(const uint8_t*)name, (int64_t)strlen(name)});
 }
 
 int64_t rt_print(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stdout); return 0; }
