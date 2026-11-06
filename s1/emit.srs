@@ -177,6 +177,7 @@ def emitProgram {r: Region} (ds: Decls): Unit =
   while !isNil(c) do
     if kind(head(c)) == DHandler then vtable(ds, head(c)) else ()
     c = tail(c)
+  if hasArena(ds) then allocFast(ds) else ()
   c = declList(ds)
   while !isNil(c) do
     val d = head(c)
@@ -191,6 +192,20 @@ def emitProgram {r: Region} (ds: Decls): Unit =
   if found(findDecl(ds, DFn, "main")) then say("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()
 
 def protoOps(ds: Decls, p: Str): Nodes = kids(kid(findDecl(ds, DProto, p), 3))
+
+// the program has the prelude's Arena handler (its alloc is rt_arena_alloc)
+def hasArena(ds: Decls): Bool = found(findDecl(ds, DHandler, "Arena"))
+
+// srs_alloc: a constructor's allocation. an Arena region bumps inline (the chunk layout of rt/srs_rt.c:24-25); a full
+// chunk or another Region handler takes the call (vic 2026-11-06: the vtable call + wrapper cost 37% of an s2 run)
+def allocFast(ds: Decls): Unit =
+  say("#include <stddef.h>\ntypedef struct srs_chunk { struct srs_chunk* next; size_t used, cap; } srs_chunk;\n")
+  say("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n  if (c->vt == vt_Arena) {\n")
+  say("    srs_chunk* h = *(srs_chunk**)c->self;\n    size_t n = ((size_t)size + 15) & ~(size_t)15;\n")
+  say("    if (h && h->used + n <= h->cap) { void* p = (char*)(h + 1) + h->used; h->used += n; return p; }\n")
+  say("    return rt_arena_alloc(c->self, size);\n  }\n  return ((void*(*)(void*, int64_t))c->vt[")
+  sayn(opIndex(protoOps(ds, "Region"), "alloc"))
+  say("])(c->self, size);\n}\n")
 
 def vtable(ds: Decls, h: Node): Unit =
   say("static void* const vt_")
@@ -509,13 +524,18 @@ def exCtor {r: Region} (ds: Decls, cs: Nodes, env: Nodes, c: Node, xs: Nodes, ta
   sayn(u)
   say(" = (struct E_")
   ctorStruct(c, targs)
-  say("*)((void*(*)(void*, int64_t))(")
-  cname(reg)
-  say("->vt[")
-  sayn(opIndex(protoOps(ds, "Region"), "alloc"))
-  say("]))(")
-  cname(reg)
-  say("->self, (int64_t)sizeof(struct E_")
+  if hasArena(ds) then
+    say("*)srs_alloc(")
+    cname(reg)
+    say(", (int64_t)sizeof(struct E_")
+  else
+    say("*)((void*(*)(void*, int64_t))(")
+    cname(reg)
+    say("->vt[")
+    sayn(opIndex(protoOps(ds, "Region"), "alloc"))
+    say("]))(")
+    cname(reg)
+    say("->self, (int64_t)sizeof(struct E_")
   ctorStruct(c, targs)
   say(")); o")
   sayn(u)
