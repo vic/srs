@@ -25,11 +25,14 @@ for t in tests/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat tests/$n.out)" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
+# every "// expect: msg" line must be printed: errors are data, main reports them all (vic-ngq); armed: 0 lines = FAIL
 for t in tests/neg/*.srs; do
-  n=$(basename "$t" .srs); want=$(sed -n "1s|^// expect: ||p" "$t")
+  n=$(basename "$t" .srs)
   msg=$(timeout 2 "$B/s2" $LIBS "$t" 2>&1 >/dev/null); code=$?
-  case "$msg" in *"$want"*) [ $code -eq 1 ] && { echo "ok neg/$n"; continue; };; esac
-  echo "FAIL neg/$n exit=$code msg=$msg"; fail=1
+  bad=""; [ $code -eq 1 ] || bad=" exit=$code"
+  wants=$(sed -n "s|^// expect: ||p" "$t"); [ -n "$wants" ] || bad="$bad no-expect"
+  while IFS= read -r want; do case "$msg" in *"$want"*) ;; *) bad="$bad missing=$want";; esac; done <<< "$wants"
+  if [ -z "$bad" ]; then echo "ok neg/$n"; else echo "FAIL neg/$n$bad msg=$msg"; fail=1; fi
 done
 # content hashes (vic-uw3 H1): `s1 --hash` prints "name hash"; each "// same: a b" / "// differ: a b" line must hold
 for t in tests/hash/*.srs; do

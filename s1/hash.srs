@@ -111,7 +111,7 @@ def hFnKids {r: Region} (xs: Nodes): Nodes = if len(xs) > 4 then NCons(nth(xs, 4
 def hNode {r: Region} (cx: HCtx, env: Nodes, g0: Digest, x: Node): HW =
   val k = kind(x)
   // the header in one token: kind code + (codes) * kid count; then num. the kind fixes the name tokens after it
-  val g = dgAdd(dgAdd(g0, kindCode(k) + (kindCode(TyVals) + 1) * len(kids(x))), num(x))
+  val g = dgAdd(dgAdd(g0, kindCode(k) + (kindCode(TyHole) + 1) * len(kids(x))), num(x))
   if k == SVal || k == SHandle || k == Param || k == Binder then
     // a binding: its kids (value, type, handler args) see the old scope; the name becomes the next position
     val g2 = if k == SHandle then hName(cx, env, g, text2(x), false) else g
@@ -329,3 +329,6 @@ def kindCode(k: Kind): I64 = k match
   case GState => 58
   case GVar => 59
   case TyVals => 60
+  case XIllTyped => 61
+  // the largest code: the digest radix (dgNode) and the store reader bound
+  case TyHole => 62

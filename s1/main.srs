@@ -22,5 +22,14 @@ def main(): I64 =
     ds = append(ds, parseFile(lex(src)))
     i = i + 1
   val ds2 = check(ds)
+  // errors are data until here (vic-ngq): every mark is reported, and a marked program is rejected
+  val bad = illTypedIn(ds2)
+  if !isNil(bad) then
+    var c = bad
+    while !isNil(c) do
+      eprintErr(text(head(c)), text2(head(c)), lineOf(head(c)))
+      c = tail(c)
+    rt_exit(1)
+  else ()
   if lean then emitLean(mkDecls(expandTypes(mkDecls(ds))), rt_arg(2)) else if hashing then hashPrint(mkDecls(ds2)) else if storing then storeCheck(mkDecls(ds2)) else if evaling then evalPrint(ds2) else emitProgram(mkDecls(mono(mkDecls(ds2))))
   0

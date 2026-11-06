@@ -1,0 +1,10 @@
+// expect: srs:7: error: unknown name 'nope'
+// expect: srs:8: error: unknown function 'nofn'
+// expect: srs:9: error: unknown name 'inner'
+// two errors, both reported: each ill-typed expr is data, main prints them all (vic-ngq);
+// an error inside the args of an unknown function is reported too
+def main(): I64 =
+  val x: I64 = nope
+  val y: I64 = nofn(1)
+  val z: I64 = nofn(inner)
+  x + y + z

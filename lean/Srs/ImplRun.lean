@@ -14,7 +14,13 @@ def implAccepts (srcs : List String) : IO Bool := do
     match lex src >>= parseFile >>= append ds with
     | some x => ds := x
     | none => return false
-  return (check ds >>= mkDecls >>= mono).isSome
+  -- errors are data (vic-ngq): a checked program with a mark (XIllTyped) is rejected
+  match check ds with
+  | some ds2 =>
+    match illTypedIn ds2 with
+    | some Nodes.NNil => return (mkDecls ds2 >>= mono).isSome
+    | _ => return false
+  | none => return false
 
 def checkVerdicts : IO Unit := do
   let libs := ["../lib/prelude.srs", "../lib/kanren.srs", "../lib/datalog.srs", "../tests/list.lib", "../tests/file.lib"]

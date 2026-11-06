@@ -20,7 +20,7 @@ def withKids {r: Region} (e: Node, ks: Nodes): Node = e match
   case Node(k, s, t, n, l, _) => Node(k, s, t, n, l, ks)
   case NoNode => NoNode
 
-def err(what: Str, name: Str, line: I64): Unit =
+def eprintErr(what: Str, name: Str, line: I64): Unit =
   rt_eprint("srs:")
   rt_eprint_i64(line)
   rt_eprint(": error: ")
@@ -28,7 +28,28 @@ def err(what: Str, name: Str, line: I64): Unit =
   rt_eprint(" '")
   rt_eprint(name)
   rt_eprint("'\n")
+
+def err(what: Str, name: Str, line: I64): Unit =
+  eprintErr(what, name, line)
   rt_exit(1)
+
+// an error as data (vic-ngq): the ill-typed expr e stays in e2 as a mark over its checked sub-exprs xs; its type is
+// the hole, consistent with every type (Zhao et al. POPL 2024, Thm 2.3: ill-typed iff at least one mark)
+def illTyped {r: Region} (gam: Nodes, what: Str, name: Str, e: Node, xs: Nodes): TG =
+  TG(Node(TyHole, "", "", 0, lineOf(e), NNil), gam, Node(XIllTyped, what, name, 0, lineOf(e), xs))
+
+// every mark in the checked decls, in source order: main reports them all and rejects the program
+def illTypedIn {r: Region} (xs: Nodes): Nodes = rev(illTypedAcc(xs, NNil))
+def illTypedAcc {r: Region} (xs: Nodes, acc0: Nodes): Nodes =
+  var acc = acc0
+  var c = xs
+  while !isNil(c) do
+    val k = kind(head(c))
+    if k == XIllTyped then acc = NCons(head(c), acc) else ()
+    // a mark is an expr (only chk makes one): types, params, groups and names hold none
+    if k != Ty && k != Params && k != Groups && k != Names then acc = illTypedAcc(kids(head(c)), acc) else ()
+    c = tail(c)
+  acc
 
 def tyCaps(t: Node): Nodes
   ensures result == tailS(kidsS(t))
@@ -40,8 +61,8 @@ def prim {r: Region} (name: Str): Node = mkTy(name, NNil)
 def tyArgs(t: Node): Nodes = kids(head(kids(t)))
 // t with new caps: name and type args kept
 def recap {r: Region} (t: Node, caps: Nodes): Node = Node(Ty, text(t), "", 1, 0, NCons(Node(TyTo, "", "", 0, 0, tyArgs(t)), caps))
-// one type: same name, same type args (caps are checked apart)
-def tyEq(a: Node, b: Node): Bool = eqs(text(a), text(b)) && tysEq(tyArgs(a), tyArgs(b))
+// one type: same name, same type args (caps are checked apart); the hole is consistent with every type (POPL 2024)
+def tyEq(a: Node, b: Node): Bool = eqs(text(a), text(b)) && tysEq(tyArgs(a), tyArgs(b)) || kind(a) == TyHole || kind(b) == TyHole
 def tysEq(a: Nodes, b: Nodes): Bool =
   if isNil(a) || isNil(b) then isNil(a) && isNil(b) else tyEq(head(a), head(b)) && tysEq(tail(a), tail(b))
 def eprintTy(t: Node): Unit =
@@ -525,9 +546,10 @@ def chk {r: Region} (ds: Decls, env: Nodes, gam: Nodes, e: Node, want: Node): TG
       TG(t, gam, e)
     else
       val c = findDecl(ds, DCase, text(e))
-      if !found(c) then err("unknown name", text(e), line) else ()
-      if !isNil(kids(kid(c, 0))) then err("constructor needs arguments:", text(e), line) else ()
-      chkNullary(ds, gam, c, e, want)
+      if !found(c) then illTyped(gam, "unknown name", text(e), e, NNil)
+      else
+        if !isNil(kids(kid(c, 0))) then err("constructor needs arguments:", text(e), line) else ()
+        chkNullary(ds, gam, c, e, want)
   else if k == XCall then
     val c = findDecl(ds, DCase, text(e))
     if found(c) then chkCtor(ds, env, gam, c, e, want) else chkCall(ds, env, gam, e, want, NNil)
@@ -772,9 +794,23 @@ def mapCaps {r: Region} (caps: Nodes, m: Nodes): Nodes =
 
 // gs: the call's groups (f[T]{a}(x), vic 2026-11-05): explicit type args, the {} binders chosen by name
 def chkCall {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, e: Node, want: Node, gs: Nodes): TG =
-  val line = lineOf(e)
   val f = findDecl(ds, DFn, text(e))
-  if !found(f) then err("unknown function", text(e), line) else ()
+  if found(f) then chkCallOf(ds, env, gam0, f, e, want, gs) else illTypedCall(ds, env, gam0, "unknown function", e)
+
+// an ill-typed call: its args are still checked, so the errors inside them surface too
+def illTypedCall {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, what: Str, e: Node): TG =
+  var gam = gam0
+  var xs = NNil
+  var a = kids(e)
+  while !isNil(a) do
+    val tg = chk(ds, env, gam, head(a), NoNode)
+    gam = tgGam(tg)
+    xs = NCons(tgE(tg), xs)
+    a = tail(a)
+  illTyped(gam, what, text(e), e, rev(xs))
+
+def chkCallOf {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, f: Node, e: Node, want: Node, gs: Nodes): TG =
+  val line = lineOf(e)
   // a spec def calls only fns without effects: pure defs and the pure externs (vic-u2d U1b, s1/purity.srs)
   if isPure(env) && isImpure(ds, text(f)) then err("a spec def calls only pure defs and pure externs, not", text(e), line) else ()
   var ps = kids(kid(f, 0))
