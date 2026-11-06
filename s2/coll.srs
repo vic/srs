@@ -41,6 +41,11 @@ enum Coll.IMap [V: Type]:
   case Coll.Tip
   case Coll.Bin(size: I64, k: I64, v: V, l: Coll.IMap[V], r: Coll.IMap[V])
 
+// the two balance factors (Adams; delta 3, ratio 2, above): one side may hold at most delta times the other, and a
+// rotation is single when the inner grandchild holds less than ratio times the outer one, else double
+def Coll.delta(): I64 = 3
+def Coll.ratio(): I64 = 2
+
 def Coll.size [V: Type] (m: Coll.IMap[V]): I64 = m match
   case Coll.Tip => 0
   case Coll.Bin(s, _, _, _, _) => s
@@ -58,14 +63,14 @@ def Coll.balance [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.
   val sl = Coll.size(l)
   val sr = Coll.size(r2)
   if sl + sr <= 1 then Coll.bin(k, v, l, r2)
-  else if sr > 3 * sl then Coll.rotateL(k, v, l, r2)
-  else if sl > 3 * sr then Coll.rotateR(k, v, l, r2)
+  else if sr > Coll.delta() * sl then Coll.rotateL(k, v, l, r2)
+  else if sl > Coll.delta() * sr then Coll.rotateR(k, v, l, r2)
   else Coll.bin(k, v, l, r2)
 
 def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = r2 match
   case Coll.Tip => Coll.bin(k, v, l, r2)
   case Coll.Bin(_, k2, v2, rl, rr) =>
-    if Coll.size(rl) < 2 * Coll.size(rr) then Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
+    if Coll.size(rl) < Coll.ratio() * Coll.size(rr) then Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
     else rl match
       case Coll.Tip => Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
       case Coll.Bin(_, k3, v3, rll, rlr) => Coll.bin(k3, v3, Coll.bin(k, v, l, rll), Coll.bin(k2, v2, rlr, rr))
@@ -73,7 +78,7 @@ def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.
 def Coll.rotateR [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
   case Coll.Tip => Coll.bin(k, v, l, r2)
   case Coll.Bin(_, k2, v2, ll, lr) =>
-    if Coll.size(lr) < 2 * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+    if Coll.size(lr) < Coll.ratio() * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
     else lr match
       case Coll.Tip => Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
       case Coll.Bin(_, k3, v3, lrl, lrr) => Coll.bin(k3, v3, Coll.bin(k2, v2, ll, lrl), Coll.bin(k, v, lrr, r2))

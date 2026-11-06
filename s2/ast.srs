@@ -114,7 +114,8 @@ enum Ast.Decl:
   case Ast.DProto(p: Ast.Proto)
   case Ast.DHandler(h: Ast.Handler)
 
-// ── printer: srs source, 2 spaces per level ──
+// ── printer: srs source, Ast.step() spaces per level ──
+def Ast.step(): I64 = 2
 
 def Ast.sym(s: Sym.Sym): Unit = rt_print(Sym.str(s))
 
@@ -180,42 +181,63 @@ def Ast.opText(op: Ast.BinOp): Str = op match
   case Ast.And => "&&"
   case Ast.Or => "||"
 
-// binding strength, as the s1 parser (s1/parse.srs:593 opLevel); every level is left associative
-def Ast.level(op: Ast.BinOp): I64 = op match
-  case Ast.Or => 0
-  case Ast.And => 1
-  case Ast.Eq => 2
-  case Ast.Ne => 2
-  case Ast.Lt => 3
-  case Ast.Le => 3
-  case Ast.Gt => 3
-  case Ast.Ge => 3
-  case Ast.Add => 4
-  case Ast.Sub => 4
-  case Ast.Mul => 5
-  case Ast.Div => 5
-  case Ast.Mod => 5
+// how tightly an expression binds as an operand, loosest first: if, match, block, while and assign only in ( ); a
+// binary operator by its level; a unary operator; an atom (literal, name, call, method)
+enum Ast.Bind:
+  case Ast.Loose
+  case Ast.Infix(op: Ast.BinOp)
+  case Ast.Prefix
+  case Ast.Atomic
 
-// how strongly e binds as an operand: atoms 9, a unary 6, a binary its level, the rest (if, match, ...) -1
-def Ast.strength(e: Ast.Expr): I64 = e match
-  case Ast.Bin(_, op, _, _) => Ast.level(op)
-  case Ast.Un(_, _, _) => 6
-  case Ast.If(_, _, _, _) => -1
-  case Ast.Match(_, _, _) => -1
-  case Ast.Block(_, _, _) => -1
-  case Ast.While(_, _, _) => -1
-  case Ast.Assign(_, _, _) => -1
-  case _ => 9
+// an operand position: it takes an expression that binds at least as tightly as b, or strictly more tightly
+// (the right operand of a left associative operator)
+enum Ast.Need:
+  case Ast.AtLeast(b: Ast.Bind)
+  case Ast.Above(b: Ast.Bind)
 
-// e as an operand that must bind at least as strongly as min: in ( ) when it binds less
-def Ast.operand(e: Ast.Expr, min: I64, ind: I64): Unit =
-  if Ast.strength(e) < min then
+// the order of Bind, loosest first; binary levels as the s1 parser (s1/parse.srs:593 opLevel). only compared
+def Ast.rank(b: Ast.Bind): I64 = b match
+  case Ast.Loose => 0
+  case Ast.Infix(op) => op match
+    case Ast.Or => 1
+    case Ast.And => 2
+    case Ast.Eq => 3
+    case Ast.Ne => 3
+    case Ast.Lt => 4
+    case Ast.Le => 4
+    case Ast.Gt => 4
+    case Ast.Ge => 4
+    case Ast.Add => 5
+    case Ast.Sub => 5
+    case Ast.Mul => 6
+    case Ast.Div => 6
+    case Ast.Mod => 6
+  case Ast.Prefix => 7
+  case Ast.Atomic => 8
+
+def Ast.bindOf {r: Region} (e: Ast.Expr): Ast.Bind = e match
+  case Ast.Bin(_, op, _, _) => Ast.Infix(op)
+  case Ast.Un(_, _, _) => Ast.Prefix
+  case Ast.If(_, _, _, _) => Ast.Loose
+  case Ast.Match(_, _, _) => Ast.Loose
+  case Ast.Block(_, _, _) => Ast.Loose
+  case Ast.While(_, _, _) => Ast.Loose
+  case Ast.Assign(_, _, _) => Ast.Loose
+  case _ => Ast.Atomic
+
+def Ast.fits {r: Region} (e: Ast.Expr, n: Ast.Need): Bool = n match
+  case Ast.AtLeast(b) => Ast.rank(Ast.bindOf(e)) >= Ast.rank(b)
+  case Ast.Above(b) => Ast.rank(Ast.bindOf(e)) > Ast.rank(b)
+
+// e in an operand position: in ( ) when it does not fit
+def Ast.operand {r: Region} (e: Ast.Expr, n: Ast.Need, ind: I64): Unit =
+  if Ast.fits(e, n) then Ast.expr(e, ind)
+  else
     rt_print("(")
     Ast.expr(e, ind)
     rt_print(")")
-  else Ast.expr(e, ind)
 
-def Ast.args(xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
+def Ast.args {r: Region} (xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
     Ast.expr(h, ind)
@@ -226,16 +248,16 @@ def Ast.args(xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
         Ast.args(t, ind)
 
 // e after `=`, `then`, `else`, `do` or `=>`: a block on its own lines one level in, anything else on this line
-def Ast.body(e: Ast.Expr, ind: I64): Unit = e match
+def Ast.body {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
   case Ast.Block(_, ss, last) =>
-    Ast.stmts(ss, ind + 2)
-    Ast.line(ind + 2)
-    Ast.expr(last, ind + 2)
+    Ast.stmts(ss, ind + Ast.step())
+    Ast.line(ind + Ast.step())
+    Ast.expr(last, ind + Ast.step())
   case _ =>
     rt_print(" ")
     Ast.expr(e, ind)
 
-def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
+def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
   case Ast.Int(_, v) => rt_print_i64(v)
   case Ast.Bool(_, v) => rt_print(if v then "true" else "false")
   case Ast.Str(_, s) =>
@@ -269,14 +291,14 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
     Ast.args(xs, ind)
     rt_print(")")
   case Ast.Bin(_, op, l, rhs) =>
-    Ast.operand(l, Ast.level(op), ind)
+    Ast.operand(l, Ast.AtLeast(Ast.Infix(op)), ind)
     rt_print(" ")
     rt_print(Ast.opText(op))
     rt_print(" ")
-    Ast.operand(rhs, Ast.level(op) + 1, ind)
+    Ast.operand(rhs, Ast.Above(Ast.Infix(op)), ind)
   case Ast.Un(_, op, x) =>
     rt_print(Ast.unText(op))
-    Ast.operand(x, 6, ind)
+    Ast.operand(x, Ast.AtLeast(Ast.Prefix), ind)
   case Ast.If(_, c, t, x) =>
     rt_print("if ")
     Ast.expr(c, ind)
@@ -284,9 +306,9 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
     Ast.body(t, ind)
     Ast.elseBody(x, ind)
   case Ast.Match(_, s, arms) =>
-    Ast.operand(s, 9, ind)
+    Ast.operand(s, Ast.AtLeast(Ast.Atomic), ind)
     rt_print(" match")
-    Ast.arms(arms, ind + 2)
+    Ast.arms(arms, ind + Ast.step())
   case Ast.Block(_, ss, last) =>
     Ast.stmts(ss, ind)
     Ast.line(ind)
@@ -306,7 +328,7 @@ def Ast.unText(op: Ast.UnOp): Str = op match
   case Ast.Not => "!"
 
 // `else` on the line of a one-line then, on its own line after a block then
-def Ast.elseBody(x: Ast.Expr, ind: I64): Unit = x match
+def Ast.elseBody {r: Region} (x: Ast.Expr, ind: I64): Unit = x match
   case Ast.Block(_, _, _) =>
     Ast.line(ind)
     rt_print("else")
@@ -315,7 +337,7 @@ def Ast.elseBody(x: Ast.Expr, ind: I64): Unit = x match
     rt_print(" else")
     Ast.body(x, ind)
 
-def Ast.arms(xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
+def Ast.arms {r: Region} (xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
     val Ast.Arm(_, p, b) = a
@@ -338,14 +360,14 @@ def Ast.pat(p: Ast.Pat): Unit = p match
         rt_print(")")
 
 // each statement on its own line at ind
-def Ast.stmts(xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
+def Ast.stmts {r: Region} (xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(s, t) =>
     Ast.line(ind)
     Ast.stmt(s, ind)
     Ast.stmts(t, ind)
 
-def Ast.stmt(s: Ast.Stmt, ind: I64): Unit = s match
+def Ast.stmt {r: Region} (s: Ast.Stmt, ind: I64): Unit = s match
   case Ast.Val(_, x, ann, e) =>
     rt_print("val ")
     Ast.binding(x, ann, e, ind)
@@ -362,7 +384,7 @@ def Ast.stmt(s: Ast.Stmt, ind: I64): Unit = s match
     rt_print(")")
   case Ast.Do(e) => Ast.expr(e, ind)
 
-def Ast.binding(x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
+def Ast.binding {r: Region} (x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
   Ast.sym(x)
   ann match
     case Coll.None => ()
@@ -433,7 +455,7 @@ def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
         rt_print(">")
     Ast.groups(t)
 
-def Ast.fn(f: Ast.Fn, ind: I64): Unit =
+def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
   body match
     case Ast.Extern => rt_print("extern ")
@@ -460,7 +482,7 @@ def Ast.fn(f: Ast.Fn, ind: I64): Unit =
       rt_print(" =")
       Ast.body(e, ind)
 
-def Ast.fns(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+def Ast.fns {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
     Ast.line(ind)
@@ -484,7 +506,7 @@ def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
     val Ast.Op(_, name, ps, ret, trs) = o
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("op ")
     Ast.sym(name)
     rt_print("(")
@@ -499,7 +521,7 @@ def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(rl, t) =>
     val Ast.RuleDef(_, name, ps, body) = rl
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("rule def ")
     Ast.sym(name)
     rt_print("(")
@@ -512,7 +534,7 @@ def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(c, t) =>
     val Ast.Case(_, name, fs) = c
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("case ")
     Ast.sym(name)
     fs match
@@ -523,7 +545,7 @@ def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
         rt_print(")")
     Ast.cases(t)
 
-def Ast.decl(d: Ast.Decl): Unit = d match
+def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
   case Ast.DFn(f) => Ast.fn(f, 0)
   case Ast.DEnum(en) =>
     val Ast.Enum(_, name, gs, cs) = en
@@ -537,20 +559,20 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     rt_print("protocol ")
     Ast.sym(name)
     rt_print(":")
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("state ")
     Ast.syms(sts, ", ")
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("start ")
     Ast.sym(start)
-    Ast.line(2)
+    Ast.line(Ast.step())
     rt_print("end ")
     Ast.syms(ends, ", ")
     Ast.ops(ops)
     dropOp match
       case Coll.None => ()
       case Coll.Some(o) =>
-        Ast.line(2)
+        Ast.line(Ast.step())
         rt_print("drop ")
         Ast.sym(o)
     Ast.rules(rules)
@@ -561,10 +583,10 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     rt_print(" for ")
     Ast.sym(proto)
     rt_print(":")
-    Ast.fns(fs, 2)
+    Ast.fns(fs, Ast.step())
 
 // a program: its decls, one blank line between two, a newline after the last
-def Ast.print(ds: Coll.List[Ast.Decl]): Unit = ds match
+def Ast.print {r: Region} (ds: Coll.List[Ast.Decl]): Unit = ds match
   case Coll.Nil => ()
   case Coll.Cons(d, t) =>
     Ast.decl(d)

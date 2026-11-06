@@ -91,16 +91,16 @@ def K.setDom {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Opti
       case K.Var(n) => rest match
         case Coll.Nil => K.unify(s, K.Var(n), K.Int(h)) match
           case Coll.None => Coll.None
-          case Coll.Some(s2) => Coll.Some(K.State(s2, ns, ds, K.emit(ps, n, true), nx))
+          case Coll.Some(s2) => Coll.Some(K.State(s2, ns, ds, K.emit(ps, n, K.Fixed), nx))
         case Coll.Cons(_, _) =>
           val k = 1 + Coll.length(rest)
-          if K.domSizeAt(ds, n) == k then Coll.Some(st)
-          else Coll.Some(K.State(s, ns, Coll.insert(ds, n, K.Dom(k, K.lastOf(h, rest), h, rest)), K.emit(ps, n, false), nx))
+          if K.hasSize(ds, n, k) then Coll.Some(st)
+          else Coll.Some(K.State(s, ns, Coll.insert(ds, n, K.Dom(k, K.lastOf(h, rest), h, rest)), K.emit(ps, n, K.Narrowed), nx))
 
-// the size of n's domain, -1 when it has none (no allocation)
-def K.domSizeAt(ds: Coll.IMap[K.Dom], n: I64): I64 = ds match
-  case Coll.Tip => -1
-  case Coll.Bin(_, k, d, l, r2) => if n < k then K.domSizeAt(l, n) else if n > k then K.domSizeAt(r2, n) else K.domSize(d)
+// n has a domain of size k (no allocation); false when n has no domain
+def K.hasSize(ds: Coll.IMap[K.Dom], n: I64, k: I64): Bool = ds match
+  case Coll.Tip => false
+  case Coll.Bin(_, key, d, l, r2) => if n < key then K.hasSize(l, n, k) else if n > key then K.hasSize(r2, n, k) else K.domSize(d) == k
 
 // t takes a value of xs and of the domain it already has
 def K.meet {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.domOf(st, t) match
@@ -161,16 +161,20 @@ def K.fire {r: Region} (st: K.State, c: K.Fd): Coll.Option[K.State] = c match
 // event per real change: a variable fixed (one value) or narrowed. a =/= propagator wakes on fix events only (it prunes
 // nothing before), the others on every change. monotone narrowing reaches the same fixpoint in any fair order (Apt
 // 1999), so the answers are those of full rounds (the s1 lib).
+enum K.Change:
+  case K.Fixed
+  case K.Narrowed
+
 enum K.Ev:
-  case K.Ev(v: I64, fixed: Bool)
+  case K.Ev(v: I64, change: K.Change)
 
 // the fd field of a state: the watch indexes (variable -> propagators) and the events not yet woken
 enum K.Props:
   case K.Props(fix: Coll.IMap[Coll.List[K.Fd]], any: Coll.IMap[Coll.List[K.Fd]], evs: Coll.List[K.Ev])
 
-def K.emit {r: Region} (ps: K.Props, n: I64, fixed: Bool): K.Props =
+def K.emit {r: Region} (ps: K.Props, n: I64, change: K.Change): K.Props =
   val K.Props(fx, an, evs) = ps
-  K.Props(fx, an, Coll.Cons(K.Ev(n, fixed), evs))
+  K.Props(fx, an, Coll.Cons(K.Ev(n, change), evs))
 
 def K.fdTerms {r: Region} (c: K.Fd): Coll.List[K.Term] = c match
   case K.FBin(_, x, y) => Coll.Cons(x, Coll.Cons(y, Coll.Nil))
@@ -202,10 +206,13 @@ def K.isNe(c: K.Fd): Bool = c match
 def K.wakeAll {r: Region} (ps: K.Props, evs: Coll.List[K.Ev], agenda: Coll.List[K.Fd]): Coll.List[K.Fd] = evs match
   case Coll.Nil => agenda
   case Coll.Cons(e, rest) =>
-    val K.Ev(n, fixed) = e
+    val K.Ev(n, change) = e
     val K.Props(fx, an, _) = ps
     val a1 = Coll.revOnto(K.watchers(an, n), agenda)
-    K.wakeAll(ps, rest, if fixed then Coll.revOnto(K.watchers(fx, n), a1) else a1)
+    val a2 = change match
+      case K.Fixed => Coll.revOnto(K.watchers(fx, n), a1)
+      case K.Narrowed => a1
+    K.wakeAll(ps, rest, a2)
 
 // fire the agenda; when it is empty, wake the events the fires left; done when both are empty
 def K.prop {r: Region} (st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = agenda match
@@ -251,7 +258,7 @@ def K.bound {r: Region} (s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State)
           if k == m then K.bound(s0, rest, st)
           else
             val K.Props(fx, an, evs) = ps
-            val moved = K.Props(Coll.insert(fx, k, Coll.revOnto(K.watchers(fx, m), K.watchers(fx, k))), Coll.insert(an, k, Coll.revOnto(K.watchers(an, m), K.watchers(an, k))), Coll.Cons(K.Ev(k, true), evs))
+            val moved = K.Props(Coll.insert(fx, k, Coll.revOnto(K.watchers(fx, m), K.watchers(fx, k))), Coll.insert(an, k, Coll.revOnto(K.watchers(an, m), K.watchers(an, k))), Coll.Cons(K.Ev(k, K.Fixed), evs))
             val st1 = K.State(s, ns, ds, moved, nx)
             val met: Coll.Option[K.State] = Coll.lookup(ds, m) match
               case Coll.None => Coll.Some(st1)
@@ -260,7 +267,7 @@ def K.bound {r: Region} (s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State)
               case Coll.None => Coll.None
               case Coll.Some(st2) => K.bound(s0, rest, st2)
         case _ =>
-          val st1 = K.State(s, ns, ds, K.emit(ps, m, true), nx)
+          val st1 = K.State(s, ns, ds, K.emit(ps, m, K.Fixed), nx)
           val met: Coll.Option[K.State] = Coll.lookup(ds, m) match
             case Coll.None => Coll.Some(st1)
             case Coll.Some(d) => K.meet(st1, K.Var(m), K.ints(d))
