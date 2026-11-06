@@ -15,9 +15,14 @@ enum D.Arg:
 enum D.Atom:
   case D.Atom(rel: Sym.Sym, args: Coll.List[D.Arg])
 
-// head :- body (positive atoms), over variables 0..nvars-1
+// a body literal: an atom that must hold, or one that must not (stratified negation)
+enum D.Lit:
+  case D.Pos(a: D.Atom)
+  case D.Neg(a: D.Atom)
+
+// head :- body
 enum D.Rule:
-  case D.Rule(head: D.Atom, body: Coll.List[D.Atom])
+  case D.Rule(head: D.Atom, body: Coll.List[D.Lit])
 
 enum D.Fact:
   case D.Fact(rel: Sym.Sym, vals: Coll.List[D.Val])
@@ -112,8 +117,9 @@ enum D.Use:
 enum D.CAtom:
   case D.CAtom(rel: I64, args: Coll.List[D.Arg])
 
+// a compiled rule: the positive atoms in order, the negated ones (filters once the positives bound every variable)
 enum D.CRule:
-  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom])
+  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom])
 
 def D.idOf(tab: Coll.List[Sym.Sym], s: Sym.Sym, i: I64): I64 = tab match
   case Coll.Nil => -1
@@ -128,11 +134,21 @@ def D.internAtoms {r: Region} (tab: Coll.List[Sym.Sym], as: Coll.List[D.Atom]): 
     val D.Atom(rel, _) = a
     D.internAtoms(D.intern(tab, rel), rest)
 
+def D.litAtom(l: D.Lit): D.Atom = l match
+  case D.Pos(a) => a
+  case D.Neg(a) => a
+
+def D.internLits {r: Region} (tab: Coll.List[Sym.Sym], ls: Coll.List[D.Lit]): Coll.List[Sym.Sym] = ls match
+  case Coll.Nil => tab
+  case Coll.Cons(l, rest) =>
+    val D.Atom(rel, _) = D.litAtom(l)
+    D.internLits(D.intern(tab, rel), rest)
+
 def D.internRules {r: Region} (tab: Coll.List[Sym.Sym], rs: Coll.List[D.Rule]): Coll.List[Sym.Sym] = rs match
   case Coll.Nil => tab
   case Coll.Cons(rl, rest) =>
     val D.Rule(h, b) = rl
-    D.internRules(D.internAtoms(tab, Coll.Cons(h, b)), rest)
+    D.internRules(D.internLits(D.internAtoms(tab, Coll.Cons(h, Coll.Nil)), b), rest)
 
 def D.internFacts {r: Region} (tab: Coll.List[Sym.Sym], fs: Coll.List[D.Fact]): Coll.List[Sym.Sym] = fs match
   case Coll.Nil => tab
@@ -144,15 +160,18 @@ def D.catom {r: Region} (tab: Coll.List[Sym.Sym], a: D.Atom): D.CAtom =
   val D.Atom(rel, args) = a
   D.CAtom(D.idOf(tab, rel, 0), args)
 
-def D.cbody {r: Region} (tab: Coll.List[Sym.Sym], as: Coll.List[D.Atom], acc: Coll.List[D.CAtom]): Coll.List[D.CAtom] = as match
+// the compiled atoms of the positive (pos = true) or the negated literals, in order
+def D.cbody {r: Region} (tab: Coll.List[Sym.Sym], ls: Coll.List[D.Lit], pos: Bool, acc: Coll.List[D.CAtom]): Coll.List[D.CAtom] = ls match
   case Coll.Nil => Coll.rev(acc)
-  case Coll.Cons(a, rest) => D.cbody(tab, rest, Coll.Cons(D.catom(tab, a), acc))
+  case Coll.Cons(l, rest) => l match
+    case D.Pos(a) => D.cbody(tab, rest, pos, if pos then Coll.Cons(D.catom(tab, a), acc) else acc)
+    case D.Neg(a) => D.cbody(tab, rest, pos, if pos then acc else Coll.Cons(D.catom(tab, a), acc))
 
 def D.crules {r: Region} (tab: Coll.List[Sym.Sym], rs: Coll.List[D.Rule], acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(rl, rest) =>
     val D.Rule(h, b) = rl
-    D.crules(tab, rest, Coll.Cons(D.CRule(D.catom(tab, h), D.cbody(tab, b, Coll.Nil)), acc))
+    D.crules(tab, rest, Coll.Cons(D.CRule(D.catom(tab, h), D.cbody(tab, b, true, Coll.Nil), D.cbody(tab, b, false, Coll.Nil)), acc))
 
 // ── joins ──
 enum D.Bound:
@@ -251,22 +270,37 @@ def D.heads {r: Region} (rels: Coll.IMap[D.Rel], h: D.CAtom, rd: I64, envs: Coll
         val rl = D.relOf(rels, rel)
         if D.has(rl, t) then D.heads(rels, h, rd, rest) else D.heads(Coll.insert(rels, rel, D.add(rl, rd, t)), h, rd, rest)
 
-// one rule in round rd: once per body position whose relation has recent rows. the joins read the relations as the
-// round began (rels0); the new rows go to rels
+// the envs whose negated atoms all fail: each tuple is in no round of its relation (a lower stratum, complete)
+def D.negOk {r: Region} (rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], e: Coll.IMap[D.Val]): Bool = negs match
+  case Coll.Nil => true
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(rel, args) = a
+    D.inst(e, args, Coll.Nil) match
+      case Coll.None => false
+      case Coll.Some(t) => if D.has(D.relOf(rels, rel), t) then false else D.negOk(rels, rest, e)
+
+def D.filterNeg {r: Region} (rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], envs: Coll.List[Coll.IMap[D.Val]], out: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = envs match
+  case Coll.Nil => out
+  case Coll.Cons(e, rest) => D.filterNeg(rels, negs, rest, if D.negOk(rels, negs, e) then Coll.Cons(e, out) else out)
+
+// one rule in round rd, once per body position whose relation has recent rows; the first round of a stratum reads
+// every row once (j = -1: all positions read both). the joins read the relations as the round began (rels0)
 def D.fireAt {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, bs: Coll.List[D.CAtom], j: I64, rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = bs match
   case Coll.Nil => rels
   case Coll.Cons(a, rest) =>
-    val D.CRule(h, body) = rl
     if D.recentOf(rels0, a) == 0 then D.fireAt(rels0, rl, rest, j + 1, rd, rels)
-    else
-      val e0: Coll.IMap[D.Val] = Coll.Tip
-      D.fireAt(rels0, rl, rest, j + 1, rd, D.heads(rels, h, rd, D.evalBody(rels0, body, j, 0, rd, Coll.Cons(e0, Coll.Nil))))
+    else D.fireAt(rels0, rl, rest, j + 1, rd, D.fireOnce(rels0, rl, j, rd, rels))
 
-def D.fireAll {r: Region} (rels0: Coll.IMap[D.Rel], rs: Coll.List[D.CRule], rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = rs match
+def D.fireOnce {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, j: I64, rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
+  val D.CRule(h, body, neg) = rl
+  val e0: Coll.IMap[D.Val] = Coll.Tip
+  D.heads(rels, h, rd, D.filterNeg(rels0, neg, D.evalBody(rels0, body, j, 0, rd, Coll.Cons(e0, Coll.Nil)), Coll.Nil))
+
+def D.fireAll {r: Region} (rels0: Coll.IMap[D.Rel], rs: Coll.List[D.CRule], rd: I64, first: Bool, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = rs match
   case Coll.Nil => rels
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body) = rl
-    D.fireAll(rels0, rest, rd, D.fireAt(rels0, rl, body, 0, rd, rels))
+    val D.CRule(_, body, _) = rl
+    D.fireAll(rels0, rest, rd, first, if first then D.fireOnce(rels0, rl, -1, rd, rels) else D.fireAt(rels0, rl, body, 0, rd, rels))
 
 // a round ends: this round's rows become the recent ones; the number of new rows in all relations
 def D.advance {r: Region} (rels: Coll.IMap[D.Rel], id: I64, k: I64, acc: Coll.IMap[D.Rel], news: I64): D.Next =
@@ -278,10 +312,80 @@ def D.advance {r: Region} (rels: Coll.IMap[D.Rel], id: I64, k: I64, acc: Coll.IM
 enum D.Next:
   case D.Next(rels: Coll.IMap[D.Rel], news: I64)
 
+// the relations after a stratum, and the next round number (stamps keep growing across strata)
+enum D.Stage:
+  case D.Stage(rels: Coll.IMap[D.Rel], rd: I64)
+
 // round rd reads rows of rounds < rd (the facts are round 0)
-def D.rounds {r: Region} (rs: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rd: I64, k: I64): Coll.IMap[D.Rel] =
-  val D.Next(rels2, news) = D.advance(D.fireAll(rels, rs, rd, rels), 0, k, Coll.Tip, 0)
-  if news == 0 then rels2 else D.rounds(rs, rels2, rd + 1, k)
+def D.rounds {r: Region} (rs: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rd: I64, k: I64, first: Bool): D.Stage =
+  val D.Next(rels2, news) = D.advance(D.fireAll(rels, rs, rd, first, rels), 0, k, Coll.Tip, 0)
+  if news == 0 then D.Stage(rels2, rd + 1) else D.rounds(rs, rels2, rd + 1, k, false)
+
+// ── strata: a head's stratum is at least each positive body relation's, above each negated one's ──
+def D.stOf(st: Coll.IMap[I64], id: I64): I64 = Coll.node(st, id) match
+  case Coll.Tip => 0
+  case Coll.Bin(_, _, s, _, _) => s
+
+def D.maxSt(st: Coll.IMap[I64], as: Coll.List[D.CAtom], plus: I64, m: I64): I64 = as match
+  case Coll.Nil => m
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(rel, _) = a
+    val s = D.stOf(st, rel) + plus
+    D.maxSt(st, rest, plus, if s > m then s else m)
+
+enum D.Raised:
+  case D.Raised(st: Coll.IMap[I64], changed: Bool)
+
+def D.raiseAll {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool): D.Raised = rs match
+  case Coll.Nil => D.Raised(st, changed)
+  case Coll.Cons(rl, rest) =>
+    val D.CRule(h, body, neg) = rl
+    val D.CAtom(hr, _) = h
+    val m = D.maxSt(st, neg, 1, D.maxSt(st, body, 0, 0))
+    if m > D.stOf(st, hr) then D.raiseAll(rest, Coll.insert(st, hr, m), true) else D.raiseAll(rest, st, changed)
+
+def D.topOf(st: Coll.IMap[I64], id: I64, k: I64, m: I64): I64 = if id == k then m else D.topOf(st, id + 1, k, if D.stOf(st, id) > m then D.stOf(st, id) else m)
+
+// raise until no stratum changes, or one passes k (a cycle through negation: a stratification has at most k strata)
+def D.strata {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64): Coll.IMap[I64] =
+  val D.Raised(st2, changed) = D.raiseAll(rs, st, false)
+  if !changed || D.topOf(st2, 0, k, 0) > k then st2 else D.strata(rs, st2, k)
+
+def D.overRel(st: Coll.IMap[I64], id: I64, k: I64): I64 = if id == k then -1 else if D.stOf(st, id) > k then id else D.overRel(st, id + 1, k)
+
+def D.rulesAt {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(rl, rest) =>
+    val D.CRule(h, _, _) = rl
+    val D.CAtom(hr, _) = h
+    D.rulesAt(rest, st, s, if D.stOf(st, hr) == s then Coll.Cons(rl, acc) else acc)
+
+def D.runStrata {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, top: I64, rels: Coll.IMap[D.Rel], rd: I64, k: I64): Coll.IMap[D.Rel] =
+  if s > top then rels
+  else
+    val D.Stage(rels2, rd2) = D.rounds(D.rulesAt(rs, st, s, Coll.Nil), rels, rd, k, true)
+    D.runStrata(rs, st, s + 1, top, rels2, rd2, k)
+
+// ── safety: every head variable and every variable of a negated atom occurs in a positive atom ──
+def D.allIn(vs: Coll.List[I64], bound: Coll.List[I64]): Bool = vs match
+  case Coll.Nil => true
+  case Coll.Cons(v, rest) => if D.memberI(v, bound) then D.allIn(rest, bound) else false
+
+def D.atomsVars {r: Region} (as: Coll.List[D.CAtom], acc: Coll.List[I64]): Coll.List[I64] = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(_, args) = a
+    D.atomsVars(rest, D.argVars(args, acc))
+
+// the head relation of the first unsafe rule, or -1
+def D.firstUnsafe {r: Region} (rs: Coll.List[D.CRule]): I64 = rs match
+  case Coll.Nil => -1
+  case Coll.Cons(rl, rest) =>
+    val D.CRule(h, body, neg) = rl
+    val D.CAtom(hr, hargs) = h
+    val bound = D.atomsVars(body, Coll.Nil)
+    if D.allIn(D.argVars(hargs, Coll.Nil), bound) && D.allIn(D.atomsVars(neg, Coll.Nil), bound) then D.firstUnsafe(rest) else hr
+
 
 // ── which columns need an index: per body atom (variables bound left to right, constants bound) its first bound
 // column, the one D.probe reads; no other column is ever indexed ──
@@ -317,7 +421,7 @@ def D.probesOf {r: Region} (body: Coll.List[D.CAtom], bound: Coll.List[I64], ics
 def D.probesAll {r: Region} (rs: Coll.List[D.CRule], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = rs match
   case Coll.Nil => ics
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body) = rl
+    val D.CRule(_, body, _) = rl
     D.probesAll(rest, D.probesOf(body, Coll.Nil, ics))
 
 def D.initRels {r: Region} (ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
@@ -336,13 +440,31 @@ def D.load {r: Region} (tab: Coll.List[Sym.Sym], fs: Coll.List[D.Fact], rels: Co
     val rl = D.relOf(rels, id)
     D.load(tab, rest, if D.has(rl, vals) then rels else Coll.insert(rels, id, D.add(rl, 0, vals)))
 
-// the least model of rules over facts (positive rules)
-def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Model =
+// a program's result: its model, or why it is not a program (an unsafe rule, a cycle through negation)
+enum D.Result:
+  case D.Solved(m: D.Model)
+  case D.Unsafe(rel: Sym.Sym)
+  case D.NegCycle(rel: Sym.Sym)
+
+def D.nthSym(tab: Coll.List[Sym.Sym], i: I64, fallback: Sym.Sym): Sym.Sym = tab match
+  case Coll.Nil => fallback
+  case Coll.Cons(h, t) => if i == 0 then h else D.nthSym(t, i - 1, fallback)
+
+// the model of rules over facts: strata in order, each to its fixpoint
+def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
   val tab = D.internFacts(D.internRules(Coll.Nil, rules), facts)
   val crs = D.crules(tab, rules, Coll.Nil)
   val k = Coll.length(tab)
-  val D.Next(rels, _) = D.advance(D.load(tab, facts, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip)), 0, k, Coll.Tip, 0)
-  D.Model(tab, D.rounds(crs, rels, 1, k))
+  val none = Sym.of("")
+  val bad = D.firstUnsafe(crs)
+  if bad >= 0 then D.Unsafe(D.nthSym(tab, bad, none))
+  else
+    val st = D.strata(crs, Coll.Tip, k)
+    val top = D.topOf(st, 0, k, 0)
+    if top > k then D.NegCycle(D.nthSym(tab, D.overRel(st, 0, k), none))
+    else
+      val D.Next(rels, _) = D.advance(D.load(tab, facts, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip)), 0, k, Coll.Tip, 0)
+      D.Solved(D.Model(tab, D.runStrata(crs, st, 0, top, rels, 1, k)))
 
 def D.rowsOf {r: Region} (rows: Coll.List[D.Row], acc: Coll.List[Coll.List[D.Val]]): Coll.List[Coll.List[D.Val]] = rows match
   case Coll.Nil => acc

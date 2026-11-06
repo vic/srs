@@ -1,32 +1,100 @@
-// s2 component 6 (Datalog core): transitive closure: a ring of 200 nodes (cyclic: 40000 paths, as lib/datalog.srs), a
-// chain of 10 (45 paths), and a rule with a constant (from0(Y) :- path(0, Y))
+// s2 component 6 (Datalog): transitive closure (a 10-chain: 45 paths, a 200-ring: 40000, as lib/datalog.srs; a rule
+// with a constant), then the cases of tests/datalog.srs: stratified negation, a negation cycle and unsafe rules
+// rejected, a repeated variable, a constant in a body atom, a negated atom over integers
 def T.v {r: Region} (n: I64): D.Arg = D.AVar(n)
-def T.a2 {r: Region} (rel: Sym.Sym, x: D.Arg, y: D.Arg): D.Atom = D.Atom(rel, Coll.Cons(x, Coll.Cons(y, Coll.Nil)))
+def T.s {r: Region} (x: Str): D.Val = D.VSym(Sym.of(x))
+def T.a1 {r: Region} (rel: Str, x: D.Arg): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(x, Coll.Nil))
+def T.a2 {r: Region} (rel: Str, x: D.Arg, y: D.Arg): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(x, Coll.Cons(y, Coll.Nil)))
+def T.p {r: Region} (a: D.Atom): D.Lit = D.Pos(a)
+def T.n {r: Region} (a: D.Atom): D.Lit = D.Neg(a)
+def T.b1 {r: Region} (x: D.Lit): Coll.List[D.Lit] = Coll.Cons(x, Coll.Nil)
+def T.b2 {r: Region} (x: D.Lit, y: D.Lit): Coll.List[D.Lit] = Coll.Cons(x, Coll.Cons(y, Coll.Nil))
+def T.f1 {r: Region} (rel: Str, x: D.Val): D.Fact = D.Fact(Sym.of(rel), Coll.Cons(x, Coll.Nil))
+def T.f2 {r: Region} (rel: Str, x: Str, y: Str): D.Fact = D.Fact(Sym.of(rel), Coll.Cons(T.s(x), Coll.Cons(T.s(y), Coll.Nil)))
 
-def T.edges {r: Region} (e: Sym.Sym, i: I64, n: I64, ring: Bool, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
+def T.edges {r: Region} (i: I64, n: I64, ring: Bool, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
   if i == n then acc
   else if !ring && i == n - 1 then acc
-  else T.edges(e, i + 1, n, ring, Coll.Cons(D.Fact(e, Coll.Cons(D.VInt(i), Coll.Cons(D.VInt((i + 1) % n), Coll.Nil))), acc))
+  else T.edges(i + 1, n, ring, Coll.Cons(D.Fact(Sym.of("edge"), Coll.Cons(D.VInt(i), Coll.Cons(D.VInt((i + 1) % n), Coll.Nil))), acc))
 
-// path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).  from0(Y) :- path(0, Y).
-def T.rules {r: Region} (e: Sym.Sym, p: Sym.Sym, f: Sym.Sym): Coll.List[D.Rule] =
-  val r1 = D.Rule(T.a2(p, T.v(0), T.v(1)), Coll.Cons(T.a2(e, T.v(0), T.v(1)), Coll.Nil))
-  val r2 = D.Rule(T.a2(p, T.v(0), T.v(2)), Coll.Cons(T.a2(e, T.v(0), T.v(1)), Coll.Cons(T.a2(p, T.v(1), T.v(2)), Coll.Nil)))
-  val r3 = D.Rule(D.Atom(f, Coll.Cons(T.v(1), Coll.Nil)), Coll.Cons(T.a2(p, D.AVal(D.VInt(0)), T.v(1)), Coll.Nil))
-  Coll.Cons(r1, Coll.Cons(r2, Coll.Cons(r3, Coll.Nil)))
+// path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).
+def T.tc {r: Region} (): Coll.List[D.Rule] =
+  val r1 = D.Rule(T.a2("path", T.v(0), T.v(1)), T.b1(T.p(T.a2("edge", T.v(0), T.v(1)))))
+  val r2 = D.Rule(T.a2("path", T.v(0), T.v(2)), T.b2(T.p(T.a2("edge", T.v(0), T.v(1))), T.p(T.a2("path", T.v(1), T.v(2)))))
+  Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
 
-def T.run {r: Region} (n: I64, ring: Bool): Unit =
-  val e = Sym.of("edge")
-  val p = Sym.of("path")
-  val f = Sym.of("from0")
-  val m = D.solve(T.rules(e, p, f), T.edges(e, 0, n, ring, Coll.Nil))
-  rt_print_i64(Coll.length(D.tuples(m, p)))
-  rt_print(" ")
-  rt_print_i64(Coll.length(D.tuples(m, f)))
+def T.count {r: Region} (res: D.Result, rel: Str): Unit = res match
+  case D.Solved(m) => rt_print_i64(Coll.length(D.tuples(m, Sym.of(rel))))
+  case D.Unsafe(p) =>
+    rt_print("unsafe ")
+    rt_print(Sym.str(p))
+  case D.NegCycle(p) =>
+    rt_print("negcycle ")
+    rt_print(Sym.str(p))
+
+def T.showVal(v: D.Val): Unit = v match
+  case D.VSym(s) => rt_print(Sym.str(s))
+  case D.VInt(n) => rt_print_i64(n)
+
+def T.showTuple(t: Coll.List[D.Val], first: Bool): Unit = t match
+  case Coll.Nil => rt_print(")")
+  case Coll.Cons(v, rest) =>
+    if !first then rt_print(", ") else ()
+    T.showVal(v)
+    T.showTuple(rest, false)
+
+def T.showAll(rel: Str, ts: Coll.List[Coll.List[D.Val]]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(t, rest) =>
+    rt_print(rel)
+    rt_print("(")
+    T.showTuple(t, true)
+    rt_print(" ")
+    T.showAll(rel, rest)
+
+// the facts of rel (oldest first), or why there is no model
+def T.show {r: Region} (res: D.Result, rel: Str): Unit =
+  res match
+    case D.Solved(m) => T.showAll(rel, D.tuples(m, Sym.of(rel)))
+    case _ => T.count(res, rel)
   rt_print("\n")
 
 def main(): I64 =
   handle r = Arena()
-  T.run(10, false)
-  T.run(200, true)
+  val from0 = D.Rule(T.a1("from0", T.v(1)), T.b1(T.p(T.a2("path", D.AVal(D.VInt(0)), T.v(1)))))
+  val tc0 = Coll.Cons(from0, T.tc())
+  val c10 = D.solve(tc0, T.edges(0, 10, false, Coll.Nil))
+  T.count(c10, "path")
+  rt_print(" ")
+  T.count(c10, "from0")
+  rt_print("\n")
+  val r200 = D.solve(tc0, T.edges(0, 200, true, Coll.Nil))
+  T.count(r200, "path")
+  rt_print(" ")
+  T.count(r200, "from0")
+  rt_print("\n")
+  val x = T.v(0)
+  val y = T.v(1)
+  val edges = Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "b", "c"), Coll.Cons(T.f2("edge", "c", "d"), Coll.Nil)))
+  T.show(D.solve(T.tc(), edges), "path")
+  // unreach(X) :- node(X), not reach(X).  reach(Y) :- reach(X), edge(X, Y).  reach(a).  nodes a..e
+  val nodes = Coll.Cons(T.f1("node", T.s("a")), Coll.Cons(T.f1("node", T.s("b")), Coll.Cons(T.f1("node", T.s("c")), Coll.Cons(T.f1("node", T.s("d")), Coll.Cons(T.f1("node", T.s("e")), edges)))))
+  val db = Coll.Cons(T.f1("reach", T.s("a")), nodes)
+  val un = Coll.Cons(D.Rule(T.a1("unreach", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("reach", x)))), Coll.Cons(D.Rule(T.a1("reach", y), T.b2(T.p(T.a1("reach", x)), T.p(T.a2("edge", x, y)))), Coll.Nil))
+  T.show(D.solve(un, db), "unreach")
+  // p(X) :- node(X), not q(X).  q(X) :- node(X), not p(X).
+  val nc = Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Nil))
+  T.show(D.solve(nc, nodes), "p")
+  // p(X) :- node(Y).  p(Y) :- node(Y), not q(X).
+  T.show(D.solve(Coll.Cons(D.Rule(T.a1("p", x), T.b1(T.p(T.a1("node", y)))), Coll.Nil), nodes), "p")
+  T.show(D.solve(Coll.Cons(D.Rule(T.a1("p", y), T.b2(T.p(T.a1("node", y)), T.n(T.a1("q", x)))), Coll.Nil), nodes), "p")
+  // self(X) :- edge(X, X).  from_a(X) :- edge(a, X).  with edge(e, e)
+  val loops = Coll.Cons(T.f2("edge", "e", "e"), edges)
+  val sc = Coll.Cons(D.Rule(T.a1("self", x), T.b1(T.p(T.a2("edge", x, x)))), Coll.Cons(D.Rule(T.a1("from_a", x), T.b1(T.p(T.a2("edge", D.AVal(T.s("a")), x)))), Coll.Nil))
+  val m = D.solve(sc, loops)
+  T.show(m, "self")
+  T.show(m, "from_a")
+  // big(X) :- num(X), not small(X).  num(1) num(2) small(1)
+  val nums = Coll.Cons(T.f1("num", D.VInt(1)), Coll.Cons(T.f1("num", D.VInt(2)), Coll.Cons(T.f1("small", D.VInt(1)), Coll.Nil)))
+  T.show(D.solve(Coll.Cons(D.Rule(T.a1("big", x), T.b2(T.p(T.a1("num", x)), T.n(T.a1("small", x)))), Coll.Nil), nums), "big")
   0
