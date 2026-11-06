@@ -148,9 +148,24 @@ enum D.CAtom:
   case D.CAtom(rel: D.RelRef, args: Coll.List[D.Arg])
 
 // a compiled rule: the positive atoms in order, the negated ones (filters once the positives bound every variable);
-// id = its position in the list given to D.solve, the name a proof shows
+// id = its position in the list given to D.solve, the name a proof shows; its join plans (below)
 enum D.CRule:
-  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom], id: I64)
+  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom], id: I64, plans: Coll.List[D.Plan])
+
+// a join plan (semi-naive, as Souffle): for a body atom whose relation a rule derives, that atom first reading only
+// the recent rows, so its few new rows bind the variables the others probe; then the other atoms in written order,
+// those before it reading stable rows, those after it all older rows. each atom reads the same rows as in written
+// order, so the derivations are the same; only the work changes. made once per rule: no position index exists
+enum D.Plan:
+  case D.Plan(first: D.CAtom, rest: Coll.List[D.Step])
+
+enum D.Step:
+  case D.ReadOld(a: D.CAtom)
+  case D.ReadAll(a: D.CAtom)
+
+// a rule with its atoms compiled, before its plans (they need every head of the program)
+enum D.Draft:
+  case D.Draft(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom], id: I64)
 
 // a value made while the name table grows
 enum D.With [A: Type]:
@@ -197,14 +212,45 @@ def D.cbody {r: Region} (tab: Coll.List[D.RelRef], ls: Coll.List[D.Lit], pos: Co
       D.cbody(tab2, rest, pos, Coll.Cons(ca, neg))
 
 // rule i of rs has id i: its position in the list given to D.solve; the head's name gets its id first
-def D.crules {r: Region} (tab: Coll.List[D.RelRef], rs: Coll.List[D.Rule], i: I64, acc: Coll.List[D.CRule]): D.With[Coll.List[D.CRule]] = rs match
+def D.drafts {r: Region} (tab: Coll.List[D.RelRef], rs: Coll.List[D.Rule], i: I64, acc: Coll.List[D.Draft]): D.With[Coll.List[D.Draft]] = rs match
   case Coll.Nil => D.With(tab, Coll.rev(acc))
   case Coll.Cons(rl, rest) =>
     val D.Rule(h, b) = rl
     val D.With(tab2, ch) = D.catom(tab, h)
     val D.With(tab3, bd) = D.cbody(tab2, b, Coll.Nil, Coll.Nil)
     val D.Body(pos, neg) = bd
-    D.crules(tab3, rest, i + 1, Coll.Cons(D.CRule(ch, pos, neg, i), acc))
+    D.drafts(tab3, rest, i + 1, Coll.Cons(D.Draft(ch, pos, neg, i), acc))
+
+def D.headIds {r: Region} (ds: Coll.List[D.Draft], acc: Coll.List[I64]): Coll.List[I64] = ds match
+  case Coll.Nil => acc
+  case Coll.Cons(d, rest) =>
+    val D.Draft(h, _, _, _) = d
+    val D.CAtom(ref, _) = h
+    D.headIds(rest, Coll.Cons(D.idOfRef(ref), acc))
+
+// each draft with its plans: one per body atom whose relation is a head (an input relation has recent rows only
+// before the first pass, which reads in written order, so a plan for it would never run)
+def D.crules {r: Region} (ds: Coll.List[D.Draft], heads: Coll.List[I64], acc: Coll.List[D.CRule]): Coll.List[D.CRule] = ds match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(d, rest) =>
+    val D.Draft(h, body, neg, i) = d
+    D.crules(rest, heads, Coll.Cons(D.CRule(h, body, neg, i, D.plans(body, body, heads, 0, Coll.Nil)), acc))
+
+// the plans for the atoms of xs (xs = the suffix of body from position j)
+def D.plans {r: Region} (body: Coll.List[D.CAtom], xs: Coll.List[D.CAtom], heads: Coll.List[I64], j: I64, acc: Coll.List[D.Plan]): Coll.List[D.Plan] = xs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(ref, _) = a
+    if D.memberI(D.idOfRef(ref), heads) then D.plans(body, rest, heads, j + 1, Coll.Cons(D.Plan(a, D.steps(body, j, 0, Coll.Nil)), acc))
+    else D.plans(body, rest, heads, j + 1, acc)
+
+// the other atoms of body around position j, in written order
+def D.steps {r: Region} (body: Coll.List[D.CAtom], j: I64, i: I64, acc: Coll.List[D.Step]): Coll.List[D.Step] = body match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(a, rest) =>
+    if i < j then D.steps(rest, j, i + 1, Coll.Cons(D.ReadOld(a), acc))
+    else if i == j then D.steps(rest, j, i + 1, acc)
+    else D.steps(rest, j, i + 1, Coll.Cons(D.ReadAll(a), acc))
 
 // ── joins ──
 enum D.Bound:
@@ -273,43 +319,25 @@ def D.joinAtom {r: Region} (rels: Coll.IMap[D.Rel], a: D.CAtom, u: D.Use, rd: I6
     val rel = D.idOfRef(relRef)
     D.joinAtom(rels, a, u, rd, rest, D.matchRows(e, args, D.cands(D.relOf(rels, rel), D.probe(e, args, 0)), u, rd, out))
 
-// which rows each body position reads: all older rows everywhere (the first round of a stratum, and D.why), or the
-// recent rows at position j: atoms before j read stable rows, j recent ones, atoms after both
-enum D.Delta:
-  case D.AllFull
-  case D.RecentAt(j: I64)
-
-// a body position in a plan: joined already (the recent atom, joined first), or still to read stable or all rows
-enum D.Slot:
-  case D.Joined
-  case D.ReadStable
-  case D.ReadFull
-
-def D.slotAt(d: D.Delta, i: I64): D.Slot = d match
-  case D.AllFull => D.ReadFull
-  case D.RecentAt(j) => if i < j then D.ReadStable else if i == j then D.Joined else D.ReadFull
-
-def D.atomAt {r: Region} (body: Coll.List[D.CAtom], j: I64): Coll.Option[D.CAtom] = body match
-  case Coll.Nil => Coll.None
-  case Coll.Cons(a, rest) => if j == 0 then Coll.Some(a) else D.atomAt(rest, j - 1)
-
-// the join plan (semi-naive, as Souffle): the recent atom first, so its few new rows bind the variables the other
-// atoms probe; then the others in written order. each atom reads the same rows in any order, so the derivations
-// are the same; only the work changes. AllFull: written order
-def D.evalBody {r: Region} (rels: Coll.IMap[D.Rel], body: Coll.List[D.CAtom], d: D.Delta, rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = d match
-  case D.AllFull => D.joinRest(rels, body, d, 0, rd, envs)
-  case D.RecentAt(j) => D.atomAt(body, j) match
-    case Coll.None => Coll.Nil
-    case Coll.Some(a) => D.joinRest(rels, body, d, 0, rd, D.joinAtom(rels, a, D.Recent, rd, envs, Coll.Nil))
-
-def D.joinRest {r: Region} (rels: Coll.IMap[D.Rel], body: Coll.List[D.CAtom], d: D.Delta, i: I64, rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = body match
+// a body evaluated in written order, every atom reading all older rows: the first round of a stratum, and D.why
+def D.evalAll {r: Region} (rels: Coll.IMap[D.Rel], body: Coll.List[D.CAtom], rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = body match
   case Coll.Nil => envs
   case Coll.Cons(a, rest) => envs match
     case Coll.Nil => Coll.Nil
-    case Coll.Cons(_, _) => D.slotAt(d, i) match
-      case D.Joined => D.joinRest(rels, rest, d, i + 1, rd, envs)
-      case D.ReadStable => D.joinRest(rels, rest, d, i + 1, rd, D.joinAtom(rels, a, D.Stable, rd, envs, Coll.Nil))
-      case D.ReadFull => D.joinRest(rels, rest, d, i + 1, rd, D.joinAtom(rels, a, D.Full, rd, envs, Coll.Nil))
+    case Coll.Cons(_, _) => D.evalAll(rels, rest, rd, D.joinAtom(rels, a, D.Full, rd, envs, Coll.Nil))
+
+// a plan: its recent atom first, then its steps
+def D.evalPlan {r: Region} (rels: Coll.IMap[D.Rel], p: D.Plan, rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] =
+  val D.Plan(first, steps) = p
+  D.joinSteps(rels, steps, rd, D.joinAtom(rels, first, D.Recent, rd, envs, Coll.Nil))
+
+def D.joinSteps {r: Region} (rels: Coll.IMap[D.Rel], steps: Coll.List[D.Step], rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = steps match
+  case Coll.Nil => envs
+  case Coll.Cons(s, rest) => envs match
+    case Coll.Nil => Coll.Nil
+    case Coll.Cons(_, _) => s match
+      case D.ReadOld(a) => D.joinSteps(rels, rest, rd, D.joinAtom(rels, a, D.Stable, rd, envs, Coll.Nil))
+      case D.ReadAll(a) => D.joinSteps(rels, rest, rd, D.joinAtom(rels, a, D.Full, rd, envs, Coll.Nil))
 
 def D.recentOf {r: Region} (rels: Coll.IMap[D.Rel], a: D.CAtom): I64 =
   val D.CAtom(relRef, _) = a
@@ -350,20 +378,22 @@ def D.filterNeg {r: Region} (rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], e
   case Coll.Nil => out
   case Coll.Cons(e, rest) => D.filterNeg(rels, negs, rest, if D.negOk(rels, negs, e) then Coll.Cons(e, out) else out)
 
-// one rule in round rd, once per body position whose relation has recent rows. the joins read the relations as the
-// round began (rels0)
-def D.fireAt {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, bs: Coll.List[D.CAtom], j: I64, rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = bs match
+// one rule in round rd, once per plan whose recent atom's relation has recent rows. the joins read the relations as
+// the round began (rels0)
+def D.fireAt {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, ps: Coll.List[D.Plan], rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = ps match
   case Coll.Nil => rels
-  case Coll.Cons(a, rest) =>
-    if D.recentOf(rels0, a) == 0 then D.fireAt(rels0, rl, rest, j + 1, rd, rels)
-    else D.fireAt(rels0, rl, rest, j + 1, rd, D.fireOnce(rels0, rl, D.RecentAt(j), rd, rels))
+  case Coll.Cons(p, rest) =>
+    val D.Plan(first, _) = p
+    val e0: Coll.IMap[D.Val] = Coll.Tip
+    if D.recentOf(rels0, first) == 0 then D.fireAt(rels0, rl, rest, rd, rels)
+    else D.fireAt(rels0, rl, rest, rd, D.fireWith(rels0, rl, D.evalPlan(rels0, p, rd, Coll.Cons(e0, Coll.Nil)), rd, rels))
 
-def D.fireOnce {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, d: D.Delta, rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
-  val D.CRule(h, body, neg, _) = rl
-  val e0: Coll.IMap[D.Val] = Coll.Tip
-  D.heads(rels, h, rl, rd, D.filterNeg(rels0, neg, D.evalBody(rels0, body, d, rd, Coll.Cons(e0, Coll.Nil)), Coll.Nil))
+// the body matches envs of rule rl, filtered by its negated atoms, as head rows of round rd
+def D.fireWith {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, envs: Coll.List[Coll.IMap[D.Val]], rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
+  val D.CRule(h, _, neg, _, _) = rl
+  D.heads(rels, h, rl, rd, D.filterNeg(rels0, neg, envs, Coll.Nil))
 
-// the first round of a stratum reads every row once; the next rounds join the recent rows at each position in turn
+// the first round of a stratum reads every row once; the next rounds run each rule's plans
 enum D.Pass:
   case D.FirstPass
   case D.NextPass
@@ -371,10 +401,11 @@ enum D.Pass:
 def D.fireAll {r: Region} (rels0: Coll.IMap[D.Rel], rs: Coll.List[D.CRule], rd: I64, pass: D.Pass, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = rs match
   case Coll.Nil => rels
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body, _, _) = rl
+    val D.CRule(_, body, _, _, plans) = rl
+    val e0: Coll.IMap[D.Val] = Coll.Tip
     val rels2 = pass match
-      case D.FirstPass => D.fireOnce(rels0, rl, D.AllFull, rd, rels)
-      case D.NextPass => D.fireAt(rels0, rl, body, 0, rd, rels)
+      case D.FirstPass => D.fireWith(rels0, rl, D.evalAll(rels0, body, rd, Coll.Cons(e0, Coll.Nil)), rd, rels)
+      case D.NextPass => D.fireAt(rels0, rl, plans, rd, rels)
     D.fireAll(rels0, rest, rd, pass, rels2)
 
 // a round ends: this round's rows become the recent ones; the number of new rows in all relations
@@ -419,7 +450,7 @@ enum D.Raised:
 def D.raiseAll {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool): D.Raised = rs match
   case Coll.Nil => D.Raised(st, changed)
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, body, neg, _) = rl
+    val D.CRule(h, body, neg, _, _) = rl
     val D.CAtom(hrRef, _) = h
     val hr = D.idOfRef(hrRef)
     val m = D.maxSt(st, neg, 1, D.maxSt(st, body, 0, 0))
@@ -441,7 +472,7 @@ def D.overHead {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64, 
       val name = D.nameOfRef(nameRef)
       Coll.Some(name)
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, _, _, _) = rl
+    val D.CRule(h, _, _, _, _) = rl
     val D.CAtom(hrRef, _) = h
     val hr = D.idOfRef(hrRef)
     if D.stOf(st, hr) <= k then D.overHead(rest, st, k, best) else D.overHead(rest, st, k, D.smaller(h, best))
@@ -458,7 +489,7 @@ def D.smaller {r: Region} (h: D.CAtom, best: Coll.Option[D.CAtom]): Coll.Option[
 def D.rulesAt {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, _, _, _) = rl
+    val D.CRule(h, _, _, _, _) = rl
     val D.CAtom(hrRef, _) = h
     val hr = D.idOfRef(hrRef)
     D.rulesAt(rest, st, s, if D.stOf(st, hr) == s then Coll.Cons(rl, acc) else acc)
@@ -484,7 +515,7 @@ def D.atomsVars {r: Region} (as: Coll.List[D.CAtom], acc: Coll.List[I64]): Coll.
 def D.firstUnsafe {r: Region} (rs: Coll.List[D.CRule]): Coll.Option[Sym.Sym] = rs match
   case Coll.Nil => Coll.None
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, body, neg, _) = rl
+    val D.CRule(h, body, neg, _, _) = rl
     val D.CAtom(nameRef, hargs) = h
     val name = D.nameOfRef(nameRef)
     val bound = D.atomsVars(body, Coll.Nil)
@@ -529,48 +560,31 @@ def D.probeAtom {r: Region} (a: D.CAtom, bound: Coll.List[I64], ics: Coll.IMap[C
     case Coll.None => ics
     case Coll.Some(c) => if D.memberI(c, old) then ics else Coll.insert(ics, rel, Coll.Cons(c, old))
 
-// the plan with the recent atom at j (D.evalBody): atom j with nothing bound, then the others in written order
-def D.probesPlan {r: Region} (body: Coll.List[D.CAtom], j: I64, ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = D.atomAt(body, j) match
-  case Coll.None => ics
-  case Coll.Some(a) =>
+// the probes of a plan: its recent atom with nothing bound, then its steps in order
+def D.probesPlan {r: Region} (p: D.Plan, ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] =
+  val D.Plan(first, steps) = p
+  val D.CAtom(_, args) = first
+  D.probesSteps(steps, D.argVars(args, Coll.Nil), D.probeAtom(first, Coll.Nil, ics))
+
+def D.probesSteps {r: Region} (steps: Coll.List[D.Step], bound: Coll.List[I64], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = steps match
+  case Coll.Nil => ics
+  case Coll.Cons(s, rest) =>
+    val a: D.CAtom = s match
+      case D.ReadOld(x) => x
+      case D.ReadAll(x) => x
     val D.CAtom(_, args) = a
-    D.probesSkip(body, j, 0, D.argVars(args, Coll.Nil), D.probeAtom(a, Coll.Nil, ics))
+    D.probesSteps(rest, D.argVars(args, bound), D.probeAtom(a, bound, ics))
 
-def D.probesSkip {r: Region} (body: Coll.List[D.CAtom], j: I64, i: I64, bound: Coll.List[I64], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = body match
+def D.probesPlans {r: Region} (ps: Coll.List[D.Plan], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = ps match
   case Coll.Nil => ics
-  case Coll.Cons(a, rest) =>
-    if i == j then D.probesSkip(rest, j, i + 1, bound, ics)
-    else
-      val D.CAtom(_, args) = a
-      D.probesSkip(rest, j, i + 1, D.argVars(args, bound), D.probeAtom(a, bound, ics))
+  case Coll.Cons(p, rest) => D.probesPlans(rest, D.probesPlan(p, ics))
 
-// the plans of a body: one per position whose relation some rule derives (heads); an input relation has recent rows
-// only before the first pass, which reads in written order, so its plan would never run (and its probes would build
-// indexes nobody reads)
-def D.probesPlans {r: Region} (body: Coll.List[D.CAtom], heads: Coll.List[I64], j: I64, n: I64, ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] =
-  if j == n then ics
-  else
-    val ics2 = D.atomAt(body, j) match
-      case Coll.None => ics
-      case Coll.Some(a) =>
-        val D.CAtom(relRef, _) = a
-        val rel = D.idOfRef(relRef)
-        if D.memberI(rel, heads) then D.probesPlan(body, j, ics) else ics
-    D.probesPlans(body, heads, j + 1, n, ics2)
-
-def D.headIds {r: Region} (rs: Coll.List[D.CRule], acc: Coll.List[I64]): Coll.List[I64] = rs match
-  case Coll.Nil => acc
-  case Coll.Cons(rl, rest) =>
-    val D.CRule(h, _, _, _) = rl
-    val D.CAtom(relRef, _) = h
-    val rel = D.idOfRef(relRef)
-    D.headIds(rest, Coll.Cons(rel, acc))
-
-def D.probesAll {r: Region} (rs: Coll.List[D.CRule], heads: Coll.List[I64], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = rs match
+// the probes of every rule: written order (the first pass, D.why) and each plan
+def D.probesAll {r: Region} (rs: Coll.List[D.CRule], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = rs match
   case Coll.Nil => ics
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body, _, _) = rl
-    D.probesAll(rest, heads, D.probesPlans(body, heads, 0, Coll.length(body), D.probesOf(body, Coll.Nil, ics)))
+    val D.CRule(_, body, _, _, plans) = rl
+    D.probesAll(rest, D.probesPlans(plans, D.probesOf(body, Coll.Nil, ics)))
 
 def D.initRels {r: Region} (ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
   if id == k then acc
@@ -599,11 +613,12 @@ enum D.Result:
 // the model of rules over facts: strata in order, each to its fixpoint. ids: the rules' names in written order, then
 // the names only facts use
 def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
-  val D.With(tab1, crs) = D.crules(Coll.Nil, rules, 0, Coll.Nil)
+  val D.With(tab1, ds) = D.drafts(Coll.Nil, rules, 0, Coll.Nil)
+  val crs = D.crules(ds, D.headIds(ds, Coll.Nil), Coll.Nil)
   D.firstUnsafe(crs) match
     case Coll.Some(bad) => D.Unsafe(bad)
     case Coll.None =>
-      val D.With(tab, rels0) = D.load(tab1, facts, D.initRels(D.probesAll(crs, D.headIds(crs, Coll.Nil), Coll.Tip), 0, Coll.length(tab1), Coll.Tip))
+      val D.With(tab, rels0) = D.load(tab1, facts, D.initRels(D.probesAll(crs, Coll.Tip), 0, Coll.length(tab1), Coll.Tip))
       val k = Coll.length(tab)
       val st = D.strata(crs, Coll.Tip, k)
       D.overHead(crs, st, k, Coll.None) match
@@ -656,12 +671,12 @@ def D.proofOf {r: Region} (rels: Coll.IMap[D.Rel], ref: D.RelRef, t: Coll.List[D
       case D.Made(at, rl, _) => D.byRule(rels, rl, rel, at, t)
 
 def D.byRule {r: Region} (rels: Coll.IMap[D.Rel], rl: D.CRule, rel: Sym.Sym, at: I64, t: Coll.List[D.Val]): Coll.Option[D.Proof] =
-  val D.CRule(h, body, neg, i) = rl
+  val D.CRule(h, body, neg, i, _) = rl
   val D.CAtom(_, hargs) = h
   val e0: Coll.IMap[D.Val] = Coll.Tip
   D.matchT(e0, hargs, t) match
     case Coll.None => Coll.None
-    case Coll.Some(e) => D.evalBody(rels, body, D.AllFull, at, Coll.Cons(e, Coll.Nil)) match
+    case Coll.Some(e) => D.evalAll(rels, body, at, Coll.Cons(e, Coll.Nil)) match
       case Coll.Nil => Coll.None
       case Coll.Cons(e2, _) => D.premises(rels, body, neg, e2, Coll.Nil) match
         case Coll.None => Coll.None
