@@ -1,0 +1,32 @@
+// s2 component 6 (Datalog core): transitive closure: a ring of 200 nodes (cyclic: 40000 paths, as lib/datalog.srs), a
+// chain of 10 (45 paths), and a rule with a constant (from0(Y) :- path(0, Y))
+def T.v {r: Region} (n: I64): D.Arg = D.AVar(n)
+def T.a2 {r: Region} (rel: Sym.Sym, x: D.Arg, y: D.Arg): D.Atom = D.Atom(rel, Coll.Cons(x, Coll.Cons(y, Coll.Nil)))
+
+def T.edges {r: Region} (e: Sym.Sym, i: I64, n: I64, ring: Bool, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
+  if i == n then acc
+  else if !ring && i == n - 1 then acc
+  else T.edges(e, i + 1, n, ring, Coll.Cons(D.Fact(e, Coll.Cons(D.VInt(i), Coll.Cons(D.VInt((i + 1) % n), Coll.Nil))), acc))
+
+// path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).  from0(Y) :- path(0, Y).
+def T.rules {r: Region} (e: Sym.Sym, p: Sym.Sym, f: Sym.Sym): Coll.List[D.Rule] =
+  val r1 = D.Rule(T.a2(p, T.v(0), T.v(1)), Coll.Cons(T.a2(e, T.v(0), T.v(1)), Coll.Nil))
+  val r2 = D.Rule(T.a2(p, T.v(0), T.v(2)), Coll.Cons(T.a2(e, T.v(0), T.v(1)), Coll.Cons(T.a2(p, T.v(1), T.v(2)), Coll.Nil)))
+  val r3 = D.Rule(D.Atom(f, Coll.Cons(T.v(1), Coll.Nil)), Coll.Cons(T.a2(p, D.AVal(D.VInt(0)), T.v(1)), Coll.Nil))
+  Coll.Cons(r1, Coll.Cons(r2, Coll.Cons(r3, Coll.Nil)))
+
+def T.run {r: Region} (n: I64, ring: Bool): Unit =
+  val e = Sym.of("edge")
+  val p = Sym.of("path")
+  val f = Sym.of("from0")
+  val m = D.solve(T.rules(e, p, f), T.edges(e, 0, n, ring, Coll.Nil))
+  rt_print_i64(Coll.length(D.tuples(m, p)))
+  rt_print(" ")
+  rt_print_i64(Coll.length(D.tuples(m, f)))
+  rt_print("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  T.run(10, false)
+  T.run(200, true)
+  0
