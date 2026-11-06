@@ -722,7 +722,7 @@ def chkCtor {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, c: Node, e: Node, w
   while !isNil(a) do
     val ft = kid(head(fs), 0)
     val w = applyTy(sub, ft)
-    val x = chk(ds, env, gam, head(a), if mentions(tps, w) then NoNode else w)
+    val x = chk(ds, env, gam, head(a), if openIn(tps, sub, ft) then NoNode else w)
     if mentions(tps, ft) then sub = matchTy(tps, ft, tgTy(x), sub, line)
     else if !tyEq(tgTy(x), ft) then needAssign(tgTy(x), ft, line)
     else ()
@@ -867,7 +867,7 @@ def chkCallOf {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, f: Node, e: Node,
     if mentions(tps, pt) then
       // the param type names [] binders: the arg type matches it, binding them; bound ones must agree
       val w = applyTy(sub, pt)
-      val x = chk(ds, env, gam, head(a), if mentions(tps, w) then NoNode else w)
+      val x = chk(ds, env, gam, head(a), if openIn(tps, sub, pt) then NoNode else w)
       gam = tgGam(x)
       a2 = NCons(tgE(x), a2)
       sub = matchTy(tps, pt, tgTy(x), sub, line)
@@ -939,6 +939,10 @@ def zipBind {r: Region} (tps: Nodes, ts: Nodes): Nodes =
 // t names a [] binder of tps, whole or inside T[args]
 def mentions(tps: Nodes, t: Node): Bool = isTP(tps, t) || anyMentions(tps, tyArgs(t))
 def anyMentions(tps: Nodes, ts: Nodes): Bool = if isNil(ts) then false else mentions(tps, head(ts)) || anyMentions(tps, tail(ts))
+// the callee type t (before sub) names a [] binder of tps that sub does not bind yet (vic-m5r.16): never test a type
+// after sub, it holds the caller's types, and a caller binder may have the name of a callee binder
+def openIn(tps: Nodes, sub: Nodes, t: Node): Bool = (isTP(tps, t) && !found(find(sub, Binder, text(t)))) || anyOpen(tps, sub, tyArgs(t))
+def anyOpen(tps: Nodes, sub: Nodes, ts: Nodes): Bool = if isNil(ts) then false else openIn(tps, sub, head(ts)) || anyOpen(tps, sub, tail(ts))
 
 // sub extended so the pattern p (it may name [] binders tps) is the type a: one-sided unify (a names none of tps)
 def matchTy {r: Region} (tps: Nodes, p: Node, a: Node, sub: Nodes, line: I64): Nodes =

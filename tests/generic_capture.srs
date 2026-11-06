@@ -1,0 +1,25 @@
+// pass: a caller binder with the name of a callee binder (vic-m5r.16): rev's A is not onto's A; the nullary G.N gets
+// its expected type G.L[A] from the caller; was 'cannot infer A' (also with explicit onto[A])
+enum G.L [A: Type]:
+  case G.N
+  case G.C(h: A, t: G.L[A])
+
+def G.onto [A: Type] {r: Region} (xs: G.L[A], acc: G.L[A]): G.L[A] = xs match
+  case G.N => acc
+  case G.C(h, t) => G.onto(t, G.C(h, acc))
+
+def G.rev [A: Type] {r: Region} (xs: G.L[A]): G.L[A] = G.onto(xs, G.N)
+def G.rev2 [A: Type] {r: Region} (xs: G.L[A]): G.L[A] = G.onto[A](xs, G.N)
+// a case field: G.N gets G.L[A] (the caller A) as its expected type
+def G.one [A: Type] {r: Region} (x: A): G.L[A] = G.C(x, G.N)
+
+def G.first(xs: G.L[I64]): I64 = xs match
+  case G.N => 0
+  case G.C(h, _) => h
+
+def main(): I64 =
+  handle r = Arena()
+  val xs = G.C(1, G.C(2, G.C(3, G.N)))
+  rt_print_i64(G.first(G.rev(xs)) * 10 + G.first(G.rev2(G.rev(xs))) + G.first(G.one(100)))
+  rt_print("\n")
+  0
