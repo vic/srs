@@ -6,6 +6,8 @@ If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trai
 
 It is early, and it moves fast. The syntax can still change, and the [tests](tests/) are the best place to see what works today.
 
+> Status: s1 is bootstrapped from s0 but does not currently use functional idioms. Working on s2 making use of s1 features detailed here.
+
 This README starts with what will feel familiar and goes a step further in each section, so reading it top to bottom is a good way to meet the language.
 
 ## Try it
