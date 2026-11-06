@@ -1,0 +1,61 @@
+// s2 component 3 (Kanren core): the 8 cases of tests/kanren.srs (same .out lines), then a 100k-link variable chain
+// (each walk step is one map lookup)
+def T.c0 {r: Region} (f: Str): K.Term = K.Con(Sym.of(f), Coll.Nil)
+def T.c1 {r: Region} (f: Str, a: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Nil))
+def T.c2 {r: Region} (f: Str, a: K.Term, b: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
+
+def T.show(t: K.Term): Unit = t match
+  case K.Var(n) =>
+    rt_print("_")
+    rt_print_i64(n)
+  case K.Int(v) => rt_print_i64(v)
+  case K.Con(f, args) =>
+    rt_print(Sym.str(f))
+    args match
+      case Coll.Nil => ()
+      case Coll.Cons(h, t) =>
+        rt_print("(")
+        T.show(h)
+        T.showRest(t)
+        rt_print(")")
+
+def T.showRest(ts: Coll.List[K.Term]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    rt_print(", ")
+    T.show(h)
+    T.showRest(t)
+
+def T.res {r: Region} (o: Coll.Option[Coll.IMap[K.Term]], t: K.Term): Unit = o match
+  case Coll.None => rt_print("fail\n")
+  case Coll.Some(s) =>
+    T.show(K.reify(s, t))
+    rt_print("\n")
+
+def T.then {r: Region} (o: Coll.Option[Coll.IMap[K.Term]], a: K.Term, b: K.Term): Coll.Option[Coll.IMap[K.Term]] = o match
+  case Coll.None => Coll.None
+  case Coll.Some(s) => K.unify(s, a, b)
+
+// _0 = _1, _1 = _2, ..., _(n-1) = _n
+def T.chain {r: Region} (s: Coll.IMap[K.Term], i: I64, n: I64): Coll.IMap[K.Term] =
+  if i == n then s
+  else K.unify(s, K.Var(i), K.Var(i + 1)) match
+    case Coll.None => s
+    case Coll.Some(s2) => T.chain(s2, i + 1, n)
+
+def main(): I64 =
+  handle r = Arena()
+  val e: Coll.IMap[K.Term] = Coll.Tip
+  val x = K.Var(0)
+  val y = K.Var(1)
+  T.res(K.unify(e, T.c2("f", x, T.c0("b")), T.c2("f", T.c0("a"), y)), T.c2("f", x, y))
+  T.res(T.then(K.unify(e, x, y), y, T.c0("c")), x)
+  T.res(K.unify(e, x, x), x)
+  T.res(K.unify(e, x, T.c1("list", x)), x)
+  T.res(T.then(K.unify(e, x, y), y, T.c1("list", x)), x)
+  T.res(K.unify(e, T.c1("f", T.c0("a")), T.c1("g", T.c0("a"))), x)
+  T.res(K.unify(e, T.c1("f", T.c0("a")), T.c2("f", T.c0("a"), T.c0("b"))), x)
+  T.res(K.unify(e, K.Int(1), K.Int(2)), x)
+  val s = T.chain(e, 0, 100000)
+  T.res(K.unify(s, K.Var(100000), K.Int(42)), K.Var(0))
+  0

@@ -1,0 +1,66 @@
+// s2 component 3: Kanren core (vic 2026-11-06): terms, a substitution as a persistent map from variable to term
+// (Coll.IMap: one O(log n) lookup per link of a walk; the s1 lib walks an association list), unify with the occurs
+// check. a functor is a Sym: equal functors compare as integers.
+enum K.Term:
+  case K.Var(n: I64)
+  case K.Con(f: Sym.Sym, args: Coll.List[K.Term])
+  case K.Int(v: I64)
+
+// the term t stands for in s: a variable follows its bindings (a triangular substitution)
+def K.walk {r: Region} (s: Coll.IMap[K.Term], t: K.Term): K.Term = t match
+  case K.Var(n) => Coll.lookup(s, n) match
+    case Coll.None => t
+    case Coll.Some(u) => K.walk(s, u)
+  case K.Con(_, _) => t
+  case K.Int(_) => t
+
+// variable n occurs in t under s: binding n to t would build an infinite term
+def K.occurs {r: Region} (s: Coll.IMap[K.Term], n: I64, t: K.Term): Bool = K.walk(s, t) match
+  case K.Var(m) => m == n
+  case K.Con(_, args) => K.occursIn(s, n, args)
+  case K.Int(_) => false
+
+def K.occursIn {r: Region} (s: Coll.IMap[K.Term], n: I64, ts: Coll.List[K.Term]): Bool = ts match
+  case Coll.Nil => false
+  case Coll.Cons(h, t) => if K.occurs(s, n, h) then true else K.occursIn(s, n, t)
+
+// s extended so a and b are equal, or None
+def K.unify {r: Region} (s: Coll.IMap[K.Term], a: K.Term, b: K.Term): Coll.Option[Coll.IMap[K.Term]] =
+  val x = K.walk(s, a)
+  val y = K.walk(s, b)
+  x match
+    case K.Var(n) => K.bind(s, n, y)
+    case K.Con(f, xs) => y match
+      case K.Var(m) => K.bind(s, m, x)
+      case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAll(s, xs, ys) else Coll.None
+      case K.Int(_) => Coll.None
+    case K.Int(v) => y match
+      case K.Var(m) => K.bind(s, m, x)
+      case K.Int(w) => if v == w then Coll.Some(s) else Coll.None
+      case K.Con(_, _) => Coll.None
+
+def K.bind {r: Region} (s: Coll.IMap[K.Term], n: I64, t: K.Term): Coll.Option[Coll.IMap[K.Term]] = t match
+  case K.Var(m) => if m == n then Coll.Some(s) else Coll.Some(Coll.insert(s, n, t))
+  case K.Con(_, _) => if K.occurs(s, n, t) then Coll.None else Coll.Some(Coll.insert(s, n, t))
+  case K.Int(_) => Coll.Some(Coll.insert(s, n, t))
+
+// pairwise; lists of other lengths do not unify (arity)
+def K.unifyAll {r: Region} (s: Coll.IMap[K.Term], xs: Coll.List[K.Term], ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = xs match
+  case Coll.Nil => ys match
+    case Coll.Nil => Coll.Some(s)
+    case Coll.Cons(_, _) => Coll.None
+  case Coll.Cons(x, xt) => ys match
+    case Coll.Nil => Coll.None
+    case Coll.Cons(y, yt) => K.unify(s, x, y) match
+      case Coll.None => Coll.None
+      case Coll.Some(s2) => K.unifyAll(s2, xt, yt)
+
+// t with every bound variable replaced, all the way down (an answer)
+def K.reify {r: Region} (s: Coll.IMap[K.Term], t: K.Term): K.Term = K.walk(s, t) match
+  case K.Var(n) => K.Var(n)
+  case K.Int(v) => K.Int(v)
+  case K.Con(f, args) => K.Con(f, Coll.rev(K.reifyOnto(s, args, Coll.Nil)))
+
+def K.reifyOnto {r: Region} (s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => K.reifyOnto(s, t, Coll.Cons(K.reify(s, h), acc))
