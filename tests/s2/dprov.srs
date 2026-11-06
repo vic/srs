@@ -1,0 +1,156 @@
+// s2 D-PROV (vic-m5r.33, vic/c/dprov-design.md): D.why rebuilds the proof of a fact. a chain and a ring (transitive
+// closure), negation (a negated premise is absent), a fact with no proof, then a property on a graph with shortcuts:
+// every path fact has a proof whose height is the shortest path length (counted here without Datalog)
+def P.v {r: Region} (n: I64): D.Arg = D.AVar(n)
+def P.s {r: Region} (x: Str): D.Val = D.VSym(Sym.of(x))
+def P.a1 {r: Region} (rel: Str, x: I64): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(P.v(x), Coll.Nil))
+def P.a2 {r: Region} (rel: Str, x: I64, y: I64): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(P.v(x), Coll.Cons(P.v(y), Coll.Nil)))
+def P.t1 {r: Region} (x: D.Val): Coll.List[D.Val] = Coll.Cons(x, Coll.Nil)
+def P.t2 {r: Region} (x: D.Val, y: D.Val): Coll.List[D.Val] = Coll.Cons(x, Coll.Cons(y, Coll.Nil))
+def P.f1 {r: Region} (rel: Str, x: Str): D.Fact = D.Fact(Sym.of(rel), P.t1(P.s(x)))
+def P.f2 {r: Region} (rel: Str, x: Str, y: Str): D.Fact = D.Fact(Sym.of(rel), P.t2(P.s(x), P.s(y)))
+
+// r0 path(X, Y) :- edge(X, Y).  r1 path(X, Z) :- edge(X, Y), path(Y, Z).
+def P.tc {r: Region} (): Coll.List[D.Rule] =
+  val r0 = D.Rule(P.a2("path", 0, 1), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Nil))
+  val r1 = D.Rule(P.a2("path", 0, 2), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Cons(D.Pos(P.a2("path", 1, 2)), Coll.Nil)))
+  Coll.Cons(r0, Coll.Cons(r1, Coll.Nil))
+
+def P.showVal(v: D.Val): Unit = v match
+  case D.VSym(s) => rt_print(Sym.str(s))
+  case D.VInt(n) => rt_print_i64(n)
+
+def P.showVals(t: Coll.List[D.Val]): Unit = t match
+  case Coll.Nil => ()
+  case Coll.Cons(v, rest) =>
+    P.showVal(v)
+    rest match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        P.showVals(rest)
+
+def P.indent(n: I64): Unit =
+  if n > 0 then
+    rt_print(" ")
+    P.indent(n - 1)
+  else ()
+
+def P.fact(rel: Sym.Sym, t: Coll.List[D.Val], ind: I64): Unit =
+  P.indent(ind)
+  rt_print(Sym.str(rel))
+  rt_print("(")
+  P.showVals(t)
+  rt_print(")")
+
+def P.show(p: D.Proof, ind: I64): Unit = p match
+  case D.Given(rel, t) =>
+    P.fact(rel, t, ind)
+    rt_print(" given\n")
+  case D.Absent(rel, t) =>
+    P.fact(rel, t, ind)
+    rt_print(" absent\n")
+  case D.ByRule(i, rel, t, ps) =>
+    P.fact(rel, t, ind)
+    rt_print(" by rule ")
+    rt_print_i64(i)
+    rt_print("\n")
+    P.showAll(ps, ind + 2)
+
+def P.showAll(ps: Coll.List[D.Proof], ind: I64): Unit = ps match
+  case Coll.Nil => ()
+  case Coll.Cons(p, rest) =>
+    P.show(p, ind)
+    P.showAll(rest, ind)
+
+def P.why {r: Region} (res: D.Result, rel: Str, t: Coll.List[D.Val]): Unit = res match
+  case D.Solved(m) => D.why(m, Sym.of(rel), t) match
+    case Coll.Some(p) => P.show(p, 0)
+    case Coll.None => rt_print("no proof\n")
+  case D.Unsafe(_) => rt_print("unsafe\n")
+  case D.NegCycle(_) => rt_print("negcycle\n")
+
+// ── the property: a graph 0 -> 1 -> ... -> 9 with shortcuts i -> i + 2 for even i ──
+def P.i {r: Region} (n: I64): D.Val = D.VInt(n)
+def P.even(i: I64): Bool = i % 2 == 0
+
+def P.edges {r: Region} (i: I64, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
+  if i == 9 then acc
+  else
+    val chain = Coll.Cons(D.Fact(Sym.of("edge"), P.t2(P.i(i), P.i(i + 1))), acc)
+    P.edges(i + 1, if P.even(i) && i + 2 <= 9 then Coll.Cons(D.Fact(Sym.of("edge"), P.t2(P.i(i), P.i(i + 2))), chain) else chain)
+
+// the shortest path length from i to j (i < j), by recursion over the two kinds of edges
+def P.dist(i: I64, j: I64): I64 =
+  val a = if i + 1 == j then 1 else 1 + P.dist(i + 1, j)
+  val b = if P.even(i) && i + 2 <= j then (if i + 2 == j then 1 else 1 + P.dist(i + 2, j)) else a
+  if b < a then b else a
+
+def P.height(p: D.Proof): I64 = p match
+  case D.Given(_, _) => 0
+  case D.Absent(_, _) => 0
+  case D.ByRule(_, _, _, ps) => 1 + P.maxHeight(ps, 0)
+
+def P.maxHeight(ps: Coll.List[D.Proof], m: I64): I64 = ps match
+  case Coll.Nil => m
+  case Coll.Cons(p, rest) =>
+    val h = P.height(p)
+    P.maxHeight(rest, if h > m then h else m)
+
+def P.leaves(p: D.Proof): I64 = p match
+  case D.Given(_, _) => 1
+  case D.Absent(_, _) => 1
+  case D.ByRule(_, _, _, ps) => P.leavesAll(ps, 0)
+
+def P.leavesAll(ps: Coll.List[D.Proof], n: I64): I64 = ps match
+  case Coll.Nil => n
+  case Coll.Cons(p, rest) => P.leavesAll(rest, n + P.leaves(p))
+
+def P.rooted(p: D.Proof, t: Coll.List[D.Val]): Bool = p match
+  case D.ByRule(_, rel, u, _) => rt_str_eq(Sym.str(rel), "path") && D.tupleEq(u, t)
+  case _ => false
+
+enum P.Count:
+  case P.Count(proofs: I64, minimal: I64, rooted: I64)
+
+def P.add {r: Region} (c: P.Count, p: D.Proof, t: Coll.List[D.Val], d: I64): P.Count =
+  val P.Count(n, mn, ro) = c
+  P.Count(n + 1, if P.height(p) == d && P.leaves(p) == d then mn + 1 else mn, if P.rooted(p, t) then ro + 1 else ro)
+
+def P.each {r: Region} (m: D.Model, i: I64, j: I64, c: P.Count): P.Count =
+  if i == 9 then c
+  else if j == 10 then P.each(m, i + 1, i + 2, c)
+  else
+    val t = P.t2(P.i(i), P.i(j))
+    D.why(m, Sym.of("path"), t) match
+      case Coll.None => P.each(m, i, j + 1, c)
+      case Coll.Some(p) => P.each(m, i, j + 1, P.add(c, p, t, P.dist(i, j)))
+
+def main(): I64 =
+  handle r = Arena()
+  val chain = Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "d"), Coll.Nil)))
+  val tcChain = D.solve(P.tc(), chain)
+  P.why(tcChain, "path", P.t2(P.s("a"), P.s("d")))
+  val ring = Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "a"), Coll.Nil)))
+  P.why(D.solve(P.tc(), ring), "path", P.t2(P.s("a"), P.s("a")))
+  // r0 reach(X) :- start(X).  r1 reach(Y) :- reach(X), edge(X, Y).  r2 unreach(X) :- node(X), !reach(X).
+  val g0 = D.Rule(P.a1("reach", 0), Coll.Cons(D.Pos(P.a1("start", 0)), Coll.Nil))
+  val g1 = D.Rule(P.a1("reach", 1), Coll.Cons(D.Pos(P.a1("reach", 0)), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Nil)))
+  val g2 = D.Rule(P.a1("unreach", 0), Coll.Cons(D.Pos(P.a1("node", 0)), Coll.Cons(D.Neg(P.a1("reach", 0)), Coll.Nil)))
+  val nodes = Coll.Cons(P.f1("node", "a"), Coll.Cons(P.f1("node", "b"), Coll.Cons(P.f1("node", "c"), Coll.Cons(P.f1("node", "d"), Coll.Cons(P.f1("node", "e"), Coll.Nil)))))
+  val gfacts = Coll.Cons(P.f1("start", "a"), Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), nodes)))
+  val neg = D.solve(Coll.Cons(g0, Coll.Cons(g1, Coll.Cons(g2, Coll.Nil))), gfacts)
+  P.why(neg, "unreach", P.t1(P.s("d")))
+  P.why(neg, "reach", P.t1(P.s("c")))
+  P.why(tcChain, "path", P.t2(P.s("d"), P.s("a")))
+  D.solve(P.tc(), P.edges(0, Coll.Nil)) match
+    case D.Solved(m) =>
+      val P.Count(n, mn, ro) = P.each(m, 0, 1, P.Count(0, 0, 0))
+      rt_print_i64(n)
+      rt_print(" ")
+      rt_print_i64(mn)
+      rt_print(" ")
+      rt_print_i64(ro)
+      rt_print("\n")
+    case _ => rt_print("no model\n")
+  0

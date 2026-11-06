@@ -54,8 +54,14 @@ def D.thash(t: Coll.List[D.Val], h: I64): I64 = t match
 
 // ── a relation: rows by tuple hash (dedup), by value hash for each probed column (ic), and all rows (scans); each list
 // newest first. recent = rows of the last round, fresh = rows of this round ──
+// how a row came to be (provenance, zhao-2020): one value per input and one per compiled rule, made once and shared by
+// every row it makes. with the round stamp (a valid proof height: round r reads only older rows) D.why rebuilds a proof
+enum D.Origin:
+  case D.Input
+  case D.Derived(rule: I64)
+
 enum D.Row:
-  case D.Row(at: I64, t: Coll.List[D.Val])
+  case D.Row(at: I64, by: D.Origin, t: Coll.List[D.Val])
 
 enum D.Rel:
   case D.Rel(ic: Coll.List[I64], set: Coll.IMap[Coll.List[D.Row]], cols: Coll.IMap[Coll.IMap[Coll.List[D.Row]]], all: Coll.List[D.Row], recent: I64, fresh: I64)
@@ -69,7 +75,7 @@ def D.bucket {r: Region} (m: Coll.IMap[Coll.List[D.Row]], h: I64): Coll.List[D.R
 def D.inRows(rows: Coll.List[D.Row], t: Coll.List[D.Val]): Bool = rows match
   case Coll.Nil => false
   case Coll.Cons(row, rest) =>
-    val D.Row(_, u) = row
+    val D.Row(_, _, u) = row
     if D.tupleEq(u, t) then true else D.inRows(rest, t)
 
 def D.has {r: Region} (rl: D.Rel, t: Coll.List[D.Val]): Bool =
@@ -92,9 +98,9 @@ def D.indexCols {r: Region} (cols: Coll.IMap[Coll.IMap[Coll.List[D.Row]]], row: 
     D.indexCols(Coll.insert(cols, c, Coll.insert(col, h, Coll.Cons(row, D.bucket(col, h)))), row, t, rest)
 
 // t added as a row of round at (the caller checked it is new)
-def D.add {r: Region} (rl: D.Rel, at: I64, t: Coll.List[D.Val]): D.Rel =
+def D.add {r: Region} (rl: D.Rel, at: I64, by: D.Origin, t: Coll.List[D.Val]): D.Rel =
   val D.Rel(ic, set, cols, all, rc, fr) = rl
-  val row = D.Row(at, t)
+  val row = D.Row(at, by, t)
   val h = D.thash(t, 7)
   D.Rel(ic, Coll.insert(set, h, Coll.Cons(row, D.bucket(set, h))), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1)
 
@@ -103,8 +109,10 @@ def D.cands {r: Region} (rl: D.Rel, p: D.Probe): Coll.List[D.Row] =
   val D.Rel(_, _, cols, all, _, _) = rl
   p match
     case D.Scan => all
+    // no index on c: every row (in D.solve this means no rows yet; D.why binds the head first, so it can probe a
+    // column that the solve never probes)
     case D.Col(c, h) => Coll.node(cols, c) match
-      case Coll.Tip => Coll.Nil
+      case Coll.Tip => all
       case Coll.Bin(_, _, m, _, _) => D.bucket(m, h)
 
 // which rows an atom reads in round r: recent (round r-1), stable (older) or both; never rows of round r
@@ -119,7 +127,7 @@ enum D.CAtom:
 
 // a compiled rule: the positive atoms in order, the negated ones (filters once the positives bound every variable)
 enum D.CRule:
-  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom])
+  case D.CRule(head: D.CAtom, body: Coll.List[D.CAtom], neg: Coll.List[D.CAtom], by: D.Origin)
 
 def D.idOf(tab: Coll.List[Sym.Sym], s: Sym.Sym, i: I64): I64 = tab match
   case Coll.Nil => -1
@@ -167,11 +175,12 @@ def D.cbody {r: Region} (tab: Coll.List[Sym.Sym], ls: Coll.List[D.Lit], pos: Boo
     case D.Pos(a) => D.cbody(tab, rest, pos, if pos then Coll.Cons(D.catom(tab, a), acc) else acc)
     case D.Neg(a) => D.cbody(tab, rest, pos, if pos then acc else Coll.Cons(D.catom(tab, a), acc))
 
-def D.crules {r: Region} (tab: Coll.List[Sym.Sym], rs: Coll.List[D.Rule], acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
+// rule i of rs is D.Derived(i): its position in the list given to D.solve
+def D.crules {r: Region} (tab: Coll.List[Sym.Sym], rs: Coll.List[D.Rule], i: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(rl, rest) =>
     val D.Rule(h, b) = rl
-    D.crules(tab, rest, Coll.Cons(D.CRule(D.catom(tab, h), D.cbody(tab, b, true, Coll.Nil), D.cbody(tab, b, false, Coll.Nil)), acc))
+    D.crules(tab, rest, i + 1, Coll.Cons(D.CRule(D.catom(tab, h), D.cbody(tab, b, true, Coll.Nil), D.cbody(tab, b, false, Coll.Nil), D.Derived(i)), acc))
 
 // ── joins ──
 enum D.Bound:
@@ -211,7 +220,7 @@ def D.matchT {r: Region} (env: Coll.IMap[D.Val], args: Coll.List[D.Arg], t: Coll
 def D.matchRows {r: Region} (e: Coll.IMap[D.Val], args: Coll.List[D.Arg], rows: Coll.List[D.Row], u: D.Use, rd: I64, out: Coll.List[Coll.IMap[D.Val]]): Coll.List[Coll.IMap[D.Val]] = rows match
   case Coll.Nil => out
   case Coll.Cons(row, rest) =>
-    val D.Row(at, t) = row
+    val D.Row(at, _, t) = row
     if at >= rd then D.matchRows(e, args, rest, u, rd, out)
     else
       val take = u match
@@ -260,15 +269,15 @@ def D.inst {r: Region} (env: Coll.IMap[D.Val], args: Coll.List[D.Arg], acc: Coll
     case D.Is(v) => D.inst(env, rest, Coll.Cons(v, acc))
 
 // each env's head tuple added as a row of round rd, unless its relation has it (from any round)
-def D.heads {r: Region} (rels: Coll.IMap[D.Rel], h: D.CAtom, rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.IMap[D.Rel] = envs match
+def D.heads {r: Region} (rels: Coll.IMap[D.Rel], h: D.CAtom, by: D.Origin, rd: I64, envs: Coll.List[Coll.IMap[D.Val]]): Coll.IMap[D.Rel] = envs match
   case Coll.Nil => rels
   case Coll.Cons(e, rest) =>
     val D.CAtom(rel, args) = h
     D.inst(e, args, Coll.Nil) match
-      case Coll.None => D.heads(rels, h, rd, rest)
+      case Coll.None => D.heads(rels, h, by, rd, rest)
       case Coll.Some(t) =>
         val rl = D.relOf(rels, rel)
-        if D.has(rl, t) then D.heads(rels, h, rd, rest) else D.heads(Coll.insert(rels, rel, D.add(rl, rd, t)), h, rd, rest)
+        if D.has(rl, t) then D.heads(rels, h, by, rd, rest) else D.heads(Coll.insert(rels, rel, D.add(rl, rd, by, t)), h, by, rd, rest)
 
 // the envs whose negated atoms all fail: each tuple is in no round of its relation (a lower stratum, complete)
 def D.negOk {r: Region} (rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], e: Coll.IMap[D.Val]): Bool = negs match
@@ -292,14 +301,14 @@ def D.fireAt {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, bs: Coll.List[D.
     else D.fireAt(rels0, rl, rest, j + 1, rd, D.fireOnce(rels0, rl, j, rd, rels))
 
 def D.fireOnce {r: Region} (rels0: Coll.IMap[D.Rel], rl: D.CRule, j: I64, rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
-  val D.CRule(h, body, neg) = rl
+  val D.CRule(h, body, neg, by) = rl
   val e0: Coll.IMap[D.Val] = Coll.Tip
-  D.heads(rels, h, rd, D.filterNeg(rels0, neg, D.evalBody(rels0, body, j, 0, rd, Coll.Cons(e0, Coll.Nil)), Coll.Nil))
+  D.heads(rels, h, by, rd, D.filterNeg(rels0, neg, D.evalBody(rels0, body, j, 0, rd, Coll.Cons(e0, Coll.Nil)), Coll.Nil))
 
 def D.fireAll {r: Region} (rels0: Coll.IMap[D.Rel], rs: Coll.List[D.CRule], rd: I64, first: Bool, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = rs match
   case Coll.Nil => rels
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body, _) = rl
+    val D.CRule(_, body, _, _) = rl
     D.fireAll(rels0, rest, rd, first, if first then D.fireOnce(rels0, rl, -1, rd, rels) else D.fireAt(rels0, rl, body, 0, rd, rels))
 
 // a round ends: this round's rows become the recent ones; the number of new rows in all relations
@@ -339,7 +348,7 @@ enum D.Raised:
 def D.raiseAll {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool): D.Raised = rs match
   case Coll.Nil => D.Raised(st, changed)
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, body, neg) = rl
+    val D.CRule(h, body, neg, _) = rl
     val D.CAtom(hr, _) = h
     val m = D.maxSt(st, neg, 1, D.maxSt(st, body, 0, 0))
     if m > D.stOf(st, hr) then D.raiseAll(rest, Coll.insert(st, hr, m), true) else D.raiseAll(rest, st, changed)
@@ -356,7 +365,7 @@ def D.overRel(st: Coll.IMap[I64], id: I64, k: I64): I64 = if id == k then -1 els
 def D.rulesAt {r: Region} (rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, _, _) = rl
+    val D.CRule(h, _, _, _) = rl
     val D.CAtom(hr, _) = h
     D.rulesAt(rest, st, s, if D.stOf(st, hr) == s then Coll.Cons(rl, acc) else acc)
 
@@ -381,7 +390,7 @@ def D.atomsVars {r: Region} (as: Coll.List[D.CAtom], acc: Coll.List[I64]): Coll.
 def D.firstUnsafe {r: Region} (rs: Coll.List[D.CRule]): I64 = rs match
   case Coll.Nil => -1
   case Coll.Cons(rl, rest) =>
-    val D.CRule(h, body, neg) = rl
+    val D.CRule(h, body, neg, _) = rl
     val D.CAtom(hr, hargs) = h
     val bound = D.atomsVars(body, Coll.Nil)
     if D.allIn(D.argVars(hargs, Coll.Nil), bound) && D.allIn(D.atomsVars(neg, Coll.Nil), bound) then D.firstUnsafe(rest) else hr
@@ -421,7 +430,7 @@ def D.probesOf {r: Region} (body: Coll.List[D.CAtom], bound: Coll.List[I64], ics
 def D.probesAll {r: Region} (rs: Coll.List[D.CRule], ics: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = rs match
   case Coll.Nil => ics
   case Coll.Cons(rl, rest) =>
-    val D.CRule(_, body, _) = rl
+    val D.CRule(_, body, _, _) = rl
     D.probesAll(rest, D.probesOf(body, Coll.Nil, ics))
 
 def D.initRels {r: Region} (ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
@@ -430,7 +439,7 @@ def D.initRels {r: Region} (ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc
 
 // ── the model ──
 enum D.Model:
-  case D.Model(tab: Coll.List[Sym.Sym], rels: Coll.IMap[D.Rel])
+  case D.Model(tab: Coll.List[Sym.Sym], rules: Coll.List[D.CRule], rels: Coll.IMap[D.Rel])
 
 def D.load {r: Region} (tab: Coll.List[Sym.Sym], fs: Coll.List[D.Fact], rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] = fs match
   case Coll.Nil => rels
@@ -438,7 +447,7 @@ def D.load {r: Region} (tab: Coll.List[Sym.Sym], fs: Coll.List[D.Fact], rels: Co
     val D.Fact(rel, vals) = f
     val id = D.idOf(tab, rel, 0)
     val rl = D.relOf(rels, id)
-    D.load(tab, rest, if D.has(rl, vals) then rels else Coll.insert(rels, id, D.add(rl, 0, vals)))
+    D.load(tab, rest, if D.has(rl, vals) then rels else Coll.insert(rels, id, D.add(rl, 0, D.Input, vals)))
 
 // a program's result: its model, or why it is not a program (an unsafe rule, a cycle through negation)
 enum D.Result:
@@ -453,7 +462,7 @@ def D.nthSym(tab: Coll.List[Sym.Sym], i: I64, fallback: Sym.Sym): Sym.Sym = tab 
 // the model of rules over facts: strata in order, each to its fixpoint
 def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
   val tab = D.internFacts(D.internRules(Coll.Nil, rules), facts)
-  val crs = D.crules(tab, rules, Coll.Nil)
+  val crs = D.crules(tab, rules, 0, Coll.Nil)
   val k = Coll.length(tab)
   val none = Sym.of("")
   val bad = D.firstUnsafe(crs)
@@ -464,16 +473,95 @@ def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.
     if top > k then D.NegCycle(D.nthSym(tab, D.overRel(st, 0, k), none))
     else
       val D.Next(rels, _) = D.advance(D.load(tab, facts, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip)), 0, k, Coll.Tip, 0)
-      D.Solved(D.Model(tab, D.runStrata(crs, st, 0, top, rels, 1, k)))
+      D.Solved(D.Model(tab, crs, D.runStrata(crs, st, 0, top, rels, 1, k)))
 
 def D.rowsOf {r: Region} (rows: Coll.List[D.Row], acc: Coll.List[Coll.List[D.Val]]): Coll.List[Coll.List[D.Val]] = rows match
   case Coll.Nil => acc
   case Coll.Cons(row, rest) =>
-    val D.Row(_, t) = row
+    val D.Row(_, _, t) = row
     D.rowsOf(rest, Coll.Cons(t, acc))
 
 // the facts of rel in a model, oldest first
 def D.tuples {r: Region} (m: D.Model, rel: Sym.Sym): Coll.List[Coll.List[D.Val]] =
-  val D.Model(tab, rels) = m
+  val D.Model(tab, _, rels) = m
   val D.Rel(_, _, _, all, _, _) = D.relOf(rels, D.idOf(tab, rel, 0))
   D.rowsOf(all, Coll.Nil)
+
+// ── provenance (vic-m5r.33, vic/c/dprov-design.md): the proof of a fact ──
+enum D.Proof:
+  case D.Given(rel: Sym.Sym, t: Coll.List[D.Val])
+  case D.ByRule(rule: I64, rel: Sym.Sym, t: Coll.List[D.Val], premises: Coll.List[D.Proof])
+  // a negated premise: the atom is not in its relation, a complete lower stratum
+  case D.Absent(rel: Sym.Sym, t: Coll.List[D.Val])
+
+def D.symAt {r: Region} (tab: Coll.List[Sym.Sym], i: I64): Coll.Option[Sym.Sym] = tab match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(h, t) => if i == 0 then Coll.Some(h) else D.symAt(t, i - 1)
+
+def D.ruleAt {r: Region} (rs: Coll.List[D.CRule], i: I64): Coll.Option[D.CRule] = rs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(h, t) => if i == 0 then Coll.Some(h) else D.ruleAt(t, i - 1)
+
+def D.rowIn {r: Region} (rows: Coll.List[D.Row], t: Coll.List[D.Val]): Coll.Option[D.Row] = rows match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(row, rest) =>
+    val D.Row(_, _, u) = row
+    if D.tupleEq(u, t) then Coll.Some(row) else D.rowIn(rest, t)
+
+// the row of t in rl, found through the dedup set
+def D.findRow {r: Region} (rl: D.Rel, t: Coll.List[D.Val]): Coll.Option[D.Row] =
+  val D.Rel(_, set, _, _, _, _) = rl
+  D.rowIn(D.bucket(set, D.thash(t, 7)), t)
+
+// the proof of t in relation id: an input is given; a derived row is proved by the rule that made it, with the first
+// body match among rows of smaller stamps, so the recursion ends. in a stratum that reads only inputs a row's stamp is
+// its minimal proof height, and so is the height of this proof (zhao-2020 txt:575-576); across strata it can be taller
+def D.proofOf {r: Region} (tab: Coll.List[Sym.Sym], rules: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], id: I64, t: Coll.List[D.Val]): Coll.Option[D.Proof] = D.symAt(tab, id) match
+  case Coll.None => Coll.None
+  case Coll.Some(rel) => D.findRow(D.relOf(rels, id), t) match
+    case Coll.None => Coll.None
+    case Coll.Some(row) =>
+      val D.Row(at, by, _) = row
+      by match
+        case D.Input => Coll.Some(D.Given(rel, t))
+        case D.Derived(i) => D.ruleAt(rules, i) match
+          case Coll.None => Coll.None
+          case Coll.Some(rl) => D.byRule(tab, rules, rels, rl, i, rel, at, t)
+
+def D.byRule {r: Region} (tab: Coll.List[Sym.Sym], rules: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rl: D.CRule, i: I64, rel: Sym.Sym, at: I64, t: Coll.List[D.Val]): Coll.Option[D.Proof] =
+  val D.CRule(h, body, neg, _) = rl
+  val D.CAtom(_, hargs) = h
+  val e0: Coll.IMap[D.Val] = Coll.Tip
+  D.matchT(e0, hargs, t) match
+    case Coll.None => Coll.None
+    case Coll.Some(e) => D.evalBody(rels, body, -1, 0, at, Coll.Cons(e, Coll.Nil)) match
+      case Coll.Nil => Coll.None
+      case Coll.Cons(e2, _) => D.premises(tab, rules, rels, body, neg, e2, Coll.Nil) match
+        case Coll.None => Coll.None
+        case Coll.Some(ps) => Coll.Some(D.ByRule(i, rel, t, ps))
+
+// the proofs of the positive atoms xs under e, in body order, then the negated atoms negs as absent
+def D.premises {r: Region} (tab: Coll.List[Sym.Sym], rules: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], xs: Coll.List[D.CAtom], negs: Coll.List[D.CAtom], e: Coll.IMap[D.Val], acc: Coll.List[D.Proof]): Coll.Option[Coll.List[D.Proof]] = xs match
+  case Coll.Nil => D.absents(tab, negs, e, acc)
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(id, args) = a
+    D.inst(e, args, Coll.Nil) match
+      case Coll.None => Coll.None
+      case Coll.Some(t) => D.proofOf(tab, rules, rels, id, t) match
+        case Coll.None => Coll.None
+        case Coll.Some(p) => D.premises(tab, rules, rels, rest, negs, e, Coll.Cons(p, acc))
+
+def D.absents {r: Region} (tab: Coll.List[Sym.Sym], negs: Coll.List[D.CAtom], e: Coll.IMap[D.Val], acc: Coll.List[D.Proof]): Coll.Option[Coll.List[D.Proof]] = negs match
+  case Coll.Nil => Coll.Some(Coll.rev(acc))
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(id, args) = a
+    D.inst(e, args, Coll.Nil) match
+      case Coll.None => Coll.None
+      case Coll.Some(t) => D.symAt(tab, id) match
+        case Coll.None => Coll.None
+        case Coll.Some(rel) => D.absents(tab, rest, e, Coll.Cons(D.Absent(rel, t), acc))
+
+// why tuple t of rel holds in m: its proof tree down to input facts, or None when t is not in m
+def D.why {r: Region} (m: D.Model, rel: Sym.Sym, t: Coll.List[D.Val]): Coll.Option[D.Proof] =
+  val D.Model(tab, rules, rels) = m
+  D.proofOf(tab, rules, rels, D.idOf(tab, rel, 0), t)
