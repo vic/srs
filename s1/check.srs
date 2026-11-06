@@ -309,7 +309,7 @@ def regionParams {r: Region} (ps: Nodes): Nodes =
 
 // signature type as seen in the body: unannotated enum = region params + ρ
 def sigTy {r: Region} (ds: Decls, ps: Nodes, t: Node): Node =
-  if isEnum(ds, text(t)) && num(t) == 0 then recap(t, NCons(leaf(TyCap, "*", 0), regionParams(ps)))
+  if (isEnum(ds, text(t)) || isTParam(ds, text(t))) && num(t) == 0 then recap(t, NCons(leaf(TyCap, "*", 0), regionParams(ps)))
   else t
 
 // one name, one meaning (vic-gkz): fns and enum cases share the call namespace, enums/protocols/traits/handlers the
