@@ -1,6 +1,6 @@
 # srs
 
-srs is a small language with the Scala 3 look and feel that compiles to portable C. There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
+srs is a small language with the Scala 3 look and feel that compiles to portable C. It is implemented in [itself `./s1`](./s1), bootstrapped via the Zig toolchain using an stable [seed](./bootstrap).  There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
 
 If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trait`, `given`, indentation instead of braces. What srs adds is a type system that tracks *where a value lives* and *what state a resource is in*. It also lets types compute things at compile time.
 
