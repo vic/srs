@@ -6,6 +6,8 @@ If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trai
 
 It is early, and it moves fast. The syntax can still change, and the [tests](tests/) are the best place to see what works today.
 
+This README starts with what will feel familiar and goes a step further in each section, so reading it top to bottom is a good way to meet the language.
+
 ## Try it
 
 ```console
@@ -32,37 +34,56 @@ def main(): I64 =
   0
 ```
 
-The `handle r = Arena()` line is the one new thing here. Values need somewhere to live, so you open a region and the constructors put the nodes in it.
+The `handle r = Arena()` line is the one new thing here. Values need somewhere to live, so you open a region and the constructors put the nodes in it. We will come back to regions soon.
 
-## Signatures are telescopes
+## Pattern matching checks every case
 
-Everything a function needs is in its signature, written as a row of groups. Each kind of bracket asks for one kind of thing:
-
-- `(x: I64)`: values, as usual.
-- `[A: Type]`: types. `A` is a name, and `Type` is what it is.
-- `{s: Show[A]}`: evidence and capabilities. Proof that `Show[A]` exists, or a region or a file you hold. These always have a name.
-- `<at(t, Fresh)>`: facts, the states your resources must be in. Facts after the return type are the states you leave them in.
-
-The row reads left to right like a telescope: each group can use the names of the groups before it. Here `A` is used by the evidence, the tape `t` is used by the facts, and the values come last:
+A `match` has to cover every case of the enum. Add a new case, and the compiler shows you each place that does not handle it yet:
 
 ```scala
-def report [A: Type] {s: Show[A]} {t: Tape} <at(t, Fresh)> (x: A): I64 <at(t, Once)> =
-  s.show(x) + t.read()
+enum Light:
+  case Red
+  case Yellow
+  case Green
 
-def main(): I64 =
-  handle t = MemTape()
-  val n = report[I64](35)
-  t.stop()
-  n
+def wait(l: Light): I64 = l match
+  case Red => 30
+  case Yellow => 5
 ```
 
-At a call you usually pass only the values: the compiler finds the type, the evidence and the tape for you, and it checks the facts. You can also spell the groups out yourself: `report[I64](35)` gives the type, and `build{a}(3)` picks the region by name.
+```console
+srs:6: error: match is not exhaustive, missing case 'Green'
+```
 
-The same groups work on types, as you will see below: `type SortedBox [A: Type] {o: Ord[A]} = Box[A]`. A `spec def`, which only exists for proofs, takes no groups at all. An `extern def`, which is a C function, takes all of them, and its telescope is a contract that the compiler trusts.
+## Generics, traits and givens
+
+Type parameters go in `[]`, as in Scala 3. They are found from the arguments, or from the type you expect back, and you can give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time.
+
+Evidence, like a `Show[A]` instance, goes in `{}` and always has a name. A `given` can depend on other givens, so `Show[Box[A]]` holds when `Show[A]` does.
+
+```scala
+trait Show [A: Type]:
+  def show(x: A): I64
+
+given Show[I64]:
+  def show(x: I64): I64 = x
+
+given [A: Type] {s: Show[A]} Show[Box[A]]:
+  def show(x: Box[A]): I64 = x match
+    case Box(v) => 100 + s.show(v)
+
+def print [A: Type] {s: Show[A]} (x: A): Unit =
+  rt_print_i64(s.show(x))
+  rt_print("\n")
+```
+
+Then `print(Box(41))` finds the evidence for you and prints `141`. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
+
+Examples: [generic](tests/generic.srs), [generic_enum](tests/generic_enum.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs), [given_fuel](tests/neg/given_fuel.srs).
 
 ## Regions instead of a GC
 
-A function that builds data says so in its signature with a `{r: Region}` capability. You don't pass it by hand: the nearest region in scope is found for you.
+Back to regions. A function that builds data says so in its signature with a `{r: Region}` capability: the same `{}` as evidence, because holding a region is a kind of evidence too. You don't pass it by hand: the nearest region in scope is found for you.
 
 ```scala
 def build {r: Region} (n: I64): List =
@@ -103,28 +124,6 @@ Leave out the `{a}` and you get `ambiguous capability, more than one in scope fo
 
 Examples: [region_ok](tests/region_ok.srs), [var_ok](tests/var_ok.srs), [cap_uaf](tests/neg/cap_uaf.srs), [escape](tests/neg/escape.srs), [var_branch](tests/neg/var_branch.srs), [var_loop](tests/neg/var_loop.srs).
 
-<details>
-<summary>Bring your own allocator</summary>
-
-A region is not magic. `Region` is a protocol in the prelude (protocols are the next section), and `Arena` and `Heap` are two handlers of it. Write your own handler and it works everywhere a region does:
-
-```scala
-handler Bump for Region:
-  def init(): Ptr = rt_arena_new()
-  def alloc(self: Ptr, size: I64): Ptr = rt_arena_alloc(self, size)
-  def free(self: Ptr): Unit = rt_arena_free(self)
-
-def main(): I64 =
-  handle b = Bump()
-  val n = sum(build(4))
-  b.free()
-  n
-```
-
-Because it is a protocol, freeing twice or allocating after a free is a state error: `op 'free' not allowed in state Freed`. See [double_free](tests/neg/double_free.srs) and [alloc_after_free](tests/neg/alloc_after_free.srs).
-
-</details>
-
 ## Protocols: resources with states
 
 A `protocol` is a small state machine: its states, where it starts and ends, and which ops move it from state to state. A `handler` implements it. When you use one, the compiler follows the state through your code.
@@ -158,9 +157,31 @@ srs:15: error: protocol Door: op 'leave' not allowed in state Shut of 'd'
 
 Forget to leave and you hear about that too: `'d' ends its scope in state Open, not an end state`. Branches that leave a resource in different states are rejected as well. Files, locks and sockets are what this is for: [file.lib](tests/file.lib) defines a `File` protocol and [file_ok](tests/file_ok.srs) uses it. The tests that must fail: [close_no_read](tests/neg/close_no_read.srs) and [branch_state](tests/neg/branch_state.srs).
 
+<details>
+<summary>Regions are protocols too: bring your own allocator</summary>
+
+Now the region from the first example makes sense. `Region` is a protocol in the prelude, and `Arena` and `Heap` are two handlers of it. Write your own handler and it works everywhere a region does:
+
+```scala
+handler Bump for Region:
+  def init(): Ptr = rt_arena_new()
+  def alloc(self: Ptr, size: I64): Ptr = rt_arena_alloc(self, size)
+  def free(self: Ptr): Unit = rt_arena_free(self)
+
+def main(): I64 =
+  handle b = Bump()
+  val n = sum(build(4))
+  b.free()
+  n
+```
+
+Because it is a protocol, freeing twice or allocating after a free is a state error: `op 'free' not allowed in state Freed`. See [double_free](tests/neg/double_free.srs) and [alloc_after_free](tests/neg/alloc_after_free.srs).
+
+</details>
+
 ## Facts: functions that know about states
 
-This is the part I find most fun. The `<>` group of a signature holds facts: the facts a function needs when you call it, and, after the return type, the facts it leaves behind. Facts can have variables, so one function can work across many states. Here is a tape you can read twice, and a `readAny` that reads from whatever state it finds the tape in:
+This is the part I find most fun. A function can state facts in `<>`: the facts it needs when you call it, and, after the return type, the facts it leaves behind. Facts can have variables, so one function can work across many states. Here is a tape you can read twice, and a `readAny` that reads from whatever state it finds the tape in:
 
 ```scala
 protocol Tape:
@@ -213,54 +234,35 @@ Examples: [rules](tests/rules.srs) (a recursive `reach`), [rule_reach](tests/neg
 
 </details>
 
-## Pattern matching checks every case
+## Signatures are telescopes
 
-A `match` has to cover every case of the enum. Add a new case, and the compiler shows you each place that does not handle it yet:
+By now you have met four kinds of brackets in a signature, and they all belong to one idea. Everything a function needs is in its signature, written as a row of groups, and each kind of bracket asks for one kind of thing:
 
-```scala
-enum Light:
-  case Red
-  case Yellow
-  case Green
+- `(x: I64)`: values, as usual.
+- `[A: Type]`: types. `A` is a name, and `Type` is what it is.
+- `{s: Show[A]}`: evidence and capabilities. Proof that `Show[A]` exists, or a region or a file you hold. These always have a name.
+- `<at(t, Fresh)>`: facts, the states your resources must be in. Facts after the return type are the states you leave them in.
 
-def wait(l: Light): I64 = l match
-  case Red => 30
-  case Yellow => 5
-```
-
-```console
-srs:6: error: match is not exhaustive, missing case 'Green'
-```
-
-## Generics, traits and givens
-
-Type parameters go in `[]`, as in Scala 3. They are found from the arguments, or from the type you expect back, and you can give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time.
-
-Evidence, like a `Show[A]` instance, goes in `{}`. A `given` can depend on other givens, so `Show[Box[A]]` holds when `Show[A]` does.
+The row reads left to right like a telescope: each group can use the names of the groups before it. Here `A` is used by the evidence, the tape `t` is used by the facts, and the values come last:
 
 ```scala
-trait Show [A: Type]:
-  def show(x: A): I64
+def report [A: Type] {s: Show[A]} {t: Tape} <at(t, Fresh)> (x: A): I64 <at(t, Once)> =
+  s.show(x) + t.read()
 
-given Show[I64]:
-  def show(x: I64): I64 = x
-
-given [A: Type] {s: Show[A]} Show[Box[A]]:
-  def show(x: Box[A]): I64 = x match
-    case Box(v) => 100 + s.show(v)
-
-def print [A: Type] {s: Show[A]} (x: A): Unit =
-  rt_print_i64(s.show(x))
-  rt_print("\n")
+def main(): I64 =
+  handle t = MemTape()
+  val n = report(35)
+  t.stop()
+  n
 ```
 
-Then `print(Box(41))` finds the evidence for you and prints `141`. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
+At a call you usually pass only the values: the compiler finds the type, the evidence and the tape for you, and it checks the facts. You can also spell the groups out yourself, as you saw earlier: `report[I64](35)` gives the type, and `build{a}(3)` picks the region by name.
 
-Examples: [generic](tests/generic.srs), [generic_enum](tests/generic_enum.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs), [given_fuel](tests/neg/given_fuel.srs).
+The same groups work on types, which is the next section. A `spec def`, which only exists for proofs, takes no groups at all. An `extern def`, which is a C function, takes all of them, and its telescope is a contract that the compiler trusts.
 
 ## Types that carry evidence and facts
 
-The same `{}` and `<>` groups work on types. A `SortedBox[A]` is a plain `Box[A]`, but you can only name it where an `Ord[A]` exists:
+The `{}` and `<>` groups work on types too. A `SortedBox[A]` is a plain `Box[A]`, but you can only name it where an `Ord[A]` exists:
 
 ```scala
 type SortedBox [A: Type] {o: Ord[A]} = Box[A]
@@ -286,7 +288,7 @@ Examples: [type_evidence](tests/type_evidence.srs), [type_facts](tests/type_fact
 
 ## Types that compute
 
-Types can match on types, and they can take plain values that are known at compile time:
+Types can match on types, and with a `()` group they can take plain values that are known at compile time:
 
 ```scala
 type Wide [A: Type] = A match
@@ -307,7 +309,7 @@ Examples: [typelambda](tests/typelambda.srs), [type_values](tests/type_values.sr
 
 ## Pure functions run at compile time
 
-You don't mark functions as pure. A function with no effects in its signature or its body is pure, and the compiler can run it while it compiles your program. That is what the value types above use, and you can try it yourself with `--eval`, which prints every pure constant:
+That `dbl(4)` above ran while the program compiled. You don't mark functions as pure: a function with no effects in its signature or its body is pure, and the compiler can run it. You can try it yourself with `--eval`, which prints every pure constant:
 
 ```scala
 def square(x: I64): I64 = x * x
@@ -365,10 +367,12 @@ extern def rt_handle {f: File} <at(f, Opened)> (): OpenFile
 
 Generic externs work too. A value of a type parameter is passed to C as a `void*`, so one C symbol serves every type. See [generic](tests/generic.srs) and [type_facts](tests/type_facts.srs).
 
-<details>
-<summary>Contracts and proofs</summary>
+## Contracts and proofs
 
 `requires`, `ensures`, `invariant` and `decreases` are part of the syntax, together with proof hints. A `spec def` exists only for proofs and specs, and it may only call pure functions. The C output does not contain any of this.
+
+<details>
+<summary>An example: counting a list, with a loop invariant</summary>
 
 ```scala
 spec def size(xs: List): I64
@@ -397,13 +401,13 @@ def count(xs: List): I64
   n
 ```
 
-Examples: [contracts](tests/contracts.srs), [spec_impure](tests/neg/spec_impure.srs).
-
 </details>
+
+Examples: [contracts](tests/contracts.srs), [spec_impure](tests/neg/spec_impure.srs).
 
 ## Logic programming in the box
 
-The standard libraries include a miniKanren and a Datalog, both written in srs, and you can use them in your own programs. srs has no closures, so goals and rules are plain data that you build and then solve.
+The last stop is the deep end. The standard libraries include a miniKanren and a Datalog, both written in srs, and you can use them in your own programs. srs has no closures, so goals and rules are plain data that you build and then solve.
 
 <details>
 <summary>miniKanren with constraints</summary>
