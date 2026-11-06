@@ -33,3 +33,55 @@ trait Coll.Fold [F: Type] [A: Type] [B: Type]:
 def Coll.foldl [F: Type] [A: Type] [B: Type] {f: Coll.Fold[F, A, B]} (xs: Coll.List[A], acc: B): B = xs match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => Coll.foldl[F, A, B](t, f.step(acc, h))
+
+// a persistent map keyed by I64 (vic-m5r.13 C2): a weight-balanced tree, Adams' balance with delta 3, ratio 2 (the
+// pair Haskell Data.Map uses; Hirai and Yamamoto 2011 prove it the only integer pair that keeps the balance). a key
+// is an I64 (a name's strHash): one integer compare per level. an insert copies one path (O(log n) nodes).
+enum Coll.IMap [V: Type]:
+  case Coll.Tip
+  case Coll.Bin(size: I64, k: I64, v: V, l: Coll.IMap[V], r: Coll.IMap[V])
+
+def Coll.size [V: Type] (m: Coll.IMap[V]): I64 = m match
+  case Coll.Tip => 0
+  case Coll.Bin(s, _, _, _, _) => s
+
+def Coll.lookup [V: Type] {r: Region} (m: Coll.IMap[V], k: I64): Coll.Option[V] = m match
+  case Coll.Tip => Coll.None
+  case Coll.Bin(_, k2, v, l, r2) => if k < k2 then Coll.lookup(l, k) else if k > k2 then Coll.lookup(r2, k) else Coll.Some(v)
+
+// a node over l and r (their sizes known)
+def Coll.bin [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+  Coll.Bin(Coll.size(l) + Coll.size(r2) + 1, k, v, l, r2)
+
+// k, v over l and r where one side grew or shrank by at most one element: rotate back into balance
+def Coll.balance [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+  val sl = Coll.size(l)
+  val sr = Coll.size(r2)
+  if sl + sr <= 1 then Coll.bin(k, v, l, r2)
+  else if sr > 3 * sl then Coll.rotateL(k, v, l, r2)
+  else if sl > 3 * sr then Coll.rotateR(k, v, l, r2)
+  else Coll.bin(k, v, l, r2)
+
+def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = r2 match
+  case Coll.Tip => Coll.bin(k, v, l, r2)
+  case Coll.Bin(_, k2, v2, rl, rr) =>
+    if Coll.size(rl) < 2 * Coll.size(rr) then Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
+    else rl match
+      case Coll.Tip => Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
+      case Coll.Bin(_, k3, v3, rll, rlr) => Coll.bin(k3, v3, Coll.bin(k, v, l, rll), Coll.bin(k2, v2, rlr, rr))
+
+def Coll.rotateR [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
+  case Coll.Tip => Coll.bin(k, v, l, r2)
+  case Coll.Bin(_, k2, v2, ll, lr) =>
+    if Coll.size(lr) < 2 * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+    else lr match
+      case Coll.Tip => Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+      case Coll.Bin(_, k3, v3, lrl, lrr) => Coll.bin(k3, v3, Coll.bin(k2, v2, ll, lrl), Coll.bin(k, v, lrr, r2))
+
+// m with k bound to v (a binding of k is replaced)
+def Coll.insert [V: Type] {r: Region} (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m match
+  case Coll.Tip => Coll.Bin(1, k, v, Coll.Tip, Coll.Tip)
+  case Coll.Bin(s, k2, v2, l, r2) =>
+    if k < k2 then Coll.balance(k2, v2, Coll.insert(l, k, v), r2)
+    else if k > k2 then Coll.balance(k2, v2, l, Coll.insert(r2, k, v))
+    else Coll.Bin(s, k, v, l, r2)

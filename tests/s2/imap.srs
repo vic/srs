@@ -1,0 +1,46 @@
+// s2 C2 (vic-m5r.13): Coll.IMap, a weight-balanced tree keyed by I64; 100k inserts in a scrambled order and 100k in
+// order (the worst case of an unbalanced tree); every node is checked: size, key order, balance (delta 3)
+def T.valid(m: Coll.IMap[I64], lo: I64, hi: I64): Bool = m match
+  case Coll.Tip => true
+  case Coll.Bin(s, k, _, l, r) =>
+    val sl = Coll.size(l)
+    val sr = Coll.size(r)
+    s == sl + sr + 1 && k > lo && k < hi && (sl + sr <= 1 || (sl <= 3 * sr && sr <= 3 * sl)) && T.valid(l, lo, k) && T.valid(r, k, hi)
+
+// key i * 7919 mod 100003 (distinct: 100003 is prime) bound to i, for i in [i, n)
+def T.fill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i == n then m else T.fill(Coll.insert(m, (i * 7919) % 100003, i), i + 1, n)
+
+// keys 1..n bound to their key
+def T.seq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i > n then m else T.seq(Coll.insert(m, i, i), i + 1, n)
+
+// how many i in [i, n) find their value under their key
+def T.found {r: Region} (m: Coll.IMap[I64], i: I64, n: I64, acc: I64): I64 =
+  if i == n then acc
+  else
+    val hit = Coll.lookup(m, (i * 7919) % 100003) match
+      case Coll.None => 0
+      case Coll.Some(v) => if v == i then 1 else 0
+    T.found(m, i + 1, n, acc + hit)
+
+def T.at {r: Region} (m: Coll.IMap[I64], k: I64): I64 = Coll.lookup(m, k) match
+  case Coll.None => -1
+  case Coll.Some(v) => v
+
+def main(): I64 =
+  handle r = Arena()
+  val a = T.fill(Coll.Tip, 0, 100000)
+  rt_print_i64(Coll.size(a))
+  rt_print("\n")
+  rt_print_i64(if T.valid(a, -1, 100003) then 1 else 0)
+  rt_print("\n")
+  rt_print_i64(T.found(a, 0, 100000, 0))
+  rt_print("\n")
+  val b = T.seq(Coll.Tip, 1, 100000)
+  rt_print_i64(Coll.size(b))
+  rt_print("\n")
+  rt_print_i64(if T.valid(b, 0, 100001) then 1 else 0)
+  rt_print("\n")
+  val c = Coll.insert(Coll.insert(b, 5, 50), 5, 500)
+  rt_print_i64(T.at(c, 5) + T.at(c, 100001) + Coll.size(c))
+  rt_print("\n")
+  0
