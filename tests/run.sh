@@ -25,6 +25,13 @@ for t in tests/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat tests/$n.out)" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
+# s2 is functional (vic-m5r.14, vic: "NO `var` everything `val`"): no var, no while, no assignment in s2/*.srs;
+# armed: the pattern must hit 3 known bad lines and no good line, else the check proves nothing
+FX='^[[:space:]]*(var[[:space:]]|while[[:space:]]|[a-z_][A-Za-z0-9_.]*[[:space:]]*=([^=>]|$))'
+armed=$(printf '  var x = 1\n  while c do\n  x = 2\n' | grep -Ec "$FX"); good=$(printf '  val x = 1\n  if x == 2 then a else b\n  case A => b\n' | grep -Ec "$FX")
+if [ "$armed" != 3 ] || [ "$good" != 0 ]; then echo "FAIL s2 functional check unarmed ($armed, $good)"; fail=1
+elif grep -nE "$FX" s2/*.srs; then echo "FAIL s2 functional: var/while/assignment above"; fail=1
+else echo "ok s2 functional (no var, while, assignment)"; fi
 # s2 (vic-m5r.13): tests/s2/*.srs compile with the prelude and s2/*.srs only (not the s1 test libs)
 S2SRC=$(ls s2/*.srs | tr '\n' ' ')
 for t in tests/s2/*.srs; do
