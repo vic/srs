@@ -3255,10 +3255,16 @@ pure «i»
 }
 partial_fixpoint
 
-def «lex_loop5» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
+def «lex_loop6» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
 if (← (fun («i» : (Int)) => (do {
+pure (← (do {
+if (← «isAlpha» (← «rt_str_at» «src» «i»)) then {
+pure true
+} else {
 pure (← «isDigit» (← «rt_str_at» «src» «i»))
-} : Option Bool)) st') then «lex_loop5» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
+}
+}))
+} : Option Bool)) st') then «lex_loop6» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
 let mut «i» := «i»;
 «i» := («i» + (1 : Int));
 pure «i»
@@ -3266,7 +3272,37 @@ pure «i»
 }
 partial_fixpoint
 
-def «lex_loop6» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
+def «lex_loop5» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
+if (← (fun («i» : (Int)) => (do {
+pure (← (do {
+if ((← «rt_str_at» «src» «i») == (46 : Int)) then {
+pure (← «isAlpha» (← «rt_str_at» «src» («i» + (1 : Int))))
+} else {
+pure false
+}
+}))
+} : Option Bool)) st') then «lex_loop5» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
+let mut «i» := «i»;
+«i» := («i» + (1 : Int));
+let t_ ← «lex_loop6» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
+«i» := t_;
+pure «i»
+} : Option (Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «lex_loop7» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
+if (← (fun («i» : (Int)) => (do {
+pure (← «isDigit» (← «rt_str_at» «src» «i»))
+} : Option Bool)) st') then «lex_loop7» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
+let mut «i» := «i»;
+«i» := («i» + (1 : Int));
+pure «i»
+} : Option (Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «lex_loop8» («b» : Int) («c» : Int) («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («ind» : «Nodes») («out» : «Nodes») («src» : ByteArray) (st' : (Int)) : Option (Int) := do {
 if (← (fun («i» : (Int)) => (do {
 pure (← (do {
 if (← (do {
@@ -3281,7 +3317,7 @@ pure ((← «rt_str_at» «src» «i») != (10 : Int))
 pure false
 }
 }))
-} : Option Bool)) st') then «lex_loop6» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
+} : Option Bool)) st') then «lex_loop8» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» (← (fun («i» : (Int)) => (do {
 let mut «i» := «i»;
 if ((← «rt_str_at» «src» «i») == (92 : Int)) then {
 «i» := («i» + (2 : Int));
@@ -3398,11 +3434,23 @@ if (← «isAlpha» «c») then {
 let «b» ← (pure «i»);
 let t_ ← «lex_loop4» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
 «i» := t_;
+if (← (do {
+if (decide («c» >= (65 : Int))) then {
+pure (decide («c» <= (90 : Int)))
+} else {
+pure false
+}
+})) then {
+let t_ ← «lex_loop5» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
+«i» := t_;
+} else {
+let _ := ();
+};
 «out» := («Nodes».«NCons» (← «tok» «Kind».«TIdent» (← «rt_str_slice» «src» «b» «i») «line») «out»);
 } else {
 if (← «isDigit» «c») then {
 let «b» ← (pure «i»);
-let t_ ← «lex_loop5» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
+let t_ ← «lex_loop7» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
 «i» := t_;
 «out» := («Nodes».«NCons» (← «tok» «Kind».«TInt» (← «rt_str_slice» «src» «b» «i») «line») «out»);
 } else {
@@ -3415,7 +3463,7 @@ pure («c» == (39 : Int))
 })) then {
 «i» := («i» + (1 : Int));
 let «b» ← (pure «i»);
-let t_ ← «lex_loop6» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
+let t_ ← «lex_loop8» «b» «c» «n» «bol» «depth» «line» «ind» «out» «src» «i»;
 «i» := t_;
 if ((← «rt_str_at» «src» «i») != «c») then {
 let _ := (← «fatal» "unterminated literal".toUTF8 «line»);
@@ -3491,10 +3539,10 @@ pure («bol», «depth», «line», «i», «ind», «out»)
 }
 partial_fixpoint
 
-def «lex_loop7» («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («i» : Int) («src» : ByteArray) (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
+def «lex_loop9» («n» : Int) («bol» : Bool) («depth» : Int) («line» : Int) («i» : Int) («src» : ByteArray) (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«ind», _) : («Nodes» × «Nodes»)) => (do {
 pure (decide ((← «num» (← «head» «ind»)) > (0 : Int)))
-} : Option Bool)) st') then «lex_loop7» «n» «bol» «depth» «line» «i» «src» (← (fun ((«ind», «out») : («Nodes» × «Nodes»)) => (do {
+} : Option Bool)) st') then «lex_loop9» «n» «bol» «depth» «line» «i» «src» (← (fun ((«ind», «out») : («Nodes» × «Nodes»)) => (do {
 let mut «ind» := «ind»;
 let mut «out» := «out»;
 «ind» := (← «tail» «ind»);
@@ -3536,7 +3584,7 @@ pure false
 } else {
 let _ := ();
 };
-let t_ ← «lex_loop7» «n» «bol» «depth» «line» «i» «src» («ind», «out»);
+let t_ ← «lex_loop9» «n» «bol» «depth» «line» «i» «src» («ind», «out»);
 «ind» := t_.1;
 «out» := t_.2;
 pure (← «rev» («Nodes».«NCons» (← «tok» «Kind».«TEof» "".toUTF8 «line») «out»));
@@ -9174,6 +9222,35 @@ let t_ ← «isMadeEv_loop0» «et» «x» «made» («res», «c»);
 pure «res»;
 }
 
+def «sayId_loop0» («n» : Int) («s» : ByteArray) (st' : (Int × Int)) : Option (Int × Int) := do {
+if (← (fun ((«i», _) : (Int × Int)) => (do {
+pure (decide («i» < «n»))
+} : Option Bool)) st') then «sayId_loop0» «n» «s» (← (fun ((«i», «b») : (Int × Int)) => (do {
+let mut «i» := «i»;
+let mut «b» := «b»;
+if ((← «rt_str_at» «s» «i») == (46 : Int)) then {
+let _ := (← «say» (← «rt_str_slice» «s» «b» «i»));
+let _ := (← «say» "__".toUTF8);
+«b» := («i» + (1 : Int));
+} else {
+let _ := ();
+};
+«i» := («i» + (1 : Int));
+pure («i», «b»)
+} : Option (Int × Int))) st') else pure st'
+}
+partial_fixpoint
+
+def «sayId» («s» : ByteArray) : Option Unit := do {
+let «n» ← (pure (← «rt_str_len» «s»));
+let mut «b» := (0 : Int);
+let mut «i» := (0 : Int);
+let t_ ← «sayId_loop0» «n» «s» («i», «b»);
+«i» := t_.1;
+«b» := t_.2;
+pure (← «say» (← «rt_str_slice» «s» «b» «n»));
+}
+
 def «allCases_loop0» («ds» : «Decls») (st' : («Nodes» × «Nodes»)) : Option («Nodes» × «Nodes») := do {
 if (← (fun ((«c», _) : («Nodes» × «Nodes»)) => (do {
 pure (!(← «isNil» «c»))
@@ -9203,10 +9280,10 @@ pure «out»;
 def «cname» («b» : «Node») : Option Unit := do {
 if (decide ((← «num» «b») < (0 : Int))) then {
 let _ := (← «say» "p_".toUTF8);
-pure (← «say» (← «text» «b»));
+pure (← «sayId» (← «text» «b»));
 } else {
 let _ := (← «say» "v_".toUTF8);
-let _ := (← «say» (← «text» «b»));
+let _ := (← «sayId» (← «text» «b»));
 let _ := (← «say» "_".toUTF8);
 pure (← «sayn» (← «num» «b»));
 };
@@ -9227,7 +9304,7 @@ pure «c»
 partial_fixpoint
 
 def «mangle» («t» : «Node») : Option Unit := do {
-let _ := (← «say» (← «text» «t»));
+let _ := (← «sayId» (← «text» «t»));
 if (!(← «isNil» (← «tyArgs» «t»))) then {
 let _ := (← «say» "_".toUTF8);
 let _ := (← «sayn» (← «len» (← «tyArgs» «t»)));
@@ -9337,9 +9414,9 @@ pure (!(← «isNil» «ops»))
 } : Option Bool)) st') then «vtable_loop0» «h» «ds» (← (fun («ops» : («Nodes»)) => (do {
 let mut «ops» := «ops»;
 let _ := (← «say» " (void*)h_".toUTF8);
-let _ := (← «say» (← «text» «h»));
+let _ := (← «sayId» (← «text» «h»));
 let _ := (← «say» "_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «ops»)));
+let _ := (← «sayId» (← «text» (← «head» «ops»)));
 let _ := (← «say» ",".toUTF8);
 «ops» := (← «tail» «ops»);
 pure «ops»
@@ -9349,7 +9426,7 @@ partial_fixpoint
 
 def «vtable» («ds» : «Decls») («h» : «Node») : Option Unit := do {
 let _ := (← «say» "static void* const vt_".toUTF8);
-let _ := (← «say» (← «text» «h»));
+let _ := (← «sayId» (← «text» «h»));
 let _ := (← «say» "[] = {".toUTF8);
 let mut «ops» := (← «protoOps» «ds» (← «text2» «h»));
 let t_ ← «vtable_loop0» «h» «ds» «ops»;
@@ -12883,7 +12960,7 @@ pure ()
 }
 
 def «enumName» («d» : «Node») : Option Unit := do {
-let _ := (← «say» (← «text» «d»));
+let _ := (← «sayId» (← «text» «d»));
 if (!(← «isNil» (← «enumArgs» «d»))) then {
 pure (← «typeSuffix» (← «enumArgs» «d»));
 } else {
@@ -12892,7 +12969,7 @@ pure ();
 }
 
 def «ctorStruct» («c» : «Node») («targs» : «Nodes») : Option Unit := do {
-let _ := (← «say» (← «text2» «c»));
+let _ := (← «sayId» (← «text2» «c»));
 if (!(← «isNil» «targs»)) then {
 pure (← «typeSuffix» «targs»);
 } else {
@@ -14523,7 +14600,7 @@ pure (← «say» "void*".toUTF8);
 } else {
 if (← «found» (← «findDecl» «ds» «Kind».«DEnum» «n»)) then {
 let _ := (← «say» "struct E_".toUTF8);
-let _ := (← «say» «n»);
+let _ := (← «sayId» «n»);
 if (!(← «isNil» (← «tyArgs» «t»))) then {
 let _ := (← «typeSuffix» (← «tyArgs» «t»));
 } else {
@@ -14546,10 +14623,10 @@ pure (← «fatal» ": unknown type".toUTF8 (← «lineOf» «t»));
 
 def «givenName» («trait» : ByteArray) («args» : «Nodes») («m» : ByteArray) : Option Unit := do {
 let _ := (← «say» "g_".toUTF8);
-let _ := (← «say» «trait»);
+let _ := (← «sayId» «trait»);
 let _ := (← «typeSuffix» «args»);
 let _ := (← «say» "_".toUTF8);
-pure (← «say» «m»);
+pure (← «sayId» «m»);
 }
 
 def «fname2» («f» : «Node») («tag» : Int) («h» : ByteArray) : Option Unit := do {
@@ -14560,12 +14637,12 @@ let _ := ();
 };
 if («tag» == (2 : Int)) then {
 let _ := (← «say» "h_".toUTF8);
-let _ := (← «say» «h»);
+let _ := (← «sayId» «h»);
 let _ := (← «say» "_".toUTF8);
 } else {
 let _ := ();
 };
-let _ := (← «say» (← «text» «f»));
+let _ := (← «sayId» (← «text» «f»));
 if ((← «kind» (← «kid» «f» (4 : Int))) == «Kind».«Names») then {
 pure (← «typeSuffix» (← «kids» (← «kid» «f» (4 : Int))));
 } else {
@@ -14589,7 +14666,7 @@ let mut «fs» := «fs»;
 let _ := (← «say» " ".toUTF8);
 let _ := (← «ctype» «ds» (← «kid» (← «head» «fs») (0 : Int)));
 let _ := (← «say» " f_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «fs»)));
+let _ := (← «sayId» (← «text» (← «head» «fs»)));
 let _ := (← «say» ";".toUTF8);
 «fs» := (← «tail» «fs»);
 pure «fs»
@@ -14608,7 +14685,7 @@ let _ := (← «say» " struct {".toUTF8);
 let t_ ← «enumDef_loop1» «c» «d» «ds» «fs»;
 «fs» := t_;
 let _ := (← «say» " } C_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «c»)));
+let _ := (← «sayId» (← «text» (← «head» «c»)));
 let _ := (← «say» ";".toUTF8);
 } else {
 let _ := ();
@@ -14628,7 +14705,7 @@ if (← «isNil» (← «kids» (← «kid» (← «head» «c») (0 : Int)))) t
 let _ := (← «say» "static struct E_".toUTF8);
 let _ := (← «enumName» «d»);
 let _ := (← «say» " N_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «c»)));
+let _ := (← «sayId» (← «text» (← «head» «c»)));
 if (!(← «isNil» (← «enumArgs» «d»))) then {
 let _ := (← «typeSuffix» (← «enumArgs» «d»));
 } else {
@@ -14713,7 +14790,7 @@ let _ := (← «say» "f_".toUTF8);
 } else {
 let _ := ();
 };
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 if (!«ext») then {
 let _ := (← «typeSuffix» «targs»);
 } else {
@@ -14735,7 +14812,7 @@ let «c» ← (pure (← «find» «cs» «Kind».«DCase» (← «text» «e»)
 let «targs» ← (pure (← «kids» (← «kid» «e» (0 : Int))));
 if (← «isNil» (← «tail» (← «kids» «e»))) then {
 let _ := (← «say» "(&N_".toUTF8);
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 let _ := (← «typeSuffix» «targs»);
 pure (← «say» ")".toUTF8);
 } else {
@@ -14776,7 +14853,7 @@ if (← «found» «b») then {
 pure (← «cname» «b»);
 } else {
 let _ := (← «say» "(&N_".toUTF8);
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 pure (← «say» ")".toUTF8);
 };
 } else {
@@ -14791,7 +14868,7 @@ let _ := (← «say» "f_".toUTF8);
 } else {
 let _ := ();
 };
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 let _ := (← «say» "(".toUTF8);
 let _ := (← «exArgs» «ds» «cs» «env» (← «kids» «e») false);
 pure (← «say» ")".toUTF8);
@@ -14817,14 +14894,14 @@ if («k» == «Kind».«XBin») then {
 let _ := (← «say» "(".toUTF8);
 let _ := (← «ex» «ds» «cs» «env» (← «kid» «e» (0 : Int)));
 let _ := (← «say» " ".toUTF8);
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 let _ := (← «say» " ".toUTF8);
 let _ := (← «ex» «ds» «cs» «env» (← «kid» «e» (1 : Int)));
 pure (← «say» ")".toUTF8);
 } else {
 if («k» == «Kind».«XUn») then {
 let _ := (← «say» "(".toUTF8);
-let _ := (← «say» (← «text» «e»));
+let _ := (← «sayId» (← «text» «e»));
 let _ := (← «ex» «ds» «cs» «env» (← «kid» «e» (0 : Int)));
 pure (← «say» ")".toUTF8);
 } else {
@@ -14955,9 +15032,9 @@ let mut «a» := «a»;
 let _ := (← «say» " o".toUTF8);
 let _ := (← «sayn» «u»);
 let _ := (← «say» "->u.C_".toUTF8);
-let _ := (← «say» (← «text» «c»));
+let _ := (← «sayId» (← «text» «c»));
 let _ := (← «say» ".f_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «fs»)));
+let _ := (← «sayId» (← «text» (← «head» «fs»)));
 let _ := (← «say» " = ".toUTF8);
 let _ := (← «ex» «ds» «cs» «env» (← «head» «a»));
 let _ := (← «say» ";".toUTF8);
@@ -15016,9 +15093,9 @@ let _ := (← «cname» «b»);
 let _ := (← «say» " = s".toUTF8);
 let _ := (← «sayn» «u»);
 let _ := (← «say» "->u.C_".toUTF8);
-let _ := (← «say» (← «text» «c»));
+let _ := (← «sayId» (← «text» «c»));
 let _ := (← «say» ".f_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «fs»)));
+let _ := (← «sayId» (← «text» (← «head» «fs»)));
 let _ := (← «say» "; ".toUTF8);
 «env2» := («Nodes».«NCons» «b» «env2»);
 } else {
@@ -15120,11 +15197,11 @@ let «b» ← (pure («Node».«Node» «Kind».«BVar» (← «text» «s») (�
 let _ := (← «say» "srs_cap ".toUTF8);
 let _ := (← «cname» «b»);
 let _ := (← «say» "_v = { h_".toUTF8);
-let _ := (← «say» (← «text2» «s»));
+let _ := (← «sayId» (← «text2» «s»));
 let _ := (← «say» "_init(".toUTF8);
 let _ := (← «exArgs» «ds» «cs» «env» (← «kids» «s») false);
 let _ := (← «say» "), vt_".toUTF8);
-let _ := (← «say» (← «text2» «s»));
+let _ := (← «sayId» (← «text2» «s»));
 let _ := (← «say» ", 1 }; srs_cap* ".toUTF8);
 let _ := (← «cname» «b»);
 let _ := (← «say» " = &".toUTF8);
@@ -16072,7 +16149,7 @@ let _ := ();
 «first» := false;
 let _ := (← «slotType» «ds» «f» (← «kid» (← «head» «ps») (0 : Int)));
 let _ := (← «say» " p_".toUTF8);
-let _ := (← «say» (← «text» (← «head» «ps»)));
+let _ := (← «sayId» (← «text» (← «head» «ps»)));
 «ps» := (← «tail» «ps»);
 pure («first», «ps»)
 } : Option (Bool × «Nodes»))) st') else pure st'
