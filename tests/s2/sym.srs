@@ -1,0 +1,13 @@
+// s2 component 1 (Sym): same name = equal; other name = not; a hash tie with other strings = not equal
+def T.b(x: Bool): I64 = if x then 1 else 0
+
+def main(): I64 =
+  handle r = Arena()
+  val a = Sym.of("unify")
+  rt_print_i64(T.b(Sym.eq(a, Sym.of("unify"))))
+  rt_print_i64(T.b(Sym.eq(a, Sym.of("unifx"))))
+  rt_print_i64(T.b(Sym.eq(Sym.Sym(7, "a"), Sym.Sym(7, "b"))))
+  rt_print_i64(T.b(Sym.eq(Sym.Sym(7, "a"), Sym.Sym(8, "a"))))
+  rt_print_i64(T.b(Sym.hash(a) == strHash("unify") && rt_str_eq(Sym.str(a), "unify")))
+  rt_print("\n")
+  0
