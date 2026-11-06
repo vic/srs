@@ -1,0 +1,23 @@
+// pass: the declared result is the expected type of a fn body (vic-m5r.17): a nullary case of a generic enum infers
+// its binders from it, as the whole body, in a match arm, in an if branch; was 'cannot infer A'
+enum W.O [A: Type]:
+  case W.No
+  case W.Yes(v: A)
+
+def W.none [A: Type] {r: Region} (x: A): W.O[A] = W.No
+
+def W.keepIf [A: Type] {r: Region} (ok: Bool, x: A): W.O[A] = if ok then W.Yes(x) else W.No
+
+def W.flip [A: Type] {r: Region} (o: W.O[A], x: A): W.O[A] = o match
+  case W.No => W.Yes(x)
+  case W.Yes(_) => W.No
+
+def W.or(o: W.O[I64], d: I64): I64 = o match
+  case W.No => d
+  case W.Yes(v) => v
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(W.or(W.none(5), 1) + W.or(W.keepIf(true, 20), 0) + W.or(W.keepIf(false, 20), 300) + W.or(W.flip(W.none(0), 4000), 0))
+  rt_print("\n")
+  0

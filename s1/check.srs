@@ -513,8 +513,10 @@ def checkFnAt {r: Region} (ds0: Decls, f: Node, sol: Nodes): Node =
   val env0 = append(evEnv(ds, f), fnEnv(ds, ps))
   // a spec def body: checked in pure mode (vic-u2d U1), the compile-time fragment
   val env = if num(f) == 2 then NCons(leaf(BVar, "%pure", lineOf(f)), env0) else env0
-  val res = chk(ds, env, fnGam(ds, ps), kid(f, 2), NoNode)
-  needAssign(tgTy(res), sigTy(ds, ps, kid(f, 1)), lineOf(f))
+  // the declared result is the expected type of the body (check mode, vic-m5r.17): it solves [] binders a result names
+  val rt = sigTy(ds, ps, kid(f, 1))
+  val res = chk(ds, env, fnGam(ds, ps), kid(f, 2), rt)
+  needAssign(tgTy(res), rt, lineOf(f))
   var c = ps
   while !isNil(c) do
     val t = kid(head(c), 0)
