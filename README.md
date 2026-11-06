@@ -2,6 +2,8 @@
 
 srs is a small language with the Scala 3 look and feel that compiles to portable C. It is implemented in [itself `./s1`](./s1), bootstrapped via the Zig toolchain using an stable [seed](./bootstrap).  There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
 
+> Goal: My goal is to use `srs` instead of Rust for some native projects of mine. I care more about Functional features and C-ABI with no stdlib.
+
 If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trait`, `given`, indentation instead of braces. What srs adds is a type system that tracks *where a value lives* and *what state a resource is in*. It also lets types compute things at compile time.
 
 It is early, and it moves fast. The syntax can still change, and the [tests](tests/) are the best place to see what works today.

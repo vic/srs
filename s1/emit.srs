@@ -254,9 +254,69 @@ def paramEnv {r: Region} (ds: Decls, ps: Nodes): Nodes =
 
 def body {r: Region} (ds: Decls, cs: Nodes, f: Node, tag: I64, h: Str): Unit =
   sig(ds, f, tag, h)
-  say(" { return ")
-  ex(ds, cs, paramEnv(ds, kids(kid(f, 0))), kid(f, 2))
+  val jumps = tag == 1 && hasTailSelf(f, kid(f, 2))
+  say(if jumps then " { srs_tail: return " else " { return ")
+  ex(ds, cs, paramEnv(ds, kids(kid(f, 0))), if jumps then markTail(f, kid(f, 2)) else kid(f, 2))
   say("; }\n")
+
+// self tail calls (vic-m5r.10): a call of f in a tail position of its body jumps to the top of f, so a recursion in
+// tail position runs in constant C stack at any -O. tail positions: the body, if branches, match arm bodies, the last
+// statement of a block without handle (a handle ends its scope after the last statement)
+def isSelf(f: Node, e: Node): Bool =
+  if kind(kid(f, 4)) == Names then kind(e) == XInst && eqs(text(e), text(f)) && tysEq(kids(kid(e, 0)), kids(kid(f, 4)))
+  else kind(e) == XCall && eqs(text(e), text(f))
+def hasTailSelf(f: Node, e: Node): Bool =
+  val k = kind(e)
+  if isSelf(f, e) then true
+  else if k == XIf then hasTailSelf(f, kid(e, 1)) || hasTailSelf(f, kid(e, 2))
+  else if k == XMatch then anyArmTailSelf(f, tail(kids(e)))
+  else if k == XBlock && !hasHandle(kids(e)) && !isNil(kids(e)) then hasTailSelf(f, nth(kids(e), len(kids(e)) - 1))
+  else false
+def anyArmTailSelf(f: Node, arms: Nodes): Bool = if isNil(arms) then false else hasTailSelf(f, kid(head(arms), 0)) || anyArmTailSelf(f, tail(arms))
+def hasHandle(ss: Nodes): Bool = if isNil(ss) then false else kind(head(ss)) == SHandle || hasHandle(tail(ss))
+// e with each self tail call marked: num 1, kids = args ++ [f's Params, f's result type] (exJump)
+def markTail {r: Region} (f: Node, e: Node): Node =
+  val k = kind(e)
+  if isSelf(f, e) then Node(k, text(e), text2(e), 1, lineOf(e), append(kids(e), NCons(kid(f, 0), one(kid(f, 1)))))
+  else if k == XIf then withKids(e, NCons(kid(e, 0), NCons(markTail(f, kid(e, 1)), one(markTail(f, kid(e, 2))))))
+  else if k == XMatch then withKids(e, NCons(kid(e, 0), markArms(f, tail(kids(e)))))
+  else if k == XBlock && !hasHandle(kids(e)) then withKids(e, markLast(f, kids(e)))
+  else e
+def markArms {r: Region} (f: Node, arms: Nodes): Nodes =
+  if isNil(arms) then NNil else NCons(withKids(head(arms), NCons(markTail(f, kid(head(arms), 0)), tail(kids(head(arms))))), markArms(f, tail(arms)))
+def markLast {r: Region} (f: Node, ss: Nodes): Nodes =
+  if isNil(ss) then NNil else if isNil(tail(ss)) then one(markTail(f, head(ss))) else NCons(head(ss), markLast(f, tail(ss)))
+
+// a marked self tail call: the args into temps (all read before any param changes), the params, a jump to srs_tail
+def exJump {r: Region} (ds: Decls, cs: Nodes, env: Nodes, xs: Nodes): Unit =
+  val ps = kids(nth(xs, len(xs) - 2))
+  say("({ ")
+  var p = ps
+  var a = xs
+  var i = 0
+  while !isNil(p) do
+    ctype(ds, kid(head(p), 0))
+    say(" t")
+    sayn(i)
+    say(" = ")
+    ex(ds, cs, env, head(a))
+    say("; ")
+    p = tail(p)
+    a = tail(a)
+    i = i + 1
+  p = ps
+  i = 0
+  while !isNil(p) do
+    say("p_")
+    sayId(text(head(p)))
+    say(" = t")
+    sayn(i)
+    say("; ")
+    p = tail(p)
+    i = i + 1
+  say("goto srs_tail; (")
+  ctype(ds, nth(xs, len(xs) - 1))
+  say("){0}; })")
 
 def exArgs {r: Region} (ds: Decls, cs: Nodes, env: Nodes, xs: Nodes, lead: Bool): Unit =
   var c = xs
@@ -280,6 +340,9 @@ def opIndex(ops: Nodes, name: Str): I64 = index(ops, name)
 
 // a call of a generic fn: a def calls its instance; an extern its one C symbol, a void* result cast to its type
 def exInst {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
+  if num(e) == 1 then exJump(ds, cs, env, tail(kids(e))) else exInstCall(ds, cs, env, e)
+
+def exInstCall {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
   val f = findDecl(ds, DFn, text(e))
   val targs = kids(kid(e, 0))
   val ext = num(f) == 1
@@ -348,7 +411,8 @@ def ex {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
       say(")")
   else if k == XCall then
     val c = find(cs, DCase, text(e))
-    if found(c) then exCtor(ds, cs, env, c, kids(e), NNil)
+    if num(e) == 1 then exJump(ds, cs, env, kids(e))
+    else if found(c) then exCtor(ds, cs, env, c, kids(e), NNil)
     else
       val f = findDecl(ds, DFn, text(e))
       if num(f) == 0 then say("f_") else ()
