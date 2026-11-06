@@ -1,0 +1,120 @@
+// s2 P2 FLOW F1a (vic-m5r.3): protocol states as Datalog, on the Ast of s1 tests (lines are theirs): tests/file_ok.srs
+// passes; tests/neg/read_three, close_no_read, double_free are stuck at the op s1 rejects; missing_close ends its scope
+// in a non-end state (s1 reports it at the handle line); branch_state and loop_state meet in two states at the merge
+// (the if, the while). agree: both branches read once, so the merge has one state and the program passes;
+// region_drop: a region left open ends by its drop op; same_round: a split whose two states arrive in one round
+def FT.s {r: Region} (x: Str): Sym.Sym = Sym.of(x)
+def FT.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred)
+def FT.op {r: Region} (line: I64, recv: Str, op: Str): Ast.Expr = Ast.Method(line, Sym.of(recv), Sym.of(op), Coll.Nil)
+def FT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
+def FT.tr {r: Region} (a: Str, b: Str): Ast.Trans = Ast.Trans(Sym.of(a), Sym.of(b))
+def FT.handle {r: Region} (line: I64, x: Str, h: Str): Ast.Stmt = Ast.Handle(line, Sym.of(x), Sym.of(h), Coll.Nil)
+def FT.val {r: Region} (line: I64, x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(line, Sym.of(x), Coll.None, e)
+def FT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Fn = Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(body))
+def FT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
+def FT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, FT.l1(b))
+def FT.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, FT.l2(b, c))
+def FT.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Cons(a, FT.l3(b, c, d))
+
+// tests/file.lib: protocol File; lib/prelude.srs: protocol Region (drop free)
+def FT.protos {r: Region} (): Coll.List[Ast.Proto] =
+  val read = Ast.Op(5, FT.s("read"), Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Opened", "Read1"), FT.tr("Read1", "Read2")))
+  val close = Ast.Op(6, FT.s("close"), Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Read1", "Closed"), FT.tr("Read2", "Closed")))
+  val file = Ast.Proto(1, FT.s("File"), FT.l4(FT.s("Opened"), FT.s("Read1"), FT.s("Read2"), FT.s("Closed")), FT.s("Opened"), FT.l1(FT.s("Closed")), Coll.None, FT.l2(read, close), Coll.Nil)
+  val alloc = Ast.Op(28, FT.s("alloc"), FT.l1(Ast.Binder(28, FT.s("size"), FT.ty("I64"))), FT.ty("Ptr"), FT.l1(FT.tr("Open", "Open")))
+  val free = Ast.Op(29, FT.s("free"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Open", "Freed")))
+  val region = Ast.Proto(24, FT.s("Region"), FT.l2(FT.s("Open"), FT.s("Freed")), FT.s("Open"), FT.l1(FT.s("Freed")), Coll.Some(FT.s("free")), FT.l2(alloc, free), Coll.Nil)
+  // a test protocol: two ops of one type from one state to two end states
+  val on = Ast.Op(1, FT.s("on"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "On")))
+  val hit = Ast.Op(1, FT.s("hit"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "Broken")))
+  val lamp = Ast.Proto(1, FT.s("Lamp"), FT.l3(FT.s("Off"), FT.s("On"), FT.s("Broken")), FT.s("Off"), FT.l2(FT.s("On"), FT.s("Broken")), Coll.None, FT.l2(on, hit), Coll.Nil)
+  FT.l3(file, region, lamp)
+
+def FT.handlers {r: Region} (): Coll.List[Ast.Handler] = FT.l3(Ast.Handler(8, FT.s("CFile"), FT.s("File"), Coll.Nil), Ast.Handler(33, FT.s("Arena"), FT.s("Region"), Coll.Nil), Ast.Handler(1, FT.s("HLamp"), FT.s("Lamp"), Coll.Nil))
+
+// two branches of one length reach the merge in the same round in two states: the split joins two new at() rows
+def FT.sameRound {r: Region} (): Ast.Fn =
+  val c = Ast.Do(Ast.If(4, Ast.Bool(4, true), FT.op(4, "l", "on"), FT.op(4, "l", "hit")))
+  FT.main(2, Ast.Block(3, FT.l2(FT.handle(3, "l", "HLamp"), c), Ast.Int(5, 0)))
+
+def FT.fileOk {r: Region} (): Ast.Fn =
+  val first = FT.l3(FT.handle(3, "f", "CFile"), FT.val(4, "a", FT.op(4, "f", "read")), Ast.Do(FT.op(5, "f", "close")))
+  val second = FT.l3(FT.handle(6, "g", "CFile"), FT.val(7, "b", Ast.Bin(7, Ast.Add, FT.op(7, "g", "read"), FT.op(7, "g", "read"))), Ast.Do(FT.op(8, "g", "close")))
+  FT.main(2, Ast.Block(3, Coll.revOnto(Coll.rev(first), second), Ast.Int(11, 0)))
+
+def FT.readThree {r: Region} (): Ast.Fn =
+  val n = Ast.Bin(4, Ast.Add, Ast.Bin(4, Ast.Add, FT.op(4, "f", "read"), FT.op(4, "f", "read")), FT.op(4, "f", "read"))
+  FT.main(2, Ast.Block(3, FT.l3(FT.handle(3, "f", "CFile"), FT.val(4, "n", n), Ast.Do(FT.op(5, "f", "close"))), FT.nm(6, "n")))
+
+def FT.closeNoRead {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l2(FT.handle(3, "f", "CFile"), Ast.Do(FT.op(4, "f", "close"))), Ast.Int(5, 0)))
+
+def FT.missingClose {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l1(FT.handle(3, "f", "CFile")), FT.op(4, "f", "read")))
+
+def FT.doubleFree {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l3(FT.handle(3, "r", "Arena"), Ast.Do(FT.op(4, "r", "free")), Ast.Do(FT.op(5, "r", "free"))), Ast.Int(6, 0)))
+
+def FT.branch {r: Region} (): Ast.Fn =
+  val n = FT.val(4, "n", Ast.If(4, Ast.Bool(4, true), FT.op(4, "f", "read"), Ast.Int(4, 0)))
+  FT.main(2, Ast.Block(3, FT.l3(FT.handle(3, "f", "CFile"), n, Ast.Do(FT.op(5, "f", "close"))), FT.nm(6, "n")))
+
+def FT.loop {r: Region} (): Ast.Fn =
+  val inc = Ast.Assign(7, FT.s("i"), Ast.Bin(7, Ast.Add, FT.nm(7, "i"), Ast.Int(7, 1)))
+  val w = Ast.While(5, Ast.Bin(5, Ast.Lt, FT.nm(5, "i"), Ast.Int(5, 2)), Ast.Block(6, FT.l1(Ast.Do(FT.op(6, "f", "read"))), inc))
+  val ss = FT.l4(FT.handle(3, "f", "CFile"), Ast.Var(4, FT.s("i"), Coll.None, Ast.Int(4, 0)), Ast.Do(w), Ast.Do(FT.op(8, "f", "close")))
+  FT.main(2, Ast.Block(3, ss, Ast.Int(9, 0)))
+
+def FT.agree {r: Region} (): Ast.Fn =
+  val n = FT.val(4, "n", Ast.If(4, Ast.Bool(4, true), FT.op(4, "f", "read"), FT.op(4, "f", "read")))
+  FT.main(2, Ast.Block(3, FT.l3(FT.handle(3, "f", "CFile"), n, Ast.Do(FT.op(5, "f", "close"))), FT.nm(6, "n")))
+
+// a region left open at its scope end: its drop op (free) reaches an end state, so this passes
+def FT.regionDrop {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l1(FT.handle(3, "r", "Arena")), Ast.Int(4, 0)))
+
+def FT.show(c: Flow.Clash): Unit = c match
+  case Flow.Stuck(line, cap) => FT.say("stuck", line, cap)
+  case Flow.Split(line, cap) => FT.say("split", line, cap)
+  case Flow.Unended(line, cap) => FT.say("unended", line, cap)
+  case Flow.Malformed(rel) =>
+    rt_print(" malformed ")
+    rt_print(Sym.str(rel))
+
+def FT.say(kind: Str, line: I64, cap: Sym.Sym): Unit =
+  rt_print(" ")
+  rt_print(kind)
+  rt_print(" ")
+  rt_print_i64(line)
+  rt_print(" ")
+  rt_print(Sym.str(cap))
+
+def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    FT.show(c)
+    FT.showAll(rest)
+
+def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit =
+  rt_print(name)
+  rt_print(":")
+  Flow.check(FT.protos(), FT.handlers(), f) match
+    case Flow.Ok => rt_print(" ok")
+    case Flow.Bad(cs) => FT.showAll(cs)
+    case Flow.RulesUnsafe(rel) =>
+      rt_print(" rules unsafe ")
+      rt_print(Sym.str(rel))
+    case Flow.RulesNegCycle(rel) =>
+      rt_print(" rules negcycle ")
+      rt_print(Sym.str(rel))
+  rt_print("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  FT.run("file_ok", FT.fileOk())
+  FT.run("read_three", FT.readThree())
+  FT.run("close_no_read", FT.closeNoRead())
+  FT.run("missing_close", FT.missingClose())
+  FT.run("double_free", FT.doubleFree())
+  FT.run("branch_state", FT.branch())
+  FT.run("loop_state", FT.loop())
+  FT.run("agree", FT.agree())
+  FT.run("region_drop", FT.regionDrop())
+  FT.run("same_round", FT.sameRound())
+  0
