@@ -55,9 +55,45 @@ def wait(l: Light): I64 = l match
 srs:6: error: match is not exhaustive, missing case 'Green'
 ```
 
-## Generics, traits and givens
+A `match` is an expression, so it can go anywhere a value can, even as the condition of a loop: `while c match` with `case Nil => false` and `case Cons(_, _) => true` loops until the list is empty. You will see one in the contracts section.
 
-Type parameters go in `[]`, as in Scala 3. They are found from the arguments, or from the type you expect back, and you can give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time.
+## Generic enums and type aliases
+
+Type parameters go in `[]`, as in Scala 3, and enums can have them too:
+
+```scala
+enum Opt [A: Type]:
+  case None
+  case Some(v: A)
+
+enum Pair [A: Type] [B: Type]:
+  case Pair(a: A, b: B)
+
+def get [A: Type] (o: Opt[A], d: A): A = o match
+  case None => d
+  case Some(v) => v
+
+def first [A: Type] [B: Type] (p: Pair[A, B]): A = p match
+  case Pair(a, _) => a
+```
+
+Type arguments are found from the arguments, or from the type you expect back: `val n: Opt[I64] = None` is enough for `None`. Nesting is fine, so `Pair(Some(7), false)` is a `Pair[Opt[I64], Bool]`. You can also give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time.
+
+Type aliases work as you expect, with or without parameters, and they can use each other:
+
+```scala
+type Id [A: Type] = A
+type Num = I64
+type Maybe [A: Type] = Opt[Id[A]]
+
+val m: Maybe[Num] = Some(1)
+```
+
+Mixing them up is a plain type error, such as `type mismatch: Opt[I64] is not Opt[Bool]`.
+
+Examples: [generic](tests/generic.srs), [generic_enum](tests/generic_enum.srs), [typelambda](tests/typelambda.srs), [genum_mismatch](tests/neg/genum_mismatch.srs).
+
+## Traits and givens
 
 Evidence, like a `Show[A]` instance, goes in `{}` and always has a name. A `given` can depend on other givens, so `Show[Box[A]]` holds when `Show[A]` does.
 
@@ -77,9 +113,9 @@ def print [A: Type] {s: Show[A]} (x: A): Unit =
   rt_print("\n")
 ```
 
-Then `print(Box(41))` finds the evidence for you and prints `141`. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
+Then `print(Box(41))` finds the evidence for you and prints `141`. Evidence is passed on by name, so a function that holds `{s: Show[A]}` can hand it over explicitly with `print{s}(x)`, or let the compiler find it. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
 
-Examples: [generic](tests/generic.srs), [generic_enum](tests/generic_enum.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs), [given_fuel](tests/neg/given_fuel.srs).
+Examples: [traits](tests/traits.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs), [given_fuel](tests/neg/given_fuel.srs).
 
 ## Regions instead of a GC
 
@@ -105,6 +141,12 @@ srs:16: error: use of value after its region ended: 'h'
 ```
 
 A value that tries to escape its region, or a double free, is rejected the same way.
+
+The region is part of a value's type, and you can write it down when you want to be explicit. `^<r>` says "this lives in `r`":
+
+```scala
+val q: Opt[I64]^<r> = Some(5)
+```
 
 When there are two regions in scope, the compiler won't guess which one you mean. You name it at the call with `{}`, and that is also where a `var` shows its trick: its region is part of its state, so it moves when you assign it a value from somewhere else.
 
@@ -401,6 +443,15 @@ def count(xs: List): I64
   n
 ```
 
+Specs can quantify, too. This one says that after a `push`, a value is in the list exactly when it is the new head or was there before:
+
+```scala
+def push {r: Region} (h: I64, xs: List): List
+  ensures forall v: I64 => memL(v, result) == (h == v || memL(v, xs))
+  proof using memL
+= Cons(h, xs)
+```
+
 </details>
 
 Examples: [contracts](tests/contracts.srs), [spec_impure](tests/neg/spec_impure.srs).
@@ -471,6 +522,43 @@ reject: ambiguous
 This is the direction the language itself is going: type checking and code expansion as one search.
 
 </details>
+
+## Coming next: macros and synthesis
+
+This part is designed but not in the compiler yet, so treat the syntax as a preview.
+
+A macro in srs is not a template and it does not glue strings together. It is a relation, solved by the same miniKanren you saw above. You write its clauses with the `case` syntax you already know, a call is a goal, and the answer to the goal is the code that replaces the call. A clause can match literals, bind variables, repeat a variable to ask that two arguments are equal, and add an `if` guard:
+
+```scala
+macro unroll(n: I64, body: Code): Code =
+  case (0, _) => ()
+  case (n, body) if n > 0 =>
+    body
+    unroll(n - 1, body)
+
+def main(): I64 =
+  unroll(1 + 2, rt_print("hi\n"))
+  0
+```
+
+`n` is worked out at compile time, so `unroll(1 + 2, ...)` becomes three prints in a row, with no loop left in the C. If no clause fits, or two do, the call is an error. A macro that keeps expanding runs out of fuel and stops, like every other compile-time search in srs.
+
+The important part is that type checking happens inside that search, not in a second pass after it. A clause whose code does not type-check at the call site is a dead end, so the search moves on to the next clause. That is also why errors are becoming plain data inside the compiler: a failed check has to be something the search can look at, not something that stops the program.
+
+The same machinery gives you three more things that Scala 3 people usually reach for macros or derivation for:
+
+- **Derivation.** A macro can look at the shape of a type: its cases and their fields. A `json` macro can then write the encoder for your enum. The result is data, a `Json` value built from your cases, never a string template.
+- **Both directions.** A relation runs both ways, so the clauses that encode also decode. You write the backwards call with a `~`: `json(x)` encodes and `~json(j)` decodes.
+- **Synthesis.** Run the search from a type instead of a call, and miniKanren looks for a program of that type, built from what is in scope: constructors, matches, your functions and givens. It takes the first answer it finds in a fair search order, so the result is always the same, and it gives up when it runs out of fuel.
+
+Splices come with this, as a language feature and not only for macros. `fs*` stands for a group of arguments whose count is known at compile time. It expands in place, with no list and no allocation, and each position keeps its own type:
+
+```scala
+def area(w: I64, h: I64): I64 = w * h
+
+def f(r: Rect): I64 = r match
+  case Rect(fs*) => area(fs*)   // becomes area(w, h)
+```
 
 ## More examples
 
