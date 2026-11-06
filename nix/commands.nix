@@ -37,10 +37,10 @@ in
       )
       (cmd "test" "srs-bench"
         "the speed oracle: hyperfine S1 self-compile, S1 Lean gen, all pass tests; fails when slower than bench/baseline.txt (srs-test first)"
-        ''${build}; bash tests/bench.sh''
+        "${build}; bash tests/bench.sh"
       )
       (cmd "test" "bench-update" "after a faster delivery: save this run as bench/baseline.txt"
-        ''${build}; bash tests/bench.sh update''
+        "${build}; bash tests/bench.sh update"
       )
       (cmd "srs" "seed-update"
         "after an S1 change: bootstrap/seed.c = the S1 self-compile of the last srs-test"

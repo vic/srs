@@ -30,19 +30,21 @@ in
       ];
       pkgsOf = system: inputs.nixpkgs.legacyPackages.${system};
       name = "srs";
-      packages = pkgs: [
-        pkgs.zig # S0 compiler + C compiler/linker (C3, C4)
-        pkgs.lean4 # lean-check: the soundness proofs of the effect checker (C10)
-        pkgs.coreutils # timeout in tests/run.sh
-        pkgs.git
-        pkgs.nixfmt
-        pkgs.actionlint
-        pkgs.shellcheck
-        pkgs.hyperfine # srs-bench: the speed oracle (vic 2026-11-05)
-        pkgs.jq # srs-bench: reads the hyperfine json
-      ]
-      # perf record: where the time goes
-      ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.perf;
+      packages =
+        pkgs:
+        [
+          pkgs.zig # S0 compiler + C compiler/linker (C3, C4)
+          pkgs.lean4 # lean-check: the soundness proofs of the effect checker (C10)
+          pkgs.coreutils # timeout in tests/run.sh
+          pkgs.git
+          pkgs.nixfmt
+          pkgs.actionlint
+          pkgs.shellcheck
+          pkgs.hyperfine # srs-bench: the speed oracle (vic 2026-11-05)
+          pkgs.jq # srs-bench: reads the hyperfine json
+        ]
+        # perf record: where the time goes
+        ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.perf;
     };
   };
   yen.repo.srs = { };

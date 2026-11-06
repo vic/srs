@@ -57,7 +57,23 @@ def main(): I64 =
 srs:16: error: use of value after its region ended: 'h'
 ```
 
-A value that tries to escape its region, or a double free, is rejected the same way. Even a `var` is tracked: when you assign it a value from another region, its region changes with it.
+A value that tries to escape its region, or a double free, is rejected the same way.
+
+When there are two regions in scope, the compiler won't guess which one you mean. You name it at the call with `{}`, and that is also where a `var` shows its trick: its region is part of its state, so it moves when you assign it a value from somewhere else.
+
+```scala
+def main(): I64 =
+  handle a = Arena()
+  handle b = Heap()
+  // two regions in scope: say which one
+  var xs = build{a}(3)
+  // xs now lives in b, so freeing a is fine
+  xs = build{b}(2)
+  a.free()
+  sum(xs)
+```
+
+Leave out the `{a}` and you get `ambiguous capability, more than one in scope for 'Region'`.
 
 Examples: [region_ok](tests/region_ok.srs), [var_ok](tests/var_ok.srs), [cap_uaf](tests/neg/cap_uaf.srs), [escape](tests/neg/escape.srs), [double_free](tests/neg/double_free.srs).
 
@@ -94,10 +110,41 @@ srs:15: error: protocol Door: op 'leave' not allowed in state Shut of 'd'
 
 Branches that leave a resource in different states are rejected too, and so is a resource that does not reach its end state. Files, locks and sockets are what this is for: [file.lib](tests/file.lib) defines a `File` protocol and [file_ok](tests/file_ok.srs) uses it. The tests that must fail: [close_no_read](tests/neg/close_no_read.srs) and [branch_state](tests/neg/branch_state.srs).
 
-<details>
-<summary>Facts: say which states a function needs and leaves</summary>
+## Facts: functions that know about states
 
-A protocol can carry its own rules (they are Datalog), and a function can state facts in `<>`: the facts it needs when it is called, and after the return type, the facts it leaves behind.
+This is the part I find most fun. A function can state facts in `<>`: the facts it needs when you call it, and, after the return type, the facts it leaves behind. Facts can have variables, so one function can work across many states. Here is a tape you can read twice, and a `readAny` that reads from whatever state it finds the tape in:
+
+```scala
+protocol Tape:
+  state Fresh, Once, Twice, Done
+  start Fresh
+  end Done
+  op read(): I64 : Fresh -> Once, Once -> Twice
+  op stop(): Unit : Once -> Done, Twice -> Done
+
+// works from any state s that has a read, and leaves the tape in the state after it
+def readAny {t: Tape} <at(t, s), next(s, read, s2)> (): I64 <at(t, s2)> = t.read()
+
+def main(): I64 =
+  handle t = MemTape()
+  val a = readAny()
+  val b = readAny()
+  t.stop()
+  a + b
+```
+
+The compiler checks the body of `readAny` once for every state it can start from. At each call it works out where the tape is and moves it one step on. A third `readAny()` fails, because a tape in `Twice` has no read left:
+
+```console
+srs:19: error: entry facts do not hold at the call of 'readAny'
+```
+
+Examples: [facts_vars](tests/facts_vars.srs), [facts](tests/facts.srs), [fact_entry](tests/neg/fact_entry.srs), [fvar_exit](tests/neg/fvar_exit.srs).
+
+<details>
+<summary>Rules: name a path through a protocol</summary>
+
+A protocol can carry its own rules, written as Datalog, and functions can use them in their facts. Rules can have more than one clause, and they can be recursive.
 
 ```scala
 protocol Door:
@@ -114,7 +161,7 @@ def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
   a + d.knock()
 ```
 
-A type can carry facts as well. In [type_facts](tests/type_facts.srs), an `OpenFile` is a pointer that is valid only while its file is open. Recursive rules: [rules](tests/rules.srs).
+Examples: [rules](tests/rules.srs) (a recursive `reach`), [rule_reach](tests/neg/rule_reach.srs).
 
 </details>
 
@@ -138,9 +185,35 @@ def print [A: Type] {s: Show[A]} (x: A): Unit =
   rt_print("\n")
 ```
 
-Then `print(Box(41))` finds the evidence for you and prints `141`. Local evidence comes before a global given, as in Scala 3. When two givens match, the compiler does not pick one for you: it rejects the call as ambiguous.
+Then `print(Box(41))` finds the evidence for you and prints `141`. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous.
 
-Examples: [generic_enum](tests/generic_enum.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_ambig](tests/neg/given_ambig.srs), [type_evidence](tests/type_evidence.srs).
+Examples: [generic_enum](tests/generic_enum.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs).
+
+## Types that carry evidence and facts
+
+The same `{}` and `<>` groups work on types. A `SortedBox[A]` is a plain `Box[A]`, but you can only name it where an `Ord[A]` exists:
+
+```scala
+type SortedBox [A: Type] {o: Ord[A]} = Box[A]
+
+def first [A: Type] {o: Ord[A]} (b: SortedBox[A]): A = b match
+  case Box(v) => v
+
+def main(): I64 =
+  handle r = Arena()
+  val b: SortedBox[I64] = Box(41)
+  first(b) + 1
+```
+
+Ask for a `SortedBox[Bool]` and the compiler answers `no given for Ord[Bool]`.
+
+Facts on a type work the same way: an `OpenFile` can be a plain pointer that you can only use while its file is still open.
+
+```scala
+type OpenFile {f: File} <at(f, Opened)> = Ptr
+```
+
+Examples: [type_evidence](tests/type_evidence.srs), [type_facts](tests/type_facts.srs).
 
 ## Types that compute
 
@@ -211,3 +284,7 @@ Examples: [kanren_search](tests/kanren_search.srs) runs `appendo` both ways, [da
 ## More examples
 
 Every file in [tests/](tests/) is a program that must compile and run, and its expected output is in the `.out` file next to it. Every file in [tests/neg/](tests/neg/) must be rejected, and its first lines say with which error. Read the two folders side by side: that is the most complete tour of the language right now.
+
+## Sponsor Development
+
+srs is made with love by [vic](https://github.com/vic). A language with no GC, where memory, state and resources are checked before the program runs, takes a lot of patient work to get right. If srs is useful to you, or you want to see where it goes, please [sponsor vic](https://dendritic.oeiuwq.com/sponsor). Issues and pull requests are welcome.
