@@ -455,11 +455,31 @@ def block {r: Region} (ts0: Nodes): PR =
     ss = NCons(pn(p), ss)
     ts = pr(p)
     if isK(ts, TNl) then ts = tail(ts) else ()
-  PR(list(XBlock, at(ts0), rev(ss)), tail(ts))
+  PR(list(XBlock, at(ts0), unPat(ss, NNil)), tail(ts))
+
+// the statements of a block in order (ss reversed); a pattern val takes the statements after it as its arm body
+def unPat {r: Region} (ss: Nodes, acc: Nodes): Nodes =
+  if isNil(ss) then acc
+  else if kind(head(ss)) == XMatch && num(head(ss)) == 1 then unPat(tail(ss), one(armRest(head(ss), acc)))
+  else unPat(tail(ss), NCons(head(ss), acc))
+def armRest {r: Region} (m: Node, rest: Nodes): Node =
+  val arm = kid(m, 1)
+  val body = if isNil(rest) then leaf(XUnit, "", lineOf(m)) else list(XBlock, lineOf(m), rest)
+  Node(XMatch, "", "", 0, lineOf(m), NCons(kid(m, 0), one(Node(XArm, text(arm), "", 0, lineOf(arm), NCons(body, tail(kids(arm)))))))
+
+// val C(a, b) = e (vic-m5r.11): binds the fields of the one case C; block makes it `e match case C(a, b) => <rest>`
+// (num 1 until then), so a case of an enum with more cases is a non-exhaustive match
+def isPatVal(ts: Nodes): Bool = isK(ts, TIdent) && rt_str_at(text(head(ts)), 0) >= 'A' && rt_str_at(text(head(ts)), 0) <= 'Z' && isT(tail(ts), "(")
+def patVal {r: Region} (ts0: Nodes): PR =
+  val line = at(ts0)
+  val p = patBinds(drop(ts0, 2), line)
+  val e = rhs(expect(pr(p), "="))
+  PR(Node(XMatch, "", "", 1, line, NCons(pn(e), one(Node(XArm, needIdent(tail(ts0)), "", 0, line, NCons(leaf(XUnit, "", line), kids(pn(p))))))), pr(e))
 
 def stmt {r: Region} (ts0: Nodes): PR =
   val line = at(ts0)
-  if isT(ts0, "val") || isT(ts0, "var") then
+  if isT(ts0, "val") && isPatVal(tail(ts0)) then patVal(ts0)
+  else if isT(ts0, "val") || isT(ts0, "var") then
     val mut = if isT(ts0, "var") then 1 else 0
     val name = needIdent(tail(ts0))
     var ts = drop(ts0, 2)
@@ -537,6 +557,16 @@ def expr {r: Region} (ts0: Nodes): PR =
     val b = binary(ts0, 0)
     if isT(pr(b), "match") then arms(pn(b), tail(pr(b))) else b
 
+// (a, b, ...) after a case name: the binders, in order
+def patBinds {r: Region} (ts0: Nodes, line: I64): PR =
+  var ts = tail(ts0)
+  var binds = NNil
+  while !isT(ts, ")") do
+    binds = NCons(leaf(XName, needIdent(ts), line), binds)
+    ts = tail(ts)
+    if !isT(ts, ")") then ts = expect(ts, ",") else ()
+  PR(list(Names, line, rev(binds)), tail(ts))
+
 def arms {r: Region} (scrut: Node, ts0: Nodes): PR =
   var ts = expectK(expectK(ts0, TNl, "newline"), TIndent, "indent")
   var xs = NNil
@@ -550,15 +580,12 @@ def arms {r: Region} (scrut: Node, ts0: Nodes): PR =
       ctor = needIdent(ts)
       ts = tail(ts)
       if isT(ts, "(") then
-        ts = tail(ts)
-        while !isT(ts, ")") do
-          binds = NCons(leaf(XName, needIdent(ts), al), binds)
-          ts = tail(ts)
-          if !isT(ts, ")") then ts = expect(ts, ",") else ()
-        ts = tail(ts)
+        val p = patBinds(ts, al)
+        binds = kids(pn(p))
+        ts = pr(p)
       else ()
     val b = rhs(expect(ts, "=>"))
-    xs = NCons(Node(XArm, ctor, "", 0, al, NCons(pn(b), rev(binds))), xs)
+    xs = NCons(Node(XArm, ctor, "", 0, al, NCons(pn(b), binds)), xs)
     ts = pr(b)
     if isK(ts, TNl) then ts = tail(ts) else ()
   PR(Node(XMatch, "", "", 0, lineOf(scrut), NCons(scrut, rev(xs))), tail(ts))

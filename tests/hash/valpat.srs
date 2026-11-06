@@ -1,0 +1,15 @@
+// hash: a val pattern is the match it stands for (vic-m5r.11): same content hash
+// same: vpA vpB
+// differ: vpA vpC
+enum HAcc:
+  case HAcc(a: I64, b: I64)
+def vpA(s: HAcc): I64 =
+  val HAcc(a, b) = s
+  a + b
+def vpB(s: HAcc): I64 =
+  s match
+    case HAcc(a, b) =>
+      a + b
+def vpC(s: HAcc): I64 =
+  val HAcc(a, b) = s
+  a - b
