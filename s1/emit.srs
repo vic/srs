@@ -1,6 +1,20 @@
 // S1 emitter: decl nodes -> GNU C (statement expressions), same lowering as s0/emit.zig.
 // cs = all DCase nodes (t = enum name). env = BVar nodes, innermost first.
 
+// an srs symbol as a C identifier: the `.` of a module member (Foo.bar, vic 2026-11-06) prints as `__`
+def sayId(s: Str): Unit =
+  val n = rt_str_len(s)
+  var b = 0
+  var i = 0
+  while i < n do
+    if rt_str_at(s, i) == '.' then
+      say(rt_str_slice(s, b, i))
+      say("__")
+      b = i + 1
+    else ()
+    i = i + 1
+  say(rt_str_slice(s, b, n))
+
 def allCases {r: Region} (ds: Decls): Nodes =
   var out = NNil
   var c = declList(ds)
@@ -17,7 +31,7 @@ def ctype(ds: Decls, t: Node): Unit =
   else if eqs(n, "Ptr") then say("void*")
   else if found(findDecl(ds, DEnum, n)) then
     say("struct E_")
-    say(n)
+    sayId(n)
     // an enum instance (mono): its type args name it
     if !isNil(tyArgs(t)) then typeSuffix(tyArgs(t)) else ()
     say("*")
@@ -30,10 +44,10 @@ def ctype(ds: Decls, t: Node): Unit =
 def cname(b: Node): Unit =
   if num(b) < 0 then
     say("p_")
-    say(text(b))
+    sayId(text(b))
   else
     say("v_")
-    say(text(b))
+    sayId(text(b))
     say("_")
     sayn(num(b))
 
@@ -45,19 +59,19 @@ def fname(f: Node, tag: I64, h: Str): Unit =
 
 def givenName(trait: Str, args: Nodes, m: Str): Unit =
   say("g_")
-  say(trait)
+  sayId(trait)
   typeSuffix(args)
   say("_")
-  say(m)
+  sayId(m)
 
 def fname2(f: Node, tag: I64, h: Str): Unit =
   if tag == 1 then say("f_") else ()
   if tag == 2 then
     say("h_")
-    say(h)
+    sayId(h)
     say("_")
   else ()
-  say(text(f))
+  sayId(text(f))
   // an instance (mono): kid 4 = its type args
   if kind(kid(f, 4)) == Names then typeSuffix(kids(kid(f, 4))) else ()
 
@@ -71,7 +85,7 @@ def typeSuffix(ts: Nodes): Unit =
     c = tail(c)
 
 def mangle(t: Node): Unit =
-  say(text(t))
+  sayId(text(t))
   if !isNil(tyArgs(t)) then
     say("_")
     sayn(len(tyArgs(t)))
@@ -86,7 +100,7 @@ def mangle(t: Node): Unit =
 def enumArgs(d: Node): Nodes = if kind(kid(head(kids(d)), 1)) == Names then kids(kid(head(kids(d)), 1)) else NNil
 def isGenericEnum(ds: Decls, d: Node): Bool = kind(kid(head(kids(d)), 1)) == Groups && enumArity(ds, text(d)) > 0
 def enumName(d: Node): Unit =
-  say(text(d))
+  sayId(text(d))
   if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
 
 // a [] binder of a generic extern is a void* slot (vic B-Q6)
@@ -115,7 +129,7 @@ def sig(ds: Decls, f: Node, tag: I64, h: Str): Unit =
     first = false
     slotType(ds, f, kid(head(ps), 0))
     say(" p_")
-    say(text(head(ps)))
+    sayId(text(head(ps)))
     ps = tail(ps)
   say(")")
 
@@ -180,14 +194,14 @@ def protoOps(ds: Decls, p: Str): Nodes = kids(kid(findDecl(ds, DProto, p), 3))
 
 def vtable(ds: Decls, h: Node): Unit =
   say("static void* const vt_")
-  say(text(h))
+  sayId(text(h))
   say("[] = {")
   var ops = protoOps(ds, text2(h))
   while !isNil(ops) do
     say(" (void*)h_")
-    say(text(h))
+    sayId(text(h))
     say("_")
-    say(text(head(ops)))
+    sayId(text(head(ops)))
     say(",")
     ops = tail(ops)
   say(" 0 };\n")
@@ -205,11 +219,11 @@ def enumDef(ds: Decls, d: Node): Unit =
         say(" ")
         ctype(ds, kid(head(fs), 0))
         say(" f_")
-        say(text(head(fs)))
+        sayId(text(head(fs)))
         say(";")
         fs = tail(fs)
       say(" } C_")
-      say(text(head(c)))
+      sayId(text(head(c)))
       say(";")
     else ()
     c = tail(c)
@@ -220,7 +234,7 @@ def enumDef(ds: Decls, d: Node): Unit =
       say("static struct E_")
       enumName(d)
       say(" N_")
-      say(text(head(c)))
+      sayId(text(head(c)))
       if !isNil(enumArgs(d)) then typeSuffix(enumArgs(d)) else ()
       say(" = { ")
       sayn(num(head(c)))
@@ -276,7 +290,7 @@ def exInst {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
     say(")")
   else ()
   if !ext then say("f_") else ()
-  say(text(e))
+  sayId(text(e))
   if !ext then typeSuffix(targs) else ()
   say("(")
   exArgs(ds, cs, env, tail(kids(e)), false)
@@ -289,13 +303,13 @@ def exNew {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
   val targs = kids(kid(e, 0))
   if isNil(tail(kids(e))) then
     say("(&N_")
-    say(text(e))
+    sayId(text(e))
     typeSuffix(targs)
     say(")")
   else exCtor(ds, cs, env, c, tail(kids(e)), targs)
 
 def ctorStruct(c: Node, targs: Nodes): Unit =
-  say(text2(c))
+  sayId(text2(c))
   if !isNil(targs) then typeSuffix(targs) else ()
 
 // position of [] binder n among f's [] binders, in written order
@@ -330,7 +344,7 @@ def ex {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
     if found(b) then cname(b)
     else
       say("(&N_")
-      say(text(e))
+      sayId(text(e))
       say(")")
   else if k == XCall then
     val c = find(cs, DCase, text(e))
@@ -338,7 +352,7 @@ def ex {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
     else
       val f = findDecl(ds, DFn, text(e))
       if num(f) == 0 then say("f_") else ()
-      say(text(e))
+      sayId(text(e))
       say("(")
       exArgs(ds, cs, env, kids(e), false)
       say(")")
@@ -355,13 +369,13 @@ def ex {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
     say("(")
     ex(ds, cs, env, kid(e, 0))
     say(" ")
-    say(text(e))
+    sayId(text(e))
     say(" ")
     ex(ds, cs, env, kid(e, 1))
     say(")")
   else if k == XUn then
     say("(")
-    say(text(e))
+    sayId(text(e))
     ex(ds, cs, env, kid(e, 0))
     say(")")
   else if k == XIf then
@@ -450,9 +464,9 @@ def exCtor {r: Region} (ds: Decls, cs: Nodes, env: Nodes, c: Node, xs: Nodes, ta
     say(" o")
     sayn(u)
     say("->u.C_")
-    say(text(c))
+    sayId(text(c))
     say(".f_")
-    say(text(head(fs)))
+    sayId(text(head(fs)))
     say(" = ")
     ex(ds, cs, env, head(a))
     say(";")
@@ -495,9 +509,9 @@ def exMatch {r: Region} (ds: Decls, cs: Nodes, env: Nodes, e: Node): Unit =
           say(" = s")
           sayn(u)
           say("->u.C_")
-          say(text(c))
+          sayId(text(c))
           say(".f_")
-          say(text(head(fs)))
+          sayId(text(head(fs)))
           say("; ")
           env2 = NCons(b, env2)
         else ()
@@ -535,11 +549,11 @@ def exBlock {r: Region} (ds: Decls, cs: Nodes, env0: Nodes, ss: Nodes): Unit =
       say("srs_cap ")
       cname(b)
       say("_v = { h_")
-      say(text2(s))
+      sayId(text2(s))
       say("_init(")
       exArgs(ds, cs, env, kids(s), false)
       say("), vt_")
-      say(text2(s))
+      sayId(text2(s))
       say(", 1 }; srs_cap* ")
       cname(b)
       say(" = &")

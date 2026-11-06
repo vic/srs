@@ -57,6 +57,12 @@ def lex {r: Region} (src: Str): Nodes =
       else if isAlpha(c) then
         val b = i
         while isAlpha(rt_str_at(src, i)) || isDigit(rt_str_at(src, i)) do i = i + 1
+        // a module member is one symbol, the `.` part of it (vic 2026-11-06): Upper.name, Upper.Upper.name, ...
+        if c >= 'A' && c <= 'Z' then
+          while rt_str_at(src, i) == '.' && isAlpha(rt_str_at(src, i + 1)) do
+            i = i + 1
+            while isAlpha(rt_str_at(src, i)) || isDigit(rt_str_at(src, i)) do i = i + 1
+        else ()
         out = NCons(tok(TIdent, rt_str_slice(src, b, i), line), out)
       else if isDigit(c) then
         val b = i
