@@ -1,6 +1,6 @@
 # srs
 
-srs is a small language with the Scala 3 look and feel that compiles to portable C. It is implemented in [itself `./s1`](./s1), bootstrapped via the Zig toolchain using an stable [seed](./bootstrap).  There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
+srs is a small language with the Scala 3 look and feel that compiles to portable C. It is implemented in [itself `./s1`](./s1), bootstrapped via the Zig toolchain using a stable [seed](./bootstrap). There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
 
 > Goal: My goal is to use `srs` instead of Rust for some native projects of mine. I care more about Functional features like Protocols below and C ABI and being as close to metal than having scala stdlib.
 
@@ -8,9 +8,18 @@ If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trai
 
 It is early, and it moves fast. The syntax can still change, and the [tests](tests/) are the best place to see what works today.
 
-> Status: s1 is bootstrapped from s0 but does not currently use functional idioms. Working on s2 making use of s1 features detailed here.
-
 This README starts with what will feel familiar and goes a step further in each section, so reading it top to bottom is a good way to meet the language.
+
+<details>
+<summary>Where we are</summary>
+
+The compiler you can run today is s1. It compiles itself, and everything shown here works in it, except the macros section at the end. s1 was written in a hurry to get the language off the ground: it is imperative inside (`var` and `while` everywhere), and it stops at the first error.
+
+Now I'm writing s2, the compiler that will replace s1. It is written in srs in a functional style (only `val`, no loops, only recursion), and speed comes first. Its checker will be a Datalog program: protocol states, regions and `var` tracking become facts, the rules derive what holds at each point of a function, and a type error is a fact too. That gives three things s1 does not have: every error is reported, not only the first one; the joins at branches and loops come from the Datalog fixpoint instead of hand-written code; and each error will be able to say *why*, because every derived fact will remember the rule that made it.
+
+The pieces it stands on are in [s2/](s2): collections, a miniKanren with disequality and finite domains, and a Datalog with stratified negation. They give the same answers as the libraries in [lib/](lib) and are much faster. The checker itself is being ported from s1 one part at a time: first protocol states, then regions and vars, then names, purity, the parser, types and generics.
+
+</details>
 
 ## Try it
 
@@ -81,7 +90,7 @@ def first [A: Type] [B: Type] (p: Pair[A, B]): A = p match
   case Pair(a, _) => a
 ```
 
-Type arguments are found from the arguments, or from the type you expect back: `val n: Opt[I64] = None` is enough for `None`. Nesting is fine, so `Pair(Some(7), false)` is a `Pair[Opt[I64], Bool]`. You can also give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time.
+Type arguments are found from the arguments, or from the type you expect back: `val n: Opt[I64] = None` is enough for `None`. Nesting is fine, so `Pair(Some(7), false)` is a `Pair[Opt[I64], Bool]`. You can also give them by hand with `id[I64](41)`. Each use with a new type gets its own copy in C, so generic code costs nothing at run time. You pay for it in code size and compile time instead.
 
 Type aliases work as you expect, with or without parameters, and they can use each other:
 
@@ -117,7 +126,7 @@ def print [A: Type] {s: Show[A]} (x: A): Unit =
   rt_print("\n")
 ```
 
-Then `print(Box(41))` finds the evidence for you and prints `141`. Evidence is passed on by name, so a function that holds `{s: Show[A]}` can hand it over explicitly with `print{s}(x)`, or let the compiler find it. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
+Then `print(Box(41))` finds the evidence for you and prints `141`. Evidence is found by its type, as in Scala 3. The name is there so you can also hand it over yourself: a function that holds `{s: Show[A]}` can call `print{s}(x)`. Local evidence comes before a global given, and a more specific given wins over a general one, as in Scala 3. When two givens are equally good, the compiler does not pick one for you: it rejects the call as ambiguous. A set of givens that would search forever is stopped too, with `given search ran out of fuel`.
 
 Examples: [traits](tests/traits.srs), [givens](tests/givens.srs), [given_local](tests/given_local.srs), [given_rank](tests/given_rank.srs), [given_ambig](tests/neg/given_ambig.srs), [given_fuel](tests/neg/given_fuel.srs).
 
@@ -130,7 +139,7 @@ def build {r: Region} (n: I64): List =
   if n == 0 then Nil else Cons(n, build(n - 1))
 ```
 
-You can free a region early. The compiler stops you from using a value after its region is gone:
+You can free a region early. A region is a resource with states, open or freed (the protocols section shows how that works), and the compiler stops you from using a value after its region is gone:
 
 ```scala
 def main(): I64 =
@@ -146,7 +155,9 @@ srs:16: error: use of value after its region ended: 'h'
 
 A value that tries to escape its region, or a double free, is rejected the same way.
 
-The region is part of a value's type, and you can write it down when you want to be explicit. `^<r>` says "this lives in `r`":
+How can this work with aliasing? Because the unit you free is a whole region, never a single object. The region is part of a value's type, so every alias of a value names the same region: free it, and every alias is dead at once. An escape is a value whose type names a region that has already ended. The region capability itself can't be aliased: it is second-class, so it can only be a parameter or a `handle`, never stored in data, returned, or passed twice to one call. The flip side: you can't free one object out of a region.
+
+You can write the region down when you want to be explicit. `^<r>` says "this lives in `r`":
 
 ```scala
 val q: Opt[I64]^<r> = Some(5)
@@ -166,7 +177,7 @@ def main(): I64 =
   sum(xs)
 ```
 
-Leave out the `{a}` and you get `ambiguous capability, more than one in scope for 'Region'`. The compiler follows a `var` through every branch and around every loop, so a value that only moves into a freed region on the second turn of a loop is still caught.
+Leave out the `{a}` and you get `ambiguous capability, more than one in scope for 'Region'`. The compiler follows a `var` through every branch and around every loop, so a value that only moves into a freed region on the second turn of a loop is still caught. This always finishes: a `var` can only hold the regions in scope, so going around the loop again stops adding anything after a few turns. The check is conservative, it rejects what it can't prove safe, so now and then a correct program is rejected too.
 
 Examples: [region_ok](tests/region_ok.srs), [var_ok](tests/var_ok.srs), [cap_uaf](tests/neg/cap_uaf.srs), [escape](tests/neg/escape.srs), [var_branch](tests/neg/var_branch.srs), [var_loop](tests/neg/var_loop.srs).
 
@@ -201,7 +212,7 @@ def main(): I64 =
 srs:15: error: protocol Door: op 'leave' not allowed in state Shut of 'd'
 ```
 
-Forget to leave and you hear about that too: `'d' ends its scope in state Open, not an end state`. Branches that leave a resource in different states are rejected as well. Files, locks and sockets are what this is for: [file.lib](tests/file.lib) defines a `File` protocol and [file_ok](tests/file_ok.srs) uses it. The tests that must fail: [close_no_read](tests/neg/close_no_read.srs) and [branch_state](tests/neg/branch_state.srs).
+Forget to leave and you hear about that too: `'d' ends its scope in state Open, not an end state`. Branches that leave a resource in different states are rejected as well, and a loop must leave every resource in the state it found it in. This is typestate, an idea from the 80s. Vault, and later the access permissions of Bierhoff and Aldrich, showed how to make it work when many names point at one resource. srs keeps it simple by never letting two names share one. Files, locks and sockets are what this is for: [file.lib](tests/file.lib) defines a `File` protocol and [file_ok](tests/file_ok.srs) uses it. The tests that must fail: [close_no_read](tests/neg/close_no_read.srs) and [branch_state](tests/neg/branch_state.srs).
 
 <details>
 <summary>Regions are protocols too: bring your own allocator</summary>
@@ -259,7 +270,7 @@ Examples: [facts_vars](tests/facts_vars.srs), [facts](tests/facts.srs), [fact_en
 <details>
 <summary>Rules: name a path through a protocol</summary>
 
-A protocol can carry its own rules, written as Datalog, and functions can use them in their facts. Rules can have more than one clause, and they can be recursive.
+A protocol can carry its own rules, written as Datalog, and functions can use them in their facts. Rules can have more than one clause, and they can be recursive. They always finish: the states of a protocol are a fixed set, so there are only so many facts to find. A rule has no inputs or outputs either. `twoKnocks(s, s3)` is true for every pair of states two knocks apart, and `s2` is just a name for the state in the middle.
 
 ```scala
 protocol Door:
@@ -275,6 +286,8 @@ def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
   val a = d.knock()
   a + d.knock()
 ```
+
+The value is whatever the two knocks return added up: with a handler whose `knock` returns `3`, that is `6`. The facts only say where the door is before and after.
 
 Examples: [rules](tests/rules.srs) (a recursive `reach`), [rule_reach](tests/neg/rule_reach.srs).
 
@@ -311,6 +324,9 @@ The same groups work on types, which is the next section. A `spec def`, which on
 The `{}` and `<>` groups work on types too. A `SortedBox[A]` is a plain `Box[A]`, but you can only name it where an `Ord[A]` exists:
 
 ```scala
+given Ord[I64]:
+  def lt(a: I64, b: I64): Bool = a < b
+
 type SortedBox [A: Type] {o: Ord[A]} = Box[A]
 
 def first [A: Type] {o: Ord[A]} (b: SortedBox[A]): A = b match
@@ -322,7 +338,7 @@ def main(): I64 =
   first(b) + 1
 ```
 
-Ask for a `SortedBox[Bool]` and the compiler answers `no given for Ord[Bool]`.
+There is a given for `I64` and none for `Bool`, so ask for a `SortedBox[Bool]` and the compiler answers `no given for Ord[Bool]`.
 
 Facts on a type work the same way: an `OpenFile` can be a plain pointer that you can only use while its file is still open.
 
@@ -350,6 +366,8 @@ def word(x: Bits(32)): I64 = x + 1
 ```
 
 The value inside `Bits(...)` can also be a call: `Bits(dbl(4))` works when `dbl` is a pure function. A function that prints or allocates can't go there, and the compiler tells you why: `comptime call of a fn with effects: 'noisy'`. Type-level work always ends with an answer: a search that runs out of steps is a compile error, never a "maybe".
+
+To be clear about what that means: pure is not enough for a function that computes a type, it also has to end. srs does not prove that yet. It runs the function on a step budget, and a function that needs more steps than the budget is rejected, even when it would have finished. So the budget keeps the compiler from hanging, but it is not a proof. A real termination check is on the list (size-change termination is the one I'm looking at).
 
 Examples: [typelambda](tests/typelambda.srs), [type_values](tests/type_values.srs), [tval_impure](tests/neg/tval_impure.srs).
 
@@ -379,7 +397,7 @@ nine 9
 ten 10
 ```
 
-A loop that never ends or a division by zero is a compile error, not a hang: `comptime division by zero in 'half'`.
+A loop that runs past the step budget, or a division by zero, is a compile error, not a hang: `comptime division by zero in 'half'`.
 
 Examples: [eval/basic](tests/eval/basic.srs), [purity](tests/purity.srs), [eval/neg_fuel](tests/eval/neg_fuel.srs).
 
@@ -415,7 +433,7 @@ Generic externs work too. A value of a type parameter is passed to C as a `void*
 
 ## Contracts and proofs
 
-`requires`, `ensures`, `invariant` and `decreases` are part of the syntax, together with proof hints. A `spec def` exists only for proofs and specs, and it may only call pure functions. The C output does not contain any of this.
+`requires`, `ensures`, `invariant` and `decreases` are part of the syntax, together with proof hints. A `spec def` exists only for proofs and specs, and it may only call pure functions. The C output does not contain any of this. s1 can turn them into Lean 4 theorems about its own code, but that work is paused until s2 is in place, so read this section as an early sketch.
 
 <details>
 <summary>An example: counting a list, with a loop invariant</summary>
@@ -488,7 +506,7 @@ $ srs-run lib/kanren.srs pairs.srs
 1 < 3
 ```
 
-`both`, `in`, `lt` and `two` are one-line helpers that build the goals. Every search runs on fuel, so a goal that would loop forever stops and says so. Relations run both ways: [kanren_search](tests/kanren_search.srs) asks `append` which two lists give `[a, b]` and gets all three answers.
+`both`, `in`, `lt` and `two` are one-line helpers that build the goals. Every search runs on fuel, so a goal that would loop forever stops and says so. "Out of fuel" means "no answer within the budget", not "this would never end". Relations run both ways: [kanren_search](tests/kanren_search.srs) asks `append` which two lists give `[a, b]` and gets all three answers.
 
 More: [kanren](tests/kanren.srs) (unify), [kanren_neq](tests/kanren_neq.srs) (disequality), [kanren_fd](tests/kanren_fd.srs) (finite domains).
 
@@ -510,6 +528,8 @@ path(a, b) path(b, c) path(c, d) path(a, c) path(b, d) path(a, d)
 
 Negation works as long as it does not go around in a cycle. For a cycle, or a rule with a variable that nothing binds, you get that answer back instead of a result: `negcycle p` or `unsafe p`. A result also comes with a checker: give it a forged fact and it points at it, `invalid edge(x, y)`. See [datalog](tests/datalog.srs).
 
+A bare "no" from a logic program is hard to debug. So the s2 Datalog will keep, for every fact, the rule that made it. Then an error can show its proof: which steps put a resource in which state, and where two of them disagree. That is the idea from Soufflé's provenance.
+
 </details>
 
 <details>
@@ -523,7 +543,7 @@ ccall(f, cadd(cvar(x), cint(1))) : Bool
 reject: ambiguous
 ```
 
-This is the direction the language itself is going: type checking and code expansion as one search.
+This is the direction the language itself is going: type checking and code expansion as one search. The idea comes from Turnstile, [Type Systems as Macros](https://www2.ccs.neu.edu/racket/pubs/popl17-ckg.pdf) by Chang, Knauth and Greenman.
 
 </details>
 
@@ -552,7 +572,7 @@ The important part is that type checking happens inside that search, not in a se
 The same machinery gives you three more things that Scala 3 people usually reach for macros or derivation for:
 
 - **Derivation.** A macro can look at the shape of a type: its cases and their fields. A `json` macro can then write the encoder for your enum. The result is data, a `Json` value built from your cases, never a string template.
-- **Both directions.** A relation runs both ways, so the clauses that encode also decode. You write the backwards call with a `~`: `json(x)` encodes and `~json(j)` decodes.
+- **Both directions.** A relation can run both ways, so clauses that encode can often decode too. You write the backwards call with a `~`: `json(x)` encodes and `~json(j)` decodes. Not every macro can be run backwards, and decoding can fail, so `~json` gives you an `Option`.
 - **Synthesis.** Run the search from a type instead of a call, and miniKanren looks for a program of that type, built from what is in scope: constructors, matches, your functions and givens. It takes the first answer it finds in a fair search order, so the result is always the same, and it gives up when it runs out of fuel.
 
 Splices come with this, as a language feature and not only for macros. `fs*` stands for a group of arguments whose count is known at compile time. It expands in place, with no list and no allocation, and each position keeps its own type:
@@ -567,6 +587,12 @@ def f(r: Rect): I64 = r match
 ## More examples
 
 Every file in [tests/](tests/) is a program that must compile and run, and its expected output is in the `.out` file next to it. Every file in [tests/neg/](tests/neg/) must be rejected, and its first lines say with which error. Read the two folders side by side: that is the most complete tour of the language right now.
+
+## Where the ideas come from
+
+srs takes a lot from other people's work, and I want to say so. The surface is [Scala 3](https://docs.scala-lang.org/scala3/), and effects with handlers come from my own [fx-rs](https://github.com/denful/fx-rs). Regions come from Tofte and Talpin's region inference and from [Cyclone](https://www.cs.umd.edu/projects/cyclone/papers/cyclone-regions.pdf) (Grossman et al.). Regions in types are capture sets, as in Scala 3 capture checking ([Scoped Capabilities for Polymorphic Effects](https://arxiv.org/abs/2207.03402), Odersky et al.). Capabilities that can't escape are the [second-class values](https://www.cs.purdue.edu/homes/rompf/papers/osvald-oopsla16.pdf) of Osvald et al. Protocols are typestate: Strom and Yemini, Vault by DeLine and Fähndrich, and the [access permissions](http://www.cs.cmu.edu/~kbierhof/papers/typestate-verification.pdf) of Bierhoff and Aldrich. Logic in the type system and in the language owes a lot to [Flix](https://flix.dev) (Madsen et al.).
+
+The engines: [µKanren](http://webyrd.net/scheme-2013/papers/HemannMuKanren2013.pdf) by Hemann and Friedman, semi-naive Datalog with the round stamps of [egglog](https://arxiv.org/abs/2304.04332), and the provenance of [Soufflé](https://arxiv.org/abs/1907.05045) (Zhao, Subotić and Scholz). Errors as data follow [Total Type Error Localization and Recovery with Holes](https://doi.org/10.1145/3632910) (Zhao et al.). Content hashes are the idea of [Unison](https://www.unison-lang.org), proofs target [Lean 4](https://lean-lang.org/papers/lean4.pdf), and macros as typing come from [Turnstile](https://www2.ccs.neu.edu/racket/pubs/popl17-ckg.pdf).
 
 ## Sponsor Development
 
