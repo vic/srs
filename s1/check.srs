@@ -718,7 +718,9 @@ def chkCtor {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, c: Node, e: Node, w
   var caps = if inSpec then NNil else one(leaf(TyCap, reg, line))
   // a generic enum: the field types match the args, binding its [] binders (as chkCall)
   val tps = enumTParams(ds, text2(c))
-  var sub = NNil
+  // check mode first (vic-m5r.18): an expected type of this enum binds its [] binders before the args, so a nullary
+  // generic arg (Coll.Nil) gets its expected type
+  var sub = if found(want) && !isNil(tps) && eqs(text(want), text2(c)) then matchTy(tps, enumSelf(text2(c), tps), want, NNil, line) else NNil
   var a = kids(e)
   var a2 = NNil
   while !isNil(a) do
@@ -858,6 +860,9 @@ def chkCallOf {r: Region} (ds: Decls, env: Nodes, gam0: Nodes, f: Node, e: Node,
     needTy(ds, head(tx))
     tx = tail(tx)
   var sub = zipBind(tps, ex)
+  // check mode first (vic-m5r.18): the expected type binds the [] binders the result names, before the args
+  val rt0 = kid(f, 1)
+  if found(want) && mentions(tps, rt0) && (isTP(tps, rt0) || eqs(text(rt0), text(want))) then sub = matchTy(tps, rt0, want, sub, line) else ()
   var rho = NNil
   var a2 = NNil
   a = kids(e)
