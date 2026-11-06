@@ -1,0 +1,126 @@
+// s2 component 5 (disequality + finite domains): the cases of tests/kanren_neq.srs (store printed as the reified pair,
+// not the s1 binding list) and of tests/kanren_fd.srs (same .out lines); then a 9-queens-free bigger label: 8 distinct
+// vars in 1..8 with X1 < X2 < ... (one answer), to exercise settle rounds
+def T.c0 {r: Region} (f: Str): K.Term = K.Con(Sym.of(f), Coll.Nil)
+def T.c1 {r: Region} (f: Str, a: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Nil))
+def T.c2 {r: Region} (f: Str, a: K.Term, b: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
+def T.both {r: Region} (g: K.Goal, h: K.Goal): K.Goal = K.Conj(g, h)
+def T.in {r: Region} (x: K.Term, a: I64, b: I64): K.Goal = K.In(x, K.range(a, b))
+def T.lt {r: Region} (x: K.Term, y: K.Term): K.Goal = K.Post(K.FBin(K.Lt, x, y))
+def T.le {r: Region} (x: K.Term, y: K.Term): K.Goal = K.Post(K.FBin(K.Le, x, y))
+
+def T.show(t: K.Term): Unit = t match
+  case K.Var(n) =>
+    rt_print("_")
+    rt_print_i64(n)
+  case K.Int(v) => rt_print_i64(v)
+  case K.Con(f, args) =>
+    rt_print(Sym.str(f))
+    args match
+      case Coll.Nil => ()
+      case Coll.Cons(h, t) =>
+        rt_print("(")
+        T.show(h)
+        T.showRest(t)
+        rt_print(")")
+
+def T.showRest(ts: Coll.List[K.Term]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    rt_print(", ")
+    T.show(h)
+    T.showRest(t)
+
+def T.vars {r: Region} (st: K.State, i: I64, nv: I64): Unit =
+  if i < nv then
+    if i > 0 then rt_print(" ; ") else ()
+    val K.State(s, _, _, _, _) = st
+    T.show(K.reify(s, K.Var(i)))
+    T.vars(st, i + 1, nv)
+  else ()
+
+def T.neqs {r: Region} (s: Coll.IMap[K.Term], ns: Coll.List[K.Neq]): Unit = ns match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    val K.Neq(a, b) = h
+    rt_print(" {")
+    T.show(K.reify(s, a))
+    rt_print(" =/= ")
+    T.show(K.reify(s, b))
+    rt_print("}")
+    T.neqs(s, t)
+
+def T.answers {r: Region} (xs: Coll.List[K.State], nv: I64, store: Bool): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(st, t) =>
+    T.vars(st, 0, nv)
+    val K.State(s, ns, _, _, _) = st
+    if store then T.neqs(s, ns) else ()
+    rt_print("\n")
+    T.answers(t, nv, store)
+
+// disequality cases: answers with their store, then --
+def T.neq {r: Region} (g: K.Goal, nv: I64): Unit =
+  val none: Coll.List[K.Rule] = Coll.Nil
+  val K.Run(ans, _) = K.solve(none, g, nv, 100, 10)
+  T.answers(ans, nv, true)
+  rt_print("--\n")
+
+// finite domain cases: answers, then the status
+def T.fd {r: Region} (g: K.Goal, nv: I64, fuel: I64): Unit =
+  val none: Coll.List[K.Rule] = Coll.Nil
+  val K.Run(ans, st) = K.solve(none, g, nv, fuel, 10)
+  T.answers(ans, nv, false)
+  st match
+    case K.Ended => rt_print("ended\n")
+    case K.Limit => rt_print("limit\n")
+    case K.NoFuel => rt_print("nofuel\n")
+
+// X0 < X1 < ... < X(n-1)
+def T.chainLt {r: Region} (i: I64, n: I64, g: K.Goal): K.Goal = if i + 1 >= n then g else T.chainLt(i + 1, n, T.both(g, T.lt(K.Var(i), K.Var(i + 1))))
+def T.allIn {r: Region} (i: I64, n: I64, a: I64, b: I64, g: K.Goal): K.Goal = if i >= n then g else T.allIn(i + 1, n, a, b, T.both(g, T.in(K.Var(i), a, b)))
+def T.vlist {r: Region} (i: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] = if i < 0 then acc else T.vlist(i - 1, Coll.Cons(K.Var(i), acc))
+
+def main(): I64 =
+  handle r = Arena()
+  val x = K.Var(0)
+  val y = K.Var(1)
+  val z = K.Var(2)
+  val a = T.c0("a")
+  val b = T.c0("b")
+  T.neq(T.both(K.Diseq(x, a), K.Eq(x, a)), 1)
+  T.neq(T.both(K.Eq(x, a), K.Diseq(x, a)), 1)
+  T.neq(T.both(K.Diseq(x, a), K.Eq(x, b)), 1)
+  val fxy = T.c2("f", x, y)
+  val fab = T.c2("f", a, b)
+  T.neq(T.both(K.Diseq(fxy, fab), K.Eq(x, a)), 2)
+  T.neq(T.both(T.both(K.Diseq(fxy, fab), K.Eq(x, a)), K.Eq(y, b)), 2)
+  T.neq(T.both(K.Disj(K.Eq(x, a), K.Eq(x, b)), K.Diseq(x, a)), 1)
+  T.neq(T.both(K.Diseq(x, y), K.Eq(x, y)), 2)
+  T.neq(T.both(T.both(K.Diseq(x, y), K.Eq(x, a)), K.Eq(y, b)), 2)
+  T.neq(K.Diseq(T.c1("f", x), T.c1("g", x)), 1)
+  T.neq(T.both(K.Eq(x, a), K.Diseq(fxy, fab)), 2)
+  val x1: Coll.List[K.Term] = Coll.Cons(x, Coll.Nil)
+  val xy: Coll.List[K.Term] = Coll.Cons(x, Coll.Cons(y, Coll.Nil))
+  val xyz: Coll.List[K.Term] = Coll.Cons(x, Coll.Cons(y, Coll.Cons(z, Coll.Nil)))
+  T.fd(T.both(T.in(x, 1, 3), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.both(T.both(T.in(x, 1, 3), T.in(y, 1, 3)), T.lt(x, y)), K.Label(xy)), 2, 1000)
+  val sum = T.both(T.both(T.in(x, 0, 2), T.in(y, 0, 2)), K.Post(K.FPlus(x, y, z)))
+  T.fd(T.both(sum, K.Eq(z, K.Int(4))), 3, 1000)
+  T.fd(T.both(T.both(T.both(T.both(T.in(x, 1, 2), T.in(y, 1, 2)), T.in(z, 1, 2)), K.distinct(xyz)), K.Label(xyz)), 3, 1000)
+  T.fd(T.both(T.in(x, 1, 3), K.Eq(x, K.Int(5))), 1, 1000)
+  T.fd(T.both(K.Eq(x, K.Int(2)), T.in(x, 1, 3)), 1, 1000)
+  T.fd(T.both(T.both(T.in(x, 1, 3), T.in(x, 2, 5)), K.Label(x1)), 1, 1000)
+  T.fd(T.both(K.Eq(x, T.c1("f", T.c0("a"))), T.in(x, 1, 3)), 1, 1000)
+  T.fd(T.both(T.both(T.in(x, 1, 2), K.Diseq(x, K.Int(1))), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.in(x, 1, 5), T.lt(x, K.Int(2))), 1, 1000)
+  T.fd(T.both(T.both(T.in(x, 1, 5), T.in(y, 0, 0)), T.le(x, y)), 2, 1000)
+  T.fd(T.both(T.both(K.Eq(x, y), T.in(x, 1, 3)), T.in(y, 3, 5)), 2, 1000)
+  T.fd(T.both(T.both(T.both(T.in(x, 1, 3), T.in(y, 2, 3)), K.Eq(x, y)), K.Label(xy)), 2, 1000)
+  T.fd(T.both(T.in(x, 1, 3), K.Label(x1)), 1, 2)
+  T.fd(T.both(T.both(T.in(x, 1, 3), T.in(y, 1, 2)), K.Label(xy)), 2, 1000)
+  // the mirror of the case above: the wider domain is on the later variable; unified variables must meet, not overwrite
+  T.fd(T.both(T.both(T.both(T.in(x, 2, 3), T.in(y, 1, 3)), K.Eq(x, y)), K.Label(xy)), 2, 1000)
+  // 12 variables in 1..12, each smaller than the next: propagation alone fixes all (one answer, no label choice)
+  T.fd(T.both(T.chainLt(0, 12, T.allIn(0, 12, 1, 12, K.True)), K.Label(T.vlist(11, Coll.Nil))), 12, 1000)
+  0

@@ -1,0 +1,223 @@
+// s2 component 5: disequality and finite domains (CLP(FD), Alvis et al. 2011), the semantics of lib/kanren.srs K3 K4:
+// a branch settles its constraints in rounds until nothing changes. domains live in a Coll.IMap by variable (the s1
+// lib: a list); a disequality is its pair, violated when unify would add no binding (an O(1) map size check).
+enum K.Neq:
+  case K.Neq(a: K.Term, b: K.Term)
+
+// a domain: ascending, never empty (h = its smallest value)
+enum K.Dom:
+  case K.Dom(h: I64, t: Coll.List[I64])
+
+enum K.Bin:
+  case K.Le
+  case K.Lt
+  case K.Ne
+
+// propagators, run again in every round (bounds propagation)
+enum K.Fd:
+  case K.FBin(op: K.Bin, x: K.Term, y: K.Term)
+  case K.FPlus(x: K.Term, y: K.Term, z: K.Term)
+
+enum K.DomOf:
+  case K.NoDom
+  case K.Has(d: K.Dom)
+  case K.NotInt
+
+def K.member(v: I64, xs: Coll.List[I64]): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(h, t) => if h == v then true else K.member(v, t)
+
+def K.ints {r: Region} (d: K.Dom): Coll.List[I64] =
+  val K.Dom(h, t) = d
+  Coll.Cons(h, t)
+
+def K.lo(d: K.Dom): I64 =
+  val K.Dom(h, _) = d
+  h
+
+def K.lastOf(h: I64, t: Coll.List[I64]): I64 = t match
+  case Coll.Nil => h
+  case Coll.Cons(h2, t2) => K.lastOf(h2, t2)
+
+def K.hi(d: K.Dom): I64 =
+  val K.Dom(h, t) = d
+  K.lastOf(h, t)
+
+def K.domSize(d: K.Dom): I64 =
+  val K.Dom(_, t) = d
+  1 + Coll.length(t)
+
+// a..b ascending
+def K.range {r: Region} (a: I64, b: I64): Coll.List[I64] = K.rangeOnto(a, b, Coll.Nil)
+def K.rangeOnto {r: Region} (a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = if a > b then acc else K.rangeOnto(a, b - 1, Coll.Cons(b, acc))
+
+// the values of xs in a..b; xs without v; xs in d (each in order)
+def K.between {r: Region} (xs: Coll.List[I64], a: I64, b: I64): Coll.List[I64] = Coll.rev(K.betweenOnto(xs, a, b, Coll.Nil))
+def K.betweenOnto {r: Region} (xs: Coll.List[I64], a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => K.betweenOnto(t, a, b, if h >= a && h <= b then Coll.Cons(h, acc) else acc)
+def K.withoutOnto {r: Region} (xs: Coll.List[I64], v: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => K.withoutOnto(t, v, if h == v then acc else Coll.Cons(h, acc))
+def K.meetInts {r: Region} (xs: Coll.List[I64], d: K.Dom): Coll.List[I64] = Coll.rev(K.meetOnto(xs, d, Coll.Nil))
+def K.meetOnto {r: Region} (xs: Coll.List[I64], d: K.Dom, acc: Coll.List[I64]): Coll.List[I64] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => K.meetOnto(t, d, if K.member(h, K.ints(d)) then Coll.Cons(h, acc) else acc)
+
+// the domain of t: an integer has itself, a variable its entry (or none), a constructor is not an integer
+def K.domOf {r: Region} (st: K.State, t: K.Term): K.DomOf =
+  val K.State(s, _, ds, _, _) = st
+  K.walk(s, t) match
+    case K.Var(n) => Coll.lookup(ds, n) match
+      case Coll.None => K.NoDom
+      case Coll.Some(d) => K.Has(d)
+    case K.Int(v) => K.Has(K.Dom(v, Coll.Nil))
+    case K.Con(_, _) => K.NotInt
+
+// t takes a value of xs (ascending): None when none is left, bound when one is left
+def K.setDom {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] =
+  val K.State(s, ns, ds, fs, nx) = st
+  xs match
+    case Coll.Nil => Coll.None
+    case Coll.Cons(h, rest) => K.walk(s, t) match
+      case K.Int(v) => if K.member(v, xs) then Coll.Some(st) else Coll.None
+      case K.Con(_, _) => Coll.None
+      case K.Var(n) => rest match
+        case Coll.Nil => K.unify(s, K.Var(n), K.Int(h)) match
+          case Coll.None => Coll.None
+          case Coll.Some(s2) => Coll.Some(K.State(s2, ns, ds, fs, nx))
+        case Coll.Cons(_, _) => Coll.Some(K.State(s, ns, Coll.insert(ds, n, K.Dom(h, rest)), fs, nx))
+
+// t takes a value of xs and of the domain it already has
+def K.meet {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.domOf(st, t) match
+  case K.NoDom => K.setDom(st, t, xs)
+  case K.Has(d) => K.setDom(st, t, K.meetInts(xs, d))
+  case K.NotInt => Coll.None
+
+// ── propagators ──
+// x <= y - k: k = 0 for <=, 1 for <
+def K.leAt {r: Region} (st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom, k: I64): Coll.Option[K.State] =
+  K.setDom(st, x, K.between(K.ints(dx), K.lo(dx), K.hi(dy) - k)) match
+    case Coll.None => Coll.None
+    case Coll.Some(st2) => K.setDom(st2, y, K.between(K.ints(dy), K.lo(dx) + k, K.hi(dy)))
+
+def K.neAt {r: Region} (st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom): Coll.Option[K.State] =
+  if K.domSize(dx) == 1 && K.domSize(dy) == 1 then (if K.lo(dx) == K.lo(dy) then Coll.None else Coll.Some(st))
+  else if K.domSize(dx) == 1 then K.setDom(st, y, Coll.rev(K.withoutOnto(K.ints(dy), K.lo(dx), Coll.Nil)))
+  else if K.domSize(dy) == 1 then K.setDom(st, x, Coll.rev(K.withoutOnto(K.ints(dx), K.lo(dy), Coll.Nil)))
+  else Coll.Some(st)
+
+// x + y = z
+def K.plusAt {r: Region} (st: K.State, x: K.Term, y: K.Term, z: K.Term, dx: K.Dom, dy: K.Dom, dz: K.Dom): Coll.Option[K.State] =
+  K.setDom(st, z, K.between(K.ints(dz), K.lo(dx) + K.lo(dy), K.hi(dx) + K.hi(dy))) match
+    case Coll.None => Coll.None
+    case Coll.Some(st1) => K.setDom(st1, x, K.between(K.ints(dx), K.lo(dz) - K.hi(dy), K.hi(dz) - K.lo(dy))) match
+      case Coll.None => Coll.None
+      case Coll.Some(st2) => K.setDom(st2, y, K.between(K.ints(dy), K.lo(dz) - K.hi(dx), K.hi(dz) - K.lo(dx)))
+
+// a propagator runs once every variable it reads has a domain
+def K.fire {r: Region} (st: K.State, c: K.Fd): Coll.Option[K.State] = c match
+  case K.FBin(op, x, y) => K.domOf(st, x) match
+    case K.NoDom => Coll.Some(st)
+    case K.NotInt => Coll.None
+    case K.Has(dx) => K.domOf(st, y) match
+      case K.NoDom => Coll.Some(st)
+      case K.NotInt => Coll.None
+      case K.Has(dy) => op match
+        case K.Le => K.leAt(st, x, y, dx, dy, 0)
+        case K.Lt => K.leAt(st, x, y, dx, dy, 1)
+        case K.Ne => K.neAt(st, x, y, dx, dy)
+  case K.FPlus(x, y, z) => K.domOf(st, x) match
+    case K.NoDom => Coll.Some(st)
+    case K.NotInt => Coll.None
+    case K.Has(dx) => K.domOf(st, y) match
+      case K.NoDom => Coll.Some(st)
+      case K.NotInt => Coll.None
+      case K.Has(dy) => K.domOf(st, z) match
+        case K.NoDom => Coll.Some(st)
+        case K.NotInt => Coll.None
+        case K.Has(dz) => K.plusAt(st, x, y, z, dx, dy, dz)
+
+def K.fireAll {r: Region} (st: K.State, fs: Coll.List[K.Fd]): Coll.Option[K.State] = fs match
+  case Coll.Nil => Coll.Some(st)
+  case Coll.Cons(c, t) => K.fire(st, c) match
+    case Coll.None => Coll.None
+    case Coll.Some(st2) => K.fireAll(st2, t)
+
+// ── one round: disequalities, domains, propagators ──
+// the store under s: a pair that can never unify is dropped; one that already is equal (unify adds no binding) fails
+def K.recheck {r: Region} (s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
+  case Coll.Nil => Coll.Some(Coll.rev(kept))
+  case Coll.Cons(h, t) =>
+    val K.Neq(a, b) = h
+    K.unify(s, a, b) match
+      case Coll.None => K.recheck(s, t, kept)
+      case Coll.Some(s2) => if Coll.size(s2) == Coll.size(s) then Coll.None else K.recheck(s, t, Coll.Cons(h, kept))
+
+// every domain entry met again under the current substitution: bound variables checked, unified ones met
+def K.redom {r: Region} (st: K.State, ds: Coll.IMap[K.Dom]): Coll.Option[K.State] = ds match
+  case Coll.Tip => Coll.Some(st)
+  case Coll.Bin(_, n, d, l, r2) => K.redom(st, l) match
+    case Coll.None => Coll.None
+    case Coll.Some(st1) => K.meet(st1, K.Var(n), K.ints(d)) match
+      case Coll.None => Coll.None
+      case Coll.Some(st2) => K.redom(st2, r2)
+
+def K.round {r: Region} (st: K.State): Coll.Option[K.State] =
+  val K.State(s, ns, ds, fs, nx) = st
+  K.recheck(s, ns, Coll.Nil) match
+    case Coll.None => Coll.None
+    case Coll.Some(ns2) => K.redom(K.State(s, ns2, Coll.Tip, fs, nx), ds) match
+      case Coll.None => Coll.None
+      case Coll.Some(st2) => K.fireAll(st2, fs)
+
+def K.domTotal(ds: Coll.IMap[K.Dom]): I64 = ds match
+  case Coll.Tip => 0
+  case Coll.Bin(_, _, d, l, r2) => 1 + K.domSize(d) + K.domTotal(l) + K.domTotal(r2)
+
+// a round changed nothing: as many bindings and domain values (a changing round binds or removes, so rounds end)
+def K.same(a: K.State, b: K.State): Bool =
+  val K.State(sa, _, da, _, _) = a
+  val K.State(sb, _, db, _, _) = b
+  Coll.size(sa) == Coll.size(sb) && K.domTotal(da) == K.domTotal(db)
+
+def K.settle {r: Region} (st: K.State): Coll.Option[K.State] = K.round(st) match
+  case Coll.None => Coll.None
+  case Coll.Some(st2) => if K.same(st, st2) then Coll.Some(st2) else K.settle(st2)
+
+// a =/= b: dropped when they can never unify, None when they already are equal
+def K.addNeq {r: Region} (st: K.State, a: K.Term, b: K.Term): Coll.Option[K.State] =
+  val K.State(s, ns, ds, fs, nx) = st
+  K.unify(s, a, b) match
+    case Coll.None => Coll.Some(st)
+    case Coll.Some(s2) => if Coll.size(s2) == Coll.size(s) then Coll.None else Coll.Some(K.State(s, Coll.Cons(K.Neq(a, b), ns), ds, fs, nx))
+
+// ── labeling: the variable of xs with the smallest domain of 2 or more values (first-fail) ──
+enum K.Pick:
+  case K.NoPick
+  case K.Pick(t: K.Term, d: K.Dom)
+
+def K.pickVar {r: Region} (st: K.State, xs: Coll.List[K.Term], best: K.Pick): K.Pick = xs match
+  case Coll.Nil => best
+  case Coll.Cons(h, t) => K.domOf(st, h) match
+    case K.Has(d) => if K.domSize(d) > 1 && K.smaller(d, best) then K.pickVar(st, t, K.Pick(h, d)) else K.pickVar(st, t, best)
+    case K.NoDom => K.pickVar(st, t, best)
+    case K.NotInt => K.pickVar(st, t, best)
+
+def K.smaller(d: K.Dom, best: K.Pick): Bool = best match
+  case K.NoPick => true
+  case K.Pick(_, e) => K.domSize(d) < K.domSize(e)
+
+// one branch per value, in order; the goals after keep the label goal, so the next variable is labeled
+def K.labelBranches {r: Region} (st: K.State, t: K.Term, vs: Coll.List[I64], gs: Coll.List[K.Goal], acc: Coll.List[K.Branch]): Coll.List[K.Branch] = vs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(v, more) => K.labelBranches(st, t, more, gs, Coll.Cons(K.Branch(st, Coll.Cons(K.Eq(t, K.Int(v)), gs)), acc))
+
+// every two of xs differ
+def K.distinct {r: Region} (xs: Coll.List[K.Term]): K.Goal = xs match
+  case Coll.Nil => K.True
+  case Coll.Cons(h, t) => K.Conj(K.neEach(h, t), K.distinct(t))
+
+def K.neEach {r: Region} (x: K.Term, ys: Coll.List[K.Term]): K.Goal = ys match
+  case Coll.Nil => K.True
+  case Coll.Cons(y, t) => K.Conj(K.Post(K.FBin(K.Ne, x, y)), K.neEach(x, t))
