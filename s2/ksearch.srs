@@ -18,7 +18,7 @@ enum K.Rule:
 
 // what a branch knows: substitution, disequalities, domains, propagators (s2/kfd.srs), the next fresh variable
 enum K.State:
-  case K.State(s: Coll.IMap[K.Term], neq: Coll.List[K.Neq], dom: Coll.IMap[K.Dom], fd: Coll.List[K.Fd], next: I64)
+  case K.State(s: Coll.IMap[K.Term], neq: Coll.List[K.Neq], dom: Coll.IMap[K.Dom], fd: K.Props, next: I64)
 
 enum K.Branch:
   case K.Branch(st: K.State, gs: Coll.List[K.Goal])
@@ -82,22 +82,16 @@ def K.picks {r: Region} (rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.
     val K.Rule(f, head, body, nv) = h
     val K.State(s, ns, ds, fs, nx) = st
     if !Sym.eq(f, rel) then K.picks(t, rel, args, st, rest, out, cost)
-    else K.post(st, K.unifyAll(s, Coll.rev(K.shiftOnto(head, nx, Coll.Nil)), args)) match
+    else K.post(st, args, K.unifyAll(s, Coll.rev(K.shiftOnto(head, nx, Coll.Nil)), args)) match
       case Coll.None => K.picks(t, rel, args, st, rest, out, cost + 1)
       case Coll.Some(st2) =>
         val K.State(s2, ns2, ds2, fs2, _) = st2
         K.picks(t, rel, args, st, rest, Coll.Cons(K.Branch(K.State(s2, ns2, ds2, fs2, nx + nv), Coll.Cons(K.shiftGoal(body, nx), rest)), out), cost + 1)
 
-// the state after unify gave u: dead on None, else every constraint settled again
-def K.post {r: Region} (st: K.State, u: Coll.Option[Coll.IMap[K.Term]]): Coll.Option[K.State] = u match
-  case Coll.None => Coll.None
-  case Coll.Some(s2) =>
-    val K.State(_, ns, ds, fs, nx) = st
-    K.settle(K.State(s2, ns, ds, fs, nx))
-
+// after a domain on x: the events it left wake their propagators
 def K.settled {r: Region} (c: Coll.Option[K.State]): Coll.Option[K.State] = c match
   case Coll.None => Coll.None
-  case Coll.Some(st) => K.settle(st)
+  case Coll.Some(st) => K.settleFrom(st, Coll.Nil)
 
 def K.onward {r: Region} (c: Coll.Option[K.State], rest: Coll.List[K.Goal]): K.Step = c match
   case Coll.None => K.Dead
@@ -110,18 +104,18 @@ def K.kstep {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step 
     case Coll.Nil => K.Done(st)
     case Coll.Cons(g, rest) => g match
       case K.True => K.More(K.Branch(st, rest))
-      case K.Eq(a, c) => K.onward(K.post(st, K.unify(s, a, c)), rest)
+      case K.Eq(a, c) => K.onward(K.post(st, Coll.Cons(a, Coll.Cons(c, Coll.Nil)), K.unify(s, a, c)), rest)
       case K.Diseq(a, c) => K.onward(K.addNeq(st, a, c), rest)
       case K.In(x, xs) => K.onward(K.settled(K.meet(st, x, xs)), rest)
-      case K.Post(c) => K.onward(K.settle(K.State(s, ns, ds, Coll.Cons(c, fs), nx)), rest)
+      case K.Post(c) => K.onward(K.settleFrom(K.State(s, ns, ds, K.watch(s, fs, c), nx), Coll.Cons(c, Coll.Nil)), rest)
       case K.Label(xs) => K.pickVar(st, xs, K.NoPick) match
         case K.NoPick => K.More(K.Branch(st, rest))
         case K.Pick(t, d) => K.Split(K.labelBranches(st, t, K.ints(d), gs, Coll.Nil), K.domSize(d))
       case K.Conj(x, y) => K.More(K.Branch(st, Coll.Cons(x, Coll.Cons(y, rest))))
       case K.Disj(x, y) => K.Split(Coll.Cons(K.Branch(st, Coll.Cons(x, rest)), Coll.Cons(K.Branch(st, Coll.Cons(y, rest)), Coll.Nil)), 1)
-      case K.Call(f, args) => Coll.lookup(ix, Sym.hash(f)) match
-        case Coll.None => K.Split(Coll.Nil, 0)
-        case Coll.Some(rs) => K.picks(rs, f, args, st, rest, Coll.Nil, 0)
+      case K.Call(f, args) => Coll.node(ix, Sym.hash(f)) match
+        case Coll.Tip => K.Split(Coll.Nil, 0)
+        case Coll.Bin(_, _, rs, _, _) => K.picks(rs, f, args, st, rest, Coll.Nil, 0)
 
 // the driver: the current branch runs until a choice; the choice's branches go to the back of the queue (fair, so
 // complete); a choice that costs more than the fuel left stops the run (vic §17)
@@ -137,4 +131,4 @@ def K.loop {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Bra
 
 // prove g (variables 0..nvars-1) over rules: at most limit answers, within fuel
 def K.solve {r: Region} (rules: Coll.List[K.Rule], g: K.Goal, nvars: I64, fuel: I64, limit: I64): K.Run =
-  K.loop(K.index(rules), Coll.Some(K.Branch(K.State(Coll.Tip, Coll.Nil, Coll.Tip, Coll.Nil, nvars), Coll.Cons(g, Coll.Nil))), Queue.empty(), fuel, limit, Coll.Nil, 0)
+  K.loop(K.index(rules), Coll.Some(K.Branch(K.State(Coll.Tip, Coll.Nil, Coll.Tip, K.Props(Coll.Tip, Coll.Tip, Coll.Nil), nvars), Coll.Cons(g, Coll.Nil))), Queue.empty(), fuel, limit, Coll.Nil, 0)

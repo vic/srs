@@ -85,3 +85,8 @@ def Coll.insert [V: Type] {r: Region} (m: Coll.IMap[V], k: I64, v: V): Coll.IMap
     if k < k2 then Coll.balance(k2, v2, Coll.insert(l, k, v), r2)
     else if k > k2 then Coll.balance(k2, v2, l, Coll.insert(r2, k, v))
     else Coll.Bin(s, k, v, l, r2)
+
+// the node of k, Coll.Tip when absent: a lookup that allocates nothing (Coll.lookup allocates its Some)
+def Coll.node [V: Type] (m: Coll.IMap[V], k: I64): Coll.IMap[V] = m match
+  case Coll.Tip => m
+  case Coll.Bin(_, k2, _, l, r2) => if k < k2 then Coll.node(l, k) else if k > k2 then Coll.node(r2, k) else m

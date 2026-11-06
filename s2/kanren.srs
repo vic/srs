@@ -8,9 +8,9 @@ enum K.Term:
 
 // the term t stands for in s: a variable follows its bindings (a triangular substitution)
 def K.walk {r: Region} (s: Coll.IMap[K.Term], t: K.Term): K.Term = t match
-  case K.Var(n) => Coll.lookup(s, n) match
-    case Coll.None => t
-    case Coll.Some(u) => K.walk(s, u)
+  case K.Var(n) => Coll.node(s, n) match
+    case Coll.Tip => t
+    case Coll.Bin(_, _, u, _, _) => K.walk(s, u)
   case K.Con(_, _) => t
   case K.Int(_) => t
 
