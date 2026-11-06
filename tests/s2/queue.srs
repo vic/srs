@@ -1,0 +1,28 @@
+// s2 component 2 (Queue): FIFO order across the front/back switch, pushAll, empty pop, 1M push + pop interleaved
+// pop every element; the sum of position * value proves the order (FIFO: 1*1 + 2*2 + ... )
+def T.drain {r: Region} (q: Queue.Queue[I64], i: I64, acc: I64): I64 = Queue.pop(q) match
+  case Queue.Empty => acc
+  case Queue.Got(x, rest) => T.drain(rest, i + 1, acc + i * x)
+
+def T.fill {r: Region} (q: Queue.Queue[I64], i: I64, n: I64): Queue.Queue[I64] = if i > n then q else T.fill(Queue.push(q, i), i + 1, n)
+
+// push 2, pop 1, n times: the queue grows by one per turn; the sum of the popped values
+def T.churn {r: Region} (q: Queue.Queue[I64], i: I64, n: I64, acc: I64): I64 =
+  if i == n then acc
+  else Queue.pop(Queue.push(Queue.push(q, 2 * i), 2 * i + 1)) match
+    case Queue.Empty => -1
+    case Queue.Got(x, rest) => T.churn(rest, i + 1, n, acc + x)
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(T.drain(T.fill(Queue.empty(), 1, 4), 1, 0))
+  rt_print("\n")
+  val q = Queue.pushAll(Queue.push[I64](Queue.empty(), 1), Coll.Cons(2, Coll.Cons(3, Coll.Nil)))
+  rt_print_i64(T.drain(q, 1, 0))
+  rt_print("\n")
+  val e: Queue.Queue[I64] = Queue.empty()
+  rt_print_i64(T.drain(e, 1, 0))
+  rt_print("\n")
+  rt_print_i64(T.churn(Queue.empty(), 0, 1000000, 0))
+  rt_print("\n")
+  0
