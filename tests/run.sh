@@ -25,6 +25,15 @@ for t in tests/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat tests/$n.out)" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
+# s2 (vic-m5r.13): tests/s2/*.srs compile with the prelude and s2/*.srs only (not the s1 test libs)
+S2SRC=$(ls s2/*.srs | tr '\n' ' ')
+for t in tests/s2/*.srs; do
+  n=s2_$(basename "$t" .srs)
+  timeout 2 "$B/s2" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s1)"; fail=1; continue; }
+  timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; fail=1; continue; }
+  out=$(timeout 1 "$B/$n"); code=$?
+  if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
+done
 # self tail calls run in constant C stack with no C optimization (vic-m5r.10): tailcall at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/tailcall0" "$B/tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/tailcall0") && [ "$out" = "$(cat tests/tailcall.out)" ] && echo "ok tailcall -O0" || { echo "FAIL tailcall -O0"; fail=1; }
 # every "// expect: msg" line must be printed: errors are data, main reports them all (vic-ngq); armed: 0 lines = FAIL

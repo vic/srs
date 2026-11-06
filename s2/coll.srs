@@ -1,0 +1,35 @@
+// s2 collections (vic-m5r.13 C1): persistent and functional (val only); every loop is a self tail call, so it runs in
+// constant C stack (vic-m5r.10). a function is a given of a trait, named by a marker type F (no closures).
+
+enum Coll.List [A: Type]:
+  case Coll.Nil
+  case Coll.Cons(h: A, t: Coll.List[A])
+
+enum Coll.Option [A: Type]:
+  case Coll.None
+  case Coll.Some(v: A)
+
+// xs reversed onto acc
+def Coll.revOnto [A: Type] {r: Region} (xs: Coll.List[A], acc: Coll.List[A]): Coll.List[A] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => Coll.revOnto(t, Coll.Cons(h, acc))
+
+def Coll.rev [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.revOnto(xs, Coll.Nil)
+
+def Coll.lengthFrom [A: Type] (xs: Coll.List[A], n: I64): I64 = xs match
+  case Coll.Nil => n
+  case Coll.Cons(_, t) => Coll.lengthFrom(t, n + 1)
+
+def Coll.length [A: Type] (xs: Coll.List[A]): I64 = Coll.lengthFrom(xs, 0)
+
+def Coll.headOpt [A: Type] {r: Region} (xs: Coll.List[A]): Coll.Option[A] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(h, _) => Coll.Some(h)
+
+// one step of a left fold: the given for marker F
+trait Coll.Fold [F: Type] [A: Type] [B: Type]:
+  def step(acc: B, x: A): B
+
+def Coll.foldl [F: Type] [A: Type] [B: Type] {f: Coll.Fold[F, A, B]} (xs: Coll.List[A], acc: B): B = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => Coll.foldl[F, A, B](t, f.step(acc, h))
