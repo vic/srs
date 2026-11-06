@@ -1,0 +1,95 @@
+// s2 component 4 (Kanren search): the 7 cases of tests/kanren_search.srs (same .out lines), then 20k answers of
+// nat(X) (each answer a choice: the fair queue at work)
+def T.c0 {r: Region} (f: Str): K.Term = K.Con(Sym.of(f), Coll.Nil)
+def T.c1 {r: Region} (f: Str, a: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Nil))
+def T.c2 {r: Region} (f: Str, a: K.Term, b: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
+def T.l1 {r: Region} (a: K.Term): Coll.List[K.Term] = Coll.Cons(a, Coll.Nil)
+def T.l3 {r: Region} (a: K.Term, b: K.Term, c: K.Term): Coll.List[K.Term] = Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil)))
+
+def T.show(t: K.Term): Unit = t match
+  case K.Var(n) =>
+    rt_print("_")
+    rt_print_i64(n)
+  case K.Int(v) => rt_print_i64(v)
+  case K.Con(f, args) =>
+    rt_print(Sym.str(f))
+    args match
+      case Coll.Nil => ()
+      case Coll.Cons(h, t) =>
+        rt_print("(")
+        T.show(h)
+        T.showRest(t)
+        rt_print(")")
+
+def T.showRest(ts: Coll.List[K.Term]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    rt_print(", ")
+    T.show(h)
+    T.showRest(t)
+
+// the walked query variables i..nv-1 of one answer
+def T.vars {r: Region} (st: K.State, i: I64, nv: I64): Unit =
+  if i < nv then
+    if i > 0 then rt_print(" ; ") else ()
+    val K.State(s, _) = st
+    T.show(K.reify(s, K.Var(i)))
+    T.vars(st, i + 1, nv)
+  else ()
+
+def T.answers {r: Region} (xs: Coll.List[K.State], nv: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(st, t) =>
+    T.vars(st, 0, nv)
+    rt_print("\n")
+    T.answers(t, nv)
+
+def T.out {r: Region} (run: K.Run, nv: I64): Unit =
+  val K.Run(ans, st) = run
+  T.answers(ans, nv)
+  st match
+    case K.Ended => rt_print("ended\n")
+    case K.Limit => rt_print("limit\n")
+    case K.NoFuel => rt_print("nofuel\n")
+
+// append(nil, L, L).  append(cons(H, T), L, cons(H, R)) :- append(T, L, R).
+def T.appendo {r: Region} (): Coll.List[K.Rule] =
+  val app = Sym.of("append")
+  val nil = T.c0("nil")
+  val r1 = K.Rule(app, T.l3(nil, K.Var(0), K.Var(0)), K.True, 1)
+  val r2 = K.Rule(app, T.l3(T.c2("cons", K.Var(0), K.Var(1)), K.Var(2), T.c2("cons", K.Var(0), K.Var(3))), K.Call(app, T.l3(K.Var(1), K.Var(2), K.Var(3))), 4)
+  Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
+
+// nat(z).  nat(s(N)) :- nat(N).
+def T.nato {r: Region} (): Coll.List[K.Rule] =
+  val nat = Sym.of("nat")
+  Coll.Cons(K.Rule(nat, T.l1(T.c0("z")), K.True, 0), Coll.Cons(K.Rule(nat, T.l1(T.c1("s", K.Var(0))), K.Call(nat, T.l1(K.Var(0))), 1), Coll.Nil))
+
+def main(): I64 =
+  handle r = Arena()
+  val rules = T.appendo()
+  val app = Sym.of("append")
+  val nil = T.c0("nil")
+  val ab = T.c2("cons", T.c0("a"), T.c2("cons", T.c0("b"), nil))
+  val x = K.Var(0)
+  val y = K.Var(1)
+  T.out(K.solve(rules, K.Call(app, T.l3(T.c2("cons", T.c0("a"), nil), T.c2("cons", T.c0("b"), nil), x)), 1, 100, 10), 1)
+  val back = K.Call(app, T.l3(x, y, ab))
+  T.out(K.solve(rules, back, 2, 100, 10), 2)
+  T.out(K.solve(rules, back, 2, 100, 2), 2)
+  T.out(K.solve(rules, back, 2, 4, 10), 2)
+  val lp = Sym.of("loop")
+  val loop = Coll.Cons(K.Rule(lp, T.l1(K.Var(0)), K.Call(lp, T.l1(K.Var(0))), 1), Coll.Nil)
+  T.out(K.solve(loop, K.Call(lp, T.l1(T.c0("a"))), 0, 10, 10), 0)
+  val none: Coll.List[K.Rule] = Coll.Nil
+  T.out(K.solve(none, K.Disj(K.Eq(x, T.c0("a")), K.Eq(x, T.c0("b"))), 1, 100, 10), 1)
+  T.out(K.solve(loop, K.Disj(K.Call(lp, T.l1(T.c0("a"))), K.Eq(x, T.c0("a"))), 1, 10, 10), 1)
+  // append([a, b, c], [d], Z): 4 calls, 2 clauses picked per call (a head that fails costs too): fuel 8 ends, 7 does not
+  val abc = T.c2("cons", T.c0("a"), T.c2("cons", T.c0("b"), T.c2("cons", T.c0("c"), nil)))
+  val fwd = K.Call(app, T.l3(abc, T.c2("cons", T.c0("d"), nil), x))
+  T.out(K.solve(rules, fwd, 1, 8, 10), 1)
+  T.out(K.solve(rules, fwd, 1, 7, 10), 1)
+  val K.Run(nats, st) = K.solve(T.nato(), K.Call(Sym.of("nat"), T.l1(x)), 1, 1000000, 20000)
+  rt_print_i64(Coll.length(nats))
+  rt_print("\n")
+  0
