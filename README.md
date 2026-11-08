@@ -80,6 +80,8 @@ def wait(l: Light): I64 = l match
 
 Because matches return values, they can serve as loop conditions (e.g., `while c match case Nil => false case Cons(_, _) => true do ...`).
 
+**Tests:** [`tests/neg/nonexhaustive.srs`](./tests/neg/nonexhaustive.srs) rejects a match that misses a case.
+
 ### 2. Generics & Parametric Type Aliases
 Type parameters are written inside square brackets `[A: Type]`. Generic code is fully monomorphized into C, delivering maximum runtime performance at the cost of compilation time and binary footprint.
 
@@ -104,6 +106,8 @@ val m: Maybe[Num] = Some(1)
 
 Type inference automatically determines generic arguments from call parameters or return annotations (e.g., `val n: Opt[I64] = None`).
 
+**Tests:** [`tests/generic_enum.srs`](./tests/generic_enum.srs) (generic enums, one C struct per instance), [`tests/typelambda.srs`](./tests/typelambda.srs) (type aliases and match types).
+
 ### 3. Contextual Traits & Givens
 Contextual evidence (like `Show[A]` instances) is declared with `given` and accepted inside curly braces `{}`.
 
@@ -124,6 +128,8 @@ def print [A: Type] {s: Show[A]} (x: A): Unit =
 ```
 
 Calling `print(Box(41))` automatically resolves and links the requisite given instances. Resolution rules match Scala 3: local scope beats global givens, specific types beat general givens, ambiguous instances fail compilation, and recursive given searches are guarded by a fuel threshold.
+
+**Tests:** [`tests/givens.srs`](./tests/givens.srs) (given clauses with evidence), [`tests/given_rank.srs`](./tests/given_rank.srs) (specificity ranking as in Scala 3), [`tests/neg/given_ambig.srs`](./tests/neg/given_ambig.srs) (ambiguous givens rejected), [`tests/neg/given_fuel.srs`](./tests/neg/given_fuel.srs) (search out of fuel rejected).
 
 ---
 
@@ -151,6 +157,8 @@ def main(): I64 =
 
 Regions act as second-class capabilities—they cannot be stored in structs, returned from functions, or duplicated in a single call. When multiple regions exist in scope, you specify the target region explicitly (`build{a}(3)`). Mutable variables (`var`) track region state movements across loops and control flow branches conservatively.
 
+**Tests:** [`tests/region_ok.srs`](./tests/region_ok.srs) (manual early free, then no use), [`tests/neg/use_after_free.srs`](./tests/neg/use_after_free.srs) (use after region end rejected), [`tests/neg/tparam_escape.srs`](./tests/neg/tparam_escape.srs) (a callee's result keeps the argument's region), [`tests/neg/var_loop.srs`](./tests/neg/var_loop.srs) (loop fixpoint over region state).
+
 ### 2. Typestate Protocols
 Protocols model state machines for resources like files, locks, database transactions, or memory allocators. A protocol defines states, an initial state, terminal states, and valid operations:
 
@@ -172,6 +180,8 @@ The compiler enforces protocol ordering rules: calling `d.leave()` while in `Shu
 
 Because memory regions are themselves protocols (`Region` protocol with handlers like `Arena`, `Heap`, or custom `Bump` allocators), double-frees and post-free allocations are caught as protocol state errors.
 
+**Tests:** [`tests/rules.srs`](./tests/rules.srs) (a `Door` protocol that runs), [`tests/neg/double_free.srs`](./tests/neg/double_free.srs), [`tests/neg/missing_close.srs`](./tests/neg/missing_close.srs), [`tests/neg/call_freed.srs`](./tests/neg/call_freed.srs) (protocol state violations rejected).
+
 ---
 
 ## Signature Telescopes & Advanced Types
@@ -191,6 +201,8 @@ def report [A: Type] {s: Show[A]} {t: Tape} <at(t, Fresh)> (x: A): I64 <at(t, On
   s.show(x) + t.read()
 ```
 
+**Tests:** [`tests/facts.srs`](./tests/facts.srs) (entry and exit state facts), [`tests/facts_vars.srs`](./tests/facts_vars.srs) (variables in facts), [`tests/neg/tf_stale.srs`](./tests/neg/tf_stale.srs) (a fact that no longer holds is rejected).
+
 ### 2. Typestate Facts & Datalog Rules
 Functions can specify pre- and post-condition facts in `<>`. Protocol definitions can also embed declarative Datalog rules to verify complex state paths:
 
@@ -207,6 +219,8 @@ def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
   val a = d.knock()
   a + d.knock()
 ```
+
+**Tests:** [`tests/rules.srs`](./tests/rules.srs) (two rule clauses and recursion over protocol states), [`tests/neg/rule_reach.srs`](./tests/neg/rule_reach.srs) (capability must end in its declared state), [`tests/neg/rule_safety.srs`](./tests/neg/rule_safety.srs) (rule parameter missing from its body).
 
 ### 3. Types with Evidence & Compile-Time Computation
 Types can be constrained by evidence or state facts, and can compute types at compile time via pure functions:
@@ -226,6 +240,8 @@ type Bits (n: I64) = n match
 
 Pure functions with no side effects can be evaluated at compile time (`--eval` flag). Step budgets ensure compile-time evaluation always terminates safely.
 
+**Tests:** [`tests/type_values.srs`](./tests/type_values.srs) (value parameters on types), [`tests/type_facts.srs`](./tests/type_facts.srs) (state facts carried by types), [`tests/type_evidence.srs`](./tests/type_evidence.srs) (evidence required by types), [`tests/eval/basic.srs`](./tests/eval/basic.srs) (compile-time evaluation), [`tests/neg/tl_fuel.srs`](./tests/neg/tl_fuel.srs), [`tests/neg/tval_fuel.srs`](./tests/neg/tval_fuel.srs), [`tests/eval/neg_fuel.srs`](./tests/eval/neg_fuel.srs) (fuel exhaustion rejected, never treated as unknown).
+
 ---
 
 ## Content Addressing, C Interop & Contracts
@@ -238,6 +254,8 @@ def size(xs: I64): I64 = xs + 1
 def len(ys: I64): I64 = ys + 1
 // both produce hash: 3664359068.2665956217.563507961.2568932447
 ```
+
+**Tests:** [`tests/hash/basic.srs`](./tests/hash/basic.srs) (equal and differing hashes), [`tests/hash/valpat.srs`](./tests/hash/valpat.srs) (a val pattern hashes as the match it stands for).
 
 ### 2. Foreign C Interop (`extern def`)
 Use `extern def` to declare C functions while maintaining full typestate and capability guarantees:
@@ -260,6 +278,8 @@ spec def size(xs: List): I64
   case Cons(_, t) => 1 + size(t)
 ```
 
+**Tests:** [`tests/contracts.srs`](./tests/contracts.srs) (contracts parse, check, and erase in C), [`tests/neg/spec_impure.srs`](./tests/neg/spec_impure.srs) (a spec def calls impure code, rejected).
+
 ---
 
 ## Embedded Logic Engines: miniKanren & Datalog
@@ -269,6 +289,8 @@ srs ships with built-in relational programming libraries written directly in srs
 * **miniKanren**: Supports constraint logic programming, unification, disequality (`=/=`), and finite domain constraints (`in`).
 * **Datalog**: Features stratified negation, fixpoint evaluation, and full provenance tracking.
 * **Type Checker as a Relation**: Demonstrates relational type inference and macro expansion, following the Turnstile model (`turnstile.srs`).
+
+**Tests:** [`tests/kanren_search.srs`](./tests/kanren_search.srs) (search, answer limits, fuel), [`tests/kanren_neq.srs`](./tests/kanren_neq.srs) (disequality), [`tests/kanren_fd.srs`](./tests/kanren_fd.srs) (finite domains with propagation), [`tests/datalog.srs`](./tests/datalog.srs) (transitive closure, stratified negation, negation cycles rejected), [`tests/turnstile.srs`](./tests/turnstile.srs) (type checking as a relation), [`tests/s2/dprov.srs`](./tests/s2/dprov.srs) (rebuilt proof of each derived fact), [`tests/s2/datalog.srs`](./tests/s2/datalog.srs) and [`tests/s2/kfd.srs`](./tests/s2/kfd.srs) (the s2 engines, same answers as s1).
 
 ---
 
