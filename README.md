@@ -22,6 +22,8 @@ See [Where Ideas Come From](#where-the-ideas-come-from).
 > Like Unison and Nix derivations, srs names values and functions by the hash of its content and the hash of its effect requirements. So compiled functions can go into a shared store and be reused. The store keeps the AST apart from the surface syntax, so other syntaxes can sit on top of it, as Unison intended. This suits agentic workflows that run in several workspaces. They can share results instead of rebuilding `./target` and every dependency each time. Unison keeps this store in a DB. srs uses the Nix store approach instead. This also means code can be shipped around to other instances as Unison does for moving code to where data is, and other things like hot-code patching which I inted to use with llvm agents working on srs codebases.
 >
 > Protocols describe state machines for resources. Memory regions are the main use case. Protocols also fit any other stateful resource, such as a database transaction.
+>
+> The language compiles to both C and Lean for proving its own kernel.
 
 If you write Scala 3, you already know most of the syntax: `enum`, `match`, `trait`, `given`, and indentation instead of braces. srs adds a type system that tracks two things: where a value lives, and what state a resource is in. The types can also compute things at compile time.
 
