@@ -8,6 +8,10 @@ srs is a small language with the Scala 3 look and feel that compiles to portable
 > also been exploring [algebraic effects with handlers](https://github.com/denful/fx-rs) -particularly on the area of effect
 > quantification and ordering- that of course can be applied to linearity and memory management. I'm also a big fan of [Unison](https://www.unison-lang.org) and [Flix](https://flix.dev) both are great inspiration to this experiment. I've also been working
 > on [logic programming in Nix](https://github.com/vic/yen) and that is also and inspiration on using Datalog at the type-system.
+>
+> I'm planning to use this to implement my new [Nix runtime](https://github.com/denful/dnx) -Nix on delta interaction nets- instead of Rust.
+
+
 
 > What does all this means, practially?
 >
