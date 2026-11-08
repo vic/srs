@@ -2,7 +2,25 @@
 
 srs is a small language with the Scala 3 look and feel that compiles to portable C. It is implemented in [itself `./s1`](./s1), bootstrapped via the Zig toolchain using a stable [seed](./bootstrap). There is no garbage collector. Instead, the compiler checks how you use memory, mutable state and resources tracked as Flow Effects with Handlers at compile time, so the C you get has no runtime bookkeeping left in it.
 
-> Goal: My goal is to use `srs` instead of Rust for some native projects of mine. I care more about Functional features like Protocols below and C ABI and being as close to metal than having scala stdlib.
+> Why?
+>
+> My goal is to create a better Rust for myself and perhaps also for you. I have always loved Scala3 type-system and have
+> also been exploring [algebraic effects with handlers](https://github.com/denful/fx-rs) -particularly on the area of effect
+> quantification and ordering- that of course can be applied to linearity and memory management. I'm also a big fan of [Unison](https://www.unison-lang.org) and [Flix](https://flix.dev) both are great inspiration to this experiment. I've also been working
+> on [logic programming in Nix](https://github.com/vic/yen) and that is also and inspiration on using Datalog at the type-system.
+
+> What does all this means, practially?
+>
+> That we can have a high-level functional language compiled directly to any C target, with much better resource management
+> via handlers and effects and type protocols (see below). 
+>
+> Sharing functions by their content hash is an idea I've learned from Unison an Nix, that means we can have a common "store"
+> of pre-compiled functions we can re-use. That is suitable for multi-workspace agentic workflows that can share computations
+> between them instead of `./target` and all deps being recompiled each time.
+>
+> Protocols allows to express state machines on resources. Regions (memory management) is the primary use-case, but they will
+> be useful for any resource that is stateful (db-transactions, etc).
+
 
 If you write Scala 3 you already know most of the syntax: `enum`, `match`, `trait`, `given`, indentation instead of braces. What srs adds is a type system that tracks *where a value lives* and *what state a resource is in*. It also lets types compute things at compile time.
 
