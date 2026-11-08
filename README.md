@@ -14,7 +14,7 @@ srs has no garbage collector. Instead, the compiler checks at compile time how y
 >
 > You get a high-level functional language that compiles to any C target. Handlers, effects and type protocols (see below) make resource management much better.
 >
-> Like Unison and Nix, srs names a function by the hash of its content and the hash of its requirements. So compiled functions can go into a shared store and be reused. The store keeps the AST apart from the surface syntax, so other syntaxes can sit on top of it, as Unison intended. This suits agentic workflows that run in several workspaces. They can share results instead of rebuilding `./target` and every dependency each time. Unison keeps this store in SQLite. srs uses the Nix store instead.
+> Like Unison and Nix derivations, srs names values and functions by the hash of its content and the hash of its effect requirements. So compiled functions can go into a shared store and be reused. The store keeps the AST apart from the surface syntax, so other syntaxes can sit on top of it, as Unison intended. This suits agentic workflows that run in several workspaces. They can share results instead of rebuilding `./target` and every dependency each time. Unison keeps this store in a DB. srs uses the Nix store approach instead. This also means code can be shipped around to other instances as Unison does for moving code to where data is, and other things like hot-code patching which I inted to use with llvm agents working on srs codebases.
 >
 > Protocols describe state machines for resources. Memory regions are the main use case. Protocols also fit any other stateful resource, such as a database transaction.
 
