@@ -4,11 +4,16 @@ srs is a small language that looks and feels like Scala 3, and it compiles to po
 
 srs has no garbage collector. Instead, the compiler checks at compile time how your code uses memory, mutable state and other resources. It tracks them as flow effects with handlers. So the C you get has no runtime bookkeeping left in it.
 
+
 > Why?
 >
 > I want a better Rust, for me and maybe for you. I have always loved the Scala 3 type system. I have also been exploring [algebraic effects with handlers](https://github.com/denful/fx-rs), especially how to count and order effects. That work applies to linearity and memory management too. [Unison](https://www.unison-lang.org) and [Flix](https://flix.dev) inspired this experiment a lot. I have also worked on [logic programming in Nix](https://github.com/vic/yen), which shows how Datalog can live inside a type system.
 >
 > I plan to use srs for my new [Nix runtime](https://github.com/denful/dnx). It runs Nix on delta interaction nets, and I want to write it in srs instead of Rust.
+
+
+See [Where Ideas Come From](#where-the-ideas-come-from).
+
 
 > What does this mean in practice?
 >
