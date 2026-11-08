@@ -11,10 +11,10 @@ The compiler is self-hosting (written in srs itself in `./s1`) and builds via a 
 If you love high-level functional programming but need tight control over performance and resources, srs was built for you:
 
 * **Scala 3 Design, C Execution**: Enjoy `enum`, `match`, `trait`, `given`, and clean whitespace-based indentation, compiling directly to any C target.
-* **Algebraic Effects for Memory & Resources**: Inspired by fx-rs, Tofte-Talpin region inference, Cyclone, and capture checking. Memory and state management are modeled as effects with handlers.
+* **Algebraic Effects for Memory & Resources**: Inspired by structural Algebraic Effects with Handlers [fx-rs](https://github.com/denful/fx-rs), Tofte-Talpin region inference, Cyclone, and capture checking. Memory and state management are modeled as effects with handlers.
 * **Content-Addressed Execution**: Following Unison and Nix derivations, functions and values are named by the cryptographic hash of their abstract syntax tree (AST) and effect requirements. Code can be cached in a global Nix-style store, shared across workspace agents without re-compilation, and hot-patched live.
 * **Formal Verification**: Compiles to both C for production binaries and Lean 4 for proving kernel invariants.
-* **Real-World Mission**: Built to power `dnx`, a next-generation Nix runtime executing on delta interaction nets.
+* **Real-World Mission**: Built to power [`dnx`](https://github.com/denful/dnx), a next-generation Nix runtime executing on delta interaction nets.
 
 ---
 
@@ -321,4 +321,4 @@ srs builds directly upon landmark research across programming languages, static 
 
 ## Support & Development
 
-srs is actively created and maintained by **vic**. If you find srs exciting or want to follow its progress, contributions, issues, and pull requests are warmly welcomed!
+srs is actively created and maintained by **vic**. If you find srs exciting or want to follow its progress, contributions, issues, and pull requests and [sponsors](https://github.com/sponsors/vic) are warmly welcomed!
