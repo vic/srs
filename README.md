@@ -15,8 +15,9 @@ srs is a small language with the Scala 3 look and feel that compiles to portable
 > via handlers and effects and type protocols (see below). 
 >
 > Sharing functions by their content hash is an idea I've learned from Unison an Nix, that means we can have a common "store"
-> of pre-compiled functions we can re-use. That is suitable for multi-workspace agentic workflows that can share computations
-> between them instead of `./target` and all deps being recompiled each time.
+> of pre-compiled functions we can re-use (that means we could have alternative syntaxes like Unison intended to, because the store keeps ast independent of surface language). Having a shared store is suitable for multi-workspace agentic workflows that can share computations
+> between them instead of `./target` and all deps being recompiled each time. Unlike Unison which uses an sqlite database,
+> we prefer the Nix store approach.
 >
 > Protocols allows to express state machines on resources. Regions (memory management) is the primary use-case, but they will
 > be useful for any resource that is stateful (db-transactions, etc).
