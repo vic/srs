@@ -81,7 +81,7 @@ def Pure.pureExtern(n: Sym.Sym): Bool =
   rt_str_eq(s, "rt_str_len") || rt_str_eq(s, "rt_str_at") || rt_str_eq(s, "rt_str_slice") || rt_str_eq(s, "rt_str_eq")
 
 // ── facts ──
-def Pure.facts {r: Region} (ds: Coll.List[Ast.Decl]): Coll.List[D.Fact] = Pure.decls(Pure.protos(ds, Coll.Nil), Pure.hprotos(ds, Coll.sEmpty()), ds, Coll.Nil)
+def Pure.facts {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows): Coll.List[D.Fact] = Pure.decls(Pure.protos(ds, Coll.Nil), Pure.hprotos(ds, Coll.sEmpty()), rows, ds, Coll.Nil)
 
 def Pure.protos {r: Region} (ds: Coll.List[Ast.Decl], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ds match
   case Coll.Nil => acc
@@ -99,16 +99,23 @@ def Pure.hprotos {r: Region} (ds: Coll.List[Ast.Decl], m: Coll.SMap[Sym.Sym]): C
       Pure.hprotos(rest, Coll.sInsert(m, n, p))
     case _ => Pure.hprotos(rest, m)
 
-def Pure.decls {r: Region} (ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], ds: Coll.List[Ast.Decl], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ds match
+// a def's inferred row (s2/eff.srs) uses each of its protocols, as a written {} binder does
+def Pure.decls {r: Region} (ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], rows: Eff.Rows, ds: Coll.List[Ast.Decl], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ds match
   case Coll.Nil => acc
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Ast.Fn(_, n, _, _, _, _, _) = f
-      Pure.decls(ps, hp, rest, Pure.fn(ps, hp, Pure.Def(n), f, acc))
+      Pure.decls(ps, hp, rows, rest, Pure.rowUses(n, Eff.row(rows, n), Pure.fn(ps, hp, Pure.Def(n), f, acc)))
     case Ast.DHandler(h) =>
       val Ast.Handler(_, n, p, fs) = h
-      Pure.decls(ps, hp, rest, Pure.fns(ps, hp, Pure.In(n), fs, Coll.Cons(Pure.f2(Pure.RHandles, n, p), acc)))
-    case _ => Pure.decls(ps, hp, rest, acc)
+      Pure.decls(ps, hp, rows, rest, Pure.fns(ps, hp, Pure.In(n), fs, Coll.Cons(Pure.f2(Pure.RHandles, n, p), acc)))
+    case _ => Pure.decls(ps, hp, rows, rest, acc)
+
+def Pure.rowUses {r: Region} (f: Sym.Sym, cs: Coll.List[Eff.Cap], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = cs match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val Eff.Cap(p, _) = c
+    Pure.rowUses(f, rest, Coll.Cons(Pure.f2(Pure.RUses, f, p), acc))
 
 def Pure.fns {r: Region} (ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], w: Pure.Who, fs: Coll.List[Ast.Fn], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = fs match
   case Coll.Nil => acc
@@ -179,7 +186,7 @@ enum Pure.Set:
   case Pure.Got(impure: Coll.SMap[Bool])
   case Pure.RulesBad(rel: Sym.Sym)
 
-def Pure.impure {r: Region} (ds: Coll.List[Ast.Decl]): Pure.Set = D.solve(Pure.rules(), Pure.facts(ds)) match
+def Pure.impure {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows): Pure.Set = D.solve(Pure.rules(), Pure.facts(ds, rows)) match
   case D.Solved(m) => Pure.Got(Pure.names(D.tuples(m, Pure.relSym(Pure.RImpure)), Coll.sEmpty()))
   case D.Unsafe(rel) => Pure.RulesBad(rel)
   case D.NegCycle(rel) => Pure.RulesBad(rel)

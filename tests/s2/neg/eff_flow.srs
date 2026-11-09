@@ -1,0 +1,18 @@
+// expect: error[op-not-allowed]
+// a request is an op on the innermost capability of its protocol: Flow checks its state as for d.shut()
+protocol Door:
+  state Open, Shut
+  start Open
+  end Shut
+  op shut(): Unit : Open -> Shut
+
+handler Hinge for Door:
+  def init(): Ptr = rt_arena_new()
+  def shut(self: Ptr): Unit = rt_arena_free(self)
+
+def main(): I64 =
+  handle d = Hinge()
+  Door.shut()
+  Door.shut()
+  0
+// expect: --> tests/s2/neg/eff_flow.srs:16

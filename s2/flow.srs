@@ -16,12 +16,12 @@ enum Flow.St:
   case Flow.St(next: I64, facts: Coll.List[D.Fact], caps: Coll.List[Flow.Cap])
 
 // what the walk reads: the protocols, the handlers, the defs (a call reads its callee's signature), the enums (a
-// constructor call allocates in the Region in scope)
+// constructor call allocates in the innermost Region), the type decls, the effect rows (s2/eff.srs)
 enum Flow.Cx:
-  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl])
+  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl], rows: Eff.Rows)
 
 def Flow.cxHs(cx: Flow.Cx): Coll.List[Ast.Handler] =
-  val Flow.Cx(_, hs, _, _, _) = cx
+  val Flow.Cx(_, hs, _, _, _, _) = cx
   hs
 
 // the walk after an expression: its state and the point where control is now
@@ -268,10 +268,10 @@ def Flow.protoOf {r: Region} (hs: Coll.List[Ast.Handler], h: Sym.Sym): Coll.Opti
 def Flow.expr {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.At = e match
   case Ast.Call(line, f, _, chosen, xs) =>
     val Flow.At(st2, pa) = Flow.exprs(cx, st, p, xs)
-    val Flow.Cx(ps, _, fns, es, _) = cx
+    val Flow.Cx(ps, _, fns, es, _, _) = cx
     Flow.fnNamed(fns, f) match
       case Coll.Some(g) => Flow.call(ps, st2, pa, g, chosen, line)
-      case Coll.None => if Flow.isCtor(es, f) then Flow.alloc(st2, pa, line) else Flow.At(st2, pa)
+      case Coll.None => if Flow.isCtor(es, f) then Flow.alloc(st2, pa, line) else Flow.request(st2, pa, Eff.reqOf(ps, f), line)
   case Ast.Method(line, recv, op, xs) =>
     val Flow.At(st2, pa) = Flow.exprs(cx, st, p, xs)
     val Flow.St(_, _, cs) = st2
@@ -330,13 +330,13 @@ enum Flow.Src:
   case Flow.SCap(c: I64)
   case Flow.SVar(x: Sym.Sym)
 
-// the sources of e: a constructor lives in the Region in scope and in its args' sources; a call whose result is data (an
-// enum) lives in the capabilities its region binders take and in its args' sources (s1 rho); if, match and block
-// take the union of their values
+// the sources of e: a constructor lives in the innermost Region and in its args' sources; a call whose result is data
+// (an enum) lives in the capabilities its region binders take, in the innermost Region when its row has Region, and in
+// its args' sources (s1 rho); if, match and block take the union of their values
 def Flow.srcs {r: Region} (cx: Flow.Cx, cs: Coll.List[Flow.Cap], e: Ast.Expr, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = e match
   case Ast.Name(_, x) => Coll.Cons(Flow.SVar(x), acc)
   case Ast.Call(_, f, _, chosen, xs) =>
-    val Flow.Cx(ps, _, fns, es, _) = cx
+    val Flow.Cx(ps, _, fns, es, _, rows) = cx
     Flow.fnNamed(fns, f) match
       case Coll.Some(g) =>
         val Ast.Fn(_, _, gs, _, ret, _, _) = g
@@ -344,15 +344,9 @@ def Flow.srcs {r: Region} (cx: Flow.Cx, cs: Coll.List[Flow.Cap], e: Ast.Expr, ac
         // a [] binder result may be any arg (pick) or made from one (a given's method): it lives in every arg's region
         // too (vic-m5r.15)
         val data = Flow.isEnumName(es, rn) || Ty.memberSym(rn, Ty.tparams(gs, Coll.Nil))
-        if data then Flow.srcsAll(cx, cs, xs, Flow.regionSrcs(cs, chosen, Flow.regionBs(Flow.capBs(ps, gs, 0, Coll.Nil), Coll.Nil), acc)) else acc
-      case Coll.None =>
-        if Flow.isCtor(es, f) then
-          Flow.onlyCap(cs, Sym.of("Region"), Coll.None) match
-            case Coll.None => Flow.srcsAll(cx, cs, xs, acc)
-            case Coll.Some(c) =>
-              val Flow.Cap(_, id, _, _) = c
-              Flow.srcsAll(cx, cs, xs, Coll.Cons(Flow.SCap(id), acc))
-        else acc
+        val acc2 = if Eff.has(rows, f, Sym.of("Region")) then Flow.inRegion(cs, acc) else acc
+        if data then Flow.srcsAll(cx, cs, xs, Flow.regionSrcs(cs, chosen, Flow.regionBs(Flow.capBs(ps, gs, 0, Coll.Nil), Coll.Nil), acc2)) else acc
+      case Coll.None => if Flow.isCtor(es, f) then Flow.srcsAll(cx, cs, xs, Flow.inRegion(cs, acc)) else acc
   case Ast.If(_, _, t, x) => Flow.srcs(cx, cs, x, Flow.srcs(cx, cs, t, acc))
   case Ast.Block(_, _, last) => Flow.srcs(cx, cs, last, acc)
   case Ast.Match(_, _, arms) => Flow.srcsArms(cx, cs, arms, acc)
@@ -437,14 +431,33 @@ def Flow.step {r: Region} (st: Flow.St, p: I64, c: Flow.Cap, op: Sym.Sym, line: 
   val st3 = Flow.add(st2, Flow.fStep(s, q, id, op))
   Flow.At(Flow.add(st3, Flow.fLine(s, line)), q)
 
-// a constructor call (written with args: a nullary case takes no ()) allocates: an alloc step on the one Region in
-// scope (s1/check.srs:708-716). no Region, or two: the names check reports it. not yet: a spec def allocates nothing
-// (the s2 Ast has no spec marker)
-def Flow.alloc {r: Region} (st: Flow.St, p: I64, line: I64): Flow.At =
-  val Flow.St(_, _, cs) = st
-  Flow.onlyCap(cs, Sym.of("Region"), Coll.None) match
-    case Coll.None => Flow.At(st, p)
-    case Coll.Some(c) => Flow.step(st, p, c, Sym.of("alloc"), line)
+// a constructor call (written with args: a nullary case takes no ()) is a request on Region: an alloc step on the
+// innermost Region in scope. none here: the def's implicit Region (its row, s2/eff.srs), owned by a caller. not yet: a
+// spec def allocates nothing (the s2 Ast has no spec marker)
+def Flow.alloc {r: Region} (st: Flow.St, p: I64, line: I64): Flow.At = Flow.request(st, p, Coll.Some(Eff.Req(Sym.of("Region"), Sym.of("alloc"))), line)
+
+// a request P.op(...): a step of the innermost capability of P in scope (none: the implicit one, not tracked here)
+def Flow.request {r: Region} (st: Flow.St, p: I64, q: Coll.Option[Eff.Req], line: I64): Flow.At = q match
+  case Coll.None => Flow.At(st, p)
+  case Coll.Some(rq) =>
+    val Eff.Req(proto, op) = rq
+    val Flow.St(_, _, cs) = st
+    Flow.innermost(cs, proto) match
+      case Coll.None => Flow.At(st, p)
+      case Coll.Some(c) => Flow.step(st, p, c, op, line)
+
+// the innermost Region in scope as a source (none: the implicit one, a caller's)
+def Flow.inRegion {r: Region} (cs: Coll.List[Flow.Cap], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = Flow.innermost(cs, Sym.of("Region")) match
+  case Coll.None => acc
+  case Coll.Some(c) =>
+    val Flow.Cap(_, id, _, _) = c
+    Coll.Cons(Flow.SCap(id), acc)
+
+def Flow.innermost {r: Region} (cs: Coll.List[Flow.Cap], proto: Sym.Sym): Coll.Option[Flow.Cap] = cs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(c, rest) =>
+    val Flow.Cap(_, _, p, _) = c
+    if Sym.eq(p, proto) then Coll.Some(c) else Flow.innermost(rest, proto)
 
 def Flow.isCtor {r: Region} (es: Coll.List[Ast.Enum], f: Sym.Sym): Bool = es match
   case Coll.Nil => false
@@ -994,7 +1007,7 @@ def Flow.callRules {r: Region} (): Coll.List[D.Rule] =
 // no binders: one world. no solution: the def has none (NoSol)
 def Flow.facts {r: Region} (cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val Ast.Fn(line, name, gs, _, _, exit, body) = f
-  val Flow.Cx(ps, _, _, _, _) = cx
+  val Flow.Cx(ps, _, _, _, _, _) = cx
   val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
   val atoms = Flow.entryAtoms(gs, Coll.Nil)
   val as: Coll.List[Coll.List[Flow.VS]] = bs match
@@ -1141,7 +1154,7 @@ def Flow.needs {r: Region} (cx: Flow.Cx, st: Flow.St, x: Sym.Sym, ann: Coll.Opti
   case Coll.None => st
   case Coll.Some(t) =>
     val Ast.Ty(_, tn, _, _, _) = t
-    val Flow.Cx(ps, _, _, _, ts) = cx
+    val Flow.Cx(ps, _, _, _, ts, _) = cx
     Flow.typeDecl(ts, tn) match
       case Coll.None => st
       case Coll.Some(td) =>

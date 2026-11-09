@@ -331,13 +331,14 @@ def Names.statesF {r: Region} (p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Names.St)
   case Coll.Nil => st
   case Coll.Cons(s, rest) => Names.statesF(p, rest, Names.add(st, Names.fState(p, s)))
 
-// each op: declared in its protocol, wanted with arity params + 1 (self) in a handler, its transitions, its types
+// each op: declared in its protocol, its request P.op a call name, wanted with arity params + 1 (self) in a handler,
+// its transitions, its types
 def Names.ops {r: Region} (p: Sym.Sym, os: Coll.List[Ast.Op], st: Names.St): Names.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
     val Ast.Op(line, name, params, ret, trs) = o
     val n = Coll.length(params) + 1
-    val st1 = Names.add(Names.add(Names.add(st, Names.fOpOf(p, name)), Names.fWantArity(p, name, n)), Names.fSameI(n))
+    val st1 = Names.add(Names.add(Names.add(Names.declare(st, Names.NCall, Eff.dotted(Sym.str(p), name), line), Names.fOpOf(p, name)), Names.fWantArity(p, name, n)), Names.fSameI(n))
     Names.ops(p, rest, Names.transF(p, name, trs, line, Names.ty(ret, Coll.Nil, Names.binderTys(params, Coll.Nil, st1))))
 
 def Names.transF {r: Region} (p: Sym.Sym, op: Sym.Sym, trs: Coll.List[Ast.Trans], line: I64, st: Names.St): Names.St = trs match

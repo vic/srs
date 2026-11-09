@@ -43,6 +43,8 @@ enum Ty.Clash:
   case Ty.SigDiffers(line: I64, m: Sym.Sym)
   case Ty.NotInHead(line: I64, x: Sym.Sym)
   case Ty.ExternSlot(line: I64, t: K.Term)
+  // a request, or a call whose row has p, with no handler of p in scope (main's row must be empty)
+  case Ty.UnhandledEffect(line: I64, p: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -56,9 +58,9 @@ enum Ty.Inst:
 enum Ty.Bind:
   case Ty.Bind(x: Sym.Sym, t: K.Term)
 
-// the declarations the inference reads
+// the declarations the inference reads; rows: each def's implicit capabilities (s2/eff.srs)
 enum Ty.Cx:
-  case Ty.Cx(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], mode: Ty.Mode, impure: Coll.SMap[Bool])
+  case Ty.Cx(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], mode: Ty.Mode, impure: Coll.SMap[Bool], rows: Eff.Rows)
 
 // a body that runs (a constructor allocates in a Region) or a spec body, evaluated at compile time (no Region, vic Q-U4)
 enum Ty.Mode:
@@ -252,12 +254,40 @@ def Ty.bad {r: Region} (st: Ty.St, line: I64): Ty.Ex =
 
 // ── calls: a def or a constructor (a name with no args is a nullary case) ──
 def Ty.call {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
-  val Ty.Cx(fns, es, _, _, _, _, _) = cx
+  val Ty.Cx(fns, es, ps, _, _, _, _, _) = cx
   Ty.fnNamed(fns, f) match
     case Coll.Some(g) => Ty.callFn(cx, Ty.pureCall(cx, st, line, f), bs, line, g, targs, chosen, xs, want)
     case Coll.None => Ty.caseNamed(es, f) match
       case Coll.Some(co) => Ty.callCase(cx, st, bs, line, co, xs, want)
-      case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+      case Coll.None => Eff.reqOf(ps, f) match
+        case Coll.Some(q) => Ty.request(cx, st, bs, line, q, xs, want)
+        case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+
+// P.op(args): the op on the innermost capability of P in scope (vic 2026-11-09: the innermost handler answers)
+def Ty.request {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, q: Eff.Req, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+  val Eff.Req(p, op) = q
+  Ty.innermost(Ty.subst(st), bs, p) match
+    case Coll.Some(x) => Ty.method(cx, st, bs, line, x, op, xs, want)
+    case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.UnhandledEffect(line, p)), bs, xs), line)
+
+// the innermost local of protocol type p
+def Ty.innermost {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = bs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(b, rest) =>
+    val Ty.Bind(x, t) = b
+    val isP: Bool = K.walk(s, t) match
+      case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
+      case _ => false
+    if isP then Coll.Some(x) else Ty.innermost(s, rest, p)
+
+// the callee's row: for each implicit capability, the caller's innermost of its protocol
+def Ty.rowCaps {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Coll.List[Eff.Cap], acc: Coll.List[Sym.Sym]): Ty.Caps = cs match
+  case Coll.Nil => Ty.Caps(st, Coll.rev(acc))
+  case Coll.Cons(c, rest) =>
+    val Eff.Cap(p, _) = c
+    Ty.innermost(Ty.subst(st), bs, p) match
+      case Coll.Some(x) => Ty.rowCaps(st, bs, line, rest, Coll.Cons(x, acc))
+      case Coll.None => Ty.rowCaps(Ty.clash(st, Ty.UnhandledEffect(line, p)), bs, line, rest, acc)
 
 // the args alone (an unknown callee: still checked)
 def Ty.args {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr]): Ty.St = xs match
@@ -281,7 +311,9 @@ def Ty.callFn {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I
     val ev = Ty.evidence(gs, Coll.Nil)
     val st4b = if Coll.length(chosen) > 0 && Coll.length(chosen) != Coll.length(ev) then Ty.clash(st4, Ty.ChosenCount(line, name)) else st4
     val Ty.Caps(st5, caps) = Ty.capArgs(cx, st4b, bs, line, tv, ev, chosen, 0, Coll.Nil)
-    Ty.Ex(Ty.inst(st5, line, name, vars), rt, El.CallFn(line, name, vars, caps, eargs))
+    val Ty.Cx(_, _, _, _, _, _, _, rows) = cx
+    val Ty.Caps(st6, icaps) = Ty.rowCaps(st5, bs, line, Eff.row(rows, name), Coll.Nil)
+    Ty.Ex(Ty.inst(st6, line, name, vars), rt, El.CallFn(line, name, vars, Coll.revOnto(Coll.rev(caps), icaps), eargs))
 
 // record a generic instance (no binders: nothing to instantiate)
 def Ty.inst {r: Region} (st: Ty.St, line: I64, name: Sym.Sym, vars: Coll.List[K.Term]): Ty.St = vars match
@@ -317,7 +349,7 @@ def Ty.capArgs {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: 
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
     val Ast.Ty(_, pn, _, _, _) = t
-    val Ty.Cx(_, _, ps, _, _, _, _) = cx
+    val Ty.Cx(_, _, ps, _, _, _, _, _) = cx
     if !Ty.isProto(ps, pn) then Ty.capArgs(cx, Ty.addGoal(st, Ty.Goal(line, Ty.term(t, tv), bs, Ty.nthSym(chosen, i))), bs, line, tv, rest, chosen, i + 1, acc)
     else Ty.capFor(st, bs, line, pn, chosen, i) match
       case Ty.Caps(st1, c) => Ty.capArgs(cx, st1, bs, line, tv, rest, chosen, i + 1, Coll.revOnto(c, acc))
@@ -357,8 +389,8 @@ def Ty.isProto(ps: Coll.List[Ast.Proto], n: Sym.Sym): Bool = ps match
     val Ast.Proto(_, pn, _, _, _, _, _, _) = p
     if Sym.eq(pn, n) then true else Ty.isProto(rest, n)
 
-// a constructor: the enum at fresh vars, check mode first, then the fields; it allocates in the one Region in scope (a
-// spec body allocates nothing at run time)
+// a constructor: the enum at fresh vars, check mode first, then the fields; it is a request on Region, so it allocates in
+// the innermost Region in scope (a spec body allocates nothing at run time)
 def Ty.callCase {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.CaseOf, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.CaseOf(e, c) = co
   val Ast.Enum(_, en, _, _) = e
@@ -373,18 +405,17 @@ def Ty.callCase {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line:
       case Coll.Nil => Ty.Ex(st3, et, El.Nullary(line, en, vars, name))
       case Coll.Cons(_, _) =>
         val Ty.Es(st4, eargs) = Ty.params(cx, st3, bs, line, fields, tv, xs, Coll.Nil)
-        val Ty.Cx(_, _, _, _, _, mode, _) = cx
+        val Ty.Cx(_, _, _, _, _, mode, _, _) = cx
         mode match
           case Ty.Comptime => Ty.Ex(st4, et, El.New(line, en, vars, name, El.Comptime, eargs))
-          case Ty.Run => Ty.capFor(st4, bs, line, Sym.of("Region"), Coll.Nil, 0) match
-            case Ty.Caps(st5, rs) => rs match
-              case Coll.Cons(reg, _) => Ty.Ex(st5, et, El.New(line, en, vars, name, El.In(reg), eargs))
-              case Coll.Nil => Ty.Ex(st5, et, El.Bad(line))
+          case Ty.Run => Ty.innermost(Ty.subst(st4), bs, Sym.of("Region")) match
+            case Coll.Some(reg) => Ty.Ex(st4, et, El.New(line, en, vars, name, El.In(reg), eargs))
+            case Coll.None => Ty.Ex(Ty.clash(st4, Ty.UnhandledEffect(line, Sym.of("Region"))), et, El.Bad(line))
 
 // recv.op(args): recv is a capability (op of its protocol) or {} evidence of a trait (the trait method, trait args
 // bound from the evidence type)
 def Ty.method {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
-  val Ty.Cx(_, _, ps, _, trs, _, _) = cx
+  val Ty.Cx(_, _, ps, _, trs, _, _, _) = cx
   Ty.lookup(bs, recv) match
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, recv)), bs, xs), line)
     case Coll.Some(rt) => K.walk(Ty.subst(st), rt) match
@@ -471,7 +502,7 @@ def Ty.eqOp {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64
 def Ty.arms {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], want: Coll.Option[K.Term]): Ty.Ex = as match
   case Coll.Nil => Ty.bad(st, line)
   case Coll.Cons(a, rest) =>
-    val Ty.Cx(_, enums, _, _, _, _, _) = cx
+    val Ty.Cx(_, enums, _, _, _, _, _, _) = cx
     val st0 = Ty.missingCase(enums, as) match
       case Coll.Some(c) => Ty.clash(st, Ty.NotExhaustive(line, c))
       case Coll.None => st
@@ -491,7 +522,7 @@ enum Ty.AEx:
 
 def Ty.arm {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm, want: Coll.Option[K.Term]): Ty.AEx =
   val Ast.Arm(line, p, b) = a
-  val Ty.Cx(_, es, _, _, _, _, _) = cx
+  val Ty.Cx(_, es, _, _, _, _, _, _) = cx
   val Ty.Ex(st9, t9, e9) = p match
     case Ast.PAny => Ty.expr(cx, st, bs, b, want)
     case Ast.PCase(c, binds) => Ty.caseNamed(es, c) match
@@ -523,7 +554,7 @@ def Ty.block {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I6
     case Ast.Val(sl, x, ann, e) => Ty.bindStmt(cx, st, bs, line, sl, x, ann, e, false, rest, last, want, acc)
     case Ast.Var(sl, x, ann, e) => Ty.bindStmt(cx, st, bs, line, sl, x, ann, e, true, rest, last, want, acc)
     case Ast.Handle(sl, x, h, xs) =>
-      val Ty.Cx(_, _, _, hs, _, mode, _) = cx
+      val Ty.Cx(_, _, _, hs, _, mode, _, _) = cx
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st, sl, h), bs, xs, Coll.Nil)
       Ty.block(cx, st1, Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs), line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, eargs), acc))
     case Ast.Do(e) =>
@@ -563,15 +594,16 @@ def Ty.protoOf(hs: Coll.List[Ast.Handler], h: Sym.Sym): Sym.Sym = hs match
 enum Ty.FnEx:
   case Ty.FnEx(st: Ty.St, f: El.Fn)
 
-def Ty.fn {r: Region} (cx: Ty.Cx, st0: Ty.St, f: Ast.Fn): Ty.FnEx =
+// row: the implicit capabilities (s2/eff.srs), outermost locals, C params after the written ones
+def Ty.fn {r: Region} (cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val Ast.Fn(line, name, gs, ps, ret, _, body) = f
-  val Ty.Cx(_, _, protos, _, _, _, _) = cx
+  val Ty.Cx(_, _, protos, _, _, _, _, _) = cx
   val tps = Ty.tparams(gs, Coll.Nil)
   val tv = Ty.rigid(tps, Coll.Nil)
   val ev = Ty.evidence(gs, Coll.Nil)
-  val bs = Ty.binds(ps, tv, Ty.binds(ev, tv, Coll.Nil))
+  val bs = Ty.binds(ps, tv, Ty.binds(ev, tv, Ty.rowBinds(row, Coll.Nil)))
   val rt = Ty.term(ret, tv)
-  val caps = Ty.capNames(protos, ev, Coll.Nil)
+  val caps = Coll.revOnto(Coll.rev(Ty.capNames(protos, ev, Coll.Nil)), Ty.rowNames(row))
   val eps = Ty.elParams(ps, tv, Coll.Nil)
   val st = Ty.fnShape(cx, st0, line, tps, ps)
   body match
@@ -582,6 +614,18 @@ def Ty.fn {r: Region} (cx: Ty.Cx, st0: Ty.St, f: Ast.Fn): Ty.FnEx =
     case Ast.Spec(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(Ty.comptime(cx), st, bs, e, Coll.Some(rt))
       Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, El.Spec(eb)))
+
+def Ty.rowBinds {r: Region} (row: Coll.List[Eff.Cap], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = row match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val Eff.Cap(p, x) = c
+    Ty.rowBinds(rest, Coll.Cons(Ty.Bind(x, K.Con(p, Coll.Nil)), acc))
+
+def Ty.rowNames {r: Region} (row: Coll.List[Eff.Cap]): Coll.List[Sym.Sym] = row match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(c, rest) =>
+    val Eff.Cap(_, x) = c
+    Coll.Cons(x, Ty.rowNames(rest))
 
 // the {} binders of a protocol type, in written order (leading C params)
 def Ty.capNames {r: Region} (ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ev match
@@ -615,7 +659,7 @@ enum Ty.Result:
   case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait]): Ty.Cx = ds match
-  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run, Coll.sEmpty())
+  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run, Coll.sEmpty(), Eff.none())
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs)
     case Ast.DEnum(e) => Ty.cxOf(rest, fns, Coll.Cons(e, es), ps, hs, trs)
@@ -626,20 +670,22 @@ def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Co
     case Ast.DType(_) => Ty.cxOf(rest, fns, es, ps, hs, trs)
 
 // the fns with effects first (s2/pure.srs): a spec body may call none of them
-def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result = Ty.checkWith(ds, Coll.Nil)
+def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result = Eff.rows(ds) match
+  case Eff.Got(rows) => Ty.checkWith(ds, Coll.Nil, rows)
+  case Eff.RulesBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
 
-// tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls
-def Ty.checkWith {r: Region} (ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal]): Ty.Result =
-  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
+// tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls; rows: Eff.rows(ds)
+def Ty.checkWith {r: Region} (ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows): Ty.Result =
+  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
   val nom = Ty.nominals(ds, Coll.sEmpty())
-  val pr = if Ty.hasSpec(ds) then Pure.impure(ds) else Pure.Got(Coll.sEmpty())
+  val pr = if Ty.hasSpec(ds) then Pure.impure(ds, rows) else Pure.Got(Coll.sEmpty())
   val imp: Coll.SMap[Bool] = pr match
     case Pure.Got(m) => m
     case Pure.RulesBad(_) => Coll.sEmpty()
   val st0 = pr match
     case Pure.Got(_) => Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil, Coll.Nil, nom)
     case Pure.RulesBad(rel) => Ty.St(Coll.Tip, 0, Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Nil, nom)
-  val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp)
+  val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp, rows)
   val Ty.Fns(st1, fs, hs, gvs) = Ty.decls(cx, st0, ds, Coll.Nil, Coll.Nil, Coll.Nil)
   val Ty.St(s, _, cs, is, gs, _) = st1
   val allGoals = Ty.typeGoals(fns0, tgs, Coll.rev(gs))
@@ -655,7 +701,9 @@ def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Co
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.rev(hacc), Coll.rev(gacc))
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
-      val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f)
+      val Ast.Fn(_, fname, _, _, _, _, _) = f
+      val Ty.Cx(_, _, _, _, _, _, _, rows) = cx
+      val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Eff.row(rows, fname))
       Ty.decls(cx, st1, rest, Coll.Cons(ef, acc), hacc, gacc)
     case Ast.DHandler(h) =>
       val Ast.Handler(_, hn, p, fs) = h
@@ -685,7 +733,7 @@ def Ty.binderNames {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sy
 def Ty.fnsEl {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], acc: Coll.List[El.Fn]): Ty.Fns = fs match
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
-    val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f)
+    val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Coll.Nil)
     Ty.fnsEl(cx, st1, rest, Coll.Cons(ef, acc))
 
 // an instance with a type arg that is still a var after the whole program: CannotInfer
@@ -730,12 +778,12 @@ def Ty.lineOf(e: Ast.Expr): I64 = e match
   case Ast.Quant(l, _, _, _, _) => l
 
 def Ty.comptime {r: Region} (cx: Ty.Cx): Ty.Cx =
-  val Ty.Cx(fns, es, ps, hs, trs, _, imp) = cx
-  Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp)
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows) = cx
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp, rows)
 
 // in a spec body (vic Q-U4) a call of a fn with effects, and any handle, is a clash
 def Ty.pureCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
-  val Ty.Cx(_, _, _, _, _, mode, imp) = cx
+  val Ty.Cx(_, _, _, _, _, mode, imp, _) = cx
   mode match
     case Ty.Run => st
     case Ty.Comptime => if Pure.has(imp, f) then Ty.clash(st, Ty.Impure(line, f)) else st
@@ -912,7 +960,7 @@ def Ty.better {r: Region} (a: Ty.Cand, b: Ty.Cand): Bool =
 // ── shapes (s1/check.srs, s1/given.srs): what a use of a name, a def's binders and a given must look like ──
 // evidence is only a method receiver, a capability only a {} arg: neither is a value
 def Ty.nameUse {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, x: Sym.Sym, t: K.Term): Ty.St =
-  val Ty.Cx(_, _, ps, _, trs, _, _) = cx
+  val Ty.Cx(_, _, ps, _, trs, _, _, _) = cx
   K.walk(Ty.subst(st), t) match
     case K.Con(n, _) =>
       if Ty.isProto(ps, n) then Ty.clash(st, Ty.CapValue(line, x))
@@ -950,7 +998,7 @@ def Ty.fnShape {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.
 def Ty.hides {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym]): Ty.St = tps match
   case Coll.Nil => st
   case Coll.Cons(x, rest) =>
-    val Ty.Cx(_, es, ps, _, trs, _, _) = cx
+    val Ty.Cx(_, es, ps, _, trs, _, _, _) = cx
     val known = Ty.isBuiltin(x) || Ty.isEnum(es, x) || Ty.isProto(ps, x) || Ty.isTrait(trs, x)
     Ty.hides(cx, if known then Ty.clash(st, Ty.BinderHides(line, x)) else st, line, rest)
 
@@ -959,7 +1007,7 @@ def Ty.capParams {r: Region} (cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): 
   case Coll.Cons(b, rest) =>
     val Ast.Binder(line, x, t) = b
     val Ast.Ty(_, n, _, _, _) = t
-    val Ty.Cx(_, _, protos, _, _, _, _) = cx
+    val Ty.Cx(_, _, protos, _, _, _, _, _) = cx
     Ty.capParams(cx, if Ty.isProto(protos, n) then Ty.clash(st, Ty.CapParam(line, x)) else st, rest)
 
 // a given: its head names a trait with that many args; its fns are exactly the trait's methods, each with the trait's
@@ -967,7 +1015,7 @@ def Ty.capParams {r: Region} (cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): 
 def Ty.givenShape {r: Region} (cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
   val Ast.Given(line, gs, head, fs) = g
   val Ast.Ty(_, tn, targs, _, _) = head
-  val Ty.Cx(_, _, _, _, trs, _, _) = cx
+  val Ty.Cx(_, _, _, _, trs, _, _, _) = cx
   val st1 = Ty.inHead(st, line, Ty.tparams(gs, Coll.Nil), head)
   Ty.traitNamed(trs, tn) match
     case Coll.None => Ty.clash(st1, Ty.Unknown(line, tn))
