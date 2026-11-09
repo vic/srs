@@ -88,6 +88,16 @@ for t in tests/s2/eval/*.srs; do
   else while IFS= read -r line; do printf '%s\n' "$out" | grep -Fxq "$line" || pass=0; done <<< "$evals"; fi
   verdict "eval/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
 done
+# s2c --hash (content hashes): each "// same: a b" / "// differ: a b" holds; a test with no relation proves nothing
+for t in tests/s2/hash/*.srs; do
+  n=$(basename "$t" .srs); pass=1; out=$(timeout 2 "$B/s2c1" --hash lib/prelude.srs "$t" 2>&1) || pass=0
+  rels=$(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t"); [ -n "$rels" ] || pass=0
+  while read -r rel a b; do
+    ha=$(printf '%s\n' "$out" | awk -v n="$a" '$1 == n {print $2}'); hb=$(printf '%s\n' "$out" | awk -v n="$b" '$1 == n {print $2}')
+    if [ -z "$ha" ] || [ -z "$hb" ]; then pass=0; elif [ "$rel" = same: ] && [ "$ha" != "$hb" ]; then pass=0; elif [ "$rel" = differ: ] && [ "$ha" = "$hb" ]; then pass=0; fi
+  done <<< "$rels"
+  verdict "hash/$n" $pass
+done
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?
