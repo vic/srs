@@ -230,8 +230,13 @@ enum S2c.Mode:
   case S2c.EmitC
   // --eval: "name value" for each nullary pure def but main, run at compile time
   case S2c.EvalAll
+  // --hash: "name a.b.c.d", the content hash of every def and enum
+  case S2c.HashAll
 
 def S2c.finish {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
+  case S2c.HashAll =>
+    Hs.print(ds)
+    0
   case S2c.EmitC =>
     Emit.program(ds, res)
     0
@@ -263,7 +268,9 @@ enum S2c.Args:
   case S2c.Args(m: S2c.Mode, first: I64)
 
 def S2c.args {r: Region} (): S2c.Args =
-  if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval") then S2c.Args(S2c.EvalAll, 2) else S2c.Args(S2c.EmitC, 1)
+  if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
+  else if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--hash") then S2c.Args(S2c.HashAll, 2)
+  else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =
   handle r = Arena()
