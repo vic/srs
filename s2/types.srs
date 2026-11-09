@@ -607,7 +607,8 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
     // the handler's row takes the innermost capabilities outside this handle (E1b)
     case Ast.Handle(sl, x, h, xs) =>
       val Ty.Cx(_, _, _, hs, _, mode, _, rows, _) = cx
-      val st0 = if Ty.isMultiShot(hs, h) then Ty.shape(cx, st, x, Ty.protoOf(hs, h), rest, last) else st
+      val mp = Ty.protoOf(hs, h)
+      val st0 = if Ty.isMultiShot(hs, h) then Ty.shapeFns(cx, Ty.shape(cx, st, x, mp, rest, last), mp, Ty.cpsCalls(cx, mp, rest, Coll.Nil), Coll.Nil) else st
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
       val Ty.Caps(st2, caps) = Ty.rowCaps(cx, st1, bs, sl, Eff.row(rows, h), Coll.Nil)
       val bs2 = Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs)
@@ -903,8 +904,54 @@ def Ty.shape(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, ss: Coll.List[Ast.Stm
 // a whole op of p is allowed (its args are not); anything else must not use p
 def Ty.shapeTop(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
   case Ast.Method(_, recv, _, xs) => if Sym.eq(recv, x) then Ty.shapeAll(cx, st, x, p, xs) else Ty.shapeIn(cx, st, x, p, e)
-  case Ast.Call(_, f, _, _, xs) => if Ty.isReqOf(cx, f, p) then Ty.shapeAll(cx, st, x, p, xs) else Ty.shapeIn(cx, st, x, p, e)
+  case Ast.Call(_, f, _, _, xs) =>
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _) = cx
+    if Ty.isReqOf(cx, f, p) then Ty.shapeAll(cx, st, x, p, xs)
+    // a fn whose row holds p (C3.4): compiled in CPS for this site (its body: Ty.shapeFns)
+    else if Eff.has(rows, f, p) then Ty.shapeAll(cx, st, x, p, xs)
+    else Ty.shapeIn(cx, st, x, p, e)
   case _ => Ty.shapeIn(cx, st, x, p, e)
+
+// the CPS fns a multi-shot site reaches (C3.4): each body has the site's shape (ops of p and CPS calls only as whole
+// top-level vals or statements); todo: fns to check, seen: checked (recursion ends)
+def Ty.shapeFns(cx: Ty.Cx, st: Ty.St, p: Sym.Sym, todo: Coll.List[Sym.Sym], seen: Coll.List[Sym.Sym]): Ty.St = todo match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) =>
+    if Ty.memberSym(f, seen) then Ty.shapeFns(cx, st, p, rest, seen)
+    else
+      val Ty.Cx(fns, _, _, _, _, _, _, _, _) = cx
+      Ty.fnNamed(fns, f) match
+        case Coll.None => Ty.shapeFns(cx, st, p, rest, Coll.Cons(f, seen))
+        case Coll.Some(g) =>
+          val Ast.Fn(_, _, _, _, _, _, body) = g
+          val k = Eff.dotted("eff", p)
+          val bss: Coll.List[Ast.Stmt] = Ty.bodyStmts(body)
+          val st1 = body match
+            case Ast.Extern => st
+            case Ast.Def(_, e) => e match
+              case Ast.Block(_, ss, last) => Ty.shapeIn(cx, Ty.shape(cx, st, k, p, ss, Ast.Unit(0)), k, p, last)
+              case _ => Ty.shapeIn(cx, st, k, p, e)
+          Ty.shapeFns(cx, st1, p, Ty.cpsCalls(cx, p, bss, rest), Coll.Cons(f, seen))
+
+def Ty.bodyStmts(b: Ast.Body): Coll.List[Ast.Stmt] = b match
+  case Ast.Def(_, e) => e match
+    case Ast.Block(_, ss, _) => ss
+    case _ => Coll.Nil
+  case Ast.Extern => Coll.Nil
+
+// the CPS fns called as whole top-level vals or statements of ss
+def Ty.cpsCalls(cx: Ty.Cx, p: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) =>
+    val e: Ast.Expr = s match
+      case Ast.Val(_, _, _, x) => x
+      case Ast.Do(x) => x
+      case _ => Ast.Unit(0)
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _) = cx
+    val acc2: Coll.List[Sym.Sym] = e match
+      case Ast.Call(_, f, _, _, _) => if Eff.has(rows, f, p) && !Ty.isReqOf(cx, f, p) then Coll.Cons(f, acc) else acc
+      case _ => acc
+    Ty.cpsCalls(cx, p, rest, acc2)
 
 def Ty.isReqOf(cx: Ty.Cx, f: Sym.Sym, p: Sym.Sym): Bool =
   val Ty.Cx(_, _, ps, _, _, _, _, _, _) = cx

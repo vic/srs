@@ -1,0 +1,31 @@
+// pass: multi-shot, C3.4: a fn whose row holds the multi-shot capability (pick) is cut too: its choose resumes the rest
+// of pick, then the rest of the caller. leaves x*10 + y in branch order: 11 12 21 22
+capability NonDet:
+  def choose(): Bool
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+def pick(): I64 =
+  val c = NonDet.choose()
+  if c then 1 else 2
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+def tree(): Bag[I64] =
+  handle nd = All()
+  val x = pick()
+  val y = pick()
+  x * 10 + y
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0
