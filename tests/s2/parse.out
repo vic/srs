@@ -1,0 +1,91 @@
+protocol Door:
+  state Shut, Open1, Open2, Gone
+  start Shut
+  end Gone
+  op knock(): I64 : Shut -> Open1, Open1 -> Open2
+  op leave(): Unit : Open1 -> Gone, Open2 -> Gone
+  rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
+  rule def reach(s, t) = next(s, knock, t)
+  rule def reach(s, t) = next(s, knock, u), reach(u, t)
+
+handler HDoor for Door:
+  def init(): Ptr = rt_arena_new()
+  def knock(self: Ptr): I64 = 3
+  def leave(self: Ptr): Unit = rt_arena_free(self)
+
+def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
+  val a = d.knock()
+  a + d.knock()
+
+def knockOnce {d: Door} <at(d, Shut), reach(Shut, t), next(Shut, knock, t)> (): I64 <at(d, t)> = d.knock()
+
+def main(): I64 =
+  handle d = HDoor()
+  val x = knockTwice()
+  d.leave()
+  handle e = HDoor()
+  val y = knockOnce{e}()
+  e.leave()
+  rt_print_i64(x + y)
+  rt_print("\n")
+  0
+
+def main(): I64 =
+  handle f = CFile()
+  val n = if true then f.read() else 0
+  f.close()
+  n
+
+def main(): I64 =
+  handle f = CFile()
+  var i = 0
+  while i < 2 do
+    f.read()
+    i = i + 1
+  f.close()
+  0
+
+enum Opt [A: Type]:
+  case None
+  case Some(v: A)
+
+enum Pair [A: Type] [B: Type]:
+  case Pair(a: A, b: B)
+
+def get [A: Type] (o: Opt[A], d: A): A = o match
+  case None => d
+  case Some(v) => v
+
+def first [A: Type] [B: Type] (p: Pair[A, B]): A = p match
+  case Pair(a, _) => a
+
+def main(): I64 =
+  handle r = Arena()
+  val n: Opt[I64] = None
+  rt_print_i64(get(Some(41), 0) + get(n, 1))
+  rt_print("\n")
+  rt_print_i64(if get(Some(true), false) then 1 else 0)
+  rt_print("\n")
+  val p = Pair(Some(7), false)
+  rt_print_i64(get(first(p), 0))
+  rt_print("\n")
+  val q: Opt[I64]^<r> = Some(5)
+  rt_print_i64(get(q, 0))
+  rt_print("\n")
+  0
+
+def ce7(): Bool = false && 1 / 0 == 0
+
+def ce9(): I64 = 0 - (0 - 3)
+def h(p: Pair[I64, I64]): I64 =
+  val y = 1
+  p match
+    case Pair(a, b) =>
+      a + b * y
+def k(): I64 = 10 - 3 - 2
+
+def m(b: Bool): I64 =
+  if b then 1 else 2
+error 4 )
+error 3 case
+error 1 else

@@ -1,0 +1,635 @@
+// s2 P6 FRONT (vic-m5r.27, vic/c/s2-front-spec.md): the parser, recursive descent over Lex tokens into the s2 Ast, as
+// s1/parse.srs. each production returns Parse.Ok(value, rest) or Parse.Err(line, what was expected): an error is data.
+// this rung: def, extern def, enum, protocol (states, start, end, drop, ops, rule defs), handler; binder groups
+// [] {} <>; exit facts; types T[args]^<caps>; every expression and statement s1 parses except forall/exists.
+
+enum Parse.R [A: Type]:
+  case Parse.Ok(v: A, ts: Coll.List[Lex.Tok])
+  case Parse.Err(line: I64, want: Str)
+
+// ── tokens ──
+def Parse.eof {r: Region} (): Lex.Tok = Lex.TEof(0)
+
+def Parse.peek {r: Region} (ts: Coll.List[Lex.Tok]): Lex.Tok = ts match
+  case Coll.Nil => Parse.eof()
+  case Coll.Cons(t, _) => t
+
+def Parse.next {r: Region} (ts: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ts match
+  case Coll.Nil => ts
+  case Coll.Cons(_, rest) => rest
+
+def Parse.second {r: Region} (ts: Coll.List[Lex.Tok]): Lex.Tok = Parse.peek(Parse.next(ts))
+
+def Parse.lineOf(t: Lex.Tok): I64 = t match
+  case Lex.TIdent(_, l) => l
+  case Lex.TInt(_, l) => l
+  case Lex.TStr(_, l) => l
+  case Lex.TChar(_, l) => l
+  case Lex.TOp(_, l) => l
+  case Lex.TNl(l) => l
+  case Lex.TIndent(l) => l
+  case Lex.TDedent(l) => l
+  case Lex.TEof(l) => l
+
+def Parse.line {r: Region} (ts: Coll.List[Lex.Tok]): I64 = Parse.lineOf(Parse.peek(ts))
+
+def Parse.opIs(t: Lex.Tok, s: Str): Bool = t match
+  case Lex.TOp(x, _) => rt_str_eq(x, s)
+  case _ => false
+
+def Parse.kwIs(t: Lex.Tok, s: Str): Bool = t match
+  case Lex.TIdent(x, _) => rt_str_eq(x, s)
+  case _ => false
+
+def Parse.isOp {r: Region} (ts: Coll.List[Lex.Tok], s: Str): Bool = Parse.opIs(Parse.peek(ts), s)
+def Parse.isKw {r: Region} (ts: Coll.List[Lex.Tok], s: Str): Bool = Parse.kwIs(Parse.peek(ts), s)
+
+def Parse.isNl {r: Region} (ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TNl(_) => true
+  case _ => false
+
+def Parse.isIndent {r: Region} (ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TIndent(_) => true
+  case _ => false
+
+def Parse.isDedent {r: Region} (ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TDedent(_) => true
+  case _ => false
+
+def Parse.isEof {r: Region} (ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TEof(_) => true
+  case _ => false
+
+def Parse.skipNl {r: Region} (ts: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = if Parse.isNl(ts) then Parse.skipNl(Parse.next(ts)) else ts
+
+// the token after an op s, or Err
+def Parse.op {r: Region} (ts: Coll.List[Lex.Tok], s: Str): Parse.R[I64] =
+  if Parse.isOp(ts, s) then Parse.Ok(Parse.line(ts), Parse.next(ts)) else Parse.Err(Parse.line(ts), s)
+
+def Parse.kw {r: Region} (ts: Coll.List[Lex.Tok], s: Str): Parse.R[I64] =
+  if Parse.isKw(ts, s) then Parse.Ok(Parse.line(ts), Parse.next(ts)) else Parse.Err(Parse.line(ts), s)
+
+def Parse.ident {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Sym.Sym] = Parse.peek(ts) match
+  case Lex.TIdent(x, _) => Parse.Ok(Sym.of(x), Parse.next(ts))
+  case _ => Parse.Err(Parse.line(ts), "name")
+
+// `:` NL IND: a layout block opens
+def Parse.layoutOpen {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[I64] = Parse.op(ts, ":") match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(_, t1) =>
+    if Parse.isNl(t1) && Parse.isIndent(Parse.next(t1)) then Parse.Ok(Parse.line(t1), Parse.next(Parse.next(t1))) else Parse.Err(Parse.line(t1), "indented block")
+
+// the end of a line in a layout block: NL (consumed) or a DED that closes the block (left)
+def Parse.endLine {r: Region} (ts: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = if Parse.isNl(ts) then Parse.next(ts) else ts
+
+// ── the file ──
+def Parse.file {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Coll.List[Ast.Decl]] = Parse.decls(ts, Coll.Nil)
+
+def Parse.decls {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Decl]): Parse.R[Coll.List[Ast.Decl]] =
+  if Parse.isNl(ts) then Parse.decls(Parse.next(ts), acc)
+  else if Parse.isEof(ts) then Parse.Ok(Coll.rev(acc), ts)
+  else Parse.decl(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(d, t1) => Parse.decls(t1, Coll.Cons(d, acc))
+
+def Parse.decl {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
+  if Parse.isKw(ts, "def") then Parse.wrapFn(Parse.fn(Parse.next(ts), Parse.line(ts), false))
+  else if Parse.isKw(ts, "extern") then
+    Parse.kw(Parse.next(ts), "def") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), true))
+  else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "protocol") then Parse.proto(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
+  else Parse.Err(Parse.line(ts), "declaration")
+
+def Parse.wrapFn {r: Region} (rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(f, t1) => Parse.Ok(Ast.DFn(f), t1)
+
+// def name groups (params) groups : ty [<atoms>] [= rhs]; an extern def has no body
+def Parse.fn {r: Region} (ts: Coll.List[Lex.Tok], line: I64, ext: Bool): Parse.R[Ast.Fn] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(g1, t2) => Parse.params(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(ps, t3) => Parse.groups(t3, Coll.rev(g1)) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(gs, t4) => Parse.op(t4, ":") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t5) => Parse.ty(t5) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(ret, t6) => Parse.exitFacts(t6) match
+              case Parse.Err(l, w) => Parse.Err(l, w)
+              case Parse.Ok(exit, t7) =>
+                if ext then Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern), t7)
+                else Parse.op(t7, "=") match
+                  case Parse.Err(l, w) => Parse.Err(l, w)
+                  case Parse.Ok(_, t8) => Parse.rhs(t8) match
+                    case Parse.Err(l, w) => Parse.Err(l, w)
+                    case Parse.Ok(e, t9) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, Ast.Def(e)), t9)
+
+// binder groups in written order: [binders] {binders} <atoms>; acc holds them reversed
+def Parse.groups {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Group]): Parse.R[Coll.List[Ast.Group]] =
+  if Parse.isOp(ts, "[") then Parse.moreGroups(Parse.binders(Parse.next(ts), "]", Coll.Nil), Parse.GTypes, acc)
+  else if Parse.isOp(ts, "{") then Parse.moreGroups(Parse.binders(Parse.next(ts), "}", Coll.Nil), Parse.GEvidence, acc)
+  else if Parse.isOp(ts, "<") then
+    Parse.atoms(Parse.next(ts), Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(as, t1) => Parse.groups(t1, Coll.Cons(Ast.Facts(as), acc))
+  else Parse.Ok(Coll.rev(acc), ts)
+
+// which binder group: [] types or {} evidence
+enum Parse.GKind:
+  case Parse.GTypes
+  case Parse.GEvidence
+
+def Parse.moreGroups {r: Region} (rb: Parse.R[Coll.List[Ast.Binder]], kind: Parse.GKind, acc: Coll.List[Ast.Group]): Parse.R[Coll.List[Ast.Group]] = rb match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(bs, t1) => Parse.groups(t1, Coll.Cons(Parse.groupOf(kind, bs), acc))
+
+def Parse.groupOf {r: Region} (k: Parse.GKind, bs: Coll.List[Ast.Binder]): Ast.Group = k match
+  case Parse.GTypes => Ast.Types(bs)
+  case Parse.GEvidence => Ast.Evidence(bs)
+
+// name: ty, ... up to close
+def Parse.binders {r: Region} (ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Ast.Binder]): Parse.R[Coll.List[Ast.Binder]] =
+  if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(x, t1) => Parse.op(t1, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t2) => Parse.ty(t2) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(t, t3) =>
+          val acc2 = Coll.Cons(Ast.Binder(Parse.line(ts), x, t), acc)
+          if Parse.isOp(t3, ",") then Parse.binders(Parse.next(t3), close, acc2) else Parse.binders(t3, close, acc2)
+
+def Parse.params {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Coll.List[Ast.Binder]] = Parse.op(ts, "(") match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(_, t1) => Parse.binders(t1, ")", Coll.Nil)
+
+// <a(x, y), b(z)> after the result type: the exit facts
+def Parse.exitFacts {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Coll.List[Ast.Atom]] =
+  if Parse.isOp(ts, "<") then Parse.atoms(Parse.next(ts), Coll.Nil) else Parse.Ok(Coll.Nil, ts)
+
+// rel(term, ...) , ... up to >
+def Parse.atoms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Atom]): Parse.R[Coll.List[Ast.Atom]] =
+  if Parse.isOp(ts, ">") then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.atom(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(a, t1) => if Parse.isOp(t1, ",") then Parse.atoms(Parse.next(t1), Coll.Cons(a, acc)) else Parse.atoms(t1, Coll.Cons(a, acc))
+
+def Parse.atom {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Atom] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(rel, t1) => Parse.op(t1, "(") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.terms(t2, Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(xs, t3) => Parse.Ok(Ast.Atom(Parse.line(ts), rel, xs), t3)
+
+def Parse.terms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Term]): Parse.R[Coll.List[Ast.Term]] =
+  if Parse.isOp(ts, ")") then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else
+    val tm: Parse.R[Ast.Term] = Parse.peek(ts) match
+      case Lex.TInt(v, _) => Parse.Ok(Ast.TNum(v), Parse.next(ts))
+      case Lex.TIdent(x, _) => Parse.Ok(Ast.TName(Sym.of(x)), Parse.next(ts))
+      case _ => Parse.Err(Parse.line(ts), "term")
+    tm match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(t, t1) => if Parse.isOp(t1, ",") then Parse.terms(Parse.next(t1), Coll.Cons(t, acc)) else Parse.terms(t1, Coll.Cons(t, acc))
+
+// ty := name [ [ty, ...] ] [ ^<names> ]
+def Parse.ty {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) =>
+    val targs: Parse.R[Coll.List[Ast.Ty]] = if Parse.isOp(t1, "[") then Parse.tys(Parse.next(t1), "]", Coll.Nil) else Parse.Ok(Coll.Nil, t1)
+    targs match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(args, t2) =>
+        if Parse.isOp(t2, "^") then
+          Parse.op(Parse.next(t2), "<") match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(_, t3) => Parse.names(t3, ">", Coll.Nil) match
+              case Parse.Err(l, w) => Parse.Err(l, w)
+              case Parse.Ok(cs, t4) => Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Stated(cs)), t4)
+        else Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Inferred), t2)
+
+def Parse.tys {r: Region} (ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Ast.Ty]): Parse.R[Coll.List[Ast.Ty]] =
+  if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.ty(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(t, t1) => if Parse.isOp(t1, ",") then Parse.tys(Parse.next(t1), close, Coll.Cons(t, acc)) else Parse.tys(t1, close, Coll.Cons(t, acc))
+
+// names separated by commas up to close (close consumed)
+def Parse.names {r: Region} (ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Sym.Sym]): Parse.R[Coll.List[Sym.Sym]] =
+  if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(x, t1) => if Parse.isOp(t1, ",") then Parse.names(Parse.next(t1), close, Coll.Cons(x, acc)) else Parse.names(t1, close, Coll.Cons(x, acc))
+
+// names separated by commas to the end of a line (at least one)
+def Parse.nameLine {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Sym.Sym]): Parse.R[Coll.List[Sym.Sym]] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(x, t1) => if Parse.isOp(t1, ",") then Parse.nameLine(Parse.next(t1), Coll.Cons(x, acc)) else Parse.Ok(Coll.rev(Coll.Cons(x, acc)), t1)
+
+// ── enum: enum Name groups: NL IND (case Name [(fields)] NL)* DED ──
+def Parse.enumDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(gs, t2) => Parse.layoutOpen(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t3) => Parse.cases(t3, Coll.Nil) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(cs, t4) => Parse.Ok(Ast.DEnum(Ast.Enum(line, name, gs, cs)), t4)
+
+def Parse.cases {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Case]): Parse.R[Coll.List[Ast.Case]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "case") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.ident(t1) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(name, t2) =>
+        if Parse.isOp(t2, "(") then
+          Parse.params(t2) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(fs, t3) => Parse.cases(Parse.endLine(t3), Coll.Cons(Ast.Case(line, name, fs), acc))
+        else Parse.cases(Parse.endLine(t2), Coll.Cons(Ast.Case(line, name, Coll.Nil), acc))
+
+// ── protocol: items until DED (state, start, end, drop, op, rule def) ──
+enum Parse.Pr:
+  case Parse.Pr(states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], drop: Coll.Option[Sym.Sym], ops: Coll.List[Ast.Op], rules: Coll.List[Ast.RuleDef])
+
+def Parse.proto {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.layoutOpen(t1) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.items(t2, Parse.Pr(Coll.Nil, Sym.of(""), Coll.Nil, Coll.None, Coll.Nil, Coll.Nil)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(pr, t3) =>
+        val Parse.Pr(ss, st, es, dr, os, rs) = pr
+        Parse.Ok(Ast.DProto(Ast.Proto(line, name, ss, st, es, dr, Coll.rev(os), Coll.rev(rs))), t3)
+
+def Parse.items {r: Region} (ts: Coll.List[Lex.Tok], pr: Parse.Pr): Parse.R[Parse.Pr] =
+  val Parse.Pr(ss, st, es, dr, os, rs) = pr
+  if Parse.isDedent(ts) then Parse.Ok(pr, Parse.next(ts))
+  else if Parse.isKw(ts, "state") then
+    Parse.nameLine(Parse.next(ts), Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(xs, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(xs, st, es, dr, os, rs))
+  else if Parse.isKw(ts, "start") then
+    Parse.ident(Parse.next(ts)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(x, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, x, es, dr, os, rs))
+  else if Parse.isKw(ts, "end") then
+    Parse.nameLine(Parse.next(ts), Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(xs, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, xs, dr, os, rs))
+  else if Parse.isKw(ts, "drop") then
+    Parse.ident(Parse.next(ts)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(x, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, es, Coll.Some(x), os, rs))
+  else if Parse.isKw(ts, "op") then
+    Parse.opDecl(Parse.next(ts), Parse.line(ts)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(o, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, es, dr, Coll.Cons(o, os), rs))
+  else if Parse.isKw(ts, "rule") then
+    Parse.kw(Parse.next(ts), "def") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t1) => Parse.ruleDecl(t1, Parse.line(ts)) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(rd, t2) => Parse.items(Parse.endLine(t2), Parse.Pr(ss, st, es, dr, os, Coll.Cons(rd, rs)))
+  else Parse.Err(Parse.line(ts), "protocol item")
+
+// op name(params): ty : A -> B, ...
+def Parse.opDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Op] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.params(t1) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(ps, t2) => Parse.op(t2, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t3) => Parse.ty(t3) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(ret, t4) => Parse.op(t4, ":") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t5) => Parse.trans(t5, Coll.Nil) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(trs, t6) => Parse.Ok(Ast.Op(line, name, ps, ret, trs), t6)
+
+def Parse.trans {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Trans]): Parse.R[Coll.List[Ast.Trans]] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(a, t1) => Parse.op(t1, "-") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.op(t2, ">") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t3) => Parse.ident(t3) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(b, t4) =>
+          val acc2 = Coll.Cons(Ast.Trans(a, b), acc)
+          if Parse.isOp(t4, ",") then Parse.trans(Parse.next(t4), acc2) else Parse.Ok(Coll.rev(acc2), t4)
+
+// rule def name(params) = atom, ...
+def Parse.ruleDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.RuleDef] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.op(t1, "(") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.names(t2, ")", Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(ps, t3) => Parse.op(t3, "=") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t4) => Parse.ruleBody(t4, Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(as, t5) => Parse.Ok(Ast.RuleDef(line, name, ps, as), t5)
+
+def Parse.ruleBody {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Atom]): Parse.R[Coll.List[Ast.Atom]] = Parse.atom(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(a, t1) => if Parse.isOp(t1, ",") then Parse.ruleBody(Parse.next(t1), Coll.Cons(a, acc)) else Parse.Ok(Coll.rev(Coll.Cons(a, acc)), t1)
+
+// ── handler: handler Name for Proto: NL IND (def ...)* DED ──
+def Parse.handler {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.kw(t1, "for") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.ident(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(proto, t3) => Parse.layoutOpen(t3) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t4) => Parse.hfns(t4, Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(fs, t5) => Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, fs)), t5)
+
+def Parse.hfns {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Fn]): Parse.R[Coll.List[Ast.Fn]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "def") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.fn(t1, line, false) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(f, t2) => Parse.hfns(Parse.endLine(t2), Coll.Cons(f, acc))
+
+// ── bodies: rhs := NL IND block | expr ──
+def Parse.rhs {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
+  if Parse.isNl(ts) && Parse.isIndent(Parse.next(ts)) then Parse.block(Parse.next(Parse.next(ts)), Parse.line(Parse.next(ts)))
+  else Parse.expr(ts)
+
+// a block: statements until DED (a NL between them is optional); its value is the last statement when it is an
+// expression, else Unit. val C(a, b) = e takes the rest of the block as the body of a one-arm match
+def Parse.block {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Expr] = Parse.stmts(ts, line, Coll.Nil)
+
+def Parse.stmts {r: Region} (ts: Coll.List[Lex.Tok], line: I64, acc: Coll.List[Ast.Stmt]): Parse.R[Ast.Expr] =
+  val t0 = Parse.skipNl(ts)
+  if Parse.isDedent(t0) then Parse.Ok(Parse.blockOf(line, acc), Parse.next(t0))
+  else if Parse.isKw(t0, "val") && Parse.isPatVal(Parse.next(t0)) then Parse.patVal(Parse.next(t0), Parse.line(t0), line, acc)
+  else Parse.stmt(t0) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(s, t1) => Parse.stmts(t1, line, Coll.Cons(s, acc))
+
+// the block of the statements acc (reversed): a last expression statement is the value
+def Parse.blockOf {r: Region} (line: I64, acc: Coll.List[Ast.Stmt]): Ast.Expr = acc match
+  case Coll.Nil => Ast.Block(line, Coll.Nil, Ast.Unit(line))
+  case Coll.Cons(s, rest) => s match
+    case Ast.Do(e) => Ast.Block(line, Coll.rev(rest), e)
+    case _ => Ast.Block(line, Coll.rev(acc), Ast.Unit(line))
+
+// val Upper(...) = e: the name starts with an upper case letter and ( follows
+def Parse.isPatVal {r: Region} (ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TIdent(x, _) => rt_str_at(x, 0) >= 'A' && rt_str_at(x, 0) <= 'Z' && Parse.opIs(Parse.second(ts), "(")
+  case _ => false
+
+def Parse.patVal {r: Region} (ts: Coll.List[Lex.Tok], vline: I64, line: I64, acc: Coll.List[Ast.Stmt]): Parse.R[Ast.Expr] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(c, t1) => Parse.op(t1, "(") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.names(t2, ")", Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(bs, t3) => Parse.op(t3, "=") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t4) => Parse.rhs(t4) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(e, t5) => Parse.stmts(t5, vline, Coll.Nil) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(body, t6) =>
+              val m = Ast.Match(vline, e, Coll.Cons(Ast.Arm(vline, Ast.PCase(c, bs), body), Coll.Nil))
+              Parse.Ok(Parse.blockOf(line, Coll.Cons(Ast.Do(m), acc)), t6)
+
+def Parse.stmt {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Stmt] =
+  if Parse.isKw(ts, "val") || Parse.isKw(ts, "var") then Parse.valStmt(Parse.next(ts), Parse.line(ts), Parse.isKw(ts, "var"))
+  else if Parse.isKw(ts, "handle") then Parse.handleStmt(Parse.next(ts), Parse.line(ts))
+  else Parse.expr(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(e, t1) => Parse.Ok(Ast.Do(e), t1)
+
+// val x [: ty] = rhs
+def Parse.valStmt {r: Region} (ts: Coll.List[Lex.Tok], line: I64, isVar: Bool): Parse.R[Ast.Stmt] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(x, t1) =>
+    val ann: Parse.R[Coll.Option[Ast.Ty]] = if Parse.isOp(t1, ":") then Parse.someTy(Parse.ty(Parse.next(t1))) else Parse.Ok(Coll.None, t1)
+    ann match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(a, t2) => Parse.op(t2, "=") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t3) => Parse.rhs(t3) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(e, t4) => Parse.Ok(if isVar then Ast.Var(line, x, a, e) else Ast.Val(line, x, a, e), t4)
+
+def Parse.someTy {r: Region} (rt: Parse.R[Ast.Ty]): Parse.R[Coll.Option[Ast.Ty]] = rt match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(t, t1) => Parse.Ok(Coll.Some(t), t1)
+
+// handle x = H(args)
+def Parse.handleStmt {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Stmt] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(x, t1) => Parse.op(t1, "=") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.ident(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(h, t3) => Parse.args(t3) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(xs, t4) => Parse.Ok(Ast.Handle(line, x, h, xs), t4)
+
+// ── expressions ──
+def Parse.expr {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
+  if Parse.isKw(ts, "if") then Parse.ifExpr(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "while") then Parse.whileExpr(Parse.next(ts), Parse.line(ts))
+  else Parse.peek(ts) match
+    case Lex.TIdent(x, line) =>
+      if Parse.opIs(Parse.second(ts), "=") then
+        Parse.rhs(Parse.next(Parse.next(ts))) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(e, t1) => Parse.Ok(Ast.Assign(line, Sym.of(x), e), t1)
+      else Parse.matchOf(Parse.binary(ts, 0))
+    case _ => Parse.matchOf(Parse.binary(ts, 0))
+
+// e match NL IND (case pat => rhs)* DED: match is postfix on a whole binary expression
+def Parse.matchOf {r: Region} (re: Parse.R[Ast.Expr]): Parse.R[Ast.Expr] = re match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(e, t1) =>
+    if Parse.isKw(t1, "match") then
+      val t2 = Parse.next(t1)
+      if Parse.isNl(t2) && Parse.isIndent(Parse.next(t2)) then
+        Parse.arms(Parse.next(Parse.next(t2)), Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(as, t3) => Parse.Ok(Ast.Match(Parse.line(t1), e, as), t3)
+      else Parse.Err(Parse.line(t2), "match arms")
+    else re
+
+def Parse.arms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Arm]): Parse.R[Coll.List[Ast.Arm]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "case") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.pat(t1) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(p, t2) => Parse.op(t2, "=>") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t3) => Parse.rhs(t3) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(b, t4) => Parse.arms(Parse.endLine(t4), Coll.Cons(Ast.Arm(line, p, b), acc))
+
+// _ | Name [(names)]
+def Parse.pat {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Pat] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(c, t1) =>
+    if rt_str_eq(Sym.str(c), "_") then Parse.Ok(Ast.PAny, t1)
+    else if Parse.isOp(t1, "(") then
+      Parse.names(Parse.next(t1), ")", Coll.Nil) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(bs, t2) => Parse.Ok(Ast.PCase(c, bs), t2)
+    else Parse.Ok(Ast.PCase(c, Coll.Nil), t1)
+
+// if c then rhs [NL] else rhs
+def Parse.ifExpr {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Expr] = Parse.expr(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(c, t1) => Parse.kw(t1, "then") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.rhs(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(t, t3) =>
+        val t4 = if Parse.isNl(t3) && Parse.kwIs(Parse.second(t3), "else") then Parse.next(t3) else t3
+        Parse.kw(t4, "else") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t5) => Parse.rhs(t5) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(e, t6) => Parse.Ok(Ast.If(line, c, t, e), t6)
+
+// while c do rhs
+def Parse.whileExpr {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Expr] = Parse.expr(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(c, t1) => Parse.kw(t1, "do") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.rhs(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(b, t3) => Parse.Ok(Ast.While(line, c, b), t3)
+
+// the binary operator of a token and its level (lowest first), or None (s1/parse.srs:593 opLevel)
+enum Parse.BinTok:
+  case Parse.BinTok(op: Ast.BinOp, level: I64)
+
+def Parse.binOf {r: Region} (t: Lex.Tok): Coll.Option[Parse.BinTok] = t match
+  case Lex.TOp(s, _) =>
+    if rt_str_eq(s, "||") then Coll.Some(Parse.BinTok(Ast.Or, 0))
+    else if rt_str_eq(s, "&&") then Coll.Some(Parse.BinTok(Ast.And, 1))
+    else if rt_str_eq(s, "==") then Coll.Some(Parse.BinTok(Ast.Eq, 2))
+    else if rt_str_eq(s, "!=") then Coll.Some(Parse.BinTok(Ast.Ne, 2))
+    else if rt_str_eq(s, "<") then Coll.Some(Parse.BinTok(Ast.Lt, 3))
+    else if rt_str_eq(s, "<=") then Coll.Some(Parse.BinTok(Ast.Le, 3))
+    else if rt_str_eq(s, ">") then Coll.Some(Parse.BinTok(Ast.Gt, 3))
+    else if rt_str_eq(s, ">=") then Coll.Some(Parse.BinTok(Ast.Ge, 3))
+    else if rt_str_eq(s, "+") then Coll.Some(Parse.BinTok(Ast.Add, 4))
+    else if rt_str_eq(s, "-") then Coll.Some(Parse.BinTok(Ast.Sub, 4))
+    else if rt_str_eq(s, "*") then Coll.Some(Parse.BinTok(Ast.Mul, 5))
+    else if rt_str_eq(s, "/") then Coll.Some(Parse.BinTok(Ast.Div, 5))
+    else if rt_str_eq(s, "%") then Coll.Some(Parse.BinTok(Ast.Mod, 5))
+    else Coll.None
+  case _ => Coll.None
+
+// operators of level >= lvl, left associative
+def Parse.binary {r: Region} (ts: Coll.List[Lex.Tok], lvl: I64): Parse.R[Ast.Expr] = Parse.unary(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(lhs, t1) => Parse.binLoop(lhs, t1, lvl)
+
+def Parse.binLoop {r: Region} (lhs: Ast.Expr, ts: Coll.List[Lex.Tok], lvl: I64): Parse.R[Ast.Expr] = Parse.binOf(Parse.peek(ts)) match
+  case Coll.None => Parse.Ok(lhs, ts)
+  case Coll.Some(bt) =>
+    val Parse.BinTok(op, l) = bt
+    if l < lvl then Parse.Ok(lhs, ts)
+    else Parse.binary(Parse.next(ts), l + 1) match
+      case Parse.Err(el, w) => Parse.Err(el, w)
+      case Parse.Ok(rhs, t2) => Parse.binLoop(Ast.Bin(Parse.line(ts), op, lhs, rhs), t2, lvl)
+
+def Parse.unary {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
+  if Parse.isOp(ts, "-") then Parse.unOf(Parse.line(ts), Ast.Neg, Parse.unary(Parse.next(ts)))
+  else if Parse.isOp(ts, "!") then Parse.unOf(Parse.line(ts), Ast.Not, Parse.unary(Parse.next(ts)))
+  else Parse.primary(ts)
+
+def Parse.unOf {r: Region} (line: I64, op: Ast.UnOp, re: Parse.R[Ast.Expr]): Parse.R[Ast.Expr] = re match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(e, t1) => Parse.Ok(Ast.Un(line, op, e), t1)
+
+// the value of a char literal: one character, or a backslash escape (s1/parse.srs charValue)
+def Parse.charValue(s: Str): I64 =
+  if rt_str_len(s) == 1 then rt_str_at(s, 0)
+  else
+    val c = rt_str_at(s, 1)
+    if c == 'n' then 10 else if c == 't' then 9 else if c == 'r' then 13 else if c == '0' then 0 else c
+
+def Parse.primary {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] = Parse.peek(ts) match
+  case Lex.TInt(v, line) => Parse.Ok(Ast.Int(line, v), Parse.next(ts))
+  case Lex.TStr(s, line) => Parse.Ok(Ast.Str(line, s), Parse.next(ts))
+  case Lex.TChar(s, line) => Parse.Ok(Ast.Int(line, Parse.charValue(s)), Parse.next(ts))
+  case Lex.TIdent(x, line) =>
+    val t1 = Parse.next(ts)
+    if rt_str_eq(x, "true") then Parse.Ok(Ast.Bool(line, true), t1)
+    else if rt_str_eq(x, "false") then Parse.Ok(Ast.Bool(line, false), t1)
+    else if Parse.isOp(t1, "(") then Parse.callOf(line, Sym.of(x), Coll.Nil, Coll.Nil, Parse.args(t1))
+    else if Parse.isOp(t1, "[") || Parse.isOp(t1, "{") then Parse.callGroups(t1, line, Sym.of(x), Coll.Nil, Coll.Nil)
+    else if Parse.isOp(t1, ".") then
+      Parse.ident(Parse.next(t1)) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(op, t2) => Parse.args(t2) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(xs, t3) => Parse.Ok(Ast.Method(line, Sym.of(x), op, xs), t3)
+    else Parse.Ok(Ast.Name(line, Sym.of(x)), t1)
+  case Lex.TOp(s, line) =>
+    if rt_str_eq(s, "(") then
+      val t1 = Parse.next(ts)
+      if Parse.isOp(t1, ")") then Parse.Ok(Ast.Unit(line), Parse.next(t1))
+      else Parse.expr(t1) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(e, t2) => Parse.op(t2, ")") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t3) => Parse.Ok(e, t3)
+    else Parse.Err(line, "expression")
+  case _ => Parse.Err(Parse.line(ts), "expression")
+
+// f[T, ...]{a, ...}(args): the groups in any order, then the args
+def Parse.callGroups {r: Region} (ts: Coll.List[Lex.Tok], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym]): Parse.R[Ast.Expr] =
+  if Parse.isOp(ts, "[") then
+    Parse.tys(Parse.next(ts), "]", Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(tys, t1) => Parse.callGroups(t1, line, f, Coll.revOnto(Coll.rev(targs), tys), chosen)
+  else if Parse.isOp(ts, "{") then
+    Parse.names(Parse.next(ts), "}", Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(ns, t1) => Parse.callGroups(t1, line, f, targs, Coll.revOnto(Coll.rev(chosen), ns))
+  else Parse.callOf(line, f, targs, chosen, Parse.args(ts))
+
+def Parse.callOf {r: Region} (line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], ra: Parse.R[Coll.List[Ast.Expr]]): Parse.R[Ast.Expr] = ra match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(xs, t1) => Parse.Ok(Ast.Call(line, f, targs, chosen, xs), t1)
+
+// (expr, ...)
+def Parse.args {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Coll.List[Ast.Expr]] = Parse.op(ts, "(") match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(_, t1) => Parse.exprs(t1, Coll.Nil)
+
+def Parse.exprs {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Expr]): Parse.R[Coll.List[Ast.Expr]] =
+  if Parse.isOp(ts, ")") then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.expr(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(e, t1) => if Parse.isOp(t1, ",") then Parse.exprs(Parse.next(t1), Coll.Cons(e, acc)) else Parse.exprs(t1, Coll.Cons(e, acc))
+
+// a source: lex, then parse; a lex error is a parse error at its line
+def Parse.source {r: Region} (src: Str): Parse.R[Coll.List[Ast.Decl]] = Lex.lex(src) match
+  case Lex.Bad(line, _) => Parse.Err(line, "lexable source")
+  case Lex.Toks(ts) => Parse.file(ts)
