@@ -1,0 +1,137 @@
+// s2 COL b1 (vic/c/col-design.md): Coll.BMap, a persistent 2-3-4 tree keyed by I64. The arity is the case, so a wrong key
+// count cannot be built. Insert is top-down (Guibas-Sedgewick 1978): a full B4 is split before it is entered, so bIns
+// never sees a B4 and no per-level result wrapper is allocated. Uniform leaf depth and key order are test invariants.
+enum Coll.BTree [V: Type]:
+  case Coll.BTip
+  case Coll.B2(a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V])
+  case Coll.B3(a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V])
+  case Coll.B4(a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k3: I64, v3: V, d: Coll.BTree[V])
+
+enum Coll.BMap [V: Type]:
+  case Coll.BMap(n: I64, t: Coll.BTree[V])
+
+def Coll.bEmpty [V: Type] {r: Region} (): Coll.BMap[V] = Coll.BMap(0, Coll.BTip)
+
+def Coll.bSize [V: Type] (m: Coll.BMap[V]): I64 = m match
+  case Coll.BMap(n, _) => n
+
+// the node holding k, BTip when absent (no allocation)
+def Coll.bFind [V: Type] (t: Coll.BTree[V], k: I64): Coll.BTree[V] = t match
+  case Coll.BTip => t
+  case Coll.B2(a, k1, _, b) => if k < k1 then Coll.bFind(a, k) else if k > k1 then Coll.bFind(b, k) else t
+  case Coll.B3(a, k1, _, b, k2, _, c) =>
+    if k < k1 then Coll.bFind(a, k) else if k == k1 then t else if k < k2 then Coll.bFind(b, k) else if k == k2 then t else Coll.bFind(c, k)
+  case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) =>
+    if k < k1 then Coll.bFind(a, k) else if k == k1 then t else if k < k2 then Coll.bFind(b, k) else if k == k2 then t
+    else if k < k3 then Coll.bFind(c, k) else if k == k3 then t else Coll.bFind(d, k)
+
+// the value of k in node n (a bFind answer), d when n is BTip
+def Coll.bValOr [V: Type] (n: Coll.BTree[V], k: I64, d: V): V = n match
+  case Coll.BTip => d
+  case Coll.B2(_, k1, v1, _) => if k == k1 then v1 else d
+  case Coll.B3(_, k1, v1, _, k2, v2, _) => if k == k1 then v1 else if k == k2 then v2 else d
+  case Coll.B4(_, k1, v1, _, k2, v2, _, k3, v3, _) => if k == k1 then v1 else if k == k2 then v2 else if k == k3 then v3 else d
+
+def Coll.bGetOr [V: Type] (m: Coll.BMap[V], k: I64, d: V): V = m match
+  case Coll.BMap(_, t) => Coll.bValOr(Coll.bFind(t, k), k, d)
+
+def Coll.bIsNode [V: Type] (n: Coll.BTree[V]): Bool = n match
+  case Coll.BTip => false
+  case Coll.B2(_, _, _, _) => true
+  case Coll.B3(_, _, _, _, _, _, _) => true
+  case Coll.B4(_, _, _, _, _, _, _, _, _, _) => true
+
+def Coll.bHas [V: Type] (m: Coll.BMap[V], k: I64): Bool = m match
+  case Coll.BMap(_, t) => Coll.bIsNode(Coll.bFind(t, k))
+
+def Coll.bLookup [V: Type] {r: Region} (m: Coll.BMap[V], k: I64): Coll.Option[V] = m match
+  case Coll.BMap(_, t) => Coll.bSome(Coll.bFind(t, k), k)
+
+def Coll.bSome [V: Type] {r: Region} (n: Coll.BTree[V], k: I64): Coll.Option[V] = n match
+  case Coll.BTip => Coll.None
+  case Coll.B2(_, k1, v1, _) => if k == k1 then Coll.Some(v1) else Coll.None
+  case Coll.B3(_, k1, v1, _, k2, v2, _) => if k == k1 then Coll.Some(v1) else if k == k2 then Coll.Some(v2) else Coll.None
+  case Coll.B4(_, k1, v1, _, k2, v2, _, k3, v3, _) =>
+    if k == k1 then Coll.Some(v1) else if k == k2 then Coll.Some(v2) else if k == k3 then Coll.Some(v3) else Coll.None
+
+// a B4 split around its middle key: the two halves are B2 trees (left, middle key and value, right)
+enum Coll.Split [V: Type]:
+  case Coll.Split(l: Coll.BTree[V], k: I64, v: V, r: Coll.BTree[V])
+
+// the halves of a full node (its fields, so no other shape can be passed), k inserted into the half it belongs to.
+// the halves are B2s, so bIns may enter them.
+def Coll.bSplitIns [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k3: I64, v3: V, d: Coll.BTree[V], k: I64, v: V): Coll.Split[V] =
+  if k == k2 then Coll.Split(Coll.B2(a, k1, v1, b), k2, v, Coll.B2(c, k3, v3, d))
+  else if k < k2 then Coll.Split(Coll.bIns(Coll.B2(a, k1, v1, b), k, v), k2, v2, Coll.B2(c, k3, v3, d))
+  else Coll.Split(Coll.B2(a, k1, v1, b), k2, v2, Coll.bIns(Coll.B2(c, k3, v3, d), k, v))
+
+// a B4 root becomes a B2 over two B2s, then k enters it
+def Coll.bRootIns [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k3: I64, v3: V, d: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] =
+  Coll.bIns(Coll.B2(Coll.B2(a, k1, v1, b), k2, v2, Coll.B2(c, k3, v3, d)), k, v)
+
+// a B4 is only met at the root (children are split before they are entered)
+def Coll.bIns [V: Type] {r: Region} (t: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = t match
+  case Coll.BTip => Coll.B2(Coll.BTip, k, v, Coll.BTip)
+  case Coll.B2(a, k1, v1, b) =>
+    if k == k1 then Coll.B2(a, k1, v, b)
+    else if k < k1 then Coll.bInto2L(a, k1, v1, b, k, v)
+    else Coll.bInto2R(a, k1, v1, b, k, v)
+  case Coll.B3(a, k1, v1, b, k2, v2, c) =>
+    if k == k1 then Coll.B3(a, k1, v, b, k2, v2, c)
+    else if k == k2 then Coll.B3(a, k1, v1, b, k2, v, c)
+    else if k < k1 then Coll.bInto3A(a, k1, v1, b, k2, v2, c, k, v)
+    else if k < k2 then Coll.bInto3B(a, k1, v1, b, k2, v2, c, k, v)
+    else Coll.bInto3C(a, k1, v1, b, k2, v2, c, k, v)
+  case Coll.B4(a, k1, v1, b, k2, v2, c, k3, v3, d) => Coll.bRootIns(a, k1, v1, b, k2, v2, c, k3, v3, d, k, v)
+
+def Coll.bLift2L [V: Type] {r: Region} (s: Coll.Split[V], k1: I64, v1: V, b: Coll.BTree[V]): Coll.BTree[V] = s match
+  case Coll.Split(l, km, vm, rr) => Coll.B3(l, km, vm, rr, k1, v1, b)
+
+def Coll.bLift2R [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, s: Coll.Split[V]): Coll.BTree[V] = s match
+  case Coll.Split(l, km, vm, rr) => Coll.B3(a, k1, v1, l, km, vm, rr)
+
+// descend into the left child a of B2(a, k1, v1, b) with k < k1
+def Coll.bInto2L [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = a match
+  case Coll.BTip => Coll.B3(Coll.BTip, k, v, Coll.BTip, k1, v1, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) => Coll.bLift2L(Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v), k1, v1, b)
+  case Coll.B2(_, _, _, _) => Coll.B2(Coll.bIns(a, k, v), k1, v1, b)
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B2(Coll.bIns(a, k, v), k1, v1, b)
+
+def Coll.bInto2R [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = b match
+  case Coll.BTip => Coll.B3(Coll.BTip, k1, v1, Coll.BTip, k, v, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) => Coll.bLift2R(a, k1, v1, Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v))
+  case Coll.B2(_, _, _, _) => Coll.B2(a, k1, v1, Coll.bIns(b, k, v))
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B2(a, k1, v1, Coll.bIns(b, k, v))
+
+def Coll.bLift3A [V: Type] {r: Region} (s: Coll.Split[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V]): Coll.BTree[V] = s match
+  case Coll.Split(l, km, vm, rr) => Coll.B4(l, km, vm, rr, k1, v1, b, k2, v2, c)
+
+def Coll.bLift3B [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, s: Coll.Split[V], k2: I64, v2: V, c: Coll.BTree[V]): Coll.BTree[V] = s match
+  case Coll.Split(l, km, vm, rr) => Coll.B4(a, k1, v1, l, km, vm, rr, k2, v2, c)
+
+def Coll.bLift3C [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, s: Coll.Split[V]): Coll.BTree[V] = s match
+  case Coll.Split(l, km, vm, rr) => Coll.B4(a, k1, v1, b, k2, v2, l, km, vm, rr)
+
+def Coll.bInto3A [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = a match
+  case Coll.BTip => Coll.B4(Coll.BTip, k, v, Coll.BTip, k1, v1, Coll.BTip, k2, v2, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) => Coll.bLift3A(Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v), k1, v1, b, k2, v2, c)
+  case Coll.B2(_, _, _, _) => Coll.B3(Coll.bIns(a, k, v), k1, v1, b, k2, v2, c)
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B3(Coll.bIns(a, k, v), k1, v1, b, k2, v2, c)
+
+def Coll.bInto3B [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = b match
+  case Coll.BTip => Coll.B4(Coll.BTip, k1, v1, Coll.BTip, k, v, Coll.BTip, k2, v2, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) => Coll.bLift3B(a, k1, v1, Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v), k2, v2, c)
+  case Coll.B2(_, _, _, _) => Coll.B3(a, k1, v1, Coll.bIns(b, k, v), k2, v2, c)
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B3(a, k1, v1, Coll.bIns(b, k, v), k2, v2, c)
+
+def Coll.bInto3C [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = c match
+  case Coll.BTip => Coll.B4(Coll.BTip, k1, v1, Coll.BTip, k2, v2, Coll.BTip, k, v, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) => Coll.bLift3C(a, k1, v1, b, k2, v2, Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v))
+  case Coll.B2(_, _, _, _) => Coll.B3(a, k1, v1, b, k2, v2, Coll.bIns(c, k, v))
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B3(a, k1, v1, b, k2, v2, Coll.bIns(c, k, v))
+
+// m with k bound to v (a binding of k is replaced); the count grows only when k was absent
+def Coll.bInsert [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.BMap[V] = m match
+  case Coll.BMap(n, t) =>
+    val t2 = Coll.bIns(t, k, v)
+    if Coll.bHas(m, k) then Coll.BMap(n, t2) else Coll.BMap(n + 1, t2)
