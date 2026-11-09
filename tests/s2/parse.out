@@ -77,7 +77,7 @@ def main(): I64 =
 def ce7(): Bool = false && 1 / 0 == 0
 
 def ce9(): I64 = 0 - (0 - 3)
-spec def size(xs: List): I64
+def size(xs: List): I64
   ensures result >= 0
   proof by induction xs
 = xs match
@@ -103,7 +103,7 @@ def count(xs: List): I64
     n = n + 1
   n
 
-spec def memL(v: I64, xs: List): Bool = xs match
+def memL(v: I64, xs: List): Bool = xs match
   case Nil => false
   case Cons(h, t) => h == v || memL(v, t)
 
@@ -119,9 +119,9 @@ def main(): I64 =
   Console.print("\n")
   0
 
-spec def twoOf(n: I64): List = Cons(n, Cons(n, Nil))
+def twoOf(n: I64): List = Cons(n, Cons(n, Nil))
 
-spec def strLen2(s: Str): I64 = Str.len(s) * 2
+def strLen2(s: Str): I64 = Str.len(s) * 2
 def h(p: Pair[I64, I64]): I64 =
   val y = 1
   p match
@@ -139,8 +139,7 @@ given Ho.Fold[Ho.Sum, I64, I64]:
 
 given [A: Type] {o: Ord[A]} Ord[List[A]]:
   def cmp(a: A, b: A): I64 = 0
-spec def twoOf(n: I64): I64 = n + n
-error 1 a spec def without binder groups
+error 1 declaration
 type Bits (n: I64) = n match
   case 8 => Bool
   case _ => I64

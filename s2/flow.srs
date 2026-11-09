@@ -432,8 +432,7 @@ def Flow.step(st: Flow.St, p: I64, c: Flow.Cap, op: Sym.Sym, line: I64): Flow.At
   Flow.At(Flow.add(st3, Flow.fLine(s, line)), q)
 
 // a constructor call (written with args: a nullary case takes no ()) is a request on Region: an alloc step on the
-// innermost Region in scope. none here: the def's implicit Region (its row, s2/eff.srs), owned by a caller. not yet: a
-// spec def allocates nothing (the s2 Ast has no spec marker)
+// innermost Region in scope. none here: the def's implicit Region (its row, s2/eff.srs), owned by a caller
 def Flow.alloc(st: Flow.St, p: I64, line: I64): Flow.At = Flow.request(st, p, Coll.Some(Eff.Req(Sym.of("Region"), Sym.of("alloc"))), line)
 
 // a request P.op(...): a step of the innermost capability of P in scope (none: the implicit one, not tracked here)
@@ -1019,7 +1018,6 @@ def Flow.facts(cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val walked: Flow.At = body match
     case Ast.Extern => Flow.At(st1, 0)
     case Ast.Def(_, e) => Flow.expr(cx, st1, 0, e)
-    case Ast.Spec(_, e) => Flow.expr(cx, st1, 0, e)
   val Flow.At(st2, e) = walked
   val st3 = Flow.worlds(ps, st2, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Exit(e))
   val st4 = as match

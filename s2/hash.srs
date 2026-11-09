@@ -213,7 +213,6 @@ def Hs.fn(cx: Hs.Cx, f: Ast.Fn): Hs.Dg =
   body match
     case Ast.Extern => Hs.add(g3, 70)
     case Ast.Def(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 71), e), cs)
-    case Ast.Spec(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 72), e), cs)
 
 // an enum: its groups, then each case's fields (the field and case names are metadata: positions only)
 def Hs.enum_(cx: Hs.Cx, e: Ast.Enum): Hs.Dg =
@@ -251,7 +250,6 @@ def Hs.refs(d: Hs.D, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = d match
     val Ast.Fn(_, _, _, _, _, _, body) = f
     body match
       case Ast.Def(_, e) => Hs.eRefs(e, acc)
-      case Ast.Spec(_, e) => Hs.eRefs(e, acc)
       case Ast.Extern => acc
   case Hs.DE(e) =>
     val Ast.Enum(_, _, _, cases) = e

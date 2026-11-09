@@ -94,10 +94,10 @@ def Parse.decls(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Decl]): Parse.R[Coll.
 
 def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   if Parse.isKw(ts, "def") then Parse.wrapFn(Parse.fn(Parse.next(ts), Parse.line(ts), Parse.FDef))
-  else if Parse.isKw(ts, "extern") || Parse.isKw(ts, "spec") then
+  else if Parse.isKw(ts, "extern") then
     Parse.kw(Parse.next(ts), "def") match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), if Parse.isKw(ts, "spec") then Parse.FSpec else Parse.FExtern))
+      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), Parse.FExtern))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "protocol") then Parse.proto(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
@@ -234,11 +234,10 @@ def Parse.wrapFn(rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(f, t1) => Parse.Ok(Ast.DFn(f), t1)
 
-// which def: a def with a body, an extern def (or a trait method: no body), a spec def (a body, no binder groups)
+// which def: a def with a body, an extern def (or a trait method: no body)
 enum Parse.FnKind:
   case Parse.FDef
   case Parse.FExtern
-  case Parse.FSpec
 
 // def name groups (params) groups : ty [<atoms>] [= rhs]
 def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn] = Parse.ident(ts) match
@@ -257,18 +256,13 @@ def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn
               case Parse.Err(l, w) => Parse.Err(l, w)
               case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern), k)
 
-// the body of a def by its kind; a spec def with binder groups is an error (vic 2026-11-05)
-def Parse.fnBody(ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind): Parse.R[Ast.Fn] =
-  val Ast.Fn(line, name, gs, ps, ret, exit, _) = f
-  k match
-    case Parse.FExtern => Parse.Ok(f, ts)
-    case Parse.FDef => Parse.bodyOf(ts, f, false)
-    case Parse.FSpec => gs match
-      case Coll.Nil => Parse.bodyOf(ts, f, true)
-      case Coll.Cons(_, _) => Parse.Err(line, "a spec def without binder groups")
+// the body of a def by its kind
+def Parse.fnBody(ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind): Parse.R[Ast.Fn] = k match
+  case Parse.FExtern => Parse.Ok(f, ts)
+  case Parse.FDef => Parse.bodyOf(ts, f)
 
 // [NL IND clauses DED] = rhs (s1/parse.srs:88-89: the clauses sit between the signature and =)
-def Parse.bodyOf(ts: Coll.List[Lex.Tok], f: Ast.Fn, spec: Bool): Parse.R[Ast.Fn] =
+def Parse.bodyOf(ts: Coll.List[Lex.Tok], f: Ast.Fn): Parse.R[Ast.Fn] =
   val Ast.Fn(line, name, gs, ps, ret, exit, _) = f
   val rc: Parse.R[Coll.List[Ast.Clause]] = if Parse.isNl(ts) && Parse.isIndent(Parse.next(ts)) then Parse.clauses(Parse.next(Parse.next(ts)), Coll.Nil) else Parse.Ok(Coll.Nil, ts)
   rc match
@@ -277,7 +271,7 @@ def Parse.bodyOf(ts: Coll.List[Lex.Tok], f: Ast.Fn, spec: Bool): Parse.R[Ast.Fn]
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(_, t1) => Parse.rhs(t1) match
         case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(e, t2) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, if spec then Ast.Spec(cs, e) else Ast.Def(cs, e)), t2)
+        case Parse.Ok(e, t2) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, Ast.Def(cs, e)), t2)
 
 // clauses until DED, one per line
 def Parse.clauses(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Clause]): Parse.R[Coll.List[Ast.Clause]] =

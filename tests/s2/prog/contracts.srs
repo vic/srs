@@ -1,5 +1,5 @@
 // pass: verification syntax (C13) parses, checks, and is erased in C
-spec def size(xs: List): I64
+def size(xs: List): I64
   ensures result >= 0
   proof by induction xs
 = xs match
@@ -25,7 +25,7 @@ def count(xs: List): I64
     n = n + 1
   n
 
-spec def memL(v: I64, xs: List): Bool = xs match
+def memL(v: I64, xs: List): Bool = xs match
   case Nil => false
   case Cons(h, t) => h == v || memL(v, t)
 
@@ -41,6 +41,6 @@ def main(): I64 =
   Console.print("\n")
   0
 
-// a spec def builds data w/o a Region (vic Q-U4) and calls spec defs + pure externs; S1 checks it in pure mode
-spec def twoOf(n: I64): List = Cons(n, Cons(n, Nil))
-spec def strLen2(s: Str): I64 = Str.len(s) * 2
+// plain defs: Region is inferred where a def builds data
+def twoOf(n: I64): List = Cons(n, Cons(n, Nil))
+def strLen2(s: Str): I64 = Str.len(s) * 2

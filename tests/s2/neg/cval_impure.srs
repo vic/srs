@@ -1,0 +1,10 @@
+// expect: error[impure-call]
+// f is impure through say: Console.print is an effect
+def say(x: I64): Unit = Console.print("a")
+def f(x: I64): I64 =
+  say(x)
+  x
+val g: I64 = f(1)
+def main(): I64 = 0
+// a compile-time body calls only pure fns, not 'f'
+// expect: --> tests/s2/neg/cval_impure.srs:7

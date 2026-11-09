@@ -43,11 +43,10 @@ enum El.Param:
 enum El.Fn:
   case El.Fn(line: I64, name: Sym.Sym, tparams: Coll.List[Sym.Sym], caps: Coll.List[Sym.Sym], params: Coll.List[El.Param], ret: K.Term, body: El.Body)
 
-// a def has C, an extern is a C symbol of the runtime, a spec body is compile time only (no C)
+// a def has C, an extern is a C symbol of the runtime
 enum El.Body:
   case El.Def(e: El.Expr)
   case El.Extern
-  case El.Spec(e: El.Expr)
 
 // handler name for protocol proto: its fns (init, then the ops)
 enum El.Handler:
@@ -58,7 +57,7 @@ enum El.Handler:
 enum El.Given:
   case El.Given(tparams: Coll.List[Sym.Sym], ev: Coll.List[Sym.Sym], head: K.Term, fns: Coll.List[El.Fn])
 
-// where a constructor allocates: in the Region capability region, or nowhere at run time (a spec body: compile time only)
+// where a constructor allocates: in the Region capability region, or nowhere at run time (a top-level val: compile time only)
 enum El.Alloc:
   case El.In(region: Sym.Sym)
   case El.Comptime
