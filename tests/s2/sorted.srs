@@ -1,0 +1,49 @@
+// s2 b4: Coll.sortDedup builds a Sorted (strictly ascending keys, last binding wins) by bottom-up merge sort
+def T.show(xs: Coll.List[Coll.KV[I64]]): I64 = xs match
+  case Coll.Nil => 0
+  case Coll.Cons(e, t) => T.showKV(e, t)
+
+def T.showKV(e: Coll.KV[I64], t: Coll.List[Coll.KV[I64]]): I64 = e match
+  case Coll.KV(k, v) =>
+    rt_print_i64(k)
+    rt_print("=")
+    rt_print_i64(v)
+    rt_print(" ")
+    T.show(t)
+
+// 1 iff keys strictly ascend (prev < every key)
+def T.asc(xs: Coll.List[Coll.KV[I64]], prev: I64): I64 = xs match
+  case Coll.Nil => 1
+  case Coll.Cons(e, t) => if Coll.kvKey(e) > prev then T.asc(t, Coll.kvKey(e)) else 0
+
+def T.scr {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
+  if i == n then acc else T.scr(i + 1, n, Coll.Cons(Coll.KV((i * 7919) % 100003, i), acc))
+
+def T.none(): Coll.List[Coll.KV[I64]] = Coll.Nil
+
+def T.val(s: Coll.Sorted[I64]): Coll.List[Coll.KV[I64]] = s match
+  case Coll.Sorted(_, xs) => xs
+
+def T.cnt(s: Coll.Sorted[I64]): I64 = s match
+  case Coll.Sorted(n, _) => n
+
+def main(): I64 =
+  handle r = Arena()
+  val l = Coll.Cons(Coll.KV(5, 1), Coll.Cons(Coll.KV(3, 2), Coll.Cons(Coll.KV(9, 3), Coll.Cons(Coll.KV(5, 4), Coll.Cons(Coll.KV(1, 5), Coll.Cons(Coll.KV(3, 6), Coll.Cons(Coll.KV(7, 7), Coll.Cons(Coll.KV(5, 8), Coll.Cons(Coll.KV(0, 9), Coll.Cons(Coll.KV(8, 10), Coll.Nil))))))))))
+  val s = Coll.sortDedup(l)
+  T.show(T.val(s))
+  rt_print("\n")
+  rt_print_i64(T.cnt(s))
+  rt_print("\n")
+  val w = Coll.sortDedup(Coll.Cons(Coll.KV(4, 100), Coll.Cons(Coll.KV(4, 200), Coll.Nil)))
+  T.show(T.val(w))
+  rt_print("\n")
+  val big = Coll.sortDedup(T.scr(0, 100000, Coll.Nil))
+  rt_print_i64(T.asc(T.val(big), -1))
+  rt_print("\n")
+  rt_print_i64(T.cnt(big) + Coll.length(T.val(big)) - 100000)
+  rt_print("\n")
+  val e = Coll.sortDedup(T.none())
+  rt_print_i64(T.cnt(e))
+  rt_print("\n")
+  0
