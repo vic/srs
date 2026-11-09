@@ -253,6 +253,7 @@ def FT.show(c: Flow.Clash): Unit = c match
   case Flow.NoSol(line, cap) => FT.say("nosol", line, cap)
   case Flow.Dead(line, cap) => FT.say("dead", line, cap)
   case Flow.Escape(line, cap) => FT.say("escape", line, cap)
+  case Flow.Stale(line, x) => FT.say("stale", line, x)
 
 def FT.say(kind: Str, line: I64, cap: Sym.Sym): Unit =
   rt_print(" ")
@@ -268,7 +269,7 @@ def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
     FT.show(c)
     FT.showAll(rest)
 
-def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), FT.fns(), FT.enums()), f))
+def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), FT.fns(), FT.enums(), Coll.Nil), f))
 
 def FT.verdict (name: Str, v: Flow.Verdict): Unit =
   rt_print(name)

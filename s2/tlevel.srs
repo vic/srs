@@ -250,7 +250,7 @@ def Tl.ty {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], t
       case Coll.Some(b) => Tl.W(b, es2)
       case Coll.None => Coll.sLookup(tds, n) match
         case Coll.None => Tl.W(Ast.Ty(line, n, args2, caps, vals), if Coll.length(vals) == 0 then es2 else Coll.Cons(Tl.NoVals(line, n), es2))
-        case Coll.Some(td) => Tl.apply(cx, cv, td, line, args2, caps, vals, fuel, es2)
+        case Coll.Some(td) => if Tl.nominal(td) then Tl.W(Ast.Ty(line, n, args2, caps, vals), es2) else Tl.apply(cx, cv, td, line, args2, caps, vals, fuel, es2)
 
 def Tl.tyArgs {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], ts: Coll.List[Ast.Ty], fuel: I64, acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
@@ -593,3 +593,15 @@ def Tl.stmtsGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ss: Coll.List[Ast.Stmt], a
 def Tl.annGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ann: Coll.Option[Ast.Ty], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ann match
   case Coll.None => acc
   case Coll.Some(t) => Tl.tyGoals(cx, f, t, acc)
+
+// a type with <> facts stays nominal (vic-jxk): a value of it carries the facts, so a plain value of its body type does
+// not fit it; C gives it its body's type (s2/emit.srs Emit.nominalOf)
+def Tl.nominal(td: Ast.TypeDecl): Bool =
+  val Ast.TypeDecl(_, _, gs, _, _) = td
+  Tl.hasFacts(gs)
+
+def Tl.hasFacts(gs: Coll.List[Ast.Group]): Bool = gs match
+  case Coll.Nil => false
+  case Coll.Cons(g, rest) => g match
+    case Ast.Facts(_) => true
+    case _ => Tl.hasFacts(rest)
