@@ -120,11 +120,19 @@ def Tl.groups(cx: Tl.Cx, gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Group], es
       val Tl.W(bs2, es2) = Tl.binders(cx, bs, Coll.Nil, es)
       Tl.groups(cx, rest, Coll.Cons(Ast.Types(bs2), acc), es2)
     case Ast.Evidence(bs) =>
-      val Tl.W(bs2, es2) = Tl.binders(cx, bs, Coll.Nil, es)
+      val Tl.W(bs2, es2) = Tl.binders(cx, Tl.unnamed(bs), Coll.Nil, es)
       Tl.groups(cx, rest, Coll.Cons(Ast.Evidence(bs2), acc), es2)
     case Ast.Facts(_) => Tl.groups(cx, rest, Coll.Cons(g, acc), es)
 
-def Tl.binders(cx: Tl.Cx, bs: Coll.List[Ast.Binder], acc: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Binder]] = bs match
+// a {} binder `_` (vic Q1: {Console}) is still a C param: it takes its type's name, which Names (run before) never bound
+def Tl.unnamed(bs: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = bs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(line, x, t) = b
+    val Ast.Ty(_, n, _, _, _) = t
+    Coll.Cons(if Str.eq(Sym.str(x), "_") then Ast.Binder(line, n, t) else b, Tl.unnamed(rest))
+
+def Tl.binders(cx: Tl.Cx,bs: Coll.List[Ast.Binder], acc: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Binder]] = bs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(line, x, t) = b

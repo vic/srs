@@ -338,18 +338,21 @@ def Parse.groupOf(k: Parse.GKind, bs: Coll.List[Ast.Binder]): Ast.Group = k matc
   case Parse.GTypes => Ast.Types(bs)
   case Parse.GEvidence => Ast.Evidence(bs)
 
-// name: ty, ... up to close
+// name: ty, ... up to close; in {} a binder without a name is `_` (vic Q1: {Console} is {_: Console})
 def Parse.binders(ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Ast.Binder]): Parse.R[Coll.List[Ast.Binder]] =
   if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else if Str.eq(close, "}") && !Parse.isOp(Parse.next(ts), ":") then Parse.binderTy(ts, Parse.line(ts), Sym.of("_"), close, acc)
   else Parse.ident(ts) match
     case Parse.Err(l, w) => Parse.Err(l, w)
     case Parse.Ok(x, t1) => Parse.op(t1, ":") match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(_, t2) => Parse.ty(t2) match
-        case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(t, t3) =>
-          val acc2 = Coll.Cons(Ast.Binder(Parse.line(ts), x, t), acc)
-          if Parse.isOp(t3, ",") then Parse.binders(Parse.next(t3), close, acc2) else Parse.binders(t3, close, acc2)
+      case Parse.Ok(_, t2) => Parse.binderTy(t2, Parse.line(ts), x, close, acc)
+
+def Parse.binderTy(ts: Coll.List[Lex.Tok], line: I64, x: Sym.Sym, close: Str, acc: Coll.List[Ast.Binder]): Parse.R[Coll.List[Ast.Binder]] = Parse.ty(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(t, t3) =>
+    val acc2 = Coll.Cons(Ast.Binder(line, x, t), acc)
+    if Parse.isOp(t3, ",") then Parse.binders(Parse.next(t3), close, acc2) else Parse.binders(t3, close, acc2)
 
 def Parse.params(ts: Coll.List[Lex.Tok]): Parse.R[Coll.List[Ast.Binder]] = Parse.op(ts, "(") match
   case Parse.Err(l, w) => Parse.Err(l, w)
