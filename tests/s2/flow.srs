@@ -28,9 +28,18 @@ def FT.protos {r: Region} (): Coll.List[Ast.Proto] =
   val on = Ast.Op(1, FT.s("on"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "On")))
   val hit = Ast.Op(1, FT.s("hit"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "Broken")))
   val lamp = Ast.Proto(1, FT.s("Lamp"), FT.l3(FT.s("Off"), FT.s("On"), FT.s("Broken")), FT.s("Off"), FT.l2(FT.s("On"), FT.s("Broken")), Coll.None, FT.l2(on, hit), Coll.Nil)
-  FT.l3(file, region, lamp)
+  Coll.Cons(file, Coll.Cons(region, Coll.Cons(lamp, FT.l1(FT.door()))))
 
-def FT.handlers {r: Region} (): Coll.List[Ast.Handler] = FT.l3(Ast.Handler(8, FT.s("CFile"), FT.s("File"), Coll.Nil), Ast.Handler(33, FT.s("Arena"), FT.s("Region"), Coll.Nil), Ast.Handler(1, FT.s("HLamp"), FT.s("Lamp"), Coll.Nil))
+def FT.handlers {r: Region} (): Coll.List[Ast.Handler] = FT.l4(Ast.Handler(8, FT.s("CFile"), FT.s("File"), Coll.Nil), Ast.Handler(33, FT.s("Arena"), FT.s("Region"), Coll.Nil), Ast.Handler(1, FT.s("HLamp"), FT.s("Lamp"), Coll.Nil), Ast.Handler(13, FT.s("HDoor"), FT.s("Door"), Coll.Nil))
+
+// tests/rules.srs: protocol Door with rule defs twoKnocks, and reach (two clauses, recursive)
+def FT.door {r: Region} (): Ast.Proto =
+  val knock = Ast.Op(7, FT.s("knock"), Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Shut", "Open1"), FT.tr("Open1", "Open2")))
+  val leave = Ast.Op(8, FT.s("leave"), Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Open1", "Gone"), FT.tr("Open2", "Gone")))
+  val two = Ast.RuleDef(9, FT.s("twoKnocks"), FT.l2(FT.s("s"), FT.s("s3")), FT.l2(FT.nextA("s", "knock", "s2"), FT.nextA("s2", "knock", "s3")))
+  val reach1 = Ast.RuleDef(10, FT.s("reach"), FT.l2(FT.s("s"), FT.s("t")), FT.l1(FT.nextA("s", "knock", "t")))
+  val reach2 = Ast.RuleDef(11, FT.s("reach"), FT.l2(FT.s("s"), FT.s("t")), FT.l2(FT.nextA("s", "knock", "u"), Ast.Atom(11, Sym.of("reach"), FT.l2(Ast.TName(FT.s("u")), Ast.TName(FT.s("t"))))))
+  Ast.Proto(3, FT.s("Door"), FT.l4(FT.s("Shut"), FT.s("Open1"), FT.s("Open2"), FT.s("Gone")), FT.s("Shut"), FT.l1(FT.s("Gone")), Coll.None, FT.l2(knock, leave), FT.l3(two, reach1, reach2))
 
 // two branches of one length reach the merge in the same round in two states: the split joins two new at() rows
 def FT.sameRound {r: Region} (): Ast.Fn =
@@ -84,7 +93,7 @@ def FT.fns {r: Region} (): Coll.List[Ast.Fn] =
   val readAny = FT.callee("readAny", FT.l2(FT.at("f", "s"), FT.nextA("s", "read", "s2")), FT.l1(FT.at("f", "s2")), FT.op(3, "f", "read"))
   // no at() for f: f must be in the start state, and s is free: two solutions (Opened -> Read1, Read1 -> Read2)
   val anyStep = FT.callee("anyStep", FT.l1(FT.nextA("s", "read", "s2")), Coll.Nil, Ast.Int(1, 0))
-  Coll.Cons(readOnce, Coll.Cons(closeAfter, Coll.Cons(readAny, Coll.Cons(anyStep, FT.l1(FT.readBoth())))))
+  Coll.Cons(readOnce, Coll.Cons(closeAfter, Coll.Cons(readAny, Coll.Cons(anyStep, Coll.Cons(FT.readBoth(), FT.l4(FT.knockTwice(), FT.knockOnce(), FT.farReach(), FT.onward()))))))
 
 // tests/facts.srs main
 def FT.callsOk {r: Region} (): Ast.Fn = FT.main(5, Ast.Block(6, FT.l3(FT.handle(6, "f", "CFile"), FT.val(7, "a", FT.call(7, "readOnce")), Ast.Do(FT.call(8, "closeAfter"))), FT.nm(11, "a")))
@@ -118,6 +127,41 @@ def FT.twoCaps {r: Region} (): Ast.Fn =
 def FT.twoCapsBad {r: Region} (): Ast.Fn =
   val ss = Coll.Cons(FT.handle(3, "a", "CFile"), Coll.Cons(FT.handle(4, "b", "CFile"), Coll.Cons(Ast.Do(FT.op(5, "b", "read")), Coll.Cons(Ast.Do(FT.callBoth(6)), FT.l2(Ast.Do(FT.op(7, "a", "close")), Ast.Do(FT.op(8, "b", "close")))))))
   FT.main(2, Ast.Block(3, ss, Ast.Int(9, 0)))
+
+// ── protocol rules in entry facts (tests/rules.srs) ──
+def FT.doorFn {r: Region} (line: I64, name: Str, entry: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], body: Ast.Expr): Ast.Fn =
+  Ast.Fn(line, Sym.of(name), FT.l2(Ast.Evidence(FT.l1(Ast.Binder(line, FT.s("d"), FT.ty("Door")))), Ast.Facts(entry)), Coll.Nil, FT.ty("I64"), exit, Ast.Def(body))
+
+def FT.ruleAtom {r: Region} (rel: Str, a: Str, b: Str): Ast.Atom = Ast.Atom(1, Sym.of(rel), FT.l2(Ast.TName(Sym.of(a)), Ast.TName(Sym.of(b))))
+
+// knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> = { val a = d.knock(); a + d.knock() }
+def FT.knockTwice {r: Region} (): Ast.Fn =
+  val body = Ast.Block(18, FT.l1(FT.val(18, "a", FT.op(18, "d", "knock"))), Ast.Bin(19, Ast.Add, FT.nm(19, "a"), FT.op(19, "d", "knock")))
+  FT.doorFn(17, "knockTwice", FT.l2(FT.at("d", "s"), FT.ruleAtom("twoKnocks", "s", "s3")), FT.l1(FT.at("d", "s3")), body)
+
+// knockOnce {d: Door} <at(d, Shut), reach(Shut, t), next(Shut, knock, t)> (): I64 <at(d, t)> = d.knock()
+def FT.knockOnce {r: Region} (): Ast.Fn =
+  FT.doorFn(22, "knockOnce", FT.l3(FT.at("d", "Shut"), FT.ruleAtom("reach", "Shut", "t"), FT.nextA("Shut", "knock", "t")), FT.l1(FT.at("d", "t")), FT.op(22, "d", "knock"))
+
+// tests/rules.srs main
+def FT.rulesOk {r: Region} (): Ast.Fn =
+  val ss = Coll.Cons(FT.handle(25, "d", "HDoor"), Coll.Cons(FT.val(26, "x", FT.call(26, "knockTwice")), Coll.Cons(Ast.Do(FT.op(27, "d", "leave")), Coll.Cons(FT.handle(28, "e", "HDoor"), FT.l2(FT.val(29, "y", FT.callOn(29, "knockOnce", "e")), Ast.Do(FT.op(30, "e", "leave")))))))
+  FT.main(24, Ast.Block(25, ss, Ast.Int(33, 0)))
+
+// reach(Shut, Open2) holds only through the recursive clause of reach
+def FT.farReach {r: Region} (): Ast.Fn = FT.doorFn(30, "farReach", FT.l2(FT.at("d", "Shut"), FT.ruleAtom("reach", "Shut", "Open2")), Coll.Nil, Ast.Int(30, 0))
+
+def FT.reachRec {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l4(FT.handle(3, "d", "HDoor"), Ast.Do(FT.call(4, "farReach")), Ast.Do(FT.op(5, "d", "knock")), Ast.Do(FT.op(6, "d", "leave"))), Ast.Int(7, 0)))
+
+// from Open1 both knock (to Open2) and leave (to Gone) exist; reach uses knock only, so t is Open2, one solution
+def FT.onward {r: Region} (): Ast.Fn = FT.doorFn(31, "onward", FT.l2(FT.at("d", "Open1"), FT.ruleAtom("reach", "Open1", "t")), FT.l1(FT.at("d", "t")), FT.op(31, "d", "knock"))
+
+def FT.onwardCall {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l4(FT.handle(3, "d", "HDoor"), Ast.Do(FT.op(4, "d", "knock")), Ast.Do(FT.call(5, "onward")), Ast.Do(FT.op(6, "d", "leave"))), Ast.Int(7, 0)))
+
+// d knocked once: twoKnocks(Open1, s3) has no solution (no knock from Open2)
+def FT.rulesBad {r: Region} (): Ast.Fn =
+  val ss = Coll.Cons(FT.handle(3, "d", "HDoor"), Coll.Cons(Ast.Do(FT.op(4, "d", "knock")), Coll.Cons(FT.val(5, "x", FT.call(5, "knockTwice")), FT.l1(Ast.Do(FT.op(6, "d", "leave"))))))
+  FT.main(2, Ast.Block(3, ss, Ast.Int(7, 0)))
 
 // ── the def side: a def with capability binders checks its own body, once per solution (world) ──
 def FT.fn {r: Region} (name: Str): Ast.Fn = Flow.fnNamed(FT.fns(), Sym.of(name)) match
@@ -217,6 +261,12 @@ def main(): I64 =
   FT.run("def_readBoth", FT.fn("readBoth"))
   FT.run("sig_state", FT.sigState())
   FT.run("no_sol", FT.noSol())
+  FT.run("rules_ok", FT.rulesOk())
+  FT.run("rules_bad", FT.rulesBad())
+  FT.run("def_knockTwice", FT.fn("knockTwice"))
+  FT.run("def_knockOnce", FT.fn("knockOnce"))
+  FT.run("reach_rec", FT.reachRec())
+  FT.run("op_const", FT.onwardCall())
   FT.verdict("ill_typed", FT.illTyped())
   FT.verdict("well_typed", FT.wellTyped())
   0
