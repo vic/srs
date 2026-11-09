@@ -99,7 +99,7 @@ def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), Parse.FExtern))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
-  else if Parse.isKw(ts, "capability") || Parse.isKw(ts, "protocol") then Parse.proto(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "capability") then Parse.proto(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "trait") then Parse.traitDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "given") then Parse.givenDecl(Parse.next(ts), Parse.line(ts))
@@ -459,7 +459,7 @@ def Parse.cases(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Case]): Parse.R[Coll.
             case Parse.Ok(fs, t3) => Parse.cases(Parse.endLine(t3), Coll.Cons(Ast.Case(line, name, fs), acc))
         else Parse.cases(Parse.endLine(t2), Coll.Cons(Ast.Case(line, name, Coll.Nil), acc))
 
-// ── capability (vic 2026-11-09; protocol is its old name): items until DED (state, start, stop, drop, transition, def,
+// ── capability (vic 2026-11-09): items until DED (state, start, stop, drop, transition, def,
 // rule def). no state line: one state Live. a def's moves resolve to transitions once every item is read ──
 enum Parse.Pr:
   case Parse.Pr(states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], drop: Coll.Option[Sym.Sym], ops: Coll.List[Parse.COp], rules: Coll.List[Ast.RuleDef], rels: Coll.List[Parse.Rel])
@@ -468,12 +468,11 @@ enum Parse.Pr:
 enum Parse.Rel:
   case Parse.Rel(name: Sym.Sym, pairs: Coll.List[Ast.Trans])
 
-// how a def moves its subject: <A> .. <B>, <s r t> .. <t>, or no facts (each state stays); op: the old form, resolved
+// how a def moves its subject: <A> .. <B>, <s r t> .. <t>, or no facts (each state stays)
 enum Parse.Moves:
   case Parse.Stay
   case Parse.Move(from: Sym.Sym, to: Sym.Sym)
   case Parse.ByRel(line: I64, rel: Sym.Sym)
-  case Parse.Written(trans: Coll.List[Ast.Trans])
 
 enum Parse.COp:
   case Parse.COp(line: I64, name: Sym.Sym, params: Coll.List[Ast.Binder], ret: Ast.Ty, moves: Parse.Moves)
@@ -507,7 +506,6 @@ def Parse.resolveOps(os: Coll.List[Parse.COp], ss: Coll.List[Sym.Sym], rels: Col
     val rt: Parse.R[Coll.List[Ast.Trans]] = mv match
       case Parse.Stay => Parse.Ok(Parse.stays(ss), Coll.Nil)
       case Parse.Move(a, b) => Parse.Ok(Coll.Cons(Ast.Trans(a, b), Coll.Nil), Coll.Nil)
-      case Parse.Written(trs) => Parse.Ok(trs, Coll.Nil)
       case Parse.ByRel(l, r) => Parse.relPairs(rels, r) match
         case Coll.Some(trs) => Parse.Ok(trs, Coll.Nil)
         case Coll.None => Parse.Err(l, "a transition of this capability")
@@ -536,7 +534,7 @@ def Parse.items(ts: Coll.List[Lex.Tok], pr: Parse.Pr): Parse.R[Parse.Pr] =
     Parse.ident(Parse.next(ts)) match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(x, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, x, es, dr, os, rs, rels))
-  else if Parse.isKw(ts, "stop") || Parse.isKw(ts, "end") then
+  else if Parse.isKw(ts, "stop") then
     Parse.nameLine(Parse.next(ts), Coll.Nil) match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(xs, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, xs, dr, os, rs, rels))
@@ -554,12 +552,6 @@ def Parse.items(ts: Coll.List[Lex.Tok], pr: Parse.Pr): Parse.R[Parse.Pr] =
     Parse.capDef(Parse.next(ts), Parse.line(ts)) match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(o, t1) => Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, es, dr, Coll.Cons(o, os), rs, rels))
-  else if Parse.isKw(ts, "op") then
-    Parse.opDecl(Parse.next(ts), Parse.line(ts)) match
-      case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(o, t1) =>
-        val Ast.Op(ol, on, ops, oret, otrs) = o
-        Parse.items(Parse.endLine(t1), Parse.Pr(ss, st, es, dr, Coll.Cons(Parse.COp(ol, on, ops, oret, Parse.Written(otrs)), os), rs, rels))
   else if Parse.isKw(ts, "rule") then
     Parse.kw(Parse.next(ts), "def") match
       case Parse.Err(l, w) => Parse.Err(l, w)
@@ -625,20 +617,6 @@ def Parse.moves(line: I64, en: Parse.Entry, ex: Coll.Option[Sym.Sym]): Parse.R[P
     case Coll.Some(b) => if Sym.eq(b, t) then Parse.Ok(Parse.ByRel(line, r), Coll.Nil) else Parse.Err(line, "the exit <t> of <s r t>")
     case Coll.None => Parse.Err(line, "the exit <t> of <s r t>")
 
-// op name(params): ty : A -> B, ...
-def Parse.opDecl(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Op] = Parse.ident(ts) match
-  case Parse.Err(l, w) => Parse.Err(l, w)
-  case Parse.Ok(name, t1) => Parse.params(t1) match
-    case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(ps, t2) => Parse.op(t2, ":") match
-      case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(_, t3) => Parse.ty(t3) match
-        case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(ret, t4) => Parse.op(t4, ":") match
-          case Parse.Err(l, w) => Parse.Err(l, w)
-          case Parse.Ok(_, t5) => Parse.trans(t5, Coll.Nil) match
-            case Parse.Err(l, w) => Parse.Err(l, w)
-            case Parse.Ok(trs, t6) => Parse.Ok(Ast.Op(line, name, ps, ret, trs), t6)
 
 def Parse.trans(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Trans]): Parse.R[Coll.List[Ast.Trans]] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)

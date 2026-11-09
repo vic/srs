@@ -1,11 +1,11 @@
 // pass: E1 effect rows (vic 2026-11-09): a request names the protocol, Log.say(n), never a handler instance. a fn's
 // row is inferred (no {} binder is written): its requests, its constructors (a request on Region) and the rows of
 // its callees, minus what it handles. main handles every protocol it needs, so its row is empty
-protocol Log:
+capability Log:
   state Live
   start Live
-  end Live
-  op say(n: I64): Unit : Live -> Live
+  stop Live
+  def say(n: I64): Unit
 
 handler Out for Log:
   def say(n: I64): Unit =

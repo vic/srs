@@ -1,13 +1,13 @@
 // pass: vic-jxk facts on a type: OpenFile is a Ptr valid only while its File is Opened; a read checks the fact in
 // Γ, a value carries the fact of its type
-type OpenFile {f: File} <at(f, Opened)> = Ptr
+type OpenFile {f: File} <f: Opened> = Ptr
 
-extern def ext_handle {f: File} <at(f, Opened)> (): OpenFile
+extern def ext_handle {f: File} <f: Opened> (): OpenFile
 
 // h: OpenFile needs f Opened at each read of h
-def use {f: File} <at(f, Opened)> (h: OpenFile): I64 = 1
+def use {f: File} <f: Opened> (h: OpenFile): I64 = 1
 
-def peek {f: File} <at(f, Opened)> (): I64 =
+def peek {f: File} <f: Opened> (): I64 =
   val h: OpenFile = ext_handle()
   use(h) + use(h)
 

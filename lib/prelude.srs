@@ -21,12 +21,12 @@ extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
 extern def rt_heap_free(self: Ptr): Unit
 
 // Memory region = effect. Open until free; values captured by a region die at free.
-protocol Region:
+capability Region:
   state Open, Freed
   start Open
-  end Freed
-  op alloc(size: I64): Ptr : Open -> Open
-  op free(): Unit : Open -> Freed
+  stop Freed
+  def alloc <Open> (size: I64): Ptr <Open>
+  def free <Open> (): Unit <Freed>
   drop free
 
 // Allocators = handlers of Region.
@@ -55,17 +55,14 @@ extern def rt_capture_begin(): Unit
 extern def rt_capture_end(): Str
 
 // captureBegin .. captureEnd: the prints between them are one string, not output
-protocol Console:
-  state Live
-  start Live
-  end Live
-  op print(s: Str): Unit : Live -> Live
-  op printI64(v: I64): Unit : Live -> Live
-  op printChar(c: I64): Unit : Live -> Live
-  op eprint(s: Str): Unit : Live -> Live
-  op eprintI64(v: I64): Unit : Live -> Live
-  op captureBegin(): Unit : Live -> Live
-  op captureEnd(): Str : Live -> Live
+capability Console:
+  def print(s: Str): Unit
+  def printI64(v: I64): Unit
+  def printChar(c: I64): Unit
+  def eprint(s: Str): Unit
+  def eprintI64(v: I64): Unit
+  def captureBegin(): Unit
+  def captureEnd(): Str
 
 handler Srs.Console for Console:
   def print(s: Str): Unit = rt_print(s)
@@ -76,31 +73,22 @@ handler Srs.Console for Console:
   def captureBegin(): Unit = rt_capture_begin()
   def captureEnd(): Str = rt_capture_end()
 
-protocol Args:
-  state Live
-  start Live
-  end Live
-  op count(): I64 : Live -> Live
-  op at(i: I64): Str : Live -> Live
+capability Args:
+  def count(): I64
+  def at(i: I64): Str
 
 handler Srs.Args for Args:
   def count(): I64 = rt_argc()
   def at(i: I64): Str = rt_arg(i)
 
-protocol Files:
-  state Live
-  start Live
-  end Live
-  op read(path: Str): Str : Live -> Live
+capability Files:
+  def read(path: Str): Str
 
 handler Srs.Files for Files:
   def read(path: Str): Str = rt_read_file(path)
 
-protocol Exit:
-  state Live
-  start Live
-  end Live
-  op exit(code: I64): Unit : Live -> Live
+capability Exit:
+  def exit(code: I64): Unit
 
 handler Srs.Exit for Exit:
   def exit(code: I64): Unit = rt_exit(code)

@@ -19,12 +19,12 @@ def keep [A: Type] (x: A, n: I64): A = if n == 0 then x else keep(x, n - 1)
 // not a tail call: the multiply runs after the call returns
 def fact(n: I64): I64 = if n == 0 then 1 else n * fact(n - 1)
 
-protocol Bell:
+capability Bell:
   state Up, Down
   start Up
-  end Down
+  stop Down
   drop ring
-  op ring(): Unit : Up -> Down
+  def ring <Up> (): Unit <Down>
 
 handler LoudBell for Bell:
   def ring(): Unit =

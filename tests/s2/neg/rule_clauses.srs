@@ -1,9 +1,9 @@
 // expect: error[rule-arity]
-protocol Door:
+capability Door:
   state Shut, Open1
   start Shut
-  end Open1
-  op knock(): I64 : Shut -> Open1
+  stop Open1
+  def knock <Shut> (): I64 <Open1>
   rule def can(s) = next(s, knock, s2)
   rule def can(s, t) = next(s, knock, t)
 def main(): I64 = 0
