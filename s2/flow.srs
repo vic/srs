@@ -330,7 +330,7 @@ def Flow.srcs {r: Region} (cx: Flow.Cx, cs: Coll.List[Flow.Cap], e: Ast.Expr, ac
     Flow.fnNamed(fns, f) match
       case Coll.Some(g) =>
         val Ast.Fn(_, _, gs, _, ret, _, _) = g
-        val Ast.Ty(_, rn, _, _) = ret
+        val Ast.Ty(_, rn, _, _, _) = ret
         if Flow.isEnumName(es, rn) then Flow.srcsAll(cx, cs, xs, Flow.regionSrcs(cs, chosen, Flow.regionBs(Flow.capBs(ps, gs, 0, Coll.Nil), Coll.Nil), acc)) else acc
       case Coll.None =>
         if Flow.isCtor(es, f) then
@@ -477,7 +477,7 @@ def Flow.capBsOf {r: Region} (ps: Coll.List[Ast.Proto], gs: Coll.List[Ast.Group]
   case Coll.Nil => Flow.capBs(ps, gs, i, acc)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, ty) = b
-    val Ast.Ty(_, tn, _, _) = ty
+    val Ast.Ty(_, tn, _, _, _) = ty
     Flow.protoNamed(ps, tn) match
       case Coll.None => Flow.capBsOf(ps, gs, rest, i + 1, acc)
       case Coll.Some(_) => Flow.capBsOf(ps, gs, rest, i + 1, Coll.Cons(Flow.CapB(x, i, tn), acc))

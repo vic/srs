@@ -154,11 +154,33 @@ def Names.decl {r: Region} (d: Ast.Decl, st: Names.St): Names.St = d match
   case Ast.DTrait(tr) =>
     val Ast.Trait(line, name, gs, sigs) = tr
     Names.fnsIn(sigs, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))
+  // a type decl is a type name; its body names types in its [] binders, its value args see its value binders
+  case Ast.DType(td) =>
+    val Ast.TypeDecl(line, name, gs, vals, body) = td
+    val tps = Names.tparams(gs, Coll.Nil)
+    val ls = Names.binderNames(vals, Coll.Nil)
+    val st1 = Names.binderTys(vals, tps, Names.groupTys(gs, tps, Names.declare(st, Names.NType, name, line)))
+    body match
+      case Ast.Alias(t) => Names.tyIn(t, tps, ls, st1)
+      case Ast.TyMatch(s, arms) => Names.tyArms(arms, tps, ls, Names.tyIn(s, tps, ls, st1))
+      case Ast.ValMatch(_, arms) => Names.valArms(arms, tps, ls, st1)
   // a given names its trait head (in its [] binders); its methods are checked in them
   case Ast.DGiven(g) =>
     val Ast.Given(_, gs, head, fs) = g
     val tps = Names.tparams(gs, Coll.Nil)
     Names.fnsIn(fs, tps, Names.ty(head, tps, st))
+
+def Names.tyArms {r: Region} (as: Coll.List[Ast.TyArm], tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.TyArm(_, p, res) = a
+    Names.tyArms(rest, tps, ls, Names.tyIn(res, tps, ls, Names.tyIn(p, tps, ls, st)))
+
+def Names.valArms {r: Region} (as: Coll.List[Ast.ValArm], tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.ValArm(_, _, res) = a
+    Names.valArms(rest, tps, ls, Names.tyIn(res, tps, ls, st))
 
 def Names.fnsIn {r: Region} (fs: Coll.List[Ast.Fn], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = fs match
   case Coll.Nil => st
@@ -183,9 +205,12 @@ def Names.member(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
   case Coll.Cons(h, t) => if Sym.eq(h, x) then true else Names.member(x, t)
 
 // every type a type names: its name (unless a [] binder in scope tps) and its args
-def Names.ty {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], st: Names.St): Names.St =
-  val Ast.Ty(line, n, args, _) = t
-  Names.tys(args, tps, if Names.member(n, tps) then st else Names.add(st, Names.fTyRef(n, line)))
+def Names.ty {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], st: Names.St): Names.St = Names.tyIn(t, tps, Coll.Nil, st)
+
+// a type with the locals ls in scope of its value args (the value binders of a type decl)
+def Names.tyIn {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St =
+  val Ast.Ty(line, n, args, _, vs) = t
+  Names.exprs(vs, ls, Names.tys(args, tps, if Names.member(n, tps) then st else Names.add(st, Names.fTyRef(n, line))))
 
 def Names.tys {r: Region} (ts: Coll.List[Ast.Ty], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ts match
   case Coll.Nil => st
