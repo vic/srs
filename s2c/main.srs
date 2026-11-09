@@ -49,6 +49,16 @@ def S2c.showClashes(cs: Coll.List[Ty.Clash]): Unit = cs match
       case Ty.NoCap(l, p) => S2c.clashN(l, "no single capability of ", p)
     S2c.showClashes(rest)
 
+def S2c.showTl(es: Coll.List[Tl.Err]): Unit = es match
+  case Coll.Nil => ()
+  case Coll.Cons(e, rest) =>
+    e match
+      case Tl.Fuel(l, n) => S2c.clashN(l, "type reduction ran out of fuel at ", n)
+      case Tl.NoCase(l, n) => S2c.clashN(l, "no case of the match type matches in ", n)
+      case Tl.BadVal(l, n) => S2c.clashN(l, "a value arg has no compile-time value in ", n)
+      case Tl.Arity(l, n) => S2c.clashN(l, "wrong number of type or value args for ", n)
+    S2c.showTl(rest)
+
 def S2c.clash(l: I64, msg: Str): Unit =
   rt_eprint("line ")
   rt_eprint_i64(l)
@@ -72,12 +82,18 @@ def main(): I64 =
       S2c.showErrs(errs)
       1
     case Coll.Nil =>
-      val res = Ty.check(ds)
-      val Ty.Result(cs, _, _, _, _, _) = res
-      cs match
+      val Tl.W(xds, tes) = Tl.expand(ds)
+      tes match
         case Coll.Cons(_, _) =>
-          S2c.showClashes(Coll.rev(cs))
+          S2c.showTl(Coll.rev(tes))
           1
         case Coll.Nil =>
-          Emit.program(ds, res)
-          0
+          val res = Ty.check(xds)
+          val Ty.Result(cs, _, _, _, _, _) = res
+          cs match
+            case Coll.Cons(_, _) =>
+              S2c.showClashes(Coll.rev(cs))
+              1
+            case Coll.Nil =>
+              Emit.program(xds, res)
+              0
