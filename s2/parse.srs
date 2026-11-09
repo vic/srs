@@ -257,13 +257,59 @@ def Parse.fnBody {r: Region} (ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind
       case Coll.Nil => Parse.bodyOf(ts, f, true)
       case Coll.Cons(_, _) => Parse.Err(line, "a spec def without binder groups")
 
+// [NL IND clauses DED] = rhs (s1/parse.srs:88-89: the clauses sit between the signature and =)
 def Parse.bodyOf {r: Region} (ts: Coll.List[Lex.Tok], f: Ast.Fn, spec: Bool): Parse.R[Ast.Fn] =
   val Ast.Fn(line, name, gs, ps, ret, exit, _) = f
-  Parse.op(ts, "=") match
+  val rc: Parse.R[Coll.List[Ast.Clause]] = if Parse.isNl(ts) && Parse.isIndent(Parse.next(ts)) then Parse.clauses(Parse.next(Parse.next(ts)), Coll.Nil) else Parse.Ok(Coll.Nil, ts)
+  rc match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(_, t1) => Parse.rhs(t1) match
+    case Parse.Ok(cs, t0) => Parse.op(t0, "=") match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(e, t2) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, if spec then Ast.Spec(e) else Ast.Def(e)), t2)
+      case Parse.Ok(_, t1) => Parse.rhs(t1) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(e, t2) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, if spec then Ast.Spec(cs, e) else Ast.Def(cs, e)), t2)
+
+// clauses until DED, one per line
+def Parse.clauses {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Clause]): Parse.R[Coll.List[Ast.Clause]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.clause(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(c, t1) => Parse.clauses(Parse.endLine(t1), Coll.Cons(c, acc))
+
+// requires|ensures|returns|decreases|invariant expr | proof using f, ... | proof by induction x | proof lean "..."
+def Parse.clause {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Clause] =
+  val line = Parse.line(ts)
+  if Parse.isKw(ts, "proof") then Parse.proof(Parse.next(ts), line)
+  else Parse.condOf(Parse.peek(ts)) match
+    case Coll.None => Parse.Err(line, "requires, ensures, returns, decreases, invariant or proof")
+    case Coll.Some(k) => Parse.expr(Parse.next(ts)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(e, t1) => Parse.Ok(Ast.CondC(line, k, e), t1)
+
+def Parse.condOf {r: Region} (t: Lex.Tok): Coll.Option[Ast.Cond] =
+  if Parse.kwIs(t, "requires") then Coll.Some(Ast.Requires)
+  else if Parse.kwIs(t, "ensures") then Coll.Some(Ast.Ensures)
+  else if Parse.kwIs(t, "returns") then Coll.Some(Ast.Returns)
+  else if Parse.kwIs(t, "decreases") then Coll.Some(Ast.Decreases)
+  else if Parse.kwIs(t, "invariant") then Coll.Some(Ast.Invariant)
+  else Coll.None
+
+def Parse.proof {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Clause] =
+  if Parse.isKw(ts, "using") then
+    Parse.nameLine(Parse.next(ts), Coll.Nil) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(xs, t1) => Parse.Ok(Ast.ProofUsing(line, xs), t1)
+  else if Parse.isKw(ts, "by") then
+    Parse.kw(Parse.next(ts), "induction") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t1) => Parse.ident(t1) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(x, t2) => Parse.Ok(Ast.ProofInduction(line, x), t2)
+  else Parse.kw(ts, "lean") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t1) => Parse.peek(t1) match
+      case Lex.TStr(s, _) => Parse.Ok(Ast.ProofLean(line, s), Parse.next(t1))
+      case _ => Parse.Err(Parse.line(t1), "a string of Lean tactics")
 
 // binder groups in written order: [binders] {binders} <atoms>; acc holds them reversed
 def Parse.groups {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Group]): Parse.R[Coll.List[Ast.Group]] =
@@ -547,6 +593,10 @@ def Parse.patVal {r: Region} (ts: Coll.List[Lex.Tok], vline: I64, line: I64, acc
 def Parse.stmt {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Stmt] =
   if Parse.isKw(ts, "val") || Parse.isKw(ts, "var") then Parse.valStmt(Parse.next(ts), Parse.line(ts), Parse.isKw(ts, "var"))
   else if Parse.isKw(ts, "handle") then Parse.handleStmt(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "invariant") || Parse.isKw(ts, "decreases") then
+    Parse.expr(Parse.next(ts)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(e, t1) => Parse.Ok(Ast.Check(Parse.line(ts), if Parse.isKw(ts, "invariant") then Ast.LInvariant else Ast.LDecreases, e), t1)
   else Parse.expr(ts) match
     case Parse.Err(l, w) => Parse.Err(l, w)
     case Parse.Ok(e, t1) => Parse.Ok(Ast.Do(e), t1)
@@ -583,6 +633,7 @@ def Parse.handleStmt {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[As
 def Parse.expr {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
   if Parse.isKw(ts, "if") then Parse.ifExpr(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "while") then Parse.whileExpr(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "forall") || Parse.isKw(ts, "exists") then Parse.quant(Parse.next(ts), Parse.line(ts), if Parse.isKw(ts, "forall") then Ast.Forall else Ast.Exists)
   else Parse.peek(ts) match
     case Lex.TIdent(x, line) =>
       if Parse.opIs(Parse.second(ts), "=") then
@@ -591,6 +642,19 @@ def Parse.expr {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
           case Parse.Ok(e, t1) => Parse.Ok(Ast.Assign(line, Sym.of(x), e), t1)
       else Parse.matchOf(Parse.binary(ts, 0))
     case _ => Parse.matchOf(Parse.binary(ts, 0))
+
+// forall x: ty => expr, exists x: ty => expr (s1/parse.srs:544-548)
+def Parse.quant {r: Region} (ts: Coll.List[Lex.Tok], line: I64, q: Ast.Q): Parse.R[Ast.Expr] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(x, t1) => Parse.op(t1, ":") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t2) => Parse.ty(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(t, t3) => Parse.op(t3, "=>") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t4) => Parse.expr(t4) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(b, t5) => Parse.Ok(Ast.Quant(line, q, x, t, b), t5)
 
 // e match NL IND (case pat => rhs)* DED: match is postfix on a whole binary expression
 def Parse.matchOf {r: Region} (re: Parse.R[Ast.Expr]): Parse.R[Ast.Expr] = re match

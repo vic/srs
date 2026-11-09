@@ -7,7 +7,7 @@ def NT.tyAt {r: Region} (line: I64, n: Str): Ast.Ty = Ast.Ty(line, Sym.of(n), Co
 def NT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
 def NT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, NT.l1(b))
 def NT.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, NT.l2(b, c))
-def NT.fn {r: Region} (line: I64, name: Str, params: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(name), Coll.Nil, params, ret, Coll.Nil, Ast.Def(body)))
+def NT.fn {r: Region} (line: I64, name: Str, params: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(name), Coll.Nil, params, ret, Coll.Nil, Ast.Def(Coll.Nil, body)))
 def NT.call {r: Region} (line: I64, f: Str, xs: Coll.List[Ast.Expr]): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, xs)
 def NT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
 def NT.b {r: Region} (line: I64, x: Str, t: Str): Ast.Binder = Ast.Binder(line, Sym.of(x), NT.tyAt(line, t))
@@ -24,7 +24,7 @@ def NT.file {r: Region} (start: Str, to: Str, drop: Coll.Option[Sym.Sym]): Ast.D
 
 def NT.hfn {r: Region} (line: I64, name: Str, arity: I64): Ast.Fn =
   val ps: Coll.List[Ast.Binder] = if arity == 0 then Coll.Nil else if arity == 1 then NT.l1(NT.b(line, "self", "Ptr")) else NT.l2(NT.b(line, "self", "Ptr"), NT.b(line, "x", "I64"))
-  Ast.Fn(line, Sym.of(name), Coll.Nil, ps, NT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(line, 0)))
+  Ast.Fn(line, Sym.of(name), Coll.Nil, ps, NT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(line, 0)))
 
 def NT.handler {r: Region} (proto: Str, fns: Coll.List[Ast.Fn]): Ast.Decl = Ast.DHandler(Ast.Handler(20, NT.s("CFile"), NT.s(proto), fns))
 

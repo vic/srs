@@ -29,6 +29,14 @@ enum Ast.Caps:
 enum Ast.Ty:
   case Ast.Ty(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr])
 
+enum Ast.Q:
+  case Ast.Forall
+  case Ast.Exists
+
+enum Ast.LoopCond:
+  case Ast.LInvariant
+  case Ast.LDecreases
+
 enum Ast.Expr:
   case Ast.Int(line: I64, v: I64)
   case Ast.Bool(line: I64, v: Bool)
@@ -48,6 +56,8 @@ enum Ast.Expr:
   case Ast.Block(line: I64, stmts: Coll.List[Ast.Stmt], last: Ast.Expr)
   case Ast.While(line: I64, c: Ast.Expr, body: Ast.Expr)
   case Ast.Assign(line: I64, x: Sym.Sym, e: Ast.Expr)
+  // forall x: T => e, exists x: T => e (contracts only)
+  case Ast.Quant(line: I64, q: Ast.Q, x: Sym.Sym, t: Ast.Ty, e: Ast.Expr)
 
 enum Ast.Pat:
   case Ast.PCase(c: Sym.Sym, binds: Coll.List[Sym.Sym])
@@ -61,6 +71,8 @@ enum Ast.Stmt:
   case Ast.Var(line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
   case Ast.Handle(line: I64, x: Sym.Sym, h: Sym.Sym, args: Coll.List[Ast.Expr])
   case Ast.Do(e: Ast.Expr)
+  // a loop invariant or measure in a block (s1/parse.srs:494)
+  case Ast.Check(line: I64, k: Ast.LoopCond, e: Ast.Expr)
 
 // <> atoms. a name is a variable or a constant by its position (s1/facts.srs:1-3: lowercase in a state position is a
 // variable, but `knock` in next(s, knock, s2) is an op): the checker decides, not the parser
@@ -80,11 +92,25 @@ enum Ast.Group:
   case Ast.Evidence(bs: Coll.List[Ast.Binder])
   case Ast.Facts(atoms: Coll.List[Ast.Atom])
 
+// a contract clause between a signature and its body (C13, s1/parse.srs:147-184), erased in C
+enum Ast.Cond:
+  case Ast.Requires
+  case Ast.Ensures
+  case Ast.Returns
+  case Ast.Decreases
+  case Ast.Invariant
+
+enum Ast.Clause:
+  case Ast.CondC(line: I64, k: Ast.Cond, e: Ast.Expr)
+  case Ast.ProofUsing(line: I64, xs: Coll.List[Sym.Sym])
+  case Ast.ProofInduction(line: I64, x: Sym.Sym)
+  case Ast.ProofLean(line: I64, s: Str)
+
 enum Ast.Body:
-  case Ast.Def(e: Ast.Expr)
+  case Ast.Def(cs: Coll.List[Ast.Clause], e: Ast.Expr)
   case Ast.Extern
   // a spec def: a compile-time body, no binder groups (vic 2026-11-05), no Region
-  case Ast.Spec(e: Ast.Expr)
+  case Ast.Spec(cs: Coll.List[Ast.Clause], e: Ast.Expr)
 
 enum Ast.Fn:
   case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
@@ -265,6 +291,7 @@ def Ast.bindOf {r: Region} (e: Ast.Expr): Ast.Bind = e match
   case Ast.Block(_, _, _) => Ast.Loose
   case Ast.While(_, _, _) => Ast.Loose
   case Ast.Assign(_, _, _) => Ast.Loose
+  case Ast.Quant(_, _, _, _, _) => Ast.Loose
   case _ => Ast.Atomic
 
 def Ast.fits {r: Region} (e: Ast.Expr, n: Ast.Need): Bool = n match
@@ -346,7 +373,7 @@ def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
     Ast.expr(c, ind)
     rt_print(" then")
     Ast.body(t, ind)
-    Ast.elseBody(x, ind)
+    Ast.elseBody(t, x, ind)
   case Ast.Match(_, s, arms) =>
     Ast.operand(s, Ast.AtLeast(Ast.Atomic), ind)
     rt_print(" match")
@@ -358,8 +385,21 @@ def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
   case Ast.While(_, c, b) =>
     rt_print("while ")
     Ast.expr(c, ind)
-    rt_print(" do")
+    // a match condition ends with its arms: do starts the next line (as tests/contracts.srs)
+    c match
+      case Ast.Match(_, _, _) =>
+        Ast.line(ind)
+        rt_print("do")
+      case _ => rt_print(" do")
     Ast.body(b, ind)
+  case Ast.Quant(_, q, x, t, b) =>
+    rt_print(Ast.qText(q))
+    rt_print(" ")
+    Ast.sym(x)
+    rt_print(": ")
+    Ast.ty(t)
+    rt_print(" => ")
+    Ast.expr(b, ind)
   case Ast.Assign(_, x, v) =>
     Ast.sym(x)
     rt_print(" = ")
@@ -370,14 +410,23 @@ def Ast.unText(op: Ast.UnOp): Str = op match
   case Ast.Not => "!"
 
 // `else` on the line of a one-line then, on its own line after a block then
-def Ast.elseBody {r: Region} (x: Ast.Expr, ind: I64): Unit = x match
-  case Ast.Block(_, _, _) =>
+// else starts a new line when either branch takes more than one line (a block, a match, a multi-line if or while):
+// after one, a same-line else would read as part of its last line
+def Ast.elseBody {r: Region} (t: Ast.Expr, x: Ast.Expr, ind: I64): Unit =
+  if Ast.multiLine(t) || Ast.multiLine(x) then
     Ast.line(ind)
     rt_print("else")
     Ast.body(x, ind)
-  case _ =>
+  else
     rt_print(" else")
     Ast.body(x, ind)
+
+def Ast.multiLine(e: Ast.Expr): Bool = e match
+  case Ast.Block(_, _, _) => true
+  case Ast.Match(_, _, _) => true
+  case Ast.While(_, _, _) => true
+  case Ast.If(_, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x)
+  case _ => false
 
 def Ast.arms {r: Region} (xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
   case Coll.Nil => ()
@@ -425,6 +474,18 @@ def Ast.stmt {r: Region} (s: Ast.Stmt, ind: I64): Unit = s match
     Ast.args(xs, ind)
     rt_print(")")
   case Ast.Do(e) => Ast.expr(e, ind)
+  case Ast.Check(_, k, e) =>
+    rt_print(Ast.loopText(k))
+    rt_print(" ")
+    Ast.expr(e, ind)
+
+def Ast.qText(q: Ast.Q): Str = q match
+  case Ast.Forall => "forall"
+  case Ast.Exists => "exists"
+
+def Ast.loopText(k: Ast.LoopCond): Str = k match
+  case Ast.LInvariant => "invariant"
+  case Ast.LDecreases => "decreases"
 
 def Ast.binding {r: Region} (x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
   Ast.sym(x)
@@ -501,8 +562,8 @@ def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
     case Ast.Extern => rt_print("extern ")
-    case Ast.Spec(_) => rt_print("spec ")
-    case Ast.Def(_) => ()
+    case Ast.Spec(_, _) => rt_print("spec ")
+    case Ast.Def(_, _) => ()
   Ast.fnSig(f, ind)
 
 // a trait method signature: a def without body and without extern
@@ -534,12 +595,47 @@ def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
       rt_print(">")
   body match
     case Ast.Extern => ()
-    case Ast.Def(e) =>
-      rt_print(" =")
-      Ast.body(e, ind)
-    case Ast.Spec(e) =>
-      rt_print(" =")
-      Ast.body(e, ind)
+    case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
+    case Ast.Spec(cs, e) => Ast.withClauses(cs, e, ind)
+
+// = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/contracts.srs)
+def Ast.withClauses {r: Region} (cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
+  case Coll.Nil =>
+    rt_print(" =")
+    Ast.body(e, ind)
+  case Coll.Cons(_, _) =>
+    Ast.clauses(cs, ind + Ast.step())
+    Ast.line(ind)
+    rt_print("=")
+    Ast.body(e, ind)
+
+def Ast.condText(k: Ast.Cond): Str = k match
+  case Ast.Requires => "requires"
+  case Ast.Ensures => "ensures"
+  case Ast.Returns => "returns"
+  case Ast.Decreases => "decreases"
+  case Ast.Invariant => "invariant"
+
+def Ast.clauses {r: Region} (cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    Ast.line(ind)
+    c match
+      case Ast.CondC(_, k, x) =>
+        rt_print(Ast.condText(k))
+        rt_print(" ")
+        Ast.expr(x, ind)
+      case Ast.ProofUsing(_, xs) =>
+        rt_print("proof using ")
+        Ast.syms(xs, ", ")
+      case Ast.ProofInduction(_, x) =>
+        rt_print("proof by induction ")
+        Ast.sym(x)
+      case Ast.ProofLean(_, s) =>
+        rt_print("proof lean \"")
+        rt_print(s)
+        rt_print("\"")
+    Ast.clauses(rest, ind)
 
 def Ast.fns {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
