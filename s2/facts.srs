@@ -67,7 +67,7 @@ enum Fx.Rel:
   case Fx.RRuleUnknownAt
   case Fx.RRuleOpAt
 
-def Fx.relSym {r: Region} (rel: Fx.Rel): Sym.Sym = rel match
+def Fx.relSym(rel: Fx.Rel): Sym.Sym = rel match
   case Fx.RCap => Sym.of("fxCap")
   case Fx.RState => Sym.of("fxState")
   case Fx.ROpOf => Sym.of("fxOpOf")
@@ -108,22 +108,22 @@ def Fx.relSym {r: Region} (rel: Fx.Rel): Sym.Sym = rel match
   case Fx.RRuleOpAt => Sym.of("fxRuleOpAt")
 
 // ── rule builders: a var by number, a constant, an atom ──
-def Fx.v {r: Region} (n: I64): D.Arg = D.AVar(n)
-def Fx.c {r: Region} (n: I64): D.Arg = D.AVal(D.VInt(n))
-def Fx.at {r: Region} (rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Atom = D.Atom(Fx.relSym(rel), xs)
-def Fx.p {r: Region} (rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Lit = D.Pos(Fx.at(rel, xs))
-def Fx.n {r: Region} (rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Lit = D.Neg(Fx.at(rel, xs))
-def Fx.vs {r: Region} (xs: Coll.List[I64]): Coll.List[D.Arg] = xs match
+def Fx.v(n: I64): D.Arg = D.AVar(n)
+def Fx.c(n: I64): D.Arg = D.AVal(D.VInt(n))
+def Fx.at(rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Atom = D.Atom(Fx.relSym(rel), xs)
+def Fx.p(rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Lit = D.Pos(Fx.at(rel, xs))
+def Fx.n(rel: Fx.Rel, xs: Coll.List[D.Arg]): D.Lit = D.Neg(Fx.at(rel, xs))
+def Fx.vs(xs: Coll.List[I64]): Coll.List[D.Arg] = xs match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(x, rest) => Coll.Cons(Fx.v(x), Fx.vs(rest))
-def Fx.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
-def Fx.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, Fx.l1(b))
-def Fx.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, Fx.l2(b, c))
-def Fx.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Cons(a, Fx.l3(b, c, d))
-def Fx.l5 [A: Type] {r: Region} (a: A, b: A, c: A, d: A, e: A): Coll.List[A] = Coll.Cons(a, Fx.l4(b, c, d, e))
-def Fx.rule {r: Region} (rel: Fx.Rel, hs: Coll.List[I64], body: Coll.List[D.Lit]): D.Rule = D.Rule(Fx.at(rel, Fx.vs(hs)), body)
+def Fx.l1 [A: Type] (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
+def Fx.l2 [A: Type] (a: A, b: A): Coll.List[A] = Coll.Cons(a, Fx.l1(b))
+def Fx.l3 [A: Type] (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, Fx.l2(b, c))
+def Fx.l4 [A: Type] (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Cons(a, Fx.l3(b, c, d))
+def Fx.l5 [A: Type] (a: A, b: A, c: A, d: A, e: A): Coll.List[A] = Coll.Cons(a, Fx.l4(b, c, d, e))
+def Fx.rule(rel: Fx.Rel, hs: Coll.List[I64], body: Coll.List[D.Lit]): D.Rule = D.Rule(Fx.at(rel, Fx.vs(hs)), body)
 
-def Fx.rules {r: Region} (): Coll.List[D.Rule] =
+def Fx.rules(): Coll.List[D.Rule] =
   val isCap = Fx.rule(Fx.RIsCap, Fx.l2(0, 1), Fx.l1(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2)))))
   val defOp = Fx.rule(Fx.RDefOp, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.ROpOf, Fx.vs(Fx.l2(2, 3)))))
   val defRel = Fx.rule(Fx.RDefRel, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(2, 3, 4, 5)))))
@@ -150,15 +150,15 @@ def Fx.rules {r: Region} (): Coll.List[D.Rule] =
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), Coll.revOnto(Coll.rev(c), d)))
 
 // ── facts ──
-def Fx.s {r: Region} (x: Sym.Sym): D.Val = D.VSym(x)
-def Fx.i {r: Region} (n: I64): D.Val = D.VInt(n)
-def Fx.fact {r: Region} (rel: Fx.Rel, vs: Coll.List[D.Val]): D.Fact = D.Fact(Fx.relSym(rel), vs)
+def Fx.s(x: Sym.Sym): D.Val = D.VSym(x)
+def Fx.i(n: I64): D.Val = D.VInt(n)
+def Fx.fact(rel: Fx.Rel, vs: Coll.List[D.Val]): D.Fact = D.Fact(Fx.relSym(rel), vs)
 
 // the walk: the next id (atoms, rule defs) and the facts
 enum Fx.St:
   case Fx.St(next: I64, facts: Coll.List[D.Fact])
 
-def Fx.add {r: Region} (st: Fx.St, f: D.Fact): Fx.St =
+def Fx.add(st: Fx.St, f: D.Fact): Fx.St =
   val Fx.St(n, fs) = st
   Fx.St(n, Coll.Cons(f, fs))
 
@@ -166,7 +166,7 @@ def Fx.fresh(st: Fx.St): I64 =
   val Fx.St(n, _) = st
   n
 
-def Fx.bump {r: Region} (st: Fx.St): Fx.St =
+def Fx.bump(st: Fx.St): Fx.St =
   val Fx.St(n, fs) = st
   Fx.St(n + 1, fs)
 
@@ -175,14 +175,14 @@ def Fx.isConst(x: Sym.Sym): Bool =
   val c = Str.at(Sym.str(x), 0)
   c >= 65 && c <= 90
 
-def Fx.sameNs {r: Region} (n: I64, st: Fx.St): Fx.St = if n < 0 then st else Fx.sameNs(n - 1, Fx.add(st, Fx.fact(Fx.RSameN, Fx.l2(Fx.i(n), Fx.i(n)))))
+def Fx.sameNs(n: I64, st: Fx.St): Fx.St = if n < 0 then st else Fx.sameNs(n - 1, Fx.add(st, Fx.fact(Fx.RSameN, Fx.l2(Fx.i(n), Fx.i(n)))))
 
-def Fx.facts {r: Region} (ds: Coll.List[Ast.Decl]): Coll.List[D.Fact] =
+def Fx.facts(ds: Coll.List[Ast.Decl]): Coll.List[D.Fact] =
   val ps = Pure.protos(ds, Coll.Nil)
   val Fx.St(_, fs) = Fx.decls(ps, ds, Fx.sameNs(16, Fx.St(0, Coll.Nil)))
   fs
 
-def Fx.decls {r: Region} (ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: Fx.St): Fx.St = ds match
+def Fx.decls(ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: Fx.St): Fx.St = ds match
   case Coll.Nil => st
   case Coll.Cons(d, rest) => d match
     case Ast.DProto(p) => Fx.decls(ps, rest, Fx.proto(p, st))
@@ -192,22 +192,22 @@ def Fx.decls {r: Region} (ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: F
       Fx.decls(ps, rest, Fx.groups(n, gs, Fx.caps(ps, n, Ty.evidence(gs, Coll.Nil), st)))
     case _ => Fx.decls(ps, rest, st)
 
-def Fx.proto {r: Region} (p: Ast.Proto, st: Fx.St): Fx.St =
+def Fx.proto(p: Ast.Proto, st: Fx.St): Fx.St =
   val Ast.Proto(_, n, states, _, _, _, ops, rules) = p
   Fx.ruleDefs(n, rules, Fx.opsF(n, ops, Fx.statesF(n, states, st)))
 
-def Fx.statesF {r: Region} (p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Fx.St): Fx.St = ss match
+def Fx.statesF(p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Fx.St): Fx.St = ss match
   case Coll.Nil => st
   case Coll.Cons(s, rest) => Fx.statesF(p, rest, Fx.add(st, Fx.fact(Fx.RState, Fx.l2(Fx.s(p), Fx.s(s)))))
 
-def Fx.opsF {r: Region} (p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
+def Fx.opsF(p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
     val Ast.Op(_, n, _, _, _) = o
     Fx.opsF(p, rest, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))
 
 // a rule def: its relation and arity; reserved names; its params; its body's names and relations
-def Fx.ruleDefs {r: Region} (p: Sym.Sym, rs: Coll.List[Ast.RuleDef], st: Fx.St): Fx.St = rs match
+def Fx.ruleDefs(p: Sym.Sym, rs: Coll.List[Ast.RuleDef], st: Fx.St): Fx.St = rs match
   case Coll.Nil => st
   case Coll.Cons(rd, rest) =>
     val Ast.RuleDef(line, n, params, body) = rd
@@ -218,11 +218,11 @@ def Fx.ruleDefs {r: Region} (p: Sym.Sym, rs: Coll.List[Ast.RuleDef], st: Fx.St):
 
 def Fx.builtinRel(n: Sym.Sym): Bool = Str.eq(Sym.str(n), "at") || Str.eq(Sym.str(n), "next")
 
-def Fx.params {r: Region} (rid: I64, line: I64, xs: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
+def Fx.params(rid: I64, line: I64, xs: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
   case Coll.Nil => st
   case Coll.Cons(x, rest) => Fx.params(rid, line, rest, Fx.add(st, Fx.fact(Fx.RParam, Fx.l3(Fx.i(rid), Fx.s(x), Fx.i(line)))))
 
-def Fx.bodyAtoms {r: Region} (p: Sym.Sym, rid: I64, as: Coll.List[Ast.Atom], st: Fx.St): Fx.St = as match
+def Fx.bodyAtoms(p: Sym.Sym, rid: I64, as: Coll.List[Ast.Atom], st: Fx.St): Fx.St = as match
   case Coll.Nil => st
   case Coll.Cons(a, rest) =>
     val Ast.Atom(line, rel, args) = a
@@ -230,23 +230,23 @@ def Fx.bodyAtoms {r: Region} (p: Sym.Sym, rid: I64, as: Coll.List[Ast.Atom], st:
     Fx.bodyAtoms(p, rid, rest, Fx.bodyRel(p, line, rel, args, st1))
 
 // next names an op; at is the protocol's own; any other relation is a use of a rule def
-def Fx.bodyRel {r: Region} (p: Sym.Sym, line: I64, rel: Sym.Sym, args: Coll.List[Ast.Term], st: Fx.St): Fx.St =
+def Fx.bodyRel(p: Sym.Sym, line: I64, rel: Sym.Sym, args: Coll.List[Ast.Term], st: Fx.St): Fx.St =
   if Str.eq(Sym.str(rel), "next") then Fx.ruleNext(p, line, args, st)
   else if Str.eq(Sym.str(rel), "at") then st
   else Fx.add(st, Fx.fact(Fx.RRUse, Fx.l3(Fx.s(p), Fx.s(rel), Fx.i(line))))
 
-def Fx.bodyNames {r: Region} (rid: I64, ts: Coll.List[Ast.Term], st: Fx.St): Fx.St = ts match
+def Fx.bodyNames(rid: I64, ts: Coll.List[Ast.Term], st: Fx.St): Fx.St = ts match
   case Coll.Nil => st
   case Coll.Cons(t, rest) => t match
     case Ast.TName(x) => Fx.bodyNames(rid, rest, Fx.add(st, Fx.fact(Fx.RBodyVar, Fx.l2(Fx.i(rid), Fx.s(x)))))
     case Ast.TNum(_) => Fx.bodyNames(rid, rest, st)
 
 // the op of next(s, op, t): its second arg
-def Fx.ruleNext {r: Region} (p: Sym.Sym, line: I64, ts: Coll.List[Ast.Term], st: Fx.St): Fx.St = Fx.nth(ts, 1) match
+def Fx.ruleNext(p: Sym.Sym, line: I64, ts: Coll.List[Ast.Term], st: Fx.St): Fx.St = Fx.nth(ts, 1) match
   case Coll.Some(op) => Fx.add(st, Fx.fact(Fx.RRNext, Fx.l3(Fx.s(p), Fx.s(op), Fx.i(line))))
   case Coll.None => st
 
-def Fx.nth {r: Region} (ts: Coll.List[Ast.Term], i: I64): Coll.Option[Sym.Sym] = ts match
+def Fx.nth(ts: Coll.List[Ast.Term], i: I64): Coll.Option[Sym.Sym] = ts match
   case Coll.Nil => Coll.None
   case Coll.Cons(t, rest) =>
     if i == 0 then t match
@@ -255,29 +255,29 @@ def Fx.nth {r: Region} (ts: Coll.List[Ast.Term], i: I64): Coll.Option[Sym.Sym] =
     else Fx.nth(rest, i - 1)
 
 // a def: its {} capabilities, its entry groups (g 0) and its exit facts (g 1)
-def Fx.fn {r: Region} (ps: Coll.List[Sym.Sym], f: Ast.Fn, st: Fx.St): Fx.St =
+def Fx.fn(ps: Coll.List[Sym.Sym], f: Ast.Fn, st: Fx.St): Fx.St =
   val Ast.Fn(_, d, gs, _, _, exit, _) = f
   val st1 = Fx.caps(ps, d, Ty.evidence(gs, Coll.Nil), st)
   Fx.atoms(d, 1, exit, Fx.groups(d, gs, st1))
 
-def Fx.caps {r: Region} (ps: Coll.List[Sym.Sym], d: Sym.Sym, bs: Coll.List[Ast.Binder], st: Fx.St): Fx.St = bs match
+def Fx.caps(ps: Coll.List[Sym.Sym], d: Sym.Sym, bs: Coll.List[Ast.Binder], st: Fx.St): Fx.St = bs match
   case Coll.Nil => st
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, t) = b
     val Ast.Ty(_, n, _, _, _) = t
     Fx.caps(ps, d, rest, if Ty.memberSym(n, ps) then Fx.add(st, Fx.fact(Fx.RCap, Fx.l3(Fx.s(d), Fx.s(x), Fx.s(n)))) else st)
 
-def Fx.groups {r: Region} (d: Sym.Sym, gs: Coll.List[Ast.Group], st: Fx.St): Fx.St = gs match
+def Fx.groups(d: Sym.Sym, gs: Coll.List[Ast.Group], st: Fx.St): Fx.St = gs match
   case Coll.Nil => st
   case Coll.Cons(g, rest) => g match
     case Ast.Facts(as) => Fx.groups(d, rest, Fx.atoms(d, 0, as, st))
     case _ => Fx.groups(d, rest, st)
 
-def Fx.atoms {r: Region} (d: Sym.Sym, g: I64, as: Coll.List[Ast.Atom], st: Fx.St): Fx.St = as match
+def Fx.atoms(d: Sym.Sym, g: I64, as: Coll.List[Ast.Atom], st: Fx.St): Fx.St = as match
   case Coll.Nil => st
   case Coll.Cons(a, rest) => Fx.atoms(d, g, rest, Fx.atom(d, g, a, st))
 
-def Fx.atom {r: Region} (d: Sym.Sym, g: I64, a: Ast.Atom, st: Fx.St): Fx.St =
+def Fx.atom(d: Sym.Sym, g: I64, a: Ast.Atom, st: Fx.St): Fx.St =
   val Ast.Atom(line, rel, args) = a
   val rn = Sym.str(rel)
   if Str.eq(rn, "at") then Fx.atAtom(d, g, line, args, st)
@@ -291,7 +291,7 @@ def Fx.atom {r: Region} (d: Sym.Sym, g: I64, a: Ast.Atom, st: Fx.St): Fx.St =
       if g == 1 then Fx.add(st2, Fx.fact(Fx.RExitOther, Fx.l2(Fx.s(rel), Fx.i(line)))) else st2
 
 // at(x, S): x a capability; S a state (constant) or a variable; one id per at atom (two of one x in a group clash)
-def Fx.atAtom {r: Region} (d: Sym.Sym, g: I64, line: I64, args: Coll.List[Ast.Term], st: Fx.St): Fx.St = Fx.nth(args, 0) match
+def Fx.atAtom(d: Sym.Sym, g: I64, line: I64, args: Coll.List[Ast.Term], st: Fx.St): Fx.St = Fx.nth(args, 0) match
   case Coll.None => st
   case Coll.Some(x) =>
     val id = Fx.fresh(st)
@@ -303,7 +303,7 @@ def Fx.atAtom {r: Region} (d: Sym.Sym, g: I64, line: I64, args: Coll.List[Ast.Te
         else Fx.add(st1, Fx.fact(Fx.RVarIn, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(s), Fx.i(line))))
 
 // the variables of an atom: its lower-case names, except the op of next(s, op, t) (Fx.opPos)
-def Fx.varsFrom {r: Region} (d: Sym.Sym, g: I64, line: I64, ts: Coll.List[Ast.Term], i: I64, op: Coll.Option[I64], st: Fx.St): Fx.St = ts match
+def Fx.varsFrom(d: Sym.Sym, g: I64, line: I64, ts: Coll.List[Ast.Term], i: I64, op: Coll.Option[I64], st: Fx.St): Fx.St = ts match
   case Coll.Nil => st
   case Coll.Cons(t, rest) => t match
     case Ast.TNum(_) => Fx.varsFrom(d, g, line, rest, i + 1, op, st)
@@ -312,18 +312,18 @@ def Fx.varsFrom {r: Region} (d: Sym.Sym, g: I64, line: I64, ts: Coll.List[Ast.Te
       else Fx.varsFrom(d, g, line, rest, i + 1, op, Fx.add(st, Fx.fact(Fx.RVarIn, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(line)))))
 
 // ── the verdict: each clash relation read as (line, name) ──
-def Fx.check {r: Region} (ds: Coll.List[Ast.Decl]): Fx.Verdict = D.solve(Fx.rules(), Fx.facts(ds)) match
+def Fx.check(ds: Coll.List[Ast.Decl]): Fx.Verdict = D.solve(Fx.rules(), Fx.facts(ds)) match
   case D.Solved(m) => Fx.readAll(m, Fx.kinds(), Coll.Nil)
   case D.Unsafe(rel) => Fx.RulesBad(rel)
   case D.NegCycle(rel) => Fx.RulesBad(rel)
 
-def Fx.kinds {r: Region} (): Coll.List[Fx.Rel] =
+def Fx.kinds(): Coll.List[Fx.Rel] =
   val a = Fx.l5(Fx.RNotCapAt, Fx.RBadStateAt, Fx.RTwiceAt, Fx.RNotOpAt, Fx.RUnknownRelAt)
   val b = Fx.l4(Fx.RRelArityAt, Fx.RUnboundAt, Fx.RExitOtherAt, Fx.RReservedAt)
   val c = Fx.l4(Fx.RClauseArityAt, Fx.RUnsafeAt, Fx.RRuleUnknownAt, Fx.RRuleOpAt)
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
 
-def Fx.readAll {r: Region} (m: D.Model, ks: Coll.List[Fx.Rel], acc: Coll.List[Fx.Clash]): Fx.Verdict = ks match
+def Fx.readAll(m: D.Model, ks: Coll.List[Fx.Rel], acc: Coll.List[Fx.Clash]): Fx.Verdict = ks match
   case Coll.Nil => acc match
     case Coll.Nil => Fx.Ok
     case Coll.Cons(_, _) => Fx.Bad(Coll.rev(acc))
@@ -331,7 +331,7 @@ def Fx.readAll {r: Region} (m: D.Model, ks: Coll.List[Fx.Rel], acc: Coll.List[Fx
     case Coll.Some(acc2) => Fx.readAll(m, rest, acc2)
     case Coll.None => Fx.RulesBad(Fx.relSym(k))
 
-def Fx.rows {r: Region} (k: Fx.Rel, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Fx.Clash]): Coll.Option[Coll.List[Fx.Clash]] = ts match
+def Fx.rows(k: Fx.Rel, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Fx.Clash]): Coll.Option[Coll.List[Fx.Clash]] = ts match
   case Coll.Nil => Coll.Some(acc)
   case Coll.Cons(t, rest) => t match
     case Coll.Cons(a, more) => more match
@@ -345,7 +345,7 @@ def Fx.rows {r: Region} (k: Fx.Rel, ts: Coll.List[Coll.List[D.Val]], acc: Coll.L
       case Coll.Nil => Coll.None
     case Coll.Nil => Coll.None
 
-def Fx.make {r: Region} (k: Fx.Rel, line: I64, n: Sym.Sym): Coll.Option[Fx.Clash] = k match
+def Fx.make(k: Fx.Rel, line: I64, n: Sym.Sym): Coll.Option[Fx.Clash] = k match
   case Fx.RNotCapAt => Coll.Some(Fx.NotCap(line, n))
   case Fx.RBadStateAt => Coll.Some(Fx.BadState(line, n))
   case Fx.RTwiceAt => Coll.Some(Fx.Twice(line, n))
@@ -362,7 +362,7 @@ def Fx.make {r: Region} (k: Fx.Rel, line: I64, n: Sym.Sym): Coll.Option[Fx.Clash
   case _ => Coll.None
 
 // the position of an op name in an atom: next(s, op, t) has one at 1, other relations none
-def Fx.opPos {r: Region} (rel: Sym.Sym): Coll.Option[I64] = if Str.eq(Sym.str(rel), "next") then Coll.Some(1) else Coll.None
+def Fx.opPos(rel: Sym.Sym): Coll.Option[I64] = if Str.eq(Sym.str(rel), "next") then Coll.Some(1) else Coll.None
 
 def Fx.isPos(op: Coll.Option[I64], i: I64): Bool = op match
   case Coll.Some(j) => i == j

@@ -39,11 +39,11 @@ enum Tl.Cx:
 def Tl.fuel(): I64 = 1000
 
 // ── the program ──
-def Tl.expand {r: Region} (ds: Coll.List[Ast.Decl]): Tl.W[Coll.List[Ast.Decl]] =
+def Tl.expand(ds: Coll.List[Ast.Decl]): Tl.W[Coll.List[Ast.Decl]] =
   val cx = Tl.cxOf(ds, Coll.sEmpty(), Coll.sEmpty())
   Tl.decls(cx, ds, Coll.Nil, Coll.Nil)
 
-def Tl.cxOf {r: Region} (ds: Coll.List[Ast.Decl], ts: Coll.SMap[Ast.TypeDecl], fs: Coll.SMap[Ast.Fn]): Tl.Cx = ds match
+def Tl.cxOf(ds: Coll.List[Ast.Decl], ts: Coll.SMap[Ast.TypeDecl], fs: Coll.SMap[Ast.Fn]): Tl.Cx = ds match
   case Coll.Nil => Tl.Cx(ts, fs)
   case Coll.Cons(d, rest) => d match
     case Ast.DType(td) =>
@@ -54,13 +54,13 @@ def Tl.cxOf {r: Region} (ds: Coll.List[Ast.Decl], ts: Coll.SMap[Ast.TypeDecl], f
       Tl.cxOf(rest, ts, Coll.sInsert(fs, n, f))
     case _ => Tl.cxOf(rest, ts, fs)
 
-def Tl.decls {r: Region} (cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Decl], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Decl]] = ds match
+def Tl.decls(cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Decl], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Decl]] = ds match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(d, rest) =>
     val Tl.W(d2, es2) = Tl.decl(cx, d, es)
     Tl.decls(cx, rest, Coll.Cons(d2, acc), es2)
 
-def Tl.decl {r: Region} (cx: Tl.Cx, d: Ast.Decl, es: Coll.List[Tl.Err]): Tl.W[Ast.Decl] = d match
+def Tl.decl(cx: Tl.Cx, d: Ast.Decl, es: Coll.List[Tl.Err]): Tl.W[Ast.Decl] = d match
   case Ast.DFn(f) =>
     val Tl.W(f2, es2) = Tl.fn(cx, f, es)
     Tl.W(Ast.DFn(f2), es2)
@@ -90,13 +90,13 @@ def Tl.decl {r: Region} (cx: Tl.Cx, d: Ast.Decl, es: Coll.List[Tl.Err]): Tl.W[As
     Tl.W(Ast.DGiven(Ast.Given(line, gs2, h2, fs2)), es4)
   case Ast.DType(td) => Tl.W(d, Tl.typeDecl(td, es))
 
-def Tl.fns {r: Region} (cx: Tl.Cx, fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Fn], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Fn]] = fs match
+def Tl.fns(cx: Tl.Cx, fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Fn], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Fn]] = fs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(f, rest) =>
     val Tl.W(f2, es2) = Tl.fn(cx, f, es)
     Tl.fns(cx, rest, Coll.Cons(f2, acc), es2)
 
-def Tl.fn {r: Region} (cx: Tl.Cx, f: Ast.Fn, es: Coll.List[Tl.Err]): Tl.W[Ast.Fn] =
+def Tl.fn(cx: Tl.Cx, f: Ast.Fn, es: Coll.List[Tl.Err]): Tl.W[Ast.Fn] =
   val Ast.Fn(line, n, gs, ps, ret, exit, body) = f
   val Tl.W(gs2, es2) = Tl.groups(cx, gs, Coll.Nil, es)
   val Tl.W(ps2, es3) = Tl.binders(cx, ps, Coll.Nil, es2)
@@ -104,7 +104,7 @@ def Tl.fn {r: Region} (cx: Tl.Cx, f: Ast.Fn, es: Coll.List[Tl.Err]): Tl.W[Ast.Fn
   val Tl.W(b2, es5) = Tl.body(cx, body, es4)
   Tl.W(Ast.Fn(line, n, gs2, ps2, ret2, exit, b2), es5)
 
-def Tl.body {r: Region} (cx: Tl.Cx, b: Ast.Body, es: Coll.List[Tl.Err]): Tl.W[Ast.Body] = b match
+def Tl.body(cx: Tl.Cx, b: Ast.Body, es: Coll.List[Tl.Err]): Tl.W[Ast.Body] = b match
   case Ast.Def(cs, e) =>
     val Tl.W(e2, es2) = Tl.expr(cx, e, es)
     Tl.W(Ast.Def(cs, e2), es2)
@@ -113,7 +113,7 @@ def Tl.body {r: Region} (cx: Tl.Cx, b: Ast.Body, es: Coll.List[Tl.Err]): Tl.W[As
     Tl.W(Ast.Spec(cs, e2), es2)
   case Ast.Extern => Tl.W(b, es)
 
-def Tl.groups {r: Region} (cx: Tl.Cx, gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Group], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Group]] = gs match
+def Tl.groups(cx: Tl.Cx, gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Group], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Group]] = gs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(g, rest) => g match
     case Ast.Types(bs) =>
@@ -124,21 +124,21 @@ def Tl.groups {r: Region} (cx: Tl.Cx, gs: Coll.List[Ast.Group], acc: Coll.List[A
       Tl.groups(cx, rest, Coll.Cons(Ast.Evidence(bs2), acc), es2)
     case Ast.Facts(_) => Tl.groups(cx, rest, Coll.Cons(g, acc), es)
 
-def Tl.binders {r: Region} (cx: Tl.Cx, bs: Coll.List[Ast.Binder], acc: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Binder]] = bs match
+def Tl.binders(cx: Tl.Cx, bs: Coll.List[Ast.Binder], acc: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Binder]] = bs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(line, x, t) = b
     val Tl.W(t2, es2) = Tl.ty(cx, Coll.Nil, Coll.Nil, t, Tl.fuel(), es)
     Tl.binders(cx, rest, Coll.Cons(Ast.Binder(line, x, t2), acc), es2)
 
-def Tl.cases {r: Region} (cx: Tl.Cx, cs: Coll.List[Ast.Case], acc: Coll.List[Ast.Case], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Case]] = cs match
+def Tl.cases(cx: Tl.Cx, cs: Coll.List[Ast.Case], acc: Coll.List[Ast.Case], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Case]] = cs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(c, rest) =>
     val Ast.Case(line, n, fs) = c
     val Tl.W(fs2, es2) = Tl.binders(cx, fs, Coll.Nil, es)
     Tl.cases(cx, rest, Coll.Cons(Ast.Case(line, n, fs2), acc), es2)
 
-def Tl.ops {r: Region} (cx: Tl.Cx, os: Coll.List[Ast.Op], acc: Coll.List[Ast.Op], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Op]] = os match
+def Tl.ops(cx: Tl.Cx, os: Coll.List[Ast.Op], acc: Coll.List[Ast.Op], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Op]] = os match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(o, rest) =>
     val Ast.Op(line, n, ps, ret, tr) = o
@@ -147,7 +147,7 @@ def Tl.ops {r: Region} (cx: Tl.Cx, os: Coll.List[Ast.Op], acc: Coll.List[Ast.Op]
     Tl.ops(cx, rest, Coll.Cons(Ast.Op(line, n, ps2, ret2, tr), acc), es3)
 
 // ── expressions: the types written in them (call type args, val annotations, quantifiers) ──
-def Tl.expr {r: Region} (cx: Tl.Cx, e: Ast.Expr, es: Coll.List[Tl.Err]): Tl.W[Ast.Expr] = e match
+def Tl.expr(cx: Tl.Cx, e: Ast.Expr, es: Coll.List[Tl.Err]): Tl.W[Ast.Expr] = e match
   case Ast.Call(line, f, targs, ch, xs) =>
     val Tl.W(ts2, es2) = Tl.tys(cx, targs, Coll.Nil, es)
     val Tl.W(xs2, es3) = Tl.exprs(cx, xs, Coll.Nil, es2)
@@ -188,26 +188,26 @@ def Tl.expr {r: Region} (cx: Tl.Cx, e: Ast.Expr, es: Coll.List[Tl.Err]): Tl.W[As
     Tl.W(Ast.Quant(line, q, x, t2, b2), es3)
   case _ => Tl.W(e, es)
 
-def Tl.exprs {r: Region} (cx: Tl.Cx, xs: Coll.List[Ast.Expr], acc: Coll.List[Ast.Expr], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Expr]] = xs match
+def Tl.exprs(cx: Tl.Cx, xs: Coll.List[Ast.Expr], acc: Coll.List[Ast.Expr], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Expr]] = xs match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(x, rest) =>
     val Tl.W(x2, es2) = Tl.expr(cx, x, es)
     Tl.exprs(cx, rest, Coll.Cons(x2, acc), es2)
 
-def Tl.arms {r: Region} (cx: Tl.Cx, as: Coll.List[Ast.Arm], acc: Coll.List[Ast.Arm], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Arm]] = as match
+def Tl.arms(cx: Tl.Cx, as: Coll.List[Ast.Arm], acc: Coll.List[Ast.Arm], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Arm]] = as match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(a, rest) =>
     val Ast.Arm(line, p, b) = a
     val Tl.W(b2, es2) = Tl.expr(cx, b, es)
     Tl.arms(cx, rest, Coll.Cons(Ast.Arm(line, p, b2), acc), es2)
 
-def Tl.stmts {r: Region} (cx: Tl.Cx, ss: Coll.List[Ast.Stmt], acc: Coll.List[Ast.Stmt], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Stmt]] = ss match
+def Tl.stmts(cx: Tl.Cx, ss: Coll.List[Ast.Stmt], acc: Coll.List[Ast.Stmt], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Stmt]] = ss match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(s, rest) =>
     val Tl.W(s2, es2) = Tl.stmt(cx, s, es)
     Tl.stmts(cx, rest, Coll.Cons(s2, acc), es2)
 
-def Tl.stmt {r: Region} (cx: Tl.Cx, s: Ast.Stmt, es: Coll.List[Tl.Err]): Tl.W[Ast.Stmt] = s match
+def Tl.stmt(cx: Tl.Cx, s: Ast.Stmt, es: Coll.List[Tl.Err]): Tl.W[Ast.Stmt] = s match
   case Ast.Val(line, x, ann, e) =>
     val Tl.W(a2, es2) = Tl.ann(cx, ann, es)
     val Tl.W(e2, es3) = Tl.expr(cx, e, es2)
@@ -226,21 +226,21 @@ def Tl.stmt {r: Region} (cx: Tl.Cx, s: Ast.Stmt, es: Coll.List[Tl.Err]): Tl.W[As
     val Tl.W(e2, es2) = Tl.expr(cx, e, es)
     Tl.W(Ast.Check(line, k, e2), es2)
 
-def Tl.ann {r: Region} (cx: Tl.Cx, a: Coll.Option[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.Option[Ast.Ty]] = a match
+def Tl.ann(cx: Tl.Cx, a: Coll.Option[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.Option[Ast.Ty]] = a match
   case Coll.None => Tl.W(a, es)
   case Coll.Some(t) =>
     val Tl.W(t2, es2) = Tl.ty(cx, Coll.Nil, Coll.Nil, t, Tl.fuel(), es)
     Tl.W(Coll.Some(t2), es2)
 
 // ── a type: its args normalized; a type decl applied and reduced; the use keeps its caps (s1 normTyV) ──
-def Tl.tys {r: Region} (cx: Tl.Cx, ts: Coll.List[Ast.Ty], acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
+def Tl.tys(cx: Tl.Cx, ts: Coll.List[Ast.Ty], acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(t, rest) =>
     val Tl.W(t2, es2) = Tl.ty(cx, Coll.Nil, Coll.Nil, t, Tl.fuel(), es)
     Tl.tys(cx, rest, Coll.Cons(t2, acc), es2)
 
 // t inside a type decl's body: sub = its [] binders, cv = its () value params
-def Tl.ty {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], t: Ast.Ty, fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] =
+def Tl.ty(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], t: Ast.Ty, fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] =
   val Ast.Ty(line, n, args, caps, vals) = t
   if fuel <= 0 then Tl.W(t, Coll.Cons(Tl.Fuel(line, n), es))
   else
@@ -252,20 +252,20 @@ def Tl.ty {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], t
         case Coll.None => Tl.W(Ast.Ty(line, n, args2, caps, vals), if Coll.length(vals) == 0 then es2 else Coll.Cons(Tl.NoVals(line, n), es2))
         case Coll.Some(td) => if Tl.nominal(td) then Tl.W(Ast.Ty(line, n, args2, caps, vals), es2) else Tl.apply(cx, cv, td, line, args2, caps, vals, fuel, es2)
 
-def Tl.tyArgs {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], ts: Coll.List[Ast.Ty], fuel: I64, acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
+def Tl.tyArgs(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], ts: Coll.List[Ast.Ty], fuel: I64, acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(t, rest) =>
     val Tl.W(t2, es2) = Tl.ty(cx, sub, cv, t, fuel - 1, es)
     Tl.tyArgs(cx, sub, cv, rest, fuel, Coll.Cons(t2, acc), es2)
 
-def Tl.btLookup {r: Region} (bs: Coll.List[Tl.Bt], x: Sym.Sym): Coll.Option[Ast.Ty] = bs match
+def Tl.btLookup(bs: Coll.List[Tl.Bt], x: Sym.Sym): Coll.Option[Ast.Ty] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Tl.Bt(y, t) = b
     if Sym.eq(x, y) then Coll.Some(t) else Tl.btLookup(rest, x)
 
 // a use of type decl td at args (normalized) and value args vals (evaluated under the enclosing value params cv)
-def Tl.apply {r: Region} (cx: Tl.Cx, cv: Coll.List[Tl.Bv], td: Ast.TypeDecl, line: I64, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] =
+def Tl.apply(cx: Tl.Cx, cv: Coll.List[Tl.Bv], td: Ast.TypeDecl, line: I64, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] =
   val Ast.TypeDecl(_, n, gs, vbs, body) = td
   val tps = Ty.tparams(gs, Coll.Nil)
   if Coll.length(tps) != Coll.length(args) || Coll.length(vbs) != Coll.length(vals) then Tl.W(Ast.Ty(line, n, args, caps, Coll.Nil), Coll.Cons(Tl.Arity(line, n), es))
@@ -278,13 +278,13 @@ def Tl.apply {r: Region} (cx: Tl.Cx, cv: Coll.List[Tl.Bv], td: Ast.TypeDecl, lin
       val Ast.Ty(_, rn, rargs, _, _) = res
       Tl.W(Ast.Ty(line, rn, rargs, caps, Coll.Nil), es2)
 
-def Tl.zipBt {r: Region} (xs: Coll.List[Sym.Sym], ts: Coll.List[Ast.Ty], acc: Coll.List[Tl.Bt]): Coll.List[Tl.Bt] = xs match
+def Tl.zipBt(xs: Coll.List[Sym.Sym], ts: Coll.List[Ast.Ty], acc: Coll.List[Tl.Bt]): Coll.List[Tl.Bt] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => ts match
     case Coll.Nil => acc
     case Coll.Cons(t, trest) => Tl.zipBt(rest, trest, Coll.Cons(Tl.Bt(x, t), acc))
 
-def Tl.reduce {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, body: Ast.TBody, fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = body match
+def Tl.reduce(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, body: Ast.TBody, fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = body match
   case Ast.Alias(t) => Tl.ty(cx, sub, cv, t, fuel - 1, es)
   case Ast.TyMatch(scrut, arms) =>
     val Tl.W(s, es2) = Tl.ty(cx, sub, cv, scrut, fuel - 1, es)
@@ -294,14 +294,14 @@ def Tl.reduce {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv
     case Coll.Some(v) => Tl.valArm(cx, sub, cv, n, line, v, arms, fuel, es)
 
 // the first case whose pattern (under sub) is s
-def Tl.tyArm {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, s: Ast.Ty, arms: Coll.List[Ast.TyArm], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = arms match
+def Tl.tyArm(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, s: Ast.Ty, arms: Coll.List[Ast.TyArm], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = arms match
   case Coll.Nil => Tl.W(s, Coll.Cons(Tl.NoCase(line, n), es))
   case Coll.Cons(a, rest) =>
     val Ast.TyArm(_, pat, res) = a
     val Tl.W(p, es2) = Tl.ty(cx, sub, cv, pat, fuel - 1, es)
     if Tl.tyEq(p, s) then Tl.ty(cx, sub, cv, res, fuel - 1, es2) else Tl.tyArm(cx, sub, cv, n, line, s, rest, fuel, es2)
 
-def Tl.valArm {r: Region} (cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, v: Tl.V, arms: Coll.List[Ast.ValArm], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = arms match
+def Tl.valArm(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym, line: I64, v: Tl.V, arms: Coll.List[Ast.ValArm], fuel: I64, es: Coll.List[Tl.Err]): Tl.W[Ast.Ty] = arms match
   case Coll.Nil => Tl.W(Ast.Ty(line, n, Coll.Nil, Ast.Inferred, Coll.Nil), Coll.Cons(Tl.NoCase(line, n), es))
   case Coll.Cons(a, rest) =>
     val Ast.ValArm(_, pat, res) = a
@@ -338,7 +338,7 @@ enum Tl.Vals:
   case Tl.NoValue
   case Tl.Misfit
 
-def Tl.bindVals {r: Region} (cx: Tl.Cx, cv: Coll.List[Tl.Bv], bs: Coll.List[Ast.Binder], xs: Coll.List[Ast.Expr], acc: Coll.List[Tl.Bv]): Tl.Vals = bs match
+def Tl.bindVals(cx: Tl.Cx, cv: Coll.List[Tl.Bv], bs: Coll.List[Ast.Binder], xs: Coll.List[Ast.Expr], acc: Coll.List[Tl.Bv]): Tl.Vals = bs match
   case Coll.Nil => Tl.Bound(acc)
   case Coll.Cons(b, rest) => xs match
     case Coll.Nil => Tl.Bound(acc)
@@ -358,7 +358,7 @@ def Tl.fitsTy(t: Ast.Ty, v: Tl.V): Bool =
     case Tl.VS(_) => Str.eq(s, "Str")
 
 // a type decl: its () binders have compile-time values; each value match pattern fits its binder's type
-def Tl.typeDecl {r: Region} (td: Ast.TypeDecl, es: Coll.List[Tl.Err]): Coll.List[Tl.Err] =
+def Tl.typeDecl(td: Ast.TypeDecl, es: Coll.List[Tl.Err]): Coll.List[Tl.Err] =
   val Ast.TypeDecl(line, n, _, vbs, body) = td
   val es2 = Tl.binderTys(line, vbs, es)
   body match
@@ -367,7 +367,7 @@ def Tl.typeDecl {r: Region} (td: Ast.TypeDecl, es: Coll.List[Tl.Err]): Coll.List
       case Coll.None => es2
     case _ => es2
 
-def Tl.binderTys {r: Region} (line: I64, bs: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Coll.List[Tl.Err] = bs match
+def Tl.binderTys(line: I64, bs: Coll.List[Ast.Binder], es: Coll.List[Tl.Err]): Coll.List[Tl.Err] = bs match
   case Coll.Nil => es
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, t) = b
@@ -376,13 +376,13 @@ def Tl.binderTys {r: Region} (line: I64, bs: Coll.List[Ast.Binder], es: Coll.Lis
     val ok = Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str")
     Tl.binderTys(line, rest, if ok then es else Coll.Cons(Tl.BinderType(line, x), es))
 
-def Tl.binderTyOf {r: Region} (bs: Coll.List[Ast.Binder], x: Sym.Sym): Coll.Option[Ast.Ty] = bs match
+def Tl.binderTyOf(bs: Coll.List[Ast.Binder], x: Sym.Sym): Coll.Option[Ast.Ty] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, y, t) = b
     if Sym.eq(x, y) then Coll.Some(t) else Tl.binderTyOf(rest, x)
 
-def Tl.patTys {r: Region} (line: I64, n: Sym.Sym, t: Ast.Ty, arms: Coll.List[Ast.ValArm], es: Coll.List[Tl.Err]): Coll.List[Tl.Err] = arms match
+def Tl.patTys(line: I64, n: Sym.Sym, t: Ast.Ty, arms: Coll.List[Ast.ValArm], es: Coll.List[Tl.Err]): Coll.List[Tl.Err] = arms match
   case Coll.Nil => es
   case Coll.Cons(a, rest) =>
     val Ast.ValArm(al, p, _) = a
@@ -393,7 +393,7 @@ def Tl.patTys {r: Region} (line: I64, n: Sym.Sym, t: Ast.Ty, arms: Coll.List[Ast
       case Ast.VStr(v) => Tl.fitsTy(t, Tl.VS(v))
     Tl.patTys(line, n, t, rest, if ok then es else Coll.Cons(Tl.PatType(al, n), es))
 
-def Tl.bvLookup {r: Region} (bs: Coll.List[Tl.Bv], x: Sym.Sym): Coll.Option[Tl.V] = bs match
+def Tl.bvLookup(bs: Coll.List[Tl.Bv], x: Sym.Sym): Coll.Option[Tl.V] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Tl.Bv(y, v) = b
@@ -401,7 +401,7 @@ def Tl.bvLookup {r: Region} (bs: Coll.List[Tl.Bv], x: Sym.Sym): Coll.Option[Tl.V
 
 // a pure expression's value: literals, the env, operators, if, blocks of vals, calls of defs (each call costs fuel);
 // anything else has no compile-time value (None)
-def Tl.eval {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], e: Ast.Expr, fuel: I64): Coll.Option[Tl.V] =
+def Tl.eval(cx: Tl.Cx, env: Coll.List[Tl.Bv], e: Ast.Expr, fuel: I64): Coll.Option[Tl.V] =
   if fuel <= 0 then Coll.None
   else e match
     case Ast.Int(_, v) => Coll.Some(Tl.VI(v))
@@ -421,7 +421,7 @@ def Tl.eval {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], e: Ast.Expr, fuel: I6
     case Ast.Block(_, ss, last) => Tl.evalBlock(cx, env, ss, last, fuel)
     case _ => Coll.None
 
-def Tl.evalBlock {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], ss: Coll.List[Ast.Stmt], last: Ast.Expr, fuel: I64): Coll.Option[Tl.V] = ss match
+def Tl.evalBlock(cx: Tl.Cx, env: Coll.List[Tl.Bv], ss: Coll.List[Ast.Stmt], last: Ast.Expr, fuel: I64): Coll.Option[Tl.V] = ss match
   case Coll.Nil => Tl.eval(cx, env, last, fuel)
   case Coll.Cons(s, rest) => s match
     case Ast.Val(_, x, _, e) => Tl.eval(cx, env, e, fuel) match
@@ -430,7 +430,7 @@ def Tl.evalBlock {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], ss: Coll.List[As
     case _ => Coll.None
 
 // a call of a def: its args evaluated, bound to its params, its body evaluated with less fuel
-def Tl.call {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], f: Sym.Sym, xs: Coll.List[Ast.Expr], fuel: I64): Coll.Option[Tl.V] =
+def Tl.call(cx: Tl.Cx, env: Coll.List[Tl.Bv], f: Sym.Sym, xs: Coll.List[Ast.Expr], fuel: I64): Coll.Option[Tl.V] =
   val Tl.Cx(_, fs) = cx
   Coll.sLookup(fs, f) match
     case Coll.None => Coll.None
@@ -442,7 +442,7 @@ def Tl.call {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], f: Sym.Sym, xs: Coll.
           case Coll.None => Coll.None
         case _ => Coll.None
 
-def Tl.args {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], ps: Coll.List[Ast.Binder], xs: Coll.List[Ast.Expr], fuel: I64, acc: Coll.List[Tl.Bv]): Coll.Option[Coll.List[Tl.Bv]] = ps match
+def Tl.args(cx: Tl.Cx, env: Coll.List[Tl.Bv], ps: Coll.List[Ast.Binder], xs: Coll.List[Ast.Expr], fuel: I64, acc: Coll.List[Tl.Bv]): Coll.Option[Coll.List[Tl.Bv]] = ps match
   case Coll.Nil => xs match
     case Coll.Nil => Coll.Some(acc)
     case Coll.Cons(_, _) => Coll.None
@@ -454,13 +454,13 @@ def Tl.args {r: Region} (cx: Tl.Cx, env: Coll.List[Tl.Bv], ps: Coll.List[Ast.Bin
         case Coll.Some(v) => Tl.args(cx, env, prest, xrest, fuel, Coll.Cons(Tl.Bv(y, v), acc))
         case Coll.None => Coll.None
 
-def Tl.bin {r: Region} (op: Ast.BinOp, a: Coll.Option[Tl.V], b: Coll.Option[Tl.V]): Coll.Option[Tl.V] = a match
+def Tl.bin(op: Ast.BinOp, a: Coll.Option[Tl.V], b: Coll.Option[Tl.V]): Coll.Option[Tl.V] = a match
   case Coll.None => Coll.None
   case Coll.Some(x) => b match
     case Coll.None => Coll.None
     case Coll.Some(y) => Tl.binV(op, x, y)
 
-def Tl.binV {r: Region} (op: Ast.BinOp, a: Tl.V, b: Tl.V): Coll.Option[Tl.V] = a match
+def Tl.binV(op: Ast.BinOp, a: Tl.V, b: Tl.V): Coll.Option[Tl.V] = a match
   case Tl.VI(x) => b match
     case Tl.VI(y) => Tl.binI(op, x, y)
     case _ => Coll.None
@@ -480,7 +480,7 @@ def Tl.binV {r: Region} (op: Ast.BinOp, a: Tl.V, b: Tl.V): Coll.Option[Tl.V] = a
     case _ => Coll.None
 
 // a division by zero has no value
-def Tl.binI {r: Region} (op: Ast.BinOp, x: I64, y: I64): Coll.Option[Tl.V] = op match
+def Tl.binI(op: Ast.BinOp, x: I64, y: I64): Coll.Option[Tl.V] = op match
   case Ast.Add => Coll.Some(Tl.VI(x + y))
   case Ast.Sub => Coll.Some(Tl.VI(x - y))
   case Ast.Mul => Coll.Some(Tl.VI(x * y))
@@ -494,7 +494,7 @@ def Tl.binI {r: Region} (op: Ast.BinOp, x: I64, y: I64): Coll.Option[Tl.V] = op 
   case Ast.Ne => Coll.Some(Tl.VB(x != y))
   case _ => Coll.None
 
-def Tl.un {r: Region} (op: Ast.UnOp, a: Coll.Option[Tl.V]): Coll.Option[Tl.V] = a match
+def Tl.un(op: Ast.UnOp, a: Coll.Option[Tl.V]): Coll.Option[Tl.V] = a match
   case Coll.None => Coll.None
   case Coll.Some(v) => v match
     case Tl.VI(x) => op match
@@ -510,11 +510,11 @@ def Tl.un {r: Region} (op: Ast.UnOp, a: Coll.Option[Tl.V]): Coll.Option[Tl.V] = 
 enum Tl.Goal:
   case Tl.Goal(line: I64, fn: Sym.Sym, goal: Ast.Ty)
 
-def Tl.typeGoals {r: Region} (ds: Coll.List[Ast.Decl]): Coll.List[Tl.Goal] =
+def Tl.typeGoals(ds: Coll.List[Ast.Decl]): Coll.List[Tl.Goal] =
   val cx = Tl.cxOf(ds, Coll.sEmpty(), Coll.sEmpty())
   Tl.declGoals(cx, ds, Coll.Nil)
 
-def Tl.declGoals {r: Region} (cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ds match
+def Tl.declGoals(cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ds match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
@@ -527,14 +527,14 @@ def Tl.declGoals {r: Region} (cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List
       Tl.declGoals(cx, rest, acc3)
     case _ => Tl.declGoals(cx, rest, acc)
 
-def Tl.bindersGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = bs match
+def Tl.bindersGoals(cx: Tl.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
     Tl.bindersGoals(cx, f, rest, Tl.tyGoals(cx, f, t, acc))
 
 // t and its args: each name of a type decl with {} binders gives their types at t's args
-def Tl.tyGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, t: Ast.Ty, acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] =
+def Tl.tyGoals(cx: Tl.Cx, f: Sym.Sym, t: Ast.Ty, acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] =
   val Ast.Ty(line, n, args, _, _) = t
   val acc2 = Tl.tysGoals(cx, f, args, acc)
   val Tl.Cx(tds, _) = cx
@@ -545,11 +545,11 @@ def Tl.tyGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, t: Ast.Ty, acc: Coll.List[Tl.
       val Tl.W(args2, _) = Tl.tyArgs(cx, Coll.Nil, Coll.Nil, args, Tl.fuel(), Coll.Nil, Coll.Nil)
       Tl.evGoals(cx, f, line, Tl.zipBt(Ty.tparams(gs, Coll.Nil), args2, Coll.Nil), Ty.evidence(gs, Coll.Nil), acc2)
 
-def Tl.tysGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ts: Coll.List[Ast.Ty], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ts match
+def Tl.tysGoals(cx: Tl.Cx, f: Sym.Sym, ts: Coll.List[Ast.Ty], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ts match
   case Coll.Nil => acc
   case Coll.Cons(t, rest) => Tl.tysGoals(cx, f, rest, Tl.tyGoals(cx, f, t, acc))
 
-def Tl.evGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, line: I64, sub: Coll.List[Tl.Bt], ev: Coll.List[Ast.Binder], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ev match
+def Tl.evGoals(cx: Tl.Cx, f: Sym.Sym, line: I64, sub: Coll.List[Tl.Bt], ev: Coll.List[Ast.Binder], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ev match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, bt) = b
@@ -557,7 +557,7 @@ def Tl.evGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, line: I64, sub: Coll.List[Tl.
     Tl.evGoals(cx, f, line, sub, rest, Coll.Cons(Tl.Goal(line, f, g), acc))
 
 // the types written in a body: val annotations and call type args
-def Tl.exprGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = e match
+def Tl.exprGoals(cx: Tl.Cx, f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = e match
   case Ast.Call(_, _, targs, _, xs) => Tl.exprsGoals(cx, f, xs, Tl.tysGoals(cx, f, targs, acc))
   case Ast.Method(_, _, _, xs) => Tl.exprsGoals(cx, f, xs, acc)
   case Ast.Bin(_, _, l, x) => Tl.exprGoals(cx, f, x, Tl.exprGoals(cx, f, l, acc))
@@ -569,17 +569,17 @@ def Tl.exprGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, e: Ast.Expr, acc: Coll.List
   case Ast.Assign(_, _, x) => Tl.exprGoals(cx, f, x, acc)
   case _ => acc
 
-def Tl.exprsGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, xs: Coll.List[Ast.Expr], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = xs match
+def Tl.exprsGoals(cx: Tl.Cx, f: Sym.Sym, xs: Coll.List[Ast.Expr], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Tl.exprsGoals(cx, f, rest, Tl.exprGoals(cx, f, x, acc))
 
-def Tl.armsGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, as: Coll.List[Ast.Arm], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = as match
+def Tl.armsGoals(cx: Tl.Cx, f: Sym.Sym, as: Coll.List[Ast.Arm], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = as match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, _, b) = a
     Tl.armsGoals(cx, f, rest, Tl.exprGoals(cx, f, b, acc))
 
-def Tl.stmtsGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ss match
+def Tl.stmtsGoals(cx: Tl.Cx, f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ss match
   case Coll.Nil => acc
   case Coll.Cons(s, rest) =>
     val acc2 = s match
@@ -590,7 +590,7 @@ def Tl.stmtsGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ss: Coll.List[Ast.Stmt], a
       case Ast.Check(_, _, e) => Tl.exprGoals(cx, f, e, acc)
     Tl.stmtsGoals(cx, f, rest, acc2)
 
-def Tl.annGoals {r: Region} (cx: Tl.Cx, f: Sym.Sym, ann: Coll.Option[Ast.Ty], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ann match
+def Tl.annGoals(cx: Tl.Cx, f: Sym.Sym, ann: Coll.Option[Ast.Ty], acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = ann match
   case Coll.None => acc
   case Coll.Some(t) => Tl.tyGoals(cx, f, t, acc)
 

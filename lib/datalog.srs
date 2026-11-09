@@ -100,12 +100,12 @@ def hasFact(db: Facts, f: Fact): Bool = db match
   case FactCons(h, _, t) => factEq(h, f) || hasFact(t, f)
 
 // ── matching ──
-def envGet {r: Region} (e: Env, n: I64): Arg = e match
+def envGet(e: Env, n: I64): Arg = e match
   case EnvNil => AVar(n)
   case EnvBind(m, v, t) => if m == n then AVal(v) else envGet(t, n)
 
 // e extended so args match vals, or none
-def matchArgs {r: Region} (e: Env, args: ArgList, vals: Vals): Envs = args match
+def matchArgs(e: Env, args: ArgList, vals: Vals): Envs = args match
   case ArgNil => vals match
     case ValNil => EnvsCons(e, EnvsNil)
     case ValCons(_, _) => EnvsNil
@@ -115,14 +115,14 @@ def matchArgs {r: Region} (e: Env, args: ArgList, vals: Vals): Envs = args match
       case EnvsNil => EnvsNil
       case EnvsCons(e2, _) => matchArgs(e2, at, vt)
 
-def matchOne {r: Region} (e: Env, a: Arg, v: Val): Envs = a match
+def matchOne(e: Env, a: Arg, v: Val): Envs = a match
   case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
   case AVar(n) => envGet(e, n) match
     case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
     case AVar(_) => EnvsCons(EnvBind(n, v, e), EnvsNil)
 
 // every extension of e that matches atom a against a fact of db, in db order
-def matchFacts {r: Region} (e: Env, a: Atom, db: Facts): Envs = db match
+def matchFacts(e: Env, a: Atom, db: Facts): Envs = db match
   case FactNil => EnvsNil
   case FactCons(f, _, t) => a match
     case Atom(p, args) => f match
@@ -130,17 +130,17 @@ def matchFacts {r: Region} (e: Env, a: Atom, db: Facts): Envs = db match
         val rest = matchFacts(e, a, t)
         if Str.eq(p, q) then envsAppend(matchArgs(e, args, vals), rest) else rest
 
-def envsAppend {r: Region} (a: Envs, b: Envs): Envs = a match
+def envsAppend(a: Envs, b: Envs): Envs = a match
   case EnvsNil => b
   case EnvsCons(h, t) => EnvsCons(h, envsAppend(t, b))
 
-def matchEach {r: Region} (es: Envs, a: Atom, db: Facts): Envs = es match
+def matchEach(es: Envs, a: Atom, db: Facts): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) => envsAppend(matchFacts(e, a, db), matchEach(t, a, db))
 
 // the values of args under e. evalDatalog runs only safe rules, so every variable is bound here
 // shortcut: an unbound variable is skipped, not an error; a typed safe clause (vars proven bound) would remove it
-def ground {r: Region} (e: Env, args: ArgList): Vals = args match
+def ground(e: Env, args: ArgList): Vals = args match
   case ArgNil => ValNil
   case ArgCons(a, t) => a match
     case AVal(v) => ValCons(v, ground(e, t))
@@ -148,23 +148,23 @@ def ground {r: Region} (e: Env, args: ArgList): Vals = args match
       case AVal(v) => ValCons(v, ground(e, t))
       case AVar(_) => ground(e, t)
 
-def factOf {r: Region} (e: Env, a: Atom): Fact = a match
+def factOf(e: Env, a: Atom): Fact = a match
   case Atom(p, args) => Fact(p, ground(e, args))
 
 // the environments of the positive literals, then the ones no negative literal matches
-def joinPos {r: Region} (es: Envs, body: Lits, db: Facts): Envs = body match
+def joinPos(es: Envs, body: Lits, db: Facts): Envs = body match
   case LitNil => es
   case LitCons(l, t) => l match
     case Pos(a) => joinPos(matchEach(es, a, db), t, db)
     case Neg(_) => joinPos(es, t, db)
 
-def dropNeg {r: Region} (es: Envs, body: Lits, db: Facts): Envs = body match
+def dropNeg(es: Envs, body: Lits, db: Facts): Envs = body match
   case LitNil => es
   case LitCons(l, t) => l match
     case Pos(_) => dropNeg(es, t, db)
     case Neg(a) => dropNeg(keepAbsent(es, a, db), t, db)
 
-def keepAbsent {r: Region} (es: Envs, a: Atom, db: Facts): Envs = es match
+def keepAbsent(es: Envs, a: Atom, db: Facts): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) =>
     if hasFact(db, factOf(e, a)) then keepAbsent(t, a, db) else EnvsCons(e, keepAbsent(t, a, db))
@@ -206,7 +206,7 @@ def stratum(st: Strata, p: Str): I64 = st match
   case StNil => 0
   case StCons(q, k, t) => if Str.eq(p, q) then k else stratum(t, p)
 
-def setStratum {r: Region} (st: Strata, p: Str, k: I64): Strata = st match
+def setStratum(st: Strata, p: Str, k: I64): Strata = st match
   case StNil => StCons(p, k, StNil)
   case StCons(q, j, t) => if Str.eq(p, q) then StCons(q, k, t) else StCons(q, j, setStratum(t, p, k))
 
@@ -220,7 +220,7 @@ def needs(st: Strata, body: Lits, k: I64): I64 = body match
     case Pos(a) => needs(st, t, if stratum(st, relOf(a)) > k then stratum(st, relOf(a)) else k)
     case Neg(a) => needs(st, t, if stratum(st, relOf(a)) + 1 > k then stratum(st, relOf(a)) + 1 else k)
 
-def raise {r: Region} (st: Strata, cs: Clauses): Strata = cs match
+def raise(st: Strata, cs: Clauses): Strata = cs match
   case ClNil => st
   case ClCons(c, t) => c match
     case Clause(h, body) =>
@@ -251,16 +251,16 @@ def overRel(st: Strata, n: I64): Str = st match
 
 // ── evaluation ──
 // facts of db plus the new facts rule c derives from db
-def derive {r: Region} (c: Clause, i: I64, db: Facts, acc: Facts): Facts = c match
+def derive(c: Clause, i: I64, db: Facts, acc: Facts): Facts = c match
   case Clause(h, body) => addAll(dropNeg(joinPos(EnvsCons(EnvNil, EnvsNil), body, db), body, db), h, i, acc)
 
-def addAll {r: Region} (es: Envs, h: Atom, i: I64, acc: Facts): Facts = es match
+def addAll(es: Envs, h: Atom, i: I64, acc: Facts): Facts = es match
   case EnvsNil => acc
   case EnvsCons(e, t) =>
     val f = factOf(e, h)
     addAll(t, h, i, if hasFact(acc, f) then acc else factAppend(acc, f, ByRule(i, e)))
 
-def factAppend {r: Region} (db: Facts, f: Fact, src: Source): Facts = db match
+def factAppend(db: Facts, f: Fact, src: Source): Facts = db match
   case FactNil => FactCons(f, src, FactNil)
   case FactCons(h, s, t) => FactCons(h, s, factAppend(t, f, src))
 
@@ -291,12 +291,12 @@ def fmGet(m: FMap, h: I64): Facts = m match
   case FmTip => FactNil
   case FmBin(k, b, l, rt) => if h == k then b else if h < k then fmGet(l, h) else fmGet(rt, h)
 
-def fmAdd {r: Region} (m: FMap, h: I64, f: Fact, src: Source): FMap = m match
+def fmAdd(m: FMap, h: I64, f: Fact, src: Source): FMap = m match
   case FmTip => FmBin(h, FactCons(f, src, FactNil), FmTip, FmTip)
   case FmBin(k, b, l, rt) =>
     if h == k then FmBin(k, FactCons(f, src, b), l, rt) else if h < k then FmBin(k, b, fmAdd(l, h, f, src), rt) else FmBin(k, b, l, fmAdd(rt, h, f, src))
 
-def colsAdd {r: Region} (cs: Cols, vs: Vals, f: Fact, src: Source): Cols = vs match
+def colsAdd(cs: Cols, vs: Vals, f: Fact, src: Source): Cols = vs match
   case ValNil => cs
   case ValCons(v, vt) => cs match
     case ColNil => Col(fmAdd(FmTip, valHash(v), f, src), colsAdd(ColNil, vt, f, src))
@@ -306,27 +306,27 @@ def factsOf(rs: Rels, p: Str, delta: Bool): Facts = rs match
   case RelNil => FactNil
   case Rel(q, all, d, _, t) => if Str.eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
 
-def addFact {r: Region} (rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
+def addFact(rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
   case Fact(p, vs) => rs match
     case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, colsAdd(ColNil, vs, f, src), RelNil)
     case Rel(q, all, d, cs, t) =>
       if Str.eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
       else Rel(q, all, d, cs, addFact(t, f, src, delta))
 
-def resetDelta {r: Region} (rs: Rels): Rels = rs match
+def resetDelta(rs: Rels): Rels = rs match
   case RelNil => RelNil
   case Rel(q, all, _, cs, t) => Rel(q, all, FactNil, cs, resetDelta(t))
 
-def addFacts {r: Region} (rs: Rels, fs: Facts, delta: Bool): Rels = fs match
+def addFacts(rs: Rels, fs: Facts, delta: Bool): Rels = fs match
   case FactNil => rs
   case FactCons(f, src, t) => addFacts(addFact(rs, f, src, delta), t, delta)
 
 // the facts of p that can match args under e: the bucket of the first bound column, else all
-def candidates {r: Region} (rs: Rels, p: Str, args: ArgList, e: Env): Facts = rs match
+def candidates(rs: Rels, p: Str, args: ArgList, e: Env): Facts = rs match
   case RelNil => FactNil
   case Rel(q, all, _, cs, t) => if Str.eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
 
-def boundCol {r: Region} (all: Facts, cs: Cols, args: ArgList, e: Env): Facts = args match
+def boundCol(all: Facts, cs: Cols, args: ArgList, e: Env): Facts = args match
   case ArgNil => all
   case ArgCons(a, at) => cs match
     case ColNil => all
@@ -337,26 +337,26 @@ def boundCol {r: Region} (all: Facts, cs: Cols, args: ArgList, e: Env): Facts = 
         case AVar(_) => boundCol(all, ct, at, e)
 
 // f is a fact of rs: look in the bucket of its first column
-def knownFact {r: Region} (rs: Rels, f: Fact): Bool = f match
+def knownFact(rs: Rels, f: Fact): Bool = f match
   case Fact(p, vs) => vs match
     case ValNil => hasFact(factsOf(rs, p, false), f)
     case ValCons(v, _) => hasFact(candidates(rs, p, ArgCons(AVal(v), ArgNil), EnvNil), f)
 
 // every extension of e that matches args against a fact of fs (one relation)
-def matchRel {r: Region} (e: Env, args: ArgList, fs: Facts): Envs = fs match
+def matchRel(e: Env, args: ArgList, fs: Facts): Envs = fs match
   case FactNil => EnvsNil
   case FactCons(f, _, t) => f match
     case Fact(_, vals) => envsAppend(matchArgs(e, args, vals), matchRel(e, args, t))
 
 // each env joined with relation p: on its delta, or on the facts its bound columns select
-def matchAll {r: Region} (es: Envs, args: ArgList, rs: Rels, p: Str, delta: Bool): Envs = es match
+def matchAll(es: Envs, args: ArgList, rs: Rels, p: Str, delta: Bool): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) =>
     val fs = if delta then factsOf(rs, p, true) else candidates(rs, p, args, e)
     envsAppend(matchRel(e, args, fs), matchAll(t, args, rs, p, delta))
 
 // the positive literals joined: literal number at on the delta of its relation, the others on all facts
-def joinRels {r: Region} (es: Envs, body: Lits, rs: Rels, at: I64, i: I64): Envs = body match
+def joinRels(es: Envs, body: Lits, rs: Rels, at: I64, i: I64): Envs = body match
   case LitNil => es
   case LitCons(l, t) => l match
     case Pos(a) => a match
@@ -364,22 +364,22 @@ def joinRels {r: Region} (es: Envs, body: Lits, rs: Rels, at: I64, i: I64): Envs
     case Neg(_) => joinRels(es, t, rs, at, i + 1)
 
 // negative literals: stratified, so their relations are complete
-def dropNegRels {r: Region} (es: Envs, body: Lits, rs: Rels): Envs = body match
+def dropNegRels(es: Envs, body: Lits, rs: Rels): Envs = body match
   case LitNil => es
   case LitCons(l, t) => l match
     case Pos(_) => dropNegRels(es, t, rs)
     case Neg(a) => dropNegRels(absentIn(es, a, rs), t, rs)
 
-def absentIn {r: Region} (es: Envs, a: Atom, rs: Rels): Envs = es match
+def absentIn(es: Envs, a: Atom, rs: Rels): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) =>
     if knownFact(rs, factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
 
 // the new facts of clause i (at = its delta literal, -1 = none) added to acc, the new facts of this round
-def fireRule {r: Region} (c: Clause, i: I64, at: I64, rs: Rels, acc: Facts): Facts = c match
+def fireRule(c: Clause, i: I64, at: I64, rs: Rels, acc: Facts): Facts = c match
   case Clause(h, body) => addNew(dropNegRels(joinRels(EnvsCons(EnvNil, EnvsNil), body, rs, at, 0), body, rs), h, i, rs, acc)
 
-def addNew {r: Region} (es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts = es match
+def addNew(es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts = es match
   case EnvsNil => acc
   case EnvsCons(e, t) =>
     val f = factOf(e, h)
@@ -387,14 +387,14 @@ def addNew {r: Region} (es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts 
     addNew(t, h, i, rs, if known then acc else FactCons(f, ByRule(i, e), acc))
 
 // after the first round, a new fact needs a fact of the last round: fire once per literal whose relation grew
-def fireDeltas {r: Region} (c: Clause, i: I64, body: Lits, at: I64, rs: Rels, acc: Facts): Facts = body match
+def fireDeltas(c: Clause, i: I64, body: Lits, at: I64, rs: Rels, acc: Facts): Facts = body match
   case LitNil => acc
   case LitCons(l, t) => l match
     case Pos(a) => fireDeltas(c, i, t, at + 1, rs, if noFacts(factsOf(rs, relOf(a), true)) then acc else fireRule(c, i, at, rs, acc))
     case Neg(_) => fireDeltas(c, i, t, at + 1, rs, acc)
 
 // one round of every clause of stratum k
-def dlRound {r: Region} (st: Strata, cs: Clauses, i: I64, k: I64, first: Bool, rs: Rels, acc: Facts): Facts = cs match
+def dlRound(st: Strata, cs: Clauses, i: I64, k: I64, first: Bool, rs: Rels, acc: Facts): Facts = cs match
   case ClNil => acc
   case ClCons(c, t) => c match
     case Clause(h, body) =>
@@ -405,11 +405,11 @@ def noFacts(fs: Facts): Bool = fs match
   case FactNil => true
   case FactCons(_, _, _) => false
 
-def factsCat {r: Region} (a: Facts, b: Facts): Facts = a match
+def factsCat(a: Facts, b: Facts): Facts = a match
   case FactNil => b
   case FactCons(f, s, t) => FactCons(f, s, factsCat(t, b))
 
-def factsRev {r: Region} (a: Facts, out: Facts): Facts = a match
+def factsRev(a: Facts, out: Facts): Facts = a match
   case FactNil => out
   case FactCons(f, s, t) => factsRev(t, FactCons(f, s, out))
 
@@ -417,13 +417,13 @@ enum Safety:
   case AllSafe
   case UnsafeIn(rel: Str)
 
-def safety {r: Region} (cs: Clauses): Safety = cs match
+def safety(cs: Clauses): Safety = cs match
   case ClNil => AllSafe
   case ClCons(c, t) => if safe(c) then safety(t) else c match
     case Clause(h, _) => UnsafeIn(relOf(h))
 
 // the model of rules cs over facts db, strata in order
-def evalDatalog {r: Region} (cs: Clauses, edb: Edb): Model = safety(cs) match
+def evalDatalog(cs: Clauses, edb: Edb): Model = safety(cs) match
   case UnsafeIn(p) => Unsafe(p)
   case AllSafe =>
     // a stratum is at most the clause count unless a relation depends on itself through negation
@@ -451,7 +451,7 @@ def evalDatalog {r: Region} (cs: Clauses, edb: Edb): Model = safety(cs) match
         k = k + 1
       Model(factsCat(gs, factsRev(log, FactNil)))
 
-def given {r: Region} (edb: Edb): Facts = edb match
+def given(edb: Edb): Facts = edb match
   case EdbNil => FactNil
   case EdbCons(f, t) => FactCons(f, Given, given(t))
 
@@ -467,7 +467,7 @@ enum ClauseAt:
   case NoClause
   case ClauseAt(c: Clause)
 
-def clauseAt {r: Region} (cs: Clauses, i: I64): ClauseAt = cs match
+def clauseAt(cs: Clauses, i: I64): ClauseAt = cs match
   case ClNil => NoClause
   case ClCons(c, t) => if i == 0 then ClauseAt(c) else clauseAt(t, i - 1)
 
@@ -475,33 +475,33 @@ def edbHas(edb: Edb, f: Fact): Bool = edb match
   case EdbNil => false
   case EdbCons(h, t) => factEq(h, f) || edbHas(t, f)
 
-def posIn {r: Region} (e: Env, body: Lits, seen: Facts): Bool = body match
+def posIn(e: Env, body: Lits, seen: Facts): Bool = body match
   case LitNil => true
   case LitCons(l, t) => l match
     case Pos(a) => hasFact(seen, factOf(e, a)) && posIn(e, t, seen)
     case Neg(_) => posIn(e, t, seen)
 
-def negOut {r: Region} (e: Env, body: Lits, model: Facts): Bool = body match
+def negOut(e: Env, body: Lits, model: Facts): Bool = body match
   case LitNil => true
   case LitCons(l, t) => l match
     case Pos(_) => negOut(e, t, model)
     case Neg(a) => !hasFact(model, factOf(e, a)) && negOut(e, t, model)
 
-def supported {r: Region} (cs: Clauses, edb: Edb, model: Facts, f: Fact, src: Source, seen: Facts): Bool = src match
+def supported(cs: Clauses, edb: Edb, model: Facts, f: Fact, src: Source, seen: Facts): Bool = src match
   case Given => edbHas(edb, f)
   case ByRule(i, e) => clauseAt(cs, i) match
     case NoClause => false
     case ClauseAt(c) => c match
       case Clause(h, body) => factEq(factOf(e, h), f) && posIn(e, body, seen) && negOut(e, body, model)
 
-def checkFrom {r: Region} (cs: Clauses, edb: Edb, model: Facts, rest: Facts, seen: Facts): Verdict = rest match
+def checkFrom(cs: Clauses, edb: Edb, model: Facts, rest: Facts, seen: Facts): Verdict = rest match
   case FactNil => Valid
   case FactCons(f, src, t) =>
     if supported(cs, edb, model, f, src, seen) then checkFrom(cs, edb, model, t, factAppend(seen, f, src))
     else Invalid(f)
 
 // the first fact some clause derives from the model that the model lacks
-def closed {r: Region} (cs: Clauses, i: I64, model: Facts): Verdict = cs match
+def closed(cs: Clauses, i: I64, model: Facts): Verdict = cs match
   case ClNil => Valid
   case ClCons(c, t) =>
     val more = derive(c, i, model, model)
@@ -509,10 +509,10 @@ def closed {r: Region} (cs: Clauses, i: I64, model: Facts): Verdict = cs match
       case Valid => closed(t, i + 1, model)
       case Invalid(f) => Invalid(f)
 
-def checkModel {r: Region} (cs: Clauses, edb: Edb, model: Facts): Verdict = checkFrom(cs, edb, model, model, FactNil) match
+def checkModel(cs: Clauses, edb: Edb, model: Facts): Verdict = checkFrom(cs, edb, model, model, FactNil) match
   case Invalid(f) => Invalid(f)
   case Valid => closed(cs, 0, model)
 
-def missing {r: Region} (more: Facts, model: Facts): Verdict = more match
+def missing(more: Facts, model: Facts): Verdict = more match
   case FactNil => Valid
   case FactCons(f, _, t) => if hasFact(model, f) then missing(t, model) else Invalid(f)

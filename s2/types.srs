@@ -81,19 +81,19 @@ enum Ty.St:
 enum Ty.At:
   case Ty.At(st: Ty.St, t: K.Term)
 
-def Ty.con {r: Region} (n: Str): K.Term = K.Con(Sym.of(n), Coll.Nil)
+def Ty.con(n: Str): K.Term = K.Con(Sym.of(n), Coll.Nil)
 
-def Ty.fresh {r: Region} (st: Ty.St): Ty.At =
+def Ty.fresh(st: Ty.St): Ty.At =
   val Ty.St(s, n, cs, is, gs, nm) = st
   Ty.At(Ty.St(s, n + 1, cs, is, gs, nm), K.Var(n))
 
-def Ty.clash {r: Region} (st: Ty.St, c: Ty.Clash): Ty.St =
+def Ty.clash(st: Ty.St, c: Ty.Clash): Ty.St =
   val Ty.St(s, n, cs, is, gs, nm) = st
   Ty.St(s, n, Coll.Cons(c, cs), is, gs, nm)
 
 // got must equal want: unify, or a Mismatch (the state keeps its substitution). a value of a type with <> facts is
 // a value of its body (it only refines it, vic-jxk): got widens to the body when it does not unify as it is
-def Ty.expect {r: Region} (st: Ty.St, line: I64, got: K.Term, want: K.Term): Ty.St =
+def Ty.expect(st: Ty.St, line: I64, got: K.Term, want: K.Term): Ty.St =
   val Ty.St(s, n, cs, is, gs, nm) = st
   K.unify(s, got, want) match
     case Coll.Some(s2) => Ty.St(s2, n, cs, is, gs, nm)
@@ -103,12 +103,12 @@ def Ty.expect {r: Region} (st: Ty.St, line: I64, got: K.Term, want: K.Term): Ty.
         case Coll.None => Ty.St(s, n, Coll.Cons(Ty.Mismatch(line, got, want), cs), is, gs, nm)
       case Coll.None => Ty.St(s, n, Coll.Cons(Ty.Mismatch(line, got, want), cs), is, gs, nm)
 
-def Ty.widen {r: Region} (nm: Coll.SMap[K.Term], t: K.Term): Coll.Option[K.Term] = t match
+def Ty.widen(nm: Coll.SMap[K.Term], t: K.Term): Coll.Option[K.Term] = t match
   case K.Con(n, _) => Coll.sLookup(nm, n)
   case _ => Coll.None
 
 // the types with <> facts (kept nominal by Tl) and their bodies
-def Ty.nominals {r: Region} (ds: Coll.List[Ast.Decl], m: Coll.SMap[K.Term]): Coll.SMap[K.Term] = ds match
+def Ty.nominals(ds: Coll.List[Ast.Decl], m: Coll.SMap[K.Term]): Coll.SMap[K.Term] = ds match
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DType(td) =>
@@ -120,18 +120,18 @@ def Ty.nominals {r: Region} (ds: Coll.List[Ast.Decl], m: Coll.SMap[K.Term]): Col
     case _ => Ty.nominals(rest, m)
 
 // unify when want is known (check mode), else nothing
-def Ty.expectOpt {r: Region} (st: Ty.St, line: I64, got: K.Term, want: Coll.Option[K.Term]): Ty.St = want match
+def Ty.expectOpt(st: Ty.St, line: I64, got: K.Term, want: Coll.Option[K.Term]): Ty.St = want match
   case Coll.None => st
   case Coll.Some(w) => Ty.expect(st, line, got, w)
 
-def Ty.lookup {r: Region} (bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs match
+def Ty.lookup(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Ty.Bind(y, t) = b
     if Sym.eq(x, y) then Coll.Some(t) else Ty.lookup(rest, x)
 
 // ── Ast.Ty as a term: a name bound in tv (a [] binder: a var at a call, a rigid con in a body) is its term ──
-def Ty.term {r: Region} (t: Ast.Ty, tv: Coll.List[Ty.Bind]): K.Term =
+def Ty.term(t: Ast.Ty, tv: Coll.List[Ty.Bind]): K.Term =
   val Ast.Ty(_, n, args, _, _) = t
   args match
     case Coll.Nil => Ty.lookup(tv, n) match
@@ -139,19 +139,19 @@ def Ty.term {r: Region} (t: Ast.Ty, tv: Coll.List[Ty.Bind]): K.Term =
       case Coll.None => K.Con(n, Coll.Nil)
     case Coll.Cons(_, _) => K.Con(n, Ty.terms(args, tv, Coll.Nil))
 
-def Ty.terms {r: Region} (ts: Coll.List[Ast.Ty], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def Ty.terms(ts: Coll.List[Ast.Ty], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => Ty.terms(rest, tv, Coll.Cons(Ty.term(t, tv), acc))
 
 // the [] binder names of groups
-def Ty.tparams {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
+def Ty.tparams(gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(g, rest) => g match
     case Ast.Types(bs) => Ty.tparams(rest, Ty.names(bs, acc))
     case Ast.Evidence(_) => Ty.tparams(rest, acc)
     case Ast.Facts(_) => Ty.tparams(rest, acc)
 
-def Ty.names {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.names(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, _) = b
@@ -161,19 +161,19 @@ def Ty.names {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): C
 enum Ty.Open:
   case Ty.Open(st: Ty.St, tv: Coll.List[Ty.Bind], vars: Coll.List[K.Term])
 
-def Ty.open {r: Region} (st: Ty.St, xs: Coll.List[Sym.Sym], tv: Coll.List[Ty.Bind], vars: Coll.List[K.Term]): Ty.Open = xs match
+def Ty.open(st: Ty.St, xs: Coll.List[Sym.Sym], tv: Coll.List[Ty.Bind], vars: Coll.List[K.Term]): Ty.Open = xs match
   case Coll.Nil => Ty.Open(st, tv, Coll.rev(vars))
   case Coll.Cons(x, rest) =>
     val Ty.At(st1, v) = Ty.fresh(st)
     Ty.open(st1, rest, Coll.Cons(Ty.Bind(x, v), tv), Coll.Cons(v, vars))
 
 // each binder name to a rigid con named by it (inside a generic body)
-def Ty.rigid {r: Region} (xs: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
+def Ty.rigid(xs: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Ty.rigid(rest, Coll.Cons(Ty.Bind(x, K.Con(x, Coll.Nil)), acc))
 
 // ── lookups ──
-def Ty.fnNamed {r: Region} (fs: Coll.List[Ast.Fn], f: Sym.Sym): Coll.Option[Ast.Fn] = fs match
+def Ty.fnNamed(fs: Coll.List[Ast.Fn], f: Sym.Sym): Coll.Option[Ast.Fn] = fs match
   case Coll.Nil => Coll.None
   case Coll.Cons(g, rest) =>
     val Ast.Fn(_, n, _, _, _, _, _) = g
@@ -183,7 +183,7 @@ def Ty.fnNamed {r: Region} (fs: Coll.List[Ast.Fn], f: Sym.Sym): Coll.Option[Ast.
 enum Ty.CaseOf:
   case Ty.CaseOf(e: Ast.Enum, c: Ast.Case)
 
-def Ty.caseNamed {r: Region} (es: Coll.List[Ast.Enum], f: Sym.Sym): Coll.Option[Ty.CaseOf] = es match
+def Ty.caseNamed(es: Coll.List[Ast.Enum], f: Sym.Sym): Coll.Option[Ty.CaseOf] = es match
   case Coll.Nil => Coll.None
   case Coll.Cons(e, rest) =>
     val Ast.Enum(_, _, _, cases) = e
@@ -191,18 +191,18 @@ def Ty.caseNamed {r: Region} (es: Coll.List[Ast.Enum], f: Sym.Sym): Coll.Option[
       case Coll.Some(c) => Coll.Some(Ty.CaseOf(e, c))
       case Coll.None => Ty.caseNamed(rest, f)
 
-def Ty.caseIn {r: Region} (cs: Coll.List[Ast.Case], e: Ast.Enum, f: Sym.Sym): Coll.Option[Ast.Case] = cs match
+def Ty.caseIn(cs: Coll.List[Ast.Case], e: Ast.Enum, f: Sym.Sym): Coll.Option[Ast.Case] = cs match
   case Coll.Nil => Coll.None
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, _) = c
     if Sym.eq(n, f) then Coll.Some(c) else Ty.caseIn(rest, e, f)
 
 // the enum's type at fresh vars: E[v1..vn], with the binders bound for its fields
-def Ty.openEnum {r: Region} (st: Ty.St, e: Ast.Enum): Ty.Open =
+def Ty.openEnum(st: Ty.St, e: Ast.Enum): Ty.Open =
   val Ast.Enum(_, _, gs, _) = e
   Ty.open(st, Ty.tparams(gs, Coll.Nil), Coll.Nil, Coll.Nil)
 
-def Ty.enumTerm {r: Region} (e: Ast.Enum, vars: Coll.List[K.Term]): K.Term =
+def Ty.enumTerm(e: Ast.Enum, vars: Coll.List[K.Term]): K.Term =
   val Ast.Enum(_, n, _, _) = e
   K.Con(n, vars)
 
@@ -213,7 +213,7 @@ enum Ty.Ex:
 enum Ty.Es:
   case Ty.Es(st: Ty.St, es: Coll.List[El.Expr])
 
-def Ty.expr {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = e match
+def Ty.expr(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = e match
   case Ast.Int(line, v) => Ty.lit(st, line, Ty.con("I64"), want, El.Int(line, v))
   case Ast.Bool(line, v) => Ty.lit(st, line, Ty.con("Bool"), want, El.Bool(line, v))
   case Ast.Str(line, s) => Ty.lit(st, line, Ty.con("Str"), want, El.Str(line, s))
@@ -252,15 +252,15 @@ def Ty.expr {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Ex
     Ty.lit(st1, line, Ty.con("Bool"), want, El.Bool(line, true))
 
 // a type that is known: checked against want
-def Ty.lit {r: Region} (st: Ty.St, line: I64, t: K.Term, want: Coll.Option[K.Term], e: El.Expr): Ty.Ex = Ty.Ex(Ty.expectOpt(st, line, t, want), t, e)
+def Ty.lit(st: Ty.St, line: I64, t: K.Term, want: Coll.Option[K.Term], e: El.Expr): Ty.Ex = Ty.Ex(Ty.expectOpt(st, line, t, want), t, e)
 
 // an expression that did not type: a fresh type, El.Bad
-def Ty.bad {r: Region} (st: Ty.St, line: I64): Ty.Ex =
+def Ty.bad(st: Ty.St, line: I64): Ty.Ex =
   val Ty.At(st1, v) = Ty.fresh(st)
   Ty.Ex(st1, v, El.Bad(line))
 
 // ── calls: a def or a constructor (a name with no args is a nullary case) ──
-def Ty.call {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.call(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Cx(fns, es, ps, _, _, _, _, _) = cx
   Ty.fnNamed(fns, f) match
     case Coll.Some(g) => Ty.callFn(cx, Ty.rtCall(cx, Ty.pureCall(cx, st, line, f), line, g), bs, line, g, targs, chosen, xs, want)
@@ -271,17 +271,17 @@ def Ty.call {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64
         case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
 
 // P.op(args): the op on the innermost capability of P in scope (vic 2026-11-09: the innermost handler answers)
-def Ty.request {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, q: Eff.Req, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.request(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, q: Eff.Req, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Eff.Req(p, op) = q
   Ty.innermost(Ty.subst(st), bs, p) match
     case Coll.Some(x) => Ty.method(cx, st, bs, line, x, op, xs, want)
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.UnhandledEffect(line, p)), bs, xs), line)
 
 // the innermost local of protocol type p
-def Ty.innermost {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = Ty.innermostFrom(s, bs, p, Coll.Nil)
+def Ty.innermost(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = Ty.innermostFrom(s, bs, p, Coll.Nil)
 
 // seen: the names of the inner locals; a capability whose name an inner local shadows is out of reach by its name
-def Ty.innermostFrom {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
+def Ty.innermostFrom(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, t) = b
@@ -291,7 +291,7 @@ def Ty.innermostFrom {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], 
     if isP && !Ty.memberSym(x, seen) then Coll.Some(x) else Ty.innermostFrom(s, rest, p, Coll.Cons(x, seen))
 
 // the callee's row: for each implicit capability, the caller's innermost of its protocol
-def Ty.rowCaps {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Coll.List[Eff.Cap], acc: Coll.List[Sym.Sym]): Ty.Caps = cs match
+def Ty.rowCaps(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Coll.List[Eff.Cap], acc: Coll.List[Sym.Sym]): Ty.Caps = cs match
   case Coll.Nil => Ty.Caps(st, Coll.rev(acc))
   case Coll.Cons(c, rest) =>
     val Eff.Cap(p, _) = c
@@ -300,7 +300,7 @@ def Ty.rowCaps {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Co
       case Coll.None => Ty.rowCaps(Ty.clash(st, Ty.UnhandledEffect(line, p)), bs, line, rest, acc)
 
 // the args alone (an unknown callee: still checked)
-def Ty.args {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr]): Ty.St = xs match
+def Ty.args(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr]): Ty.St = xs match
   case Coll.Nil => st
   case Coll.Cons(x, rest) =>
     val Ty.Ex(st1, _, _) = Ty.expr(cx, st, bs, x, Coll.None)
@@ -308,7 +308,7 @@ def Ty.args {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.
 
 // f[T]{caps}(args): open the binders, explicit type args, check mode (want binds the result first), args left to right;
 // each protocol {} binder takes a caller capability (the chosen name, else the one of its protocol in scope)
-def Ty.callFn {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.callFn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ast.Fn(_, name, gs, ps, ret, _, _) = g
   val tps = Ty.tparams(gs, Coll.Nil)
   val Ty.Open(st1, tv, vars) = Ty.open(st, tps, Coll.Nil, Coll.Nil)
@@ -326,21 +326,21 @@ def Ty.callFn {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I
     Ty.Ex(Ty.inst(st6, line, name, vars), rt, El.CallFn(line, name, vars, Coll.revOnto(Coll.rev(caps), icaps), eargs))
 
 // record a generic instance (no binders: nothing to instantiate)
-def Ty.inst {r: Region} (st: Ty.St, line: I64, name: Sym.Sym, vars: Coll.List[K.Term]): Ty.St = vars match
+def Ty.inst(st: Ty.St, line: I64, name: Sym.Sym, vars: Coll.List[K.Term]): Ty.St = vars match
   case Coll.Nil => st
   case Coll.Cons(_, _) =>
     val Ty.St(s, n, cs, is, gs, nm) = st
     Ty.St(s, n, cs, Coll.Cons(Ty.Inst(line, name, vars), is), gs, nm)
 
 // f[T1, ...]: each written type arg binds its binder (too many: Arity)
-def Ty.explicit {r: Region} (st: Ty.St, line: I64, vars: Coll.List[K.Term], ts: Coll.List[K.Term]): Ty.St = ts match
+def Ty.explicit(st: Ty.St, line: I64, vars: Coll.List[K.Term], ts: Coll.List[K.Term]): Ty.St = ts match
   case Coll.Nil => st
   case Coll.Cons(t, rest) => vars match
     case Coll.Nil => Ty.clash(st, Ty.Arity(line, Sym.of("[]")))
     case Coll.Cons(v, vs) => Ty.explicit(Ty.expect(st, line, v, t), line, vs, rest)
 
 // each arg against its param type (binders as opened); the elaborated args in order
-def Ty.params {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], acc: Coll.List[El.Expr]): Ty.Es = ps match
+def Ty.params(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], acc: Coll.List[El.Expr]): Ty.Es = ps match
   case Coll.Nil => Ty.Es(st, Coll.rev(acc))
   case Coll.Cons(p, prest) => xs match
     case Coll.Nil => Ty.Es(st, Coll.rev(acc))
@@ -354,7 +354,7 @@ enum Ty.Caps:
   case Ty.Caps(st: Ty.St, caps: Coll.List[Sym.Sym])
 
 // i = the binder's index among all {} binders (f{a, b}(x) picks by it)
-def Ty.capArgs {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, tv: Coll.List[Ty.Bind], ev: Coll.List[Ast.Binder], chosen: Coll.List[Sym.Sym], i: I64, acc: Coll.List[Sym.Sym]): Ty.Caps = ev match
+def Ty.capArgs(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, tv: Coll.List[Ty.Bind], ev: Coll.List[Ast.Binder], chosen: Coll.List[Sym.Sym], i: I64, acc: Coll.List[Sym.Sym]): Ty.Caps = ev match
   case Coll.Nil => Ty.Caps(st, Coll.rev(acc))
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
@@ -365,7 +365,7 @@ def Ty.capArgs {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: 
       case Ty.Caps(st1, c) => Ty.capArgs(cx, st1, bs, line, tv, rest, chosen, i + 1, Coll.revOnto(c, acc))
 
 // the cap of protocol p: the chosen name at index i, else the one local of type p in scope (none or two: NoCap)
-def Ty.capFor {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.Sym, chosen: Coll.List[Sym.Sym], i: I64): Ty.Caps = chosen match
+def Ty.capFor(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.Sym, chosen: Coll.List[Sym.Sym], i: I64): Ty.Caps = chosen match
   case Coll.Cons(_, _) => Ty.nthSym(chosen, i) match
     case Coll.Some(x) => Ty.Caps(if Ty.isCapOf(Ty.subst(st), bs, x, p) then st else Ty.clash(st, Ty.ChosenNotCap(line, p)), Coll.Cons(x, Coll.Nil))
     case Coll.None => Ty.Caps(Ty.clash(st, Ty.NoCap(line, p)), Coll.Nil)
@@ -376,7 +376,7 @@ def Ty.capFor {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.
     case Coll.Nil => Ty.Caps(Ty.clash(st, Ty.NoCap(line, p)), Coll.Nil)
 
 // the distinct local names of type p (a shadowed name counts once)
-def Ty.capsOf {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.capsOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, t) = b
@@ -389,7 +389,7 @@ def Ty.memberSym(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
   case Coll.Nil => false
   case Coll.Cons(h, t) => if Sym.eq(h, x) then true else Ty.memberSym(x, t)
 
-def Ty.nthSym {r: Region} (xs: Coll.List[Sym.Sym], i: I64): Coll.Option[Sym.Sym] = xs match
+def Ty.nthSym(xs: Coll.List[Sym.Sym], i: I64): Coll.Option[Sym.Sym] = xs match
   case Coll.Nil => Coll.None
   case Coll.Cons(x, rest) => if i == 0 then Coll.Some(x) else Ty.nthSym(rest, i - 1)
 
@@ -401,7 +401,7 @@ def Ty.isProto(ps: Coll.List[Ast.Proto], n: Sym.Sym): Bool = ps match
 
 // a constructor: the enum at fresh vars, check mode first, then the fields; it is a request on Region, so it allocates in
 // the innermost Region in scope (a spec body allocates nothing at run time)
-def Ty.callCase {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.CaseOf, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.callCase(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.CaseOf, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.CaseOf(e, c) = co
   val Ast.Enum(_, en, _, _) = e
   val Ast.Case(_, name, fields) = c
@@ -424,7 +424,7 @@ def Ty.callCase {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line:
 
 // recv.op(args): recv is a capability (op of its protocol) or {} evidence of a trait (the trait method, trait args
 // bound from the evidence type)
-def Ty.method {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Cx(_, _, ps, _, trs, _, _, _) = cx
   Ty.lookup(bs, recv) match
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, recv)), bs, xs), line)
@@ -447,26 +447,26 @@ def Ty.subst(st: Ty.St): Coll.IMap[K.Term] =
   s
 
 // a signature with its binders bound to tv: arity, args, result
-def Ty.callSig {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, rty: K.Term, name: Sym.Sym, ps: Coll.List[Ast.Binder], ret: Ast.Ty, tv: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.callSig(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, rty: K.Term, name: Sym.Sym, ps: Coll.List[Ast.Binder], ret: Ast.Ty, tv: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val rt = Ty.term(ret, tv)
   if Coll.length(ps) != Coll.length(xs) then Ty.Ex(Ty.args(cx, Ty.clash(st, Ty.Arity(line, name)), bs, xs), rt, El.Bad(line))
   else
     val Ty.Es(st1, eargs) = Ty.params(cx, st, bs, line, ps, tv, xs, Coll.Nil)
     Ty.lit(st1, line, rt, want, El.Op(line, recv, rty, name, eargs))
 
-def Ty.zipBind {r: Region} (xs: Coll.List[Sym.Sym], ts: Coll.List[K.Term], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
+def Ty.zipBind(xs: Coll.List[Sym.Sym], ts: Coll.List[K.Term], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => ts match
     case Coll.Nil => acc
     case Coll.Cons(t, trest) => Ty.zipBind(rest, trest, Coll.Cons(Ty.Bind(x, t), acc))
 
-def Ty.protoOp {r: Region} (ps: Coll.List[Ast.Proto], p: Sym.Sym, op: Sym.Sym): Coll.Option[Ast.Op] = ps match
+def Ty.protoOp(ps: Coll.List[Ast.Proto], p: Sym.Sym, op: Sym.Sym): Coll.Option[Ast.Op] = ps match
   case Coll.Nil => Coll.None
   case Coll.Cons(x, rest) =>
     val Ast.Proto(_, n, _, _, _, _, ops, _) = x
     if Sym.eq(n, p) then Ty.opIn(ops, op) else Ty.protoOp(rest, p, op)
 
-def Ty.opIn {r: Region} (os: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Op] = os match
+def Ty.opIn(os: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Op] = os match
   case Coll.Nil => Coll.None
   case Coll.Cons(o, rest) =>
     val Ast.Op(_, n, _, _, _) = o
@@ -475,7 +475,7 @@ def Ty.opIn {r: Region} (os: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Op
 enum Ty.TM:
   case Ty.TM(t: Ast.Trait, m: Ast.Fn)
 
-def Ty.traitMethod {r: Region} (trs: Coll.List[Ast.Trait], t: Sym.Sym, op: Sym.Sym): Coll.Option[Ty.TM] = trs match
+def Ty.traitMethod(trs: Coll.List[Ast.Trait], t: Sym.Sym, op: Sym.Sym): Coll.Option[Ty.TM] = trs match
   case Coll.Nil => Coll.None
   case Coll.Cons(tr, rest) =>
     val Ast.Trait(_, n, _, sigs) = tr
@@ -486,7 +486,7 @@ def Ty.traitMethod {r: Region} (trs: Coll.List[Ast.Trait], t: Sym.Sym, op: Sym.S
     else Ty.traitMethod(rest, t, op)
 
 // ── operators: arithmetic on I64, comparison gives Bool (== and != on any one type), && || on Bool ──
-def Ty.bin {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = op match
+def Ty.bin(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = op match
   case Ast.Eq => Ty.eqOp(cx, st, bs, line, op, l, rhs, want)
   case Ast.Ne => Ty.eqOp(cx, st, bs, line, op, l, rhs, want)
   case Ast.And => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("Bool"), Ty.con("Bool"), want)
@@ -498,18 +498,18 @@ def Ty.bin {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64,
   case _ => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("I64"), want)
 
 // both operands of type arg, the result of type res
-def Ty.both {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, arg: K.Term, res: K.Term, want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.both(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, arg: K.Term, res: K.Term, want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Ex(st1, _, el) = Ty.expr(cx, st, bs, l, Coll.Some(arg))
   val Ty.Ex(st2, _, er) = Ty.expr(cx, st1, bs, rhs, Coll.Some(arg))
   Ty.lit(st2, line, res, want, El.Bin(line, op, el, er))
 
-def Ty.eqOp {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
+def Ty.eqOp(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Ex(st1, tl, el) = Ty.expr(cx, st, bs, l, Coll.None)
   val Ty.Ex(st2, _, er) = Ty.expr(cx, st1, bs, rhs, Coll.Some(tl))
   Ty.lit(st2, line, Ty.con("Bool"), want, El.Bin(line, op, el, er))
 
 // ── match: the scrutinee is an enum E[args]; each arm binds its case fields with E's binders at args ──
-def Ty.arms {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], want: Coll.Option[K.Term]): Ty.Ex = as match
+def Ty.arms(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], want: Coll.Option[K.Term]): Ty.Ex = as match
   case Coll.Nil => Ty.bad(st, line)
   case Coll.Cons(a, rest) =>
     val Ty.Cx(_, enums, _, _, _, _, _, _) = cx
@@ -520,7 +520,7 @@ def Ty.arms {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64
     Ty.armsSame(cx, st1, bs, line, ts, es, rest, t1, Coll.Cons(ea, Coll.Nil))
 
 // the arms after the first: each must have the first's type; the elaborated arms in order
-def Ty.armsSame {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], t: K.Term, acc: Coll.List[El.Arm]): Ty.Ex = as match
+def Ty.armsSame(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], t: K.Term, acc: Coll.List[El.Arm]): Ty.Ex = as match
   case Coll.Nil => Ty.Ex(st, t, El.Match(line, es, ts, Coll.rev(acc)))
   case Coll.Cons(a, rest) =>
     val Ty.AEx(st1, _, ea) = Ty.arm(cx, st, bs, ts, a, Coll.Some(t))
@@ -530,7 +530,7 @@ def Ty.armsSame {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line:
 enum Ty.AEx:
   case Ty.AEx(st: Ty.St, t: K.Term, a: El.Arm)
 
-def Ty.arm {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm, want: Coll.Option[K.Term]): Ty.AEx =
+def Ty.arm(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm, want: Coll.Option[K.Term]): Ty.AEx =
   val Ast.Arm(line, p, b) = a
   val Ty.Cx(_, es, _, _, _, _, _, _) = cx
   val Ty.Ex(st9, t9, e9) = p match
@@ -546,7 +546,7 @@ def Ty.arm {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term
         Ty.expr(cx, st2, Ty.bindFields(binds, fields, tv, bs), b, want)
   Ty.AEx(st9, t9, El.Arm(line, p, e9))
 
-def Ty.bindFields {r: Region} (xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
+def Ty.bindFields(xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
   case Coll.Nil => bs
   case Coll.Cons(x, rest) => fs match
     case Coll.Nil => bs
@@ -556,7 +556,7 @@ def Ty.bindFields {r: Region} (xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]
 
 // ── blocks: val/var bind (an annotation is the expected type), handle binds a capability of the handler's protocol;
 // acc = the elaborated statements so far, reversed ──
-def Ty.block {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, want: Coll.Option[K.Term], acc: Coll.List[El.Stmt]): Ty.Ex = ss match
+def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, want: Coll.Option[K.Term], acc: Coll.List[El.Stmt]): Ty.Ex = ss match
   case Coll.Nil =>
     val Ty.Ex(st1, t, el) = Ty.expr(cx, st, bs, last, want)
     Ty.Ex(st1, t, El.Block(line, Coll.rev(acc), el))
@@ -580,13 +580,13 @@ def Ty.block {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I6
       val Ty.Ex(st1, _, _) = Ty.expr(cx, st, bs, e, Coll.Some(want2))
       Ty.block(cx, st1, bs, line, rest, last, want, acc)
 
-def Ty.exprs {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], acc: Coll.List[El.Expr]): Ty.Es = xs match
+def Ty.exprs(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], acc: Coll.List[El.Expr]): Ty.Es = xs match
   case Coll.Nil => Ty.Es(st, Coll.rev(acc))
   case Coll.Cons(x, rest) =>
     val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.None)
     Ty.exprs(cx, st1, bs, rest, Coll.Cons(ex, acc))
 
-def Ty.bindStmt {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, sl: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, mut: Bool, rest: Coll.List[Ast.Stmt], last: Ast.Expr, want: Coll.Option[K.Term], acc: Coll.List[El.Stmt]): Ty.Ex =
+def Ty.bindStmt(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, sl: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, mut: Bool, rest: Coll.List[Ast.Stmt], last: Ast.Expr, want: Coll.Option[K.Term], acc: Coll.List[El.Stmt]): Ty.Ex =
   val wa: Coll.Option[K.Term] = ann match
     case Coll.None => Coll.None
     case Coll.Some(t) => Coll.Some(Ty.term(t, Coll.Nil))
@@ -607,7 +607,7 @@ enum Ty.FnEx:
   case Ty.FnEx(st: Ty.St, f: El.Fn)
 
 // row: the implicit capabilities (s2/eff.srs), outermost locals, C params after the written ones
-def Ty.fn {r: Region} (cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
+def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val Ast.Fn(line, name, gs, ps, ret, _, body) = f
   val Ty.Cx(_, _, protos, _, _, _, _, _) = cx
   val tps = Ty.tparams(gs, Coll.Nil)
@@ -627,39 +627,39 @@ def Ty.fn {r: Region} (cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]
       val Ty.Ex(st1, _, eb) = Ty.expr(Ty.comptime(cx), st, bs, e, Coll.Some(rt))
       Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, El.Spec(eb)))
 
-def Ty.rowBinds {r: Region} (row: Coll.List[Eff.Cap], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = row match
+def Ty.rowBinds(row: Coll.List[Eff.Cap], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = row match
   case Coll.Nil => acc
   case Coll.Cons(c, rest) =>
     val Eff.Cap(p, x) = c
     Ty.rowBinds(rest, Coll.Cons(Ty.Bind(x, K.Con(p, Coll.Nil)), acc))
 
-def Ty.rowNames {r: Region} (row: Coll.List[Eff.Cap]): Coll.List[Sym.Sym] = row match
+def Ty.rowNames(row: Coll.List[Eff.Cap]): Coll.List[Sym.Sym] = row match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(c, rest) =>
     val Eff.Cap(_, x) = c
     Coll.Cons(x, Ty.rowNames(rest))
 
 // the {} binders of a protocol type, in written order (leading C params)
-def Ty.capNames {r: Region} (ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ev match
+def Ty.capNames(ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ev match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, t) = b
     val Ast.Ty(_, n, _, _, _) = t
     Ty.capNames(ps, rest, if Ty.isProto(ps, n) then Coll.Cons(x, acc) else acc)
 
-def Ty.elParams {r: Region} (ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[El.Param]): Coll.List[El.Param] = ps match
+def Ty.elParams(ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[El.Param]): Coll.List[El.Param] = ps match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(p, rest) =>
     val Ast.Binder(_, x, t) = p
     Ty.elParams(rest, tv, Coll.Cons(El.Param(x, Ty.term(t, tv)), acc))
 
-def Ty.binds {r: Region} (ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = ps match
+def Ty.binds(ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = ps match
   case Coll.Nil => acc
   case Coll.Cons(p, rest) =>
     val Ast.Binder(_, x, t) = p
     Ty.binds(rest, tv, Coll.Cons(Ty.Bind(x, Ty.term(t, tv)), acc))
 
-def Ty.evidence {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = gs match
+def Ty.evidence(gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = gs match
   case Coll.Nil => acc
   case Coll.Cons(g, rest) => g match
     case Ast.Evidence(bs) => Ty.evidence(rest, Coll.revOnto(Coll.rev(bs), acc))
@@ -670,7 +670,7 @@ def Ty.evidence {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder
 enum Ty.Result:
   case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
-def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait]): Ty.Cx = ds match
+def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait]): Ty.Cx = ds match
   case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none())
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs)
@@ -682,12 +682,12 @@ def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Co
     case Ast.DType(_) => Ty.cxOf(rest, fns, es, ps, hs, trs)
 
 // the fns with effects first (s2/pure.srs): a spec body may call none of them
-def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result = Eff.rows(ds) match
+def Ty.check(ds: Coll.List[Ast.Decl]): Ty.Result = Eff.rows(ds) match
   case Eff.Got(rows) => Ty.checkWith(ds, Coll.Nil, rows)
   case Eff.RulesBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
 
 // tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls; rows: Eff.rows(ds)
-def Ty.checkWith {r: Region} (ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows): Ty.Result =
+def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows): Ty.Result =
   val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
   val nom = Ty.nominals(ds, Coll.sEmpty())
   val pr = if Ty.hasSpec(ds) then Pure.impure(ds, rows) else Pure.Got(Coll.sEmpty())
@@ -709,7 +709,7 @@ enum Ty.Fns:
   case Ty.Fns(st: Ty.St, fs: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 // top-level defs, handler fns (the prelude has Arena and Heap, lib/prelude.srs:38) and given fns
-def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn], hacc: Coll.List[El.Handler], gacc: Coll.List[El.Given]): Ty.Fns = ds match
+def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn], hacc: Coll.List[El.Handler], gacc: Coll.List[El.Given]): Ty.Fns = ds match
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.rev(hacc), Coll.rev(gacc))
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
@@ -731,33 +731,33 @@ def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Co
       Ty.decls(cx, st1, rest, acc, hacc, Coll.Cons(gv, gacc))
     case _ => Ty.decls(cx, st, rest, acc, hacc, gacc)
 
-def Ty.underGroups {r: Region} (gs: Coll.List[Ast.Group], fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
+def Ty.underGroups(gs: Coll.List[Ast.Group], fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(f, rest) =>
     val Ast.Fn(line, name, fgs, ps, ret, exit, body) = f
     Ty.underGroups(gs, rest, Coll.Cons(Ast.Fn(line, name, Coll.revOnto(Coll.rev(gs), fgs), ps, ret, exit, body), acc))
 
-def Ty.binderNames {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.binderNames(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, _) = b
     Ty.binderNames(rest, Coll.Cons(x, acc))
 
 // fns of a handler or given, elaborated in order, each with row
-def Ty.fnsEl {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap], acc: Coll.List[El.Fn]): Ty.Fns = fs match
+def Ty.fnsEl(cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap], acc: Coll.List[El.Fn]): Ty.Fns = fs match
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
     val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, row)
     Ty.fnsEl(cx, st1, rest, row, Coll.Cons(ef, acc))
 
 // an instance with a type arg that is still a var after the whole program: CannotInfer
-def Ty.unsolved {r: Region} (s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
+def Ty.unsolved(s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
   case Coll.Nil => cs
   case Coll.Cons(i, rest) =>
     val Ty.Inst(line, f, ts) = i
     if Ty.ground(s, ts) then Ty.unsolved(s, rest, cs) else Ty.unsolved(s, rest, Coll.Cons(Ty.CannotInfer(line, f), cs))
 
-def Ty.ground {r: Region} (s: Coll.IMap[K.Term], ts: Coll.List[K.Term]): Bool = ts match
+def Ty.ground(s: Coll.IMap[K.Term], ts: Coll.List[K.Term]): Bool = ts match
   case Coll.Nil => true
   case Coll.Cons(t, rest) => if Ty.groundT(K.reify(s, t)) then Ty.ground(s, rest) else false
 
@@ -792,14 +792,14 @@ def Ty.lineOf(e: Ast.Expr): I64 = e match
   case Ast.Quant(l, _, _, _, _) => l
 
 // the fns of a handler named Srs.* run as Ty.Srs: the runtime's own bodies, the only callers of rt_*
-def Ty.byHandler {r: Region} (cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
+def Ty.byHandler(cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
   val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows) = cx
   val s = Sym.str(h)
   val by: Ty.By = if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Ty.Srs else Ty.User
   Ty.Cx(fns, es, ps, hs, trs, Ty.Run(by), imp, rows)
 
 // a call of an rt_* extern anywhere but a Srs.* handler body
-def Ty.rtCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
+def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
   val Ty.Cx(_, _, _, _, _, mode, _, _) = cx
   val Ast.Fn(_, n, _, _, _, _, body) = g
   val s = Sym.str(n)
@@ -812,23 +812,23 @@ def Ty.rtCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
       case Ty.User => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
     case Ty.Comptime => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
 
-def Ty.comptime {r: Region} (cx: Ty.Cx): Ty.Cx =
+def Ty.comptime(cx: Ty.Cx): Ty.Cx =
   val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows) = cx
   Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp, rows)
 
 // in a spec body (vic Q-U4) a call of a fn with effects, and any handle, is a clash
-def Ty.pureCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
+def Ty.pureCall(cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
   val Ty.Cx(_, _, _, _, _, mode, imp, _) = cx
   mode match
     case Ty.Run(_) => st
     case Ty.Comptime => if Pure.has(imp, f) then Ty.clash(st, Ty.Impure(line, f)) else st
 
-def Ty.pureHandle {r: Region} (mode: Ty.Mode, st: Ty.St, line: I64, h: Sym.Sym): Ty.St = mode match
+def Ty.pureHandle(mode: Ty.Mode, st: Ty.St, line: I64, h: Sym.Sym): Ty.St = mode match
   case Ty.Run(_) => st
   case Ty.Comptime => Ty.clash(st, Ty.SpecHandle(line, h))
 
 // ── a match covers every case of its enum, or has a `_` arm: the first case no arm names ──
-def Ty.missingCase {r: Region} (es: Coll.List[Ast.Enum], as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] =
+def Ty.missingCase(es: Coll.List[Ast.Enum], as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] =
   if Ty.hasAny(as) then Coll.None
   else Ty.firstCase(as) match
     case Coll.None => Coll.None
@@ -847,7 +847,7 @@ def Ty.hasAny(as: Coll.List[Ast.Arm]): Bool = as match
       case Ast.PAny => true
       case Ast.PCase(_, _) => Ty.hasAny(rest)
 
-def Ty.firstCase {r: Region} (as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] = as match
+def Ty.firstCase(as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] = as match
   case Coll.Nil => Coll.None
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, p, _) = a
@@ -855,7 +855,7 @@ def Ty.firstCase {r: Region} (as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] = as
       case Ast.PCase(c, _) => Coll.Some(c)
       case Ast.PAny => Ty.firstCase(rest)
 
-def Ty.uncovered {r: Region} (cs: Coll.List[Ast.Case], as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] = cs match
+def Ty.uncovered(cs: Coll.List[Ast.Case], as: Coll.List[Ast.Arm]): Coll.Option[Sym.Sym] = cs match
   case Coll.Nil => Coll.None
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, _) = c
@@ -869,7 +869,7 @@ def Ty.armNames(n: Sym.Sym, as: Coll.List[Ast.Arm]): Bool = as match
       case Ast.PCase(c, _) => if Sym.eq(c, n) then true else Ty.armNames(n, rest)
       case Ast.PAny => Ty.armNames(n, rest)
 
-def Ty.addGoal {r: Region} (st: Ty.St, g: Ty.Goal): Ty.St =
+def Ty.addGoal(st: Ty.St, g: Ty.Goal): Ty.St =
   val Ty.St(s, n, cs, is, gs, nm) = st
   Ty.St(s, n, cs, is, Coll.Cons(g, gs), nm)
 
@@ -879,7 +879,7 @@ enum Ty.Cand:
   case Ty.Cand(id: I64, tps: Coll.List[Sym.Sym], head: K.Term, evs: Coll.List[K.Term])
 
 // a given's [] binders as rigid names in its head and in its {} goals of traits
-def Ty.cands {r: Region} (ps: Coll.List[Ast.Proto], ds: Coll.List[Ast.Decl], acc: Coll.List[Ty.Cand]): Coll.List[Ty.Cand] = ds match
+def Ty.cands(ps: Coll.List[Ast.Proto], ds: Coll.List[Ast.Decl], acc: Coll.List[Ty.Cand]): Coll.List[Ty.Cand] = ds match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(d, rest) => d match
     case Ast.DGiven(g) =>
@@ -889,7 +889,7 @@ def Ty.cands {r: Region} (ps: Coll.List[Ast.Proto], ds: Coll.List[Ast.Decl], acc
       Ty.cands(ps, rest, Coll.Cons(Ty.Cand(Coll.length(acc), tps, Ty.term(head, tv), Ty.traitGoals(ps, Ty.evidence(gs, Coll.Nil), tv, Coll.Nil)), acc))
     case _ => Ty.cands(ps, rest, acc)
 
-def Ty.traitGoals {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = bs match
+def Ty.traitGoals(ps: Coll.List[Ast.Proto], bs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = bs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
@@ -906,7 +906,7 @@ enum Ty.Res:
 def Ty.givenFuel(): I64 = 1000
 
 // every goal of the program, with the final substitution; a goal that is not ground has a CannotInfer already
-def Ty.goals {r: Region} (ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
+def Ty.goals(ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
   case Coll.Nil => cs
   case Coll.Cons(g, rest) =>
     val Ty.Goal(line, t0, locals, chosen) = g
@@ -917,18 +917,18 @@ def Ty.goals {r: Region} (ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s
       case Coll.Some(x) => Ty.goals(ps, cands, s, rest, if Ty.localProves(s, locals, x, t) then cs else Coll.Cons(Ty.ChosenBad(line, t), cs))
       case Coll.None => Ty.goals(ps, cands, s, rest, Ty.resClash(line, t, Ty.resolve(cands, s, locals, t, Ty.givenFuel()), cs))
 
-def Ty.resClash {r: Region} (line: I64, t: K.Term, res: Ty.Res, cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = res match
+def Ty.resClash(line: I64, t: K.Term, res: Ty.Res, cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = res match
   case Ty.Proved => cs
   case Ty.NoneFound => Coll.Cons(Ty.NoGiven(line, t), cs)
   case Ty.Tie => Coll.Cons(Ty.AmbigGivens(line, t), cs)
   case Ty.TwoLocals => Coll.Cons(Ty.AmbigEvidence(line, t), cs)
   case Ty.OutOfFuel => Coll.Cons(Ty.GivenFuel(line, t), cs)
 
-def Ty.localProves {r: Region} (s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], x: Sym.Sym, t: K.Term): Bool = Ty.lookup(locals, x) match
+def Ty.localProves(s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], x: Sym.Sym, t: K.Term): Bool = Ty.lookup(locals, x) match
   case Coll.Some(u) => Mono.termEq(K.reify(s, u), t)
   case Coll.None => false
 
-def Ty.resolve {r: Region} (cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64): Ty.Res =
+def Ty.resolve(cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64): Ty.Res =
   if fuel <= 0 then Ty.OutOfFuel
   else
     val n = Coll.length(Ty.localsOf(s, locals, t, Coll.Nil))
@@ -939,7 +939,7 @@ def Ty.resolve {r: Region} (cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], loc
       case Ty.ViableFuel => Ty.OutOfFuel
 
 // the distinct local names whose type is t (a shadowed name counts once)
-def Ty.localsOf {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], t: K.Term, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.localsOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], t: K.Term, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, u) = b
@@ -950,7 +950,7 @@ enum Ty.Vs:
   case Ty.ViableFuel
 
 // the givens whose head matches t and whose own goals are proved
-def Ty.viable {r: Region} (all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64, acc: Coll.List[Ty.Cand]): Ty.Vs = cs match
+def Ty.viable(all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64, acc: Coll.List[Ty.Cand]): Ty.Vs = cs match
   case Coll.Nil => Ty.Viable(Coll.rev(acc))
   case Coll.Cons(c, rest) =>
     val Ty.Cand(_, tps, head, evs) = c
@@ -961,7 +961,7 @@ def Ty.viable {r: Region} (all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: C
         case Ty.OutOfFuel => Ty.ViableFuel
         case _ => Ty.viable(all, rest, s, locals, t, fuel, acc)
 
-def Ty.allProved {r: Region} (all: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], gs: Coll.List[K.Term], fuel: I64): Ty.Res = gs match
+def Ty.allProved(all: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], gs: Coll.List[K.Term], fuel: I64): Ty.Res = gs match
   case Coll.Nil => Ty.Proved
   case Coll.Cons(g, rest) => Ty.resolve(all, s, locals, g, fuel) match
     case Ty.Proved => Ty.allProved(all, s, locals, rest, fuel)
@@ -971,11 +971,11 @@ def Ty.allProved {r: Region} (all: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], loc
     case Ty.OutOfFuel => Ty.OutOfFuel
 
 // the one candidate better than every other one, else a tie (none: NoneFound)
-def Ty.best {r: Region} (vs: Coll.List[Ty.Cand], all: Coll.List[Ty.Cand]): Ty.Res = vs match
+def Ty.best(vs: Coll.List[Ty.Cand], all: Coll.List[Ty.Cand]): Ty.Res = vs match
   case Coll.Nil => if Coll.length(all) == 0 then Ty.NoneFound else Ty.Tie
   case Coll.Cons(c, rest) => if Ty.beatsAll(c, all) then Ty.Proved else Ty.best(rest, all)
 
-def Ty.beatsAll {r: Region} (c: Ty.Cand, all: Coll.List[Ty.Cand]): Bool = all match
+def Ty.beatsAll(c: Ty.Cand, all: Coll.List[Ty.Cand]): Bool = all match
   case Coll.Nil => true
   case Coll.Cons(d, rest) => if Ty.sameCand(c, d) || Ty.better(c, d) then Ty.beatsAll(c, rest) else false
 
@@ -985,7 +985,7 @@ def Ty.sameCand(a: Ty.Cand, b: Ty.Cand): Bool =
   val Ty.Cand(j, _, _, _) = b
   i == j
 
-def Ty.better {r: Region} (a: Ty.Cand, b: Ty.Cand): Bool =
+def Ty.better(a: Ty.Cand, b: Ty.Cand): Bool =
   val Ty.Cand(_, atps, ah, aev) = a
   val Ty.Cand(_, btps, bh, bev) = b
   val ab = Mono.isSome(Mono.matchT(btps, bh, ah, Coll.Some(Coll.Nil)))
@@ -994,7 +994,7 @@ def Ty.better {r: Region} (a: Ty.Cand, b: Ty.Cand): Bool =
 
 // ── shapes (s1/check.srs, s1/given.srs): what a use of a name, a def's binders and a given must look like ──
 // evidence is only a method receiver, a capability only a {} arg: neither is a value
-def Ty.nameUse {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, x: Sym.Sym, t: K.Term): Ty.St =
+def Ty.nameUse(cx: Ty.Cx, st: Ty.St, line: I64, x: Sym.Sym, t: K.Term): Ty.St =
   val Ty.Cx(_, _, ps, _, trs, _, _, _) = cx
   K.walk(Ty.subst(st), t) match
     case K.Con(n, _) =>
@@ -1020,24 +1020,24 @@ def Ty.isBuiltin(n: Sym.Sym): Bool =
   Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type")
 
 // x is a local whose type is protocol p
-def Ty.isCapOf {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
+def Ty.isCapOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
   case Coll.None => false
   case Coll.Some(t) => K.walk(s, t) match
     case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
     case _ => false
 
 // a [] binder may not hide a type; a capability is a {} binder, never a value param
-def Ty.fnShape {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], ps: Coll.List[Ast.Binder]): Ty.St =
+def Ty.fnShape(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], ps: Coll.List[Ast.Binder]): Ty.St =
   Ty.capParams(cx, Ty.hides(cx, st, line, tps), ps)
 
-def Ty.hides {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym]): Ty.St = tps match
+def Ty.hides(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym]): Ty.St = tps match
   case Coll.Nil => st
   case Coll.Cons(x, rest) =>
     val Ty.Cx(_, es, ps, _, trs, _, _, _) = cx
     val known = Ty.isBuiltin(x) || Ty.isEnum(es, x) || Ty.isProto(ps, x) || Ty.isTrait(trs, x)
     Ty.hides(cx, if known then Ty.clash(st, Ty.BinderHides(line, x)) else st, line, rest)
 
-def Ty.capParams {r: Region} (cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): Ty.St = ps match
+def Ty.capParams(cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): Ty.St = ps match
   case Coll.Nil => st
   case Coll.Cons(b, rest) =>
     val Ast.Binder(line, x, t) = b
@@ -1047,7 +1047,7 @@ def Ty.capParams {r: Region} (cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): 
 
 // a given: its head names a trait with that many args; its fns are exactly the trait's methods, each with the trait's
 // signature at the head's args; each [] binder occurs in the head
-def Ty.givenShape {r: Region} (cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
+def Ty.givenShape(cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
   val Ast.Given(line, gs, head, fs) = g
   val Ast.Ty(_, tn, targs, _, _) = head
   val Ty.Cx(_, _, _, _, trs, _, _, _) = cx
@@ -1064,13 +1064,13 @@ def Ty.givenShape {r: Region} (cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
         val sub = Ty.zipBind(ttps, Ty.terms(targs, tv, Coll.Nil), Coll.Nil)
         Ty.missing(sigs, fs, line, Ty.methods(sigs, fs, sub, tv, st1))
 
-def Ty.traitNamed {r: Region} (trs: Coll.List[Ast.Trait], n: Sym.Sym): Coll.Option[Ast.Trait] = trs match
+def Ty.traitNamed(trs: Coll.List[Ast.Trait], n: Sym.Sym): Coll.Option[Ast.Trait] = trs match
   case Coll.Nil => Coll.None
   case Coll.Cons(t, rest) =>
     val Ast.Trait(_, m, _, _) = t
     if Sym.eq(m, n) then Coll.Some(t) else Ty.traitNamed(rest, n)
 
-def Ty.inHead {r: Region} (st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], head: Ast.Ty): Ty.St = tps match
+def Ty.inHead(st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], head: Ast.Ty): Ty.St = tps match
   case Coll.Nil => st
   case Coll.Cons(x, rest) => Ty.inHead(if Ty.occurs(x, head) then st else Ty.clash(st, Ty.NotInHead(line, x)), line, rest, head)
 
@@ -1083,7 +1083,7 @@ def Ty.occursAll(x: Sym.Sym, ts: Coll.List[Ast.Ty]): Bool = ts match
   case Coll.Cons(t, rest) => if Ty.occurs(x, t) then true else Ty.occursAll(x, rest)
 
 // each fn of the given: a method of the trait, with its signature (params and result at the head's args)
-def Ty.methods {r: Region} (sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], sub: Coll.List[Ty.Bind], tv: Coll.List[Ty.Bind], st: Ty.St): Ty.St = fs match
+def Ty.methods(sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], sub: Coll.List[Ty.Bind], tv: Coll.List[Ty.Bind], st: Ty.St): Ty.St = fs match
   case Coll.Nil => st
   case Coll.Cons(f, rest) =>
     val Ast.Fn(line, n, _, ps, ret, _, _) = f
@@ -1095,13 +1095,13 @@ def Ty.methods {r: Region} (sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], sub:
         if same then st else Ty.clash(st, Ty.SigDiffers(line, n))
     Ty.methods(sigs, rest, sub, tv, st1)
 
-def Ty.binderTerms {r: Region} (bs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = bs match
+def Ty.binderTerms(bs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = bs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
     Ty.binderTerms(rest, tv, Coll.Cons(Ty.term(t, tv), acc))
 
-def Ty.missing {r: Region} (sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], line: I64, st: Ty.St): Ty.St = sigs match
+def Ty.missing(sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], line: I64, st: Ty.St): Ty.St = sigs match
   case Coll.Nil => st
   case Coll.Cons(m, rest) =>
     val Ast.Fn(_, n, _, _, _, _, _) = m
@@ -1111,14 +1111,14 @@ def Ty.missing {r: Region} (sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], line
     Ty.missing(rest, fs, line, st1)
 
 // a generic extern's [] slots are void*: each type arg it is called at must be a pointer (an enum or Ptr)
-def Ty.externSlots {r: Region} (es: Coll.List[Ast.Enum], ext: Coll.SMap[Bool], s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
+def Ty.externSlots(es: Coll.List[Ast.Enum], ext: Coll.SMap[Bool], s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
   case Coll.Nil => cs
   case Coll.Cons(i, rest) =>
     val Ty.Inst(line, f, ts) = i
     Ty.externSlots(es, ext, s, rest, if Pure.has(ext, f) then Ty.ptrSlots(es, s, line, ts, cs) else cs)
 
 // the generic externs, by name
-def Ty.externs {r: Region} (fs: Coll.List[Ast.Fn], m: Coll.SMap[Bool]): Coll.SMap[Bool] = fs match
+def Ty.externs(fs: Coll.List[Ast.Fn], m: Coll.SMap[Bool]): Coll.SMap[Bool] = fs match
   case Coll.Nil => m
   case Coll.Cons(g, rest) =>
     val Ast.Fn(_, n, _, _, _, _, body) = g
@@ -1127,7 +1127,7 @@ def Ty.externs {r: Region} (fs: Coll.List[Ast.Fn], m: Coll.SMap[Bool]): Coll.SMa
       case _ => m
     Ty.externs(rest, m2)
 
-def Ty.ptrSlots {r: Region} (es: Coll.List[Ast.Enum], s: Coll.IMap[K.Term], line: I64, ts: Coll.List[K.Term], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = ts match
+def Ty.ptrSlots(es: Coll.List[Ast.Enum], s: Coll.IMap[K.Term], line: I64, ts: Coll.List[K.Term], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = ts match
   case Coll.Nil => cs
   case Coll.Cons(t0, rest) =>
     val t = K.reify(s, t0)
@@ -1152,12 +1152,12 @@ def Ty.isProtoT(ps: Coll.List[Ast.Proto], t: K.Term): Bool = t match
   case K.Con(n, _) => Ty.isProto(ps, n)
   case _ => false
 
-def Ty.headOf {r: Region} (t: K.Term): Sym.Sym = t match
+def Ty.headOf(t: K.Term): Sym.Sym = t match
   case K.Con(n, _) => n
   case _ => Sym.of("?")
 
 // each type goal under its def's binders: [] rigid, {} the locals that may prove it
-def Ty.typeGoals {r: Region} (fns: Coll.List[Ast.Fn], tgs: Coll.List[Tl.Goal], acc: Coll.List[Ty.Goal]): Coll.List[Ty.Goal] = tgs match
+def Ty.typeGoals(fns: Coll.List[Ast.Fn], tgs: Coll.List[Tl.Goal], acc: Coll.List[Ty.Goal]): Coll.List[Ty.Goal] = tgs match
   case Coll.Nil => acc
   case Coll.Cons(g, rest) =>
     val Tl.Goal(line, f, goal) = g
