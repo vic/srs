@@ -46,7 +46,7 @@ def unify {r: Region} (s: Subst, a: Term, b: Term): Unified =
     case TVar(n) => bind(s, n, y)
     case TCon(f, xs) => y match
       case TVar(m) => bind(s, m, x)
-      case TCon(g, ys) => if rt_str_eq(f, g) then unifyAll(s, xs, ys) else Fail
+      case TCon(g, ys) => if Str.eq(f, g) then unifyAll(s, xs, ys) else Fail
       case KInt(_) => Fail
     case KInt(v) => y match
       case TVar(m) => bind(s, m, x)
@@ -80,17 +80,17 @@ def walkEach {r: Region} (s: Subst, ts: Terms): Terms = ts match
 
 def showTerm(t: Term): Unit = t match
   case TVar(n) =>
-    rt_print("_")
-    rt_print_i64(n)
+    Console.print("_")
+    Console.printI64(n)
   case TCon(f, args) =>
-    rt_print(f)
+    Console.print(f)
     args match
       case TNil => ()
       case TCons(_, _) =>
-        rt_print("(")
+        Console.print("(")
         showTerms(args)
-        rt_print(")")
-  case KInt(v) => rt_print_i64(v)
+        Console.print(")")
+  case KInt(v) => Console.printI64(v)
 
 def showTerms(ts: Terms): Unit = ts match
   case TNil => ()
@@ -99,7 +99,7 @@ def showTerms(ts: Terms): Unit = ts match
     t match
       case TNil => ()
       case TCons(_, _) =>
-        rt_print(", ")
+        Console.print(", ")
         showTerms(t)
 
 // ── K2: goals and search as data (srs has no closures) ──
@@ -479,7 +479,7 @@ def picks {r: Region} (rules: Rules, rel: Str, args: Terms, st: State, nx: I64, 
   case RCons(h, t) => picks(t, rel, args, st, nx, rest) match
     case Picked(bs, cost) => h match
       case Rule(f, head, body, nv) =>
-        if rt_str_eq(f, rel) then
+        if Str.eq(f, rel) then
           val b = Branch(withNext(st, nx + nv), GCons(GEqAll(shiftAll(head, nx), args), GCons(shiftGoal(body, nx), rest)))
           Picked(QCons(b, bs), cost + 1)
         else Picked(bs, cost)

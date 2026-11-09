@@ -15,7 +15,7 @@ def Esc.pick [A: Type] (x: A): A = x
 def Esc.via [A: Type] [B: Type] {c: Esc.Id[A, B]} (x: A): B = c.conv(x)
 
 def Esc.leak2(): Esc.Box =
-  handle r = Arena()
+  handle r = Srs.Arena()
   Esc.via[Esc.Box, Esc.Box](Esc.Box(2))
 def main(): I64 = 0
 // s1: srs:18: error: value escapes the scope of its region 'r'

@@ -57,12 +57,12 @@ def NT.show(c: Names.Clash): Unit = c match
   case Names.BadArity(line, n) => NT.say("badarity", line, n)
 
 def NT.say(kind: Str, line: I64, n: Sym.Sym): Unit =
-  rt_print(" ")
-  rt_print(kind)
-  rt_print(" ")
-  rt_print_i64(line)
-  rt_print(" ")
-  rt_print(Sym.str(n))
+  Console.print(" ")
+  Console.print(kind)
+  Console.print(" ")
+  Console.printI64(line)
+  Console.print(" ")
+  Console.print(Sym.str(n))
 
 def NT.showAll(cs: Coll.List[Names.Clash]): Unit = cs match
   case Coll.Nil => ()
@@ -71,18 +71,18 @@ def NT.showAll(cs: Coll.List[Names.Clash]): Unit = cs match
     NT.showAll(rest)
 
 def NT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit =
-  rt_print(name)
-  rt_print(":")
+  Console.print(name)
+  Console.print(":")
   Names.check(ds) match
-    case Names.Ok => rt_print(" ok")
+    case Names.Ok => Console.print(" ok")
     case Names.Bad(cs) => NT.showAll(cs)
     case Names.RulesBad(rel) =>
-      rt_print(" rules bad ")
-      rt_print(Sym.str(rel))
-  rt_print("\n")
+      Console.print(" rules bad ")
+      Console.print(Sym.str(rel))
+  Console.print("\n")
 
 def main(): I64 =
-  handle r = Arena()
+  handle r = Srs.Arena()
   handle c = Srs.Console()
   NT.run("good", NT.good())
   // tests/neg/dup_def.srs: a second def one

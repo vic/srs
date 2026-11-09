@@ -24,32 +24,32 @@ def T.tc {r: Region} (): Coll.List[D.Rule] =
   Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
 
 def T.count {r: Region} (res: D.Result, rel: Str): Unit = res match
-  case D.Solved(m) => rt_print_i64(Coll.length(D.tuples(m, Sym.of(rel))))
+  case D.Solved(m) => Console.printI64(Coll.length(D.tuples(m, Sym.of(rel))))
   case D.Unsafe(p) =>
-    rt_print("unsafe ")
-    rt_print(Sym.str(p))
+    Console.print("unsafe ")
+    Console.print(Sym.str(p))
   case D.NegCycle(p) =>
-    rt_print("negcycle ")
-    rt_print(Sym.str(p))
+    Console.print("negcycle ")
+    Console.print(Sym.str(p))
 
 def T.showVal(v: D.Val): Unit = v match
-  case D.VSym(s) => rt_print(Sym.str(s))
-  case D.VInt(n) => rt_print_i64(n)
+  case D.VSym(s) => Console.print(Sym.str(s))
+  case D.VInt(n) => Console.printI64(n)
 
 def T.showTuple(t: Coll.List[D.Val], first: Bool): Unit = t match
-  case Coll.Nil => rt_print(")")
+  case Coll.Nil => Console.print(")")
   case Coll.Cons(v, rest) =>
-    if !first then rt_print(", ") else ()
+    if !first then Console.print(", ") else ()
     T.showVal(v)
     T.showTuple(rest, false)
 
 def T.showAll(rel: Str, ts: Coll.List[Coll.List[D.Val]]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(t, rest) =>
-    rt_print(rel)
-    rt_print("(")
+    Console.print(rel)
+    Console.print("(")
     T.showTuple(t, true)
-    rt_print(" ")
+    Console.print(" ")
     T.showAll(rel, rest)
 
 // the facts of rel (oldest first), or why there is no model
@@ -57,22 +57,23 @@ def T.show {r: Region} (res: D.Result, rel: Str): Unit =
   res match
     case D.Solved(m) => T.showAll(rel, D.tuples(m, Sym.of(rel)))
     case _ => T.count(res, rel)
-  rt_print("\n")
+  Console.print("\n")
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val from0 = D.Rule(T.a1("from0", T.v(1)), T.b1(T.p(T.a2("path", D.AVal(D.VInt(0)), T.v(1)))))
   val tc0 = Coll.Cons(from0, T.tc())
   val c10 = D.solve(tc0, T.edges(0, 10, false, Coll.Nil))
   T.count(c10, "path")
-  rt_print(" ")
+  Console.print(" ")
   T.count(c10, "from0")
-  rt_print("\n")
+  Console.print("\n")
   val r200 = D.solve(tc0, T.edges(0, 200, true, Coll.Nil))
   T.count(r200, "path")
-  rt_print(" ")
+  Console.print(" ")
   T.count(r200, "from0")
-  rt_print("\n")
+  Console.print("\n")
   val x = T.v(0)
   val y = T.v(1)
   val edges = Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "b", "c"), Coll.Cons(T.f2("edge", "c", "d"), Coll.Nil)))

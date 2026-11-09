@@ -2,21 +2,22 @@
 // printing the result gives it back byte for byte, except one blank line: ast.srs prints ce7 and ce9 in two Ast.print calls
 // (tests/s2/ast.srs:120-121), one call separates them. then parse errors are data (the line and what was expected)
 def PT.err(line: I64, want: Str): Unit =
-  rt_print("error ")
-  rt_print_i64(line)
-  rt_print(" ")
-  rt_print(want)
-  rt_print("\n")
+  Console.print("error ")
+  Console.printI64(line)
+  Console.print(" ")
+  Console.print(want)
+  Console.print("\n")
 
 def PT.run {r: Region} (src: Str): Unit = Parse.source(src) match
   case Parse.Ok(ds, _) => Ast.print(ds)
   case Parse.Err(line, want) => PT.err(line, want)
 
 def main(): I64 =
-  handle r = Arena()
+  handle r = Srs.Arena()
   handle c = Srs.Console()
-  PT.run(rt_read_file("tests/s2/ast.out"))
-  PT.run(rt_read_file("tests/s2/prog/contracts.srs"))
+  handle fs = Srs.Files()
+  PT.run(Files.read("tests/s2/ast.out"))
+  PT.run(Files.read("tests/s2/prog/contracts.srs"))
   PT.run("def h(p: Pair[I64, I64]): I64 =\n  val y = 1\n  val Pair(a, b) = p\n  a + b * y\n")
   PT.run("def k(): I64 = 10 - 3 - 2\ndef m(b: Bool): I64 =\n  if b then 1\n  else 2\n")
   PT.run("trait Ho.Fold [F: Type] [A: Type] [B: Type]:\n  def step(acc: B, x: A): B\n\ngiven Ho.Fold[Ho.Sum, I64, I64]:\n  def step(acc: I64, x: I64): I64 = acc + x\n\ngiven [A: Type] {o: Ord[A]} Ord[List[A]]:\n  def cmp(a: A, b: A): I64 = 0\n")

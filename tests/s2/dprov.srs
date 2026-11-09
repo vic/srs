@@ -17,8 +17,8 @@ def P.tc {r: Region} (): Coll.List[D.Rule] =
   Coll.Cons(r0, Coll.Cons(r1, Coll.Nil))
 
 def P.showVal(v: D.Val): Unit = v match
-  case D.VSym(s) => rt_print(Sym.str(s))
-  case D.VInt(n) => rt_print_i64(n)
+  case D.VSym(s) => Console.print(Sym.str(s))
+  case D.VInt(n) => Console.printI64(n)
 
 def P.showVals(t: Coll.List[D.Val]): Unit = t match
   case Coll.Nil => ()
@@ -27,34 +27,34 @@ def P.showVals(t: Coll.List[D.Val]): Unit = t match
     rest match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        rt_print(", ")
+        Console.print(", ")
         P.showVals(rest)
 
 def P.indent(n: I64): Unit =
   if n > 0 then
-    rt_print(" ")
+    Console.print(" ")
     P.indent(n - 1)
   else ()
 
 def P.fact(rel: Sym.Sym, t: Coll.List[D.Val], ind: I64): Unit =
   P.indent(ind)
-  rt_print(Sym.str(rel))
-  rt_print("(")
+  Console.print(Sym.str(rel))
+  Console.print("(")
   P.showVals(t)
-  rt_print(")")
+  Console.print(")")
 
 def P.show(p: D.Proof, ind: I64): Unit = p match
   case D.Given(rel, t) =>
     P.fact(rel, t, ind)
-    rt_print(" given\n")
+    Console.print(" given\n")
   case D.Absent(rel, t) =>
     P.fact(rel, t, ind)
-    rt_print(" absent\n")
+    Console.print(" absent\n")
   case D.ByRule(i, rel, t, ps) =>
     P.fact(rel, t, ind)
-    rt_print(" by rule ")
-    rt_print_i64(i)
-    rt_print("\n")
+    Console.print(" by rule ")
+    Console.printI64(i)
+    Console.print("\n")
     P.showAll(ps, ind + 2)
 
 def P.showAll(ps: Coll.List[D.Proof], ind: I64): Unit = ps match
@@ -66,9 +66,9 @@ def P.showAll(ps: Coll.List[D.Proof], ind: I64): Unit = ps match
 def P.why {r: Region} (res: D.Result, rel: Str, t: Coll.List[D.Val]): Unit = res match
   case D.Solved(m) => D.why(m, Sym.of(rel), t) match
     case Coll.Some(p) => P.show(p, 0)
-    case Coll.None => rt_print("no proof\n")
-  case D.Unsafe(_) => rt_print("unsafe\n")
-  case D.NegCycle(_) => rt_print("negcycle\n")
+    case Coll.None => Console.print("no proof\n")
+  case D.Unsafe(_) => Console.print("unsafe\n")
+  case D.NegCycle(_) => Console.print("negcycle\n")
 
 // ── the property: a graph 0 -> 1 -> ... -> 9 with shortcuts i -> i + 2 for even i ──
 def P.i {r: Region} (n: I64): D.Val = D.VInt(n)
@@ -107,7 +107,7 @@ def P.leavesAll(ps: Coll.List[D.Proof], n: I64): I64 = ps match
   case Coll.Cons(p, rest) => P.leavesAll(rest, n + P.leaves(p))
 
 def P.rooted(p: D.Proof, t: Coll.List[D.Val]): Bool = p match
-  case D.ByRule(_, rel, u, _) => rt_str_eq(Sym.str(rel), "path") && D.tupleEq(u, t)
+  case D.ByRule(_, rel, u, _) => Str.eq(Sym.str(rel), "path") && D.tupleEq(u, t)
   case _ => false
 
 enum P.Count:
@@ -127,7 +127,8 @@ def P.each {r: Region} (m: D.Model, i: I64, j: I64, c: P.Count): P.Count =
       case Coll.Some(p) => P.each(m, i, j + 1, P.add(c, p, t, P.dist(i, j)))
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val chain = Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "d"), Coll.Nil)))
   val tcChain = D.solve(P.tc(), chain)
   P.why(tcChain, "path", P.t2(P.s("a"), P.s("d")))
@@ -146,11 +147,11 @@ def main(): I64 =
   D.solve(P.tc(), P.edges(0, Coll.Nil)) match
     case D.Solved(m) =>
       val P.Count(n, mn, ro) = P.each(m, 0, 1, P.Count(0, 0, 0))
-      rt_print_i64(n)
-      rt_print(" ")
-      rt_print_i64(mn)
-      rt_print(" ")
-      rt_print_i64(ro)
-      rt_print("\n")
-    case _ => rt_print("no model\n")
+      Console.printI64(n)
+      Console.print(" ")
+      Console.printI64(mn)
+      Console.print(" ")
+      Console.printI64(ro)
+      Console.print("\n")
+    case _ => Console.print("no model\n")
   0

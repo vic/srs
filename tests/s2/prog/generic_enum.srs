@@ -15,17 +15,18 @@ def first [A: Type] [B: Type] (p: Pair[A, B]): A = p match
   case Pair(a, _) => a
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val n: Opt[I64] = None
-  rt_print_i64(get(Some(41), 0) + get(n, 1))
-  rt_print("\n")
-  rt_print_i64(if get(Some(true), false) then 1 else 0)
-  rt_print("\n")
+  Console.printI64(get(Some(41), 0) + get(n, 1))
+  Console.print("\n")
+  Console.printI64(if get(Some(true), false) then 1 else 0)
+  Console.print("\n")
   val p = Pair(Some(7), false)
-  rt_print_i64(get(first(p), 0))
-  rt_print("\n")
+  Console.printI64(get(first(p), 0))
+  Console.print("\n")
   // caps on a type: the value lives in region r (a fact, ^<r>)
   val q: Opt[I64]^<r> = Some(5)
-  rt_print_i64(get(q, 0))
-  rt_print("\n")
+  Console.printI64(get(q, 0))
+  Console.print("\n")
   0

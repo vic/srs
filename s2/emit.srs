@@ -5,7 +5,7 @@
 enum Emit.CaseAt:
   case Emit.CaseAt(tag: I64, en: Ast.Enum, c: Ast.Case)
 
-// how a constructor allocates: an inline bump when the program has the Arena handler (rt/srs_rt.c:24-25), else the vtable
+// how a constructor allocates: an inline bump when the program has the Srs.Arena handler (rt/srs_rt.c:24-25), else the vtable
 enum Emit.Alloc:
   case Emit.Inline
   case Emit.VTable
@@ -86,7 +86,7 @@ def Emit.cxDecls {r: Region} (ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = d
         Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, Coll.sInsert(ps, n, p), hp, al, nm))
       case Ast.DHandler(h) =>
         val Ast.Handler(_, n, p, _) = h
-        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, Coll.sInsert(hp, n, p), if Str.eq(Sym.str(n), "Arena") then Emit.Inline else al, nm))
+        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, Coll.sInsert(hp, n, p), if Str.eq(Sym.str(n), "Srs.Arena") then Emit.Inline else al, nm))
       // a type with <> facts stays nominal through typing (s2/tlevel.srs Tl.nominal): in C it is its body's type
       case Ast.DType(td) =>
         val Ast.TypeDecl(_, n, _, _, body) = td
@@ -1153,7 +1153,7 @@ def Emit.vtOps(pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
 def Emit.allocFast {r: Region} (cx: Emit.Cx): Unit =
   Console.print("typedef struct srs_chunk { struct srs_chunk* next; size_t used, cap; } srs_chunk;\n")
   Console.print("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n")
-  Console.print("  if (c->vt == vt_Arena) {\n")
+  Console.print("  if (c->vt == vt_Srs__Arena) {\n")
   Console.print("    srs_chunk* h = *(srs_chunk**)c->self;\n")
   Console.print("    size_t n = ((size_t)size + 15) & ~(size_t)15;\n")
   Console.print("    if (h && h->used + n <= h->cap) { void* p = (char*)(h + 1) + h->used; h->used += n; return p; }\n")

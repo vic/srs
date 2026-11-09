@@ -2,14 +2,14 @@
 // accepted by s1, so they must type with no clash and every generic call solved; then one program per clash kind
 def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll.List[Ast.Decl] = ps match
   case Coll.Nil => acc
-  case Coll.Cons(p, rest) => Parse.source(rt_read_file(p)) match
+  case Coll.Cons(p, rest) => Parse.source(Files.read(p)) match
     case Parse.Ok(ds, _) => TT.parseAll(rest, Coll.revOnto(Coll.rev(ds), acc))
     case Parse.Err(line, _) =>
-      rt_print("parse error ")
-      rt_print(p)
-      rt_print(" ")
-      rt_print_i64(line)
-      rt_print("\n")
+      Console.print("parse error ")
+      Console.print(p)
+      Console.print(" ")
+      Console.printI64(line)
+      Console.print("\n")
       TT.parseAll(rest, acc)
 
 // the prelude and every s2 source (a new s2 file goes here too)
@@ -50,17 +50,18 @@ def TT.show(c: Ty.Clash): Unit = c match
   case Ty.NotInHead(l, x) => TT.sayN("notinhead", l, x)
   case Ty.ExternSlot(l, _) => TT.say("externslot", l)
   case Ty.UnhandledEffect(l, p) => TT.sayN("unhandled", l, p)
+  case Ty.RtOutsideSrs(l, f) => TT.sayN("rtoutside", l, f)
 
 def TT.say(k: Str, l: I64): Unit =
-  rt_print(" ")
-  rt_print(k)
-  rt_print(" ")
-  rt_print_i64(l)
+  Console.print(" ")
+  Console.print(k)
+  Console.print(" ")
+  Console.printI64(l)
 
 def TT.sayN(k: Str, l: I64, n: Sym.Sym): Unit =
   TT.say(k, l)
-  rt_print(" ")
-  rt_print(Sym.str(n))
+  Console.print(" ")
+  Console.print(Sym.str(n))
 
 def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
   case Coll.Nil => ()
@@ -71,63 +72,64 @@ def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
 def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, Ty.check(ds))
 
 def TT.report {r: Region} (name: Str, res: Ty.Result): Unit =
-  rt_print(name)
-  rt_print(":")
+  Console.print(name)
+  Console.print(":")
   val Ty.Result(cs, _, _, _, _, _) = res
   cs match
-    case Coll.Nil => rt_print(" ok")
+    case Coll.Nil => Console.print(" ok")
     case Coll.Cons(_, _) => TT.showAll(Coll.rev(cs))
-  rt_print("\n")
+  Console.print("\n")
 
 def TT.src {r: Region} (s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
   case Parse.Ok(ds, _) => ds
   case Parse.Err(_, _) => Coll.Nil
 
 def main(): I64 =
-  handle r = Arena()
+  handle r = Srs.Arena()
   handle c = Srs.Console()
+  handle fs = Srs.Files()
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
   // the whole self check once: its clashes, instances, defs and mono
   val self = Ty.check(lib)
   TT.report("self", self)
   val Ty.Result(_, is, _, sfs, _, _) = self
   val mi = Mono.run(self)
-  rt_print("mono self: generic instances over 100: ")
-  rt_print_i64(if TT.genericCount(mi, 0) > 100 then 1 else 0)
-  rt_print(", open: ")
-  rt_print_i64(TT.openCount(mi, 0))
-  rt_print("\n")
-  rt_print("bad nodes in self: ")
-  rt_print_i64(TT.badsFns(sfs, 0))
-  rt_print("\n")
-  rt_print("instances over 1000: ")
-  rt_print_i64(if Coll.length(is) > 1000 then 1 else 0)
-  rt_print("\n")
+  Console.print("mono self: generic instances over 100: ")
+  Console.printI64(if TT.genericCount(mi, 0) > 100 then 1 else 0)
+  Console.print(", open: ")
+  Console.printI64(TT.openCount(mi, 0))
+  Console.print("\n")
+  Console.print("bad nodes in self: ")
+  Console.printI64(TT.badsFns(sfs, 0))
+  Console.print("\n")
+  Console.print("instances over 1000: ")
+  Console.printI64(if Coll.length(is) > 1000 then 1 else 0)
+  Console.print("\n")
   TT.run("trait_args", Coll.revOnto(Coll.rev(TT.src("def fold1 [X: Type] [Y: Type] {f: Coll.Fold[Y, X, I64]} (x: X): I64 = f.step(0, x)\n")), lib))
   TT.run("mismatch", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = true\n")), lib))
   TT.run("arity", Coll.revOnto(Coll.rev(TT.src("def g(x: I64): I64 = x\ndef f(): I64 = g(1, 2)\n")), lib))
   TT.run("unknown", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = nope(1)\n")), lib))
   TT.run("cannotinfer", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = Coll.length(Coll.Nil)\n")), lib))
-  rt_print("elab usem:\n")
-  TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef usem(): I64 =\n  handle a = Arena()\n  handle b = Heap()\n  val xs = mk{b}(3)\n  Coll.length(Coll.rev{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", lib, "usem")
-  rt_print("mono usem:\n")
-  TT.insts(Mono.run(Ty.check(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)))))
+  Console.print("elab usem:\n")
+  TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  handle b = Srs.Heap()\n  val xs = mk{b}(3)\n  Coll.length(Coll.rev{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", lib, "usem")
+  Console.print("mono usem:\n")
+  TT.insts(Mono.run(Ty.check(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)))))
   0
 
 // ── T3: the elaborated calls of one def: instance, type args (reified), caps; constructors with their region ──
 def TT.term(t: K.Term): Unit = t match
   case K.Var(n) =>
-    rt_print("?")
-    rt_print_i64(n)
-  case K.Int(v) => rt_print_i64(v)
+    Console.print("?")
+    Console.printI64(n)
+  case K.Int(v) => Console.printI64(v)
   case K.Con(f, args) =>
-    rt_print(Sym.str(f))
+    Console.print(Sym.str(f))
     args match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        rt_print("[")
+        Console.print("[")
         TT.terms(args)
-        rt_print("]")
+        Console.print("]")
 
 def TT.terms(ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
@@ -136,7 +138,7 @@ def TT.terms(ts: Coll.List[K.Term]): Unit = ts match
     rest match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        rt_print(", ")
+        Console.print(", ")
         TT.terms(rest)
 
 def TT.reified {r: Region} (s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
@@ -146,34 +148,34 @@ def TT.reified {r: Region} (s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Co
 def TT.syms(xs: Coll.List[Sym.Sym]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
-    rt_print(" ")
-    rt_print(Sym.str(x))
+    Console.print(" ")
+    Console.print(Sym.str(x))
     TT.syms(rest)
 
 // the calls of e, in evaluation order (args first)
 def TT.calls {r: Region} (s: Coll.IMap[K.Term], e: El.Expr): Unit = e match
   case El.CallFn(_, f, ts, caps, args) =>
     TT.callsAll(s, args)
-    rt_print(Sym.str(f))
-    rt_print("[")
+    Console.print(Sym.str(f))
+    Console.print("[")
     TT.terms(TT.reified(s, ts, Coll.Nil))
-    rt_print("] caps")
+    Console.print("] caps")
     TT.syms(caps)
-    rt_print("\n")
+    Console.print("\n")
   case El.New(_, en, ts, c, at, args) =>
     TT.callsAll(s, args)
-    rt_print("new ")
-    rt_print(Sym.str(c))
-    rt_print(" : ")
+    Console.print("new ")
+    Console.print(Sym.str(c))
+    Console.print(" : ")
     TT.term(K.reify(s, K.Con(en, ts)))
-    rt_print(" in ")
+    Console.print(" in ")
     TT.alloc(at)
-    rt_print("\n")
+    Console.print("\n")
   case El.Nullary(_, en, ts, c) =>
-    rt_print(Sym.str(c))
-    rt_print(" : ")
+    Console.print(Sym.str(c))
+    Console.print(" : ")
     TT.term(K.reify(s, K.Con(en, ts)))
-    rt_print("\n")
+    Console.print("\n")
   case El.Block(_, ss, last) =>
     TT.stmts(s, ss)
     TT.calls(s, last)
@@ -275,10 +277,10 @@ def TT.insts {r: Region} (is: Coll.List[Mono.Inst]): Unit = is match
     tps match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        rt_print(Sym.str(n))
-        rt_print("[")
+        Console.print(Sym.str(n))
+        Console.print("[")
         TT.terms(TT.subArgs(tps, sub, Coll.Nil))
-        rt_print("]\n")
+        Console.print("]\n")
     TT.insts(rest)
 
 def TT.subArgs {r: Region} (tps: Coll.List[Sym.Sym], sub: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = tps match
@@ -308,5 +310,5 @@ def TT.openSub(sub: Coll.List[Ty.Bind]): I64 = sub match
     (if Ty.groundT(t) then 0 else 1) + TT.openSub(rest)
 
 def TT.alloc(a: El.Alloc): Unit = a match
-  case El.In(reg) => rt_print(Sym.str(reg))
-  case El.Comptime => rt_print("comptime")
+  case El.In(reg) => Console.print(Sym.str(reg))
+  case El.Comptime => Console.print("comptime")

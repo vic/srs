@@ -8,44 +8,45 @@ def both {r: Region} (g: Goal, h: Goal): Goal = GConj(g, h)
 def show {r: Region} (run: Run, nv: I64): Unit = run match
   case Run(ans, _) =>
     showAnswers(ans, nv)
-    rt_print("--\n")
+    Console.print("--\n")
 
 def showAnswers {r: Region} (ans: Answers, nv: I64): Unit = ans match
   case ANil => ()
   case ACons(st, t) =>
     var i = 0
     while i < nv do
-      if i > 0 then rt_print(" ; ") else ()
+      if i > 0 then Console.print(" ; ") else ()
       showTerm(walkAll(substOf(st), TVar(i)))
       i = i + 1
     st match
       case State(_, ns, _, _, _) => showNeqs(ns)
-    rt_print("\n")
+    Console.print("\n")
     showAnswers(t, nv)
 
 def showNeqs(ns: Neqs): Unit = ns match
   case NeqNil => ()
   case NeqCons(p, t) =>
-    rt_print(" {")
+    Console.print(" {")
     showBinds(p)
-    rt_print("}")
+    Console.print("}")
     showNeqs(t)
 
 def showBinds(p: Subst): Unit = p match
   case SNil => ()
   case SBind(v, t, rest) =>
-    rt_print("_")
-    rt_print_i64(v)
-    rt_print("=")
+    Console.print("_")
+    Console.printI64(v)
+    Console.print("=")
     showTerm(t)
     rest match
       case SNil => ()
       case SBind(_, _, _) =>
-        rt_print(",")
+        Console.print(",")
         showBinds(rest)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val x = TVar(0)
   val y = TVar(1)
   val a = c0("a")

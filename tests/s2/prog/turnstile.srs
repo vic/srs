@@ -58,21 +58,22 @@ def count(a: Answers): I64 = a match
 def verdict {r: Region} (run: Run): Unit =
   run match
     case Run(ans, st) => st match
-      case NoFuel => rt_print("reject: fuel")
-      case Limit => rt_print("reject: ambiguous")
-      case Ended => if count(ans) == 0 then rt_print("reject") else ans match
-        case ANil => rt_print("reject")
+      case NoFuel => Console.print("reject: fuel")
+      case Limit => Console.print("reject: ambiguous")
+      case Ended => if count(ans) == 0 then Console.print("reject") else ans match
+        case ANil => Console.print("reject")
         case ACons(s, _) =>
           showTerm(walkAll(substOf(s), TVar(0)))
-          rt_print(" : ")
+          Console.print(" : ")
           showTerm(walkAll(substOf(s), TVar(1)))
-  rt_print("\n")
+  Console.print("\n")
 
 // e >> ? => ? under G; limit 2 so a second answer shows ambiguity
 def check {r: Region} (rules: Rules, g: Term, e: Term): Unit = verdict(solve(rules, tc(g, e, v(0), v(1)), 2, 2000, 2))
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val rules = tcRules(lookRules(normRules(RNil)))
   val i64 = c0("I64")
   val bool = c0("Bool")

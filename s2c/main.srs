@@ -123,7 +123,7 @@ def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], 
       case Ty.NotEnum(l, t) => S2c.diag(fs, "not-enum", l, "a match needs an enum, not", S2c.Type(K.reify(s, t)), "match on a value of an enum type")
       case Ty.NoOp(l, n) => S2c.diag(fs, "no-op", l, "no op or trait method", S2c.Name(n), "call an op of the capability's protocol, or a method of the evidence's trait")
       case Ty.CannotInfer(l, n) => S2c.diag(fs, "cannot-infer", l, "cannot infer the type args of", S2c.Name(n), "write them: f[T](x), or annotate the val")
-      case Ty.NoCap(l, p) => S2c.diag(fs, "no-capability", l, "no single capability in scope of", S2c.Name(p), "open one (handle r = Arena()) or take it as a {} binder; with two, choose one: f{a}(x)")
+      case Ty.NoCap(l, p) => S2c.diag(fs, "no-capability", l, "no single capability in scope of", S2c.Name(p), "open one (handle r = Srs.Arena()) or take it as a {} binder; with two, choose one: f{a}(x)")
       case Ty.Impure(l, n) => S2c.diag(fs, "impure-call", l, "a spec def calls only pure fns, not", S2c.Name(n), "a spec def runs at compile time: call only fns with no effects")
       case Ty.SpecHandle(l, h) => S2c.diag(fs, "spec-handle", l, "a spec def opens no handler, not", S2c.Name(h), "a spec def has no Region: build data without one")
       case Ty.PureRules(rel) => S2c.diag(fs, "internal", 0, "the purity rules are ill-formed at", S2c.Name(rel), "a bug in s2: report it")
@@ -147,6 +147,7 @@ def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], 
       case Ty.NotInHead(l, x) => S2c.diag(fs, "binder-not-in-head", l, "a given [] binder is not in its head:", S2c.Name(x), "use each [] binder in the given's head")
       case Ty.ExternSlot(l, t) => S2c.diag(fs, "extern-slot", l, "an extern [] binder is a pointer (void*), not", S2c.Type(t), "call the extern at an enum or Ptr type")
       case Ty.UnhandledEffect(l, p) => S2c.diag(fs, "unhandled-effect", l, "effect not handled:", S2c.Name(p), "open a handler of it in an enclosing block (handle x = H()): main must handle every effect it needs")
+      case Ty.RtOutsideSrs(l, f) => S2c.diag(fs, "rt-outside-srs", l, "rt_* is called only in the body of a Srs.* handler, not here:", S2c.Name(f), "request the effect (Console.print(s)) and handle it in main (handle c = Srs.Console())")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
@@ -346,7 +347,7 @@ def S2c.args {r: Region} (): S2c.Args =
   else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =
-  handle r = Arena()
+  handle r = Srs.Arena()
   handle c = Srs.Console()
   handle a = Srs.Args()
   handle f = Srs.Files()

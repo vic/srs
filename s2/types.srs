@@ -45,6 +45,8 @@ enum Ty.Clash:
   case Ty.ExternSlot(line: I64, t: K.Term)
   // a request, or a call whose row has p, with no handler of p in scope (main's row must be empty)
   case Ty.UnhandledEffect(line: I64, p: Sym.Sym)
+  // an rt_* extern called outside the fns of a handler named Srs.*
+  case Ty.RtOutsideSrs(line: I64, f: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -64,8 +66,13 @@ enum Ty.Cx:
 
 // a body that runs (a constructor allocates in a Region) or a spec body, evaluated at compile time (no Region, vic Q-U4)
 enum Ty.Mode:
-  case Ty.Run
+  case Ty.Run(by: Ty.By)
   case Ty.Comptime
+
+// whose body runs: only the fns of a handler named Srs.* may call rt_* (vic 2026-11-09)
+enum Ty.By:
+  case Ty.User
+  case Ty.Srs
 
 // the substitution, the next fresh var, the clashes, the instances
 enum Ty.St:
@@ -256,7 +263,7 @@ def Ty.bad {r: Region} (st: Ty.St, line: I64): Ty.Ex =
 def Ty.call {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Cx(fns, es, ps, _, _, _, _, _) = cx
   Ty.fnNamed(fns, f) match
-    case Coll.Some(g) => Ty.callFn(cx, Ty.pureCall(cx, st, line, f), bs, line, g, targs, chosen, xs, want)
+    case Coll.Some(g) => Ty.callFn(cx, Ty.rtCall(cx, Ty.pureCall(cx, st, line, f), line, g), bs, line, g, targs, chosen, xs, want)
     case Coll.None => Ty.caseNamed(es, f) match
       case Coll.Some(co) => Ty.callCase(cx, st, bs, line, co, xs, want)
       case Coll.None => Eff.reqOf(ps, f) match
@@ -271,14 +278,17 @@ def Ty.request {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: 
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.UnhandledEffect(line, p)), bs, xs), line)
 
 // the innermost local of protocol type p
-def Ty.innermost {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = bs match
+def Ty.innermost {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = Ty.innermostFrom(s, bs, p, Coll.Nil)
+
+// seen: the names of the inner locals; a capability whose name an inner local shadows is out of reach by its name
+def Ty.innermostFrom {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, t) = b
     val isP: Bool = K.walk(s, t) match
       case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
       case _ => false
-    if isP then Coll.Some(x) else Ty.innermost(s, rest, p)
+    if isP && !Ty.memberSym(x, seen) then Coll.Some(x) else Ty.innermostFrom(s, rest, p, Coll.Cons(x, seen))
 
 // the callee's row: for each implicit capability, the caller's innermost of its protocol
 def Ty.rowCaps {r: Region} (st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Coll.List[Eff.Cap], acc: Coll.List[Sym.Sym]): Ty.Caps = cs match
@@ -408,7 +418,7 @@ def Ty.callCase {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line:
         val Ty.Cx(_, _, _, _, _, mode, _, _) = cx
         mode match
           case Ty.Comptime => Ty.Ex(st4, et, El.New(line, en, vars, name, El.Comptime, eargs))
-          case Ty.Run => Ty.innermost(Ty.subst(st4), bs, Sym.of("Region")) match
+          case Ty.Run(_) => Ty.innermost(Ty.subst(st4), bs, Sym.of("Region")) match
             case Coll.Some(reg) => Ty.Ex(st4, et, El.New(line, en, vars, name, El.In(reg), eargs))
             case Coll.None => Ty.Ex(Ty.clash(st4, Ty.UnhandledEffect(line, Sym.of("Region"))), et, El.Bad(line))
 
@@ -661,7 +671,7 @@ enum Ty.Result:
   case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait]): Ty.Cx = ds match
-  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run, Coll.sEmpty(), Eff.none())
+  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none())
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs)
     case Ast.DEnum(e) => Ty.cxOf(rest, fns, Coll.Cons(e, es), ps, hs, trs)
@@ -711,7 +721,7 @@ def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Co
     case Ast.DHandler(h) =>
       val Ast.Handler(_, hn, p, fs) = h
       val Ty.Cx(_, _, _, _, _, _, _, rows) = cx
-      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, st, fs, Eff.row(rows, hn), Coll.Nil)
+      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
       Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs), hacc), gacc)
     // a given's fns see its binders: its [] binders are theirs, its {} evidence is local
     case Ast.DGiven(g) =>
@@ -781,6 +791,27 @@ def Ty.lineOf(e: Ast.Expr): I64 = e match
   case Ast.Assign(l, _, _) => l
   case Ast.Quant(l, _, _, _, _) => l
 
+// the fns of a handler named Srs.* run as Ty.Srs: the runtime's own bodies, the only callers of rt_*
+def Ty.byHandler {r: Region} (cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows) = cx
+  val s = Sym.str(h)
+  val by: Ty.By = if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Ty.Srs else Ty.User
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(by), imp, rows)
+
+// a call of an rt_* extern anywhere but a Srs.* handler body
+def Ty.rtCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
+  val Ty.Cx(_, _, _, _, _, mode, _, _) = cx
+  val Ast.Fn(_, n, _, _, _, _, body) = g
+  val s = Sym.str(n)
+  val rt: Bool = body match
+    case Ast.Extern => Str.len(s) > 3 && Str.eq(Str.slice(s, 0, 3), "rt_")
+    case _ => false
+  mode match
+    case Ty.Run(by) => by match
+      case Ty.Srs => st
+      case Ty.User => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
+    case Ty.Comptime => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
+
 def Ty.comptime {r: Region} (cx: Ty.Cx): Ty.Cx =
   val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows) = cx
   Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp, rows)
@@ -789,11 +820,11 @@ def Ty.comptime {r: Region} (cx: Ty.Cx): Ty.Cx =
 def Ty.pureCall {r: Region} (cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
   val Ty.Cx(_, _, _, _, _, mode, imp, _) = cx
   mode match
-    case Ty.Run => st
+    case Ty.Run(_) => st
     case Ty.Comptime => if Pure.has(imp, f) then Ty.clash(st, Ty.Impure(line, f)) else st
 
 def Ty.pureHandle {r: Region} (mode: Ty.Mode, st: Ty.St, line: I64, h: Sym.Sym): Ty.St = mode match
-  case Ty.Run => st
+  case Ty.Run(_) => st
   case Ty.Comptime => Ty.clash(st, Ty.SpecHandle(line, h))
 
 // ── a match covers every case of its enum, or has a `_` arm: the first case no arm names ──

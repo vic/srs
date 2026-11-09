@@ -27,10 +27,8 @@ protocol Bell:
   op ring(): Unit : Up -> Down
 
 handler LoudBell for Bell:
-  def init(): Ptr = rt_arena_new()
-  def ring(self: Ptr): Unit =
-    rt_print("ring\n")
-    rt_arena_free(self)
+  def ring(): Unit =
+    Console.print("ring\n")
 
 // not a jump: a handle block ends its scope (rings its bell) after the call
 def rings(n: I64): I64 =
@@ -41,17 +39,18 @@ def rings(n: I64): I64 =
 def swap(a: I64, b: I64, n: I64): I64 = if n == 0 then a * 10 + b else swap(b, a, n - 1)
 
 def main(): I64 =
-  handle r = Arena()
-  rt_print_i64(down(10000000, 0))
-  rt_print("\n")
-  rt_print_i64(viaMatch(S(1), 10000000, 0))
-  rt_print("\n")
-  rt_print_i64(viaBlock(10000000, 0))
-  rt_print("\n")
-  rt_print_i64(keep(7, 10000000))
-  rt_print("\n")
-  rt_print_i64(fact(10))
-  rt_print("\n")
-  rt_print_i64(rings(2) + swap(1, 2, 3))
-  rt_print("\n")
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(down(10000000, 0))
+  Console.print("\n")
+  Console.printI64(viaMatch(S(1), 10000000, 0))
+  Console.print("\n")
+  Console.printI64(viaBlock(10000000, 0))
+  Console.print("\n")
+  Console.printI64(keep(7, 10000000))
+  Console.print("\n")
+  Console.printI64(fact(10))
+  Console.print("\n")
+  Console.printI64(rings(2) + swap(1, 2, 3))
+  Console.print("\n")
   0

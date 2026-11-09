@@ -24,26 +24,26 @@ def LT.lineOf(t: Lex.Tok): I64 = t match
   case Lex.TEof(l) => l
 
 def LT.show(t: Lex.Tok): Unit =
-  rt_print(LT.kindOf(t))
+  Console.print(LT.kindOf(t))
   t match
     case Lex.TIdent(s, _) => LT.text(s)
     case Lex.TStr(s, _) => LT.text(s)
     case Lex.TChar(s, _) => LT.text(s)
     case Lex.TOp(s, _) => LT.text(s)
     case Lex.TInt(v, _) =>
-      rt_print(":")
-      rt_print_i64(v)
+      Console.print(":")
+      Console.printI64(v)
     case _ => ()
-  rt_print("@")
-  rt_print_i64(LT.lineOf(t))
-  rt_print(" ")
+  Console.print("@")
+  Console.printI64(LT.lineOf(t))
+  Console.print(" ")
 
 def LT.text(s: Str): Unit =
-  rt_print(":")
-  rt_print(s)
+  Console.print(":")
+  Console.print(s)
 
 def LT.showAll(ts: Coll.List[Lex.Tok]): Unit = ts match
-  case Coll.Nil => rt_print("\n")
+  case Coll.Nil => Console.print("\n")
   case Coll.Cons(t, rest) =>
     LT.show(t)
     LT.showAll(rest)
@@ -57,11 +57,11 @@ def LT.why(w: Lex.Why): Str = w match
 def LT.dump {r: Region} (src: Str): Unit = Lex.lex(src) match
   case Lex.Toks(ts) => LT.showAll(ts)
   case Lex.Bad(line, w) =>
-    rt_print("bad ")
-    rt_print(LT.why(w))
-    rt_print(" @")
-    rt_print_i64(line)
-    rt_print("\n")
+    Console.print("bad ")
+    Console.print(LT.why(w))
+    Console.print(" @")
+    Console.printI64(line)
+    Console.print("\n")
 
 // indents minus dedents, and the number of TEof
 def LT.balance(ts: Coll.List[Lex.Tok], open: I64, eofs: I64): I64 = ts match
@@ -73,18 +73,20 @@ def LT.balance(ts: Coll.List[Lex.Tok], open: I64, eofs: I64): I64 = ts match
     case _ => LT.balance(rest, open, eofs)
 
 def LT.file {r: Region} (path: Str): Unit =
-  rt_print(path)
-  Lex.lex(rt_read_file(path)) match
-    case Lex.Toks(ts) => rt_print(if LT.balance(ts, 0, 0) == 1 then " ok\n" else " unbalanced\n")
+  Console.print(path)
+  Lex.lex(Files.read(path)) match
+    case Lex.Toks(ts) => Console.print(if LT.balance(ts, 0, 0) == 1 then " ok\n" else " unbalanced\n")
     case Lex.Bad(line, w) =>
-      rt_print(" bad ")
-      rt_print(LT.why(w))
-      rt_print(" @")
-      rt_print_i64(line)
-      rt_print("\n")
+      Console.print(" bad ")
+      Console.print(LT.why(w))
+      Console.print(" @")
+      Console.printI64(line)
+      Console.print("\n")
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle fs = Srs.Files()
+  handle r = Srs.Arena()
   LT.dump("def f(x: I64): I64 =\n  val y = Foo.bar(x,\n    2) // c\n  y >= 'a'\n\nenum E:\n  case A\n    \"s\"\nmain\n")
   LT.dump("a\n\tb\n")
   LT.dump("a\n    b\n  c\n")
