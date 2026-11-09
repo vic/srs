@@ -543,7 +543,28 @@ def Parse.handler {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.D
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(_, t4) => Parse.defs(t4, false, Coll.Nil) match
           case Parse.Err(l, w) => Parse.Err(l, w)
-          case Parse.Ok(fs, t5) => Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, fs)), t5)
+          case Parse.Ok(fs, t5) => Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, Parse.stateless(fs, line))), t5)
+
+// a handler with no init keeps no state (E5, vic 2026-11-09: `handler Srs.Console for Console: def print(s: Str): Unit =
+// ...`): it reads as init(): Ptr = Srs.noState() and a leading self: Ptr on each op, the shape every later phase knows
+def Parse.stateless {r: Region} (fs: Coll.List[Ast.Fn], line: I64): Coll.List[Ast.Fn] =
+  if Parse.hasInit(fs) then fs
+  else
+    val ptr = Ast.Ty(line, Sym.of("Ptr"), Coll.Nil, Ast.Inferred, Coll.Nil)
+    val init = Ast.Fn(line, Sym.of("init"), Coll.Nil, Coll.Nil, ptr, Coll.Nil, Ast.Def(Coll.Nil, Ast.Call(line, Sym.of("Srs.noState"), Coll.Nil, Coll.Nil, Coll.Nil)))
+    Coll.Cons(init, Parse.withSelf(fs, ptr))
+
+def Parse.hasInit(fs: Coll.List[Ast.Fn]): Bool = fs match
+  case Coll.Nil => false
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    if Str.eq(Sym.str(n), "init") then true else Parse.hasInit(rest)
+
+def Parse.withSelf {r: Region} (fs: Coll.List[Ast.Fn], ptr: Ast.Ty): Coll.List[Ast.Fn] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(l, n, gs, ps, ret, exit, body) = f
+    Coll.Cons(Ast.Fn(l, n, gs, Coll.Cons(Ast.Binder(l, Sym.of("self"), ptr), ps), ret, exit, body), Parse.withSelf(rest, ptr))
 
 // ── bodies: rhs := NL IND block | expr ──
 def Parse.rhs {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
