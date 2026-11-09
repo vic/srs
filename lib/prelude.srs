@@ -40,6 +40,66 @@ handler Heap for Region:
   def alloc(self: Ptr, size: I64): Ptr = rt_heap_alloc(self, size)
   def free(self: Ptr): Unit = rt_heap_free(self)
 
+// strings: pure primitives, no effect (vic 2026-11-09)
+extern def Str.len(s: Str): I64
+extern def Str.at(s: Str, i: I64): I64
+extern def Str.slice(s: Str, b: I64, e: I64): Str
+extern def Str.eq(a: Str, b: Str): Bool
+
+// the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
+// main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
+extern def rt_null(): Ptr
+
+protocol Console:
+  state Live
+  start Live
+  end Live
+  op print(s: Str): Unit : Live -> Live
+  op printI64(v: I64): Unit : Live -> Live
+  op printChar(c: I64): Unit : Live -> Live
+  op eprint(s: Str): Unit : Live -> Live
+  op eprintI64(v: I64): Unit : Live -> Live
+
+handler Srs.Console for Console:
+  def init(): Ptr = rt_null()
+  def print(self: Ptr, s: Str): Unit = rt_print(s)
+  def printI64(self: Ptr, v: I64): Unit = rt_print_i64(v)
+  def printChar(self: Ptr, c: I64): Unit = rt_print_char(c)
+  def eprint(self: Ptr, s: Str): Unit = rt_eprint(s)
+  def eprintI64(self: Ptr, v: I64): Unit = rt_eprint_i64(v)
+
+protocol Args:
+  state Live
+  start Live
+  end Live
+  op count(): I64 : Live -> Live
+  op at(i: I64): Str : Live -> Live
+
+handler Srs.Args for Args:
+  def init(): Ptr = rt_null()
+  def count(self: Ptr): I64 = rt_argc()
+  def at(self: Ptr, i: I64): Str = rt_arg(i)
+
+protocol Files:
+  state Live
+  start Live
+  end Live
+  op read(path: Str): Str : Live -> Live
+
+handler Srs.Files for Files:
+  def init(): Ptr = rt_null()
+  def read(self: Ptr, path: Str): Str = rt_read_file(path)
+
+protocol Exit:
+  state Live
+  start Live
+  end Live
+  op exit(code: I64): Unit : Live -> Live
+
+handler Srs.Exit for Exit:
+  def init(): Ptr = rt_null()
+  def exit(self: Ptr, code: I64): Unit = rt_exit(code)
+
 // a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
 def strHash(s: Str): I64 =
   var h = 2166136261
