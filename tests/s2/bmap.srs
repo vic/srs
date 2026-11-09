@@ -1,0 +1,120 @@
+// s2 COL b1: Coll.BMap (2-3-4 tree) on the workloads of imap.srs; invariants as test code: every leaf at one depth,
+// keys strictly ascending inside each node and inside the (lo, hi) window of the parent
+def T.dj {r: Region} (x: Coll.Option[I64], y: Coll.Option[I64]): Coll.Option[I64] = x match
+  case Coll.None => x
+  case Coll.Some(h) => y match
+    case Coll.None => y
+    case Coll.Some(g) => if h == g then x else Coll.None
+
+def T.up {r: Region} (x: Coll.Option[I64]): Coll.Option[I64] = x match
+  case Coll.None => x
+  case Coll.Some(h) => Coll.Some(h + 1)
+
+def T.depth {r: Region} (t: Coll.BTree[I64]): Coll.Option[I64] = t match
+  case Coll.BTip => Coll.Some(0)
+  case Coll.B2(a, _, _, b) => T.up(T.dj(T.depth(a), T.depth(b)))
+  case Coll.B3(a, _, _, b, _, _, c) => T.up(T.dj(T.dj(T.depth(a), T.depth(b)), T.depth(c)))
+  case Coll.B4(a, _, _, b, _, _, c, _, _, d) => T.up(T.dj(T.dj(T.depth(a), T.depth(b)), T.dj(T.depth(c), T.depth(d))))
+
+def T.depthOk {r: Region} (t: Coll.BTree[I64]): Bool = T.depth(t) match
+  case Coll.None => false
+  case Coll.Some(_) => true
+
+// None = unbounded
+def T.above (k: I64, lo: Coll.Option[I64]): Bool = lo match
+  case Coll.None => true
+  case Coll.Some(l) => k > l
+
+def T.below (k: I64, hi: Coll.Option[I64]): Bool = hi match
+  case Coll.None => true
+  case Coll.Some(h) => k < h
+
+def T.ordered {r: Region} (t: Coll.BTree[I64], lo: Coll.Option[I64], hi: Coll.Option[I64]): Bool = t match
+  case Coll.BTip => true
+  case Coll.B2(a, k1, _, b) => T.above(k1, lo) && T.below(k1, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), hi)
+  case Coll.B3(a, k1, _, b, k2, _, c) =>
+    T.above(k1, lo) && k1 < k2 && T.below(k2, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), Coll.Some(k2)) && T.ordered(c, Coll.Some(k2), hi)
+  case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) =>
+    T.above(k1, lo) && k1 < k2 && k2 < k3 && T.below(k3, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), Coll.Some(k2)) && T.ordered(c, Coll.Some(k2), Coll.Some(k3)) && T.ordered(d, Coll.Some(k3), hi)
+
+def T.tree (m: Coll.BMap[I64]): Coll.BTree[I64] = m match
+  case Coll.BMap(_, t) => t
+
+def T.valid {r: Region} (m: Coll.BMap[I64]): Bool = T.validT(T.tree(m))
+
+def T.validT {r: Region} (t: Coll.BTree[I64]): Bool = T.depthOk(t) && T.ordered(t, Coll.None, Coll.None)
+
+
+def T.fill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i == n then m else T.fill(Coll.bInsert(m, (i * 7919) % 100003, i), i + 1, n)
+
+def T.seq {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i > n then m else T.seq(Coll.bInsert(m, i, i), i + 1, n)
+
+def T.ifill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i == n then m else T.ifill(Coll.insert(m, (i * 7919) % 100003, i), i + 1, n)
+
+def T.iseq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i > n then m else T.iseq(Coll.insert(m, i, i), i + 1, n)
+
+def T.found {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, acc: I64): I64 =
+  if i == n then acc
+  else
+    val hit = Coll.bLookup(m, (i * 7919) % 100003) match
+      case Coll.None => 0
+      case Coll.Some(v) => if v == i then 1 else 0
+    T.found(m, i + 1, n, acc + hit)
+
+// present value, or 0 when absent (absence is counted by T.miss)
+def T.val0 {r: Region} (m: Coll.BMap[I64], k: I64): I64 = Coll.bLookup(m, k) match
+  case Coll.None => 0
+  case Coll.Some(v) => v
+
+def T.miss {r: Region} (m: Coll.BMap[I64], k: I64): I64 = Coll.bLookup(m, k) match
+  case Coll.None => 1
+  case Coll.Some(_) => 0
+
+def T.nv {r: Region} (m: Coll.IMap[I64], k: I64): Coll.Option[I64] = Coll.node(m, k) match
+  case Coll.Tip => Coll.None
+  case Coll.Bin(_, _, v, _, _) => Coll.Some(v)
+
+def T.same (x: Coll.Option[I64], y: Coll.Option[I64]): Bool = x match
+  case Coll.None => T.isNone(y)
+  case Coll.Some(h) => y match
+    case Coll.None => false
+    case Coll.Some(g) => h == g
+
+def T.isNone (x: Coll.Option[I64]): Bool = x match
+  case Coll.None => true
+  case Coll.Some(_) => false
+
+// how many k in [k, n) give the same Option in both maps
+def T.agree {r: Region} (b: Coll.BMap[I64], m: Coll.IMap[I64], k: I64, n: I64, acc: I64): I64 =
+  if k == n then acc else T.agree(b, m, k + 1, n, acc + (if T.same(Coll.bLookup(b, k), T.nv(m, k)) then 1 else 0))
+
+def T.two {r: Region} (a: Coll.BTree[I64], k: I64, b: Coll.BTree[I64]): Coll.BTree[I64] = Coll.B2(a, k, 0, b)
+
+def main(): I64 =
+  handle r = Arena()
+  val a = T.fill(Coll.bEmpty[I64](), 0, 100000)
+  rt_print_i64(Coll.bSize(a))
+  rt_print("\n")
+  rt_print_i64(if T.valid(a) then 1 else 0)
+  rt_print("\n")
+  rt_print_i64(T.found(a, 0, 100000, 0))
+  rt_print("\n")
+  val b = T.seq(Coll.bEmpty[I64](), 1, 100000)
+  rt_print_i64(Coll.bSize(b))
+  rt_print("\n")
+  rt_print_i64(if T.valid(b) then 1 else 0)
+  rt_print("\n")
+  val c = Coll.bInsert(Coll.bInsert(b, 5, 50), 5, 500)
+  rt_print_i64(T.val0(c, 5) + Coll.bSize(c) - T.miss(c, 100001))
+  rt_print("\n")
+  val sa = T.fill(Coll.bEmpty[I64](), 0, 5000)
+  val ia = T.ifill(Coll.Tip, 0, 5000)
+  rt_print_i64(T.agree(sa, ia, 0, 8000, 0))
+  rt_print("\n")
+  // negative controls: key 5 left of 3 (equal depth), then unequal leaf depth
+  val t0 = T.two(Coll.BTip, 5, Coll.BTip)
+  rt_print_i64(if T.validT(T.two(t0, 3, T.two(Coll.BTip, 9, Coll.BTip))) then 1 else 0)
+  rt_print("\n")
+  rt_print_i64(if T.validT(T.two(T.two(Coll.BTip, 1, Coll.BTip), 2, Coll.BTip)) then 1 else 0)
+  rt_print("\n")
+  0
