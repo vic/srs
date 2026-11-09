@@ -1,0 +1,97 @@
+// s2 P6 FRONT (vic-m5r.27): the lexer, as s1/lex.srs. a snippet with layout (indent, a blank line, two dedents at
+// once), a comment, a dotted member name, a newline inside ( ) (no token), a char literal, a two-character op; then
+// every error kind; then real sources lex with balanced layout and one TEof
+def LT.kindOf(t: Lex.Tok): Str = t match
+  case Lex.TIdent(_, _) => "id"
+  case Lex.TInt(_, _) => "int"
+  case Lex.TStr(_, _) => "str"
+  case Lex.TChar(_, _) => "chr"
+  case Lex.TOp(_, _) => "op"
+  case Lex.TNl(_) => "nl"
+  case Lex.TIndent(_) => "in"
+  case Lex.TDedent(_) => "de"
+  case Lex.TEof(_) => "eof"
+
+def LT.lineOf(t: Lex.Tok): I64 = t match
+  case Lex.TIdent(_, l) => l
+  case Lex.TInt(_, l) => l
+  case Lex.TStr(_, l) => l
+  case Lex.TChar(_, l) => l
+  case Lex.TOp(_, l) => l
+  case Lex.TNl(l) => l
+  case Lex.TIndent(l) => l
+  case Lex.TDedent(l) => l
+  case Lex.TEof(l) => l
+
+def LT.show(t: Lex.Tok): Unit =
+  rt_print(LT.kindOf(t))
+  t match
+    case Lex.TIdent(s, _) => LT.text(s)
+    case Lex.TStr(s, _) => LT.text(s)
+    case Lex.TChar(s, _) => LT.text(s)
+    case Lex.TOp(s, _) => LT.text(s)
+    case Lex.TInt(v, _) =>
+      rt_print(":")
+      rt_print_i64(v)
+    case _ => ()
+  rt_print("@")
+  rt_print_i64(LT.lineOf(t))
+  rt_print(" ")
+
+def LT.text(s: Str): Unit =
+  rt_print(":")
+  rt_print(s)
+
+def LT.showAll(ts: Coll.List[Lex.Tok]): Unit = ts match
+  case Coll.Nil => rt_print("\n")
+  case Coll.Cons(t, rest) =>
+    LT.show(t)
+    LT.showAll(rest)
+
+def LT.why(w: Lex.Why): Str = w match
+  case Lex.Tab => "tab"
+  case Lex.BadDedent => "bad dedent"
+  case Lex.Unterminated => "unterminated"
+  case Lex.BadChar => "bad char"
+
+def LT.dump {r: Region} (src: Str): Unit = Lex.lex(src) match
+  case Lex.Toks(ts) => LT.showAll(ts)
+  case Lex.Bad(line, w) =>
+    rt_print("bad ")
+    rt_print(LT.why(w))
+    rt_print(" @")
+    rt_print_i64(line)
+    rt_print("\n")
+
+// indents minus dedents, and the number of TEof
+def LT.balance(ts: Coll.List[Lex.Tok], open: I64, eofs: I64): I64 = ts match
+  case Coll.Nil => if open == 0 && eofs == 1 then 1 else 0
+  case Coll.Cons(t, rest) => t match
+    case Lex.TIndent(_) => LT.balance(rest, open + 1, eofs)
+    case Lex.TDedent(_) => LT.balance(rest, open - 1, eofs)
+    case Lex.TEof(_) => LT.balance(rest, open, eofs + 1)
+    case _ => LT.balance(rest, open, eofs)
+
+def LT.file {r: Region} (path: Str): Unit =
+  rt_print(path)
+  Lex.lex(rt_read_file(path)) match
+    case Lex.Toks(ts) => rt_print(if LT.balance(ts, 0, 0) == 1 then " ok\n" else " unbalanced\n")
+    case Lex.Bad(line, w) =>
+      rt_print(" bad ")
+      rt_print(LT.why(w))
+      rt_print(" @")
+      rt_print_i64(line)
+      rt_print("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  LT.dump("def f(x: I64): I64 =\n  val y = Foo.bar(x,\n    2) // c\n  y >= 'a'\n\nenum E:\n  case A\n    \"s\"\nmain\n")
+  LT.dump("a\n\tb\n")
+  LT.dump("a\n    b\n  c\n")
+  LT.dump("x = \"abc\n")
+  LT.dump("a $ b\n")
+  LT.file("lib/prelude.srs")
+  LT.file("tests/rules.srs")
+  LT.file("tests/file_ok.srs")
+  LT.file("s2/coll.srs")
+  0
