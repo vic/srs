@@ -16,7 +16,8 @@ LIBS=$(sed -n 's/^LIBS="\(.*\)"$/\1/p' tests/run.sh)
 # the corpus has the S1 file list of its own time: every lib/ and s1/ file it holds, in the order of S1SRC
 CS1=""; for f in $S1SRC; do [ -f "$C/$f" ] && CS1="$CS1 $C/$f"; done
 CLEAN=${CS1% "$C"/s1/main.srs}
-CLIBS=""; for f in $LIBS; do CLIBS="$CLIBS $C/$f"; done
+# the corpus keeps the test libs at their old path tests/
+CLIBS=""; for f in $LIBS; do CLIBS="$CLIBS $C/${f/tests\/s1\//tests/}"; done
 test -x "$B/s2" || { echo "no $B/s2: run tests/run.sh first" >&2; exit 1; }
 # every pass test of the corpus checked and emitted in one command
 printf '%s\n' "for t in $C/tests/*.srs; do \"$B/s2\" $CLIBS \"\$t\" > /dev/null; done" > "$B/bench-tests.sh"

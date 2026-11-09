@@ -1,0 +1,20 @@
+// pass: vic-u2d.3 U3 value params on types (vic Q-U3 a: a type body branches on values by match on literals);
+// value args are evaluated at compile time (U2): literals, pure def calls, the type's own value params
+type Bits (n: I64) = n match
+  case 8 => Bool
+  case _ => I64
+type Twice (n: I64) = Bits(n * 2)
+type TPick (b: Bool) = b match
+  case true => Str
+  case false => I64
+def dbl(x: I64): I64 = x * 2
+def tb1(x: Bits(8)): Bool = x
+def tb2(x: Bits(12)): I64 = x + 1
+def tb3(x: Bits(dbl(4))): Bool = !x
+def tb4(x: Twice(4)): Bool = x
+def tb5(x: TPick(true)): Str = x
+def tb6(x: TPick(1 == 2)): I64 = x
+def main(): I64 =
+  if tb1(true) && tb3(false) && tb4(true) then rt_print_i64(tb2(41) + tb6(0)) else ()
+  rt_print(tb5(" ok\n"))
+  0

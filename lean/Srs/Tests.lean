@@ -1,6 +1,6 @@
 /-
-The Lean checker agrees with S1 on the effect tests of tests/ and tests/neg/ (same verdict).
-caps 0, 1 = Region (lib/prelude.srs); cap 2 = CFile (tests/file.lib). vars 0 = xs, 1 = ys.
+The Lean checker agrees with S1 on the effect tests of tests/s1/ and tests/s1/neg/ (same verdict).
+caps 0, 1 = Region (lib/prelude.srs); cap 2 = CFile (tests/s1/file.lib). vars 0 = xs, 1 = ys.
 -/
 import Srs.Model
 

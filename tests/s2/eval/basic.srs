@@ -1,0 +1,55 @@
+// pass: vic-u2d.2 U2 comptime evaluator. each eval line (name, value) holds when s1 --eval runs name at compile time
+// eval: ce1 9
+// eval: ce2 true
+// eval: ce3 6
+// eval: ce4 3
+// eval: ce5 ECons(1, ECons(2, ENil))
+// eval: ce6 2
+// eval: ce7 false
+// eval: ce8 abc
+// eval: ce9 3
+// eval: ce10 4
+// eval: ce11 1
+enum EList:
+  case ENil
+  case ECons(h: I64, t: EList)
+def csq(x: I64): I64 = x * x
+def cEven(n: I64): Bool = if n == 0 then true else cOdd(n - 1)
+def cOdd(n: I64): Bool = if n == 0 then false else cEven(n - 1)
+// var + while
+def cSumTo(n: I64): I64 =
+  var i = 0
+  var s = 0
+  while i < n do
+    i = i + 1
+    s = s + i
+  s
+def cLen(xs: EList): I64 = xs match
+  case ENil => 0
+  case ECons(_, t) => 1 + cLen(t)
+def ce1(): I64 = csq(3)
+def ce2(): Bool = cEven(10)
+def ce3(): I64 = cSumTo(3)
+def ce4(): I64 = 7 / 2
+spec def ce5(): EList = ECons(1, ECons(2, ENil))
+spec def ce6(): I64 = cLen(ECons(1, ECons(2, ENil)))
+// && does not run its right side when the left is false
+def ce7(): Bool = false && 1 / 0 == 0
+def ce8(): Str = rt_str_slice("xabcx", 1, 4)
+def ce9(): I64 = 0 - (0 - 3)
+// impure: not run at compile time
+def cNoisy(): I64 =
+  rt_print("x")
+  1
+// a generic call (XInst in e2)
+def cId [A: Type] (x: A): A = x
+def ce10(): I64 = cId(4)
+// a val in the loop body shadows x only inside the body
+def ce11(): I64 =
+  var x = 1
+  var i = 0
+  while i < 1 do
+    val x = 5
+    i = i + x
+  x
+def main(): I64 = 0

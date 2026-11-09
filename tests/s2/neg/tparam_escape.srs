@@ -1,0 +1,20 @@
+// expect: srs:18: error: value escapes the scope of its region 'r'
+// the callee returns its arg: the result keeps the arg region
+// a [] binder result lives in the regions of the call's args (vic-m5r.15): the callee may return its arg (pick) or
+// turn an A into a B through a given (via), so the caller's result keeps every arg region
+enum Esc.Box:
+  case Esc.Box(v: I64)
+
+trait Esc.Id [A: Type] [B: Type]:
+  def conv(x: A): B
+
+given Esc.Id[Esc.Box, Esc.Box]:
+  def conv(x: Esc.Box): Esc.Box = x
+
+def Esc.pick [A: Type] (x: A): A = x
+def Esc.via [A: Type] [B: Type] {c: Esc.Id[A, B]} (x: A): B = c.conv(x)
+
+def Esc.leak(): Esc.Box =
+  handle r = Arena()
+  Esc.pick(Esc.Box(1))
+def main(): I64 = 0

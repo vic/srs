@@ -1,0 +1,9 @@
+// expect: line 7: a spec def calls only pure fns, not pe
+// mutual recursion: po is impure, so pe is impure too
+def pe(n: I64): Bool = if n == 0 then true else po(n - 1)
+def po(n: I64): Bool =
+  rt_print("o")
+  if n == 0 then false else pe(n - 1)
+spec def g(n: I64): Bool = pe(n)
+def main(): I64 = 0
+// s1: a spec def calls only pure defs and pure externs, not 'pe'

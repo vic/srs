@@ -1,0 +1,10 @@
+// expect: line 8: a value arg has no compile-time value in Bits
+type Bits (n: I64) = n match
+  case 8 => Bool
+  case _ => I64
+def noisy(): I64 =
+  rt_print("x")
+  8
+def tf(x: Bits(noisy())): Bool = x
+def main(): I64 = 0
+// s1: comptime call of a fn with effects: 'noisy'

@@ -385,7 +385,7 @@ def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
   case Ast.While(_, c, b) =>
     rt_print("while ")
     Ast.expr(c, ind)
-    // a match condition ends with its arms: do starts the next line (as tests/contracts.srs)
+    // a match condition ends with its arms: do starts the next line (as tests/s2/prog/contracts.srs)
     c match
       case Ast.Match(_, _, _) =>
         Ast.line(ind)
@@ -598,7 +598,7 @@ def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
     case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
     case Ast.Spec(cs, e) => Ast.withClauses(cs, e, ind)
 
-// = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/contracts.srs)
+// = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)
 def Ast.withClauses {r: Region} (cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
   case Coll.Nil =>
     rt_print(" =")

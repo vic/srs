@@ -1,0 +1,10 @@
+// pass: var caps are flow state (C8): reassigned off a region, var lives after that region ends
+def main(): I64 =
+  handle a = Arena()
+  handle b = Heap()
+  var xs = build{a}(3)
+  xs = build{b}(2)
+  a.free()
+  rt_print_i64(sum(xs))
+  rt_print("\n")
+  0

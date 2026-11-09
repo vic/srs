@@ -1,6 +1,6 @@
 /-
 Backend oracle (L1): the generated Lean S1 (Impl, from s1/*.srs) runs the srs pipeline lex, parse, check on every
-test program and gives the C-compiled S1 verdict: tests/*.srs accepted, tests/neg/*.srs rejected (rt_exit = none).
+test program and gives the C-compiled S1 verdict: tests/s1/*.srs accepted, tests/s1/neg/*.srs rejected (rt_exit = none).
 A mismatch fails the build: the Lean backend changed the meaning of the program.
 -/
 import Srs.Impl.S1
@@ -23,12 +23,12 @@ def implAccepts (srcs : List String) : IO Bool := do
   | none => return false
 
 def checkVerdicts : IO Unit := do
-  let libs := ["../lib/prelude.srs", "../lib/kanren.srs", "../lib/datalog.srs", "../tests/list.lib", "../tests/file.lib"]
+  let libs := ["../lib/prelude.srs", "../lib/kanren.srs", "../lib/datalog.srs", "../tests/s1/list.lib", "../tests/s1/file.lib"]
   let dir (d : String) : IO (List String) := do
     let es ← System.FilePath.readDir d
     return (es.toList.map (·.path.toString)).filter (·.endsWith ".srs") |>.mergeSort
-  let pos ← dir "../tests"
-  let neg ← dir "../tests/neg"
+  let pos ← dir "../tests/s1"
+  let neg ← dir "../tests/s1/neg"
   if pos.isEmpty || neg.isEmpty then throw (IO.userError "no test programs found")
   for p in pos do
     unless (← implAccepts (libs ++ [p])) do throw (IO.userError s!"Impl rejects {p}, S1 accepts it")

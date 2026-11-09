@@ -404,12 +404,14 @@ def D.fireAll {r: Region} (rels0: Coll.IMap[D.Rel], rs: Coll.List[D.CRule], rd: 
       case D.NextPass => D.fireAt(rels0, rl, plans, rd, rels)
     D.fireAll(rels0, rest, rd, pass, rels2)
 
-// a round ends: this round's rows become the recent ones; the number of new rows in all relations
+// a round ends: this round's rows become the recent ones; the number of new rows in all relations. a relation with no
+// recent and no fresh rows is the same record after the round: it stays as it is in acc (which starts as rels)
 def D.advance {r: Region} (rels: Coll.IMap[D.Rel], id: I64, k: I64, acc: Coll.IMap[D.Rel], news: I64): D.Next =
   if id == k then D.Next(acc, news)
   else
-    val D.Rel(ic, set, cols, all, _, fr) = D.relOf(rels, id)
-    D.advance(rels, id + 1, k, Coll.insert(acc, id, D.Rel(ic, set, cols, all, fr, 0)), news + fr)
+    val D.Rel(ic, set, cols, all, rc, fr) = D.relOf(rels, id)
+    if rc == 0 && fr == 0 then D.advance(rels, id + 1, k, acc, news)
+    else D.advance(rels, id + 1, k, Coll.insert(acc, id, D.Rel(ic, set, cols, all, fr, 0)), news + fr)
 
 enum D.Next:
   case D.Next(rels: Coll.IMap[D.Rel], news: I64)
@@ -424,7 +426,8 @@ def D.firstRound(): I64 = D.inputRound() + 1
 
 // round rd reads rows of rounds < rd
 def D.rounds {r: Region} (rs: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rd: I64, k: I64, pass: D.Pass): D.Stage =
-  val D.Next(rels2, news) = D.advance(D.fireAll(rels, rs, rd, pass, rels), 0, k, Coll.Tip, 0)
+  val fired = D.fireAll(rels, rs, rd, pass, rels)
+  val D.Next(rels2, news) = D.advance(fired, 0, k, fired, 0)
   if news == 0 then D.Stage(rels2, rd + 1) else D.rounds(rs, rels2, rd + 1, k, D.NextPass)
 
 // ── strata: a head's stratum is at least each positive body relation's, above each negated one's ──
@@ -620,7 +623,7 @@ def D.solve {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.
       D.overHead(crs, st, k, Coll.None) match
         case Coll.Some(cyc) => D.NegCycle(cyc)
         case Coll.None =>
-          val D.Next(rels, _) = D.advance(rels0, 0, k, Coll.Tip, 0)
+          val D.Next(rels, _) = D.advance(rels0, 0, k, rels0, 0)
           D.Solved(D.Model(tab, D.runStrata(crs, st, 0, D.topOf(st, 0, k, 0), rels, D.firstRound(), k)))
 
 def D.rowsOf {r: Region} (rows: Coll.List[D.Row], acc: Coll.List[Coll.List[D.Val]]): Coll.List[Coll.List[D.Val]] = rows match

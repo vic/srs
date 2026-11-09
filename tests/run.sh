@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # srs gate, self-hosted (C10): bootstrap/seed.c (srs, C) builds S1; S1 compiles its own src (fixpoint);
-# tests/*.srs: S1 compile + run, stdout == .out; tests/neg/*.srs: S1 rejects with "// expect:" text.
+# tests/s1/*.srs: S1 compile + run, stdout == .out; tests/s1/neg/*.srs: S1 rejects with "// expect:" text.
 # S0 (zig) only when the seed cannot build the src: s0-bootstrap.
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"
@@ -10,7 +10,7 @@ CC="zig cc -std=gnu11 -O1 -w"
 # the compiler links static on Linux (musl): no dynamic loader per compile (vic-5r9: -13% instr on a small program)
 case "$(uname -s)" in Linux) CCS="$CC -static -target $(uname -m)-linux-musl";; *) CCS="$CC";; esac
 S1SRC="lib/prelude.srs lib/kanren.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs s1/store.srs s1/main.srs"
-LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/list.lib tests/file.lib"
+LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/s1/list.lib tests/s1/file.lib"
 fail=0
 timeout 120 $CCS -o "$B/seed" bootstrap/seed.c rt/srs_rt.c || exit 1
 timeout 10 "$B/seed" $S1SRC > "$B/s1.c" && timeout 120 $CCS -o "$B/s1" "$B/s1.c" rt/srs_rt.c || exit 1
@@ -18,12 +18,12 @@ timeout 10 "$B/s1" $S1SRC > "$B/s2.c" && timeout 120 $CCS -o "$B/s2" "$B/s2.c" r
 timeout 10 "$B/s2" $S1SRC > "$B/s3.c" || exit 1
 if cmp -s "$B/s2.c" "$B/s3.c"; then echo "ok fixpoint s2.c == s3.c"; else echo "FAIL fixpoint"; fail=1; fi
 if cmp -s bootstrap/seed.c "$B/s2.c"; then echo "ok seed == s2.c"; else echo "FAIL seed stale: seed-update"; fail=1; fi
-for t in tests/*.srs; do
+for t in tests/s1/*.srs; do
   n=$(basename "$t" .srs)
   timeout 2 "$B/s2" $LIBS "$t" > "$B/$n.c" || { echo "FAIL $n (s1)"; fail=1; continue; }
   timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; fail=1; continue; }
   out=$(timeout 1 "$B/$n"); code=$?
-  if [ $code -ne 0 ] || [ "$out" != "$(cat tests/$n.out)" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
+  if [ $code -ne 0 ] || [ "$out" != "$(cat tests/s1/$n.out)" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
 # s2 is functional (vic-m5r.14, vic: "NO `var` everything `val`"): no var, no while, no assignment in s2/*.srs;
 # armed: the pattern must hit 3 known bad lines and no good line, else the check proves nothing
@@ -55,17 +55,27 @@ for t in tests/s2/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
-# tests/*.srs compiled by s2c1 (parity with s1, vic-m5r.32); S2C_TODO = not yet in s2c (type decls, TLEVEL bead
-# vic-m5r.30): each prints "todo", and one that passes is a FAIL (the list must shrink, never go stale)
-S2C_TODO=" "
-for t in tests/*.srs; do
+# the s2 suite (vic 2026-11-09: only s2 survives, tests/s2 stands alone): tests/s2/prog/*.srs compiled by s2c1, run,
+# stdout == .out; tests/s2/neg/*.srs rejected by s2c1 (exit 1) with every "// expect:" text. a test named in
+# tests/s2/todo is not yet in s2c: it prints "todo", and one that passes is a FAIL (the list only shrinks)
+S2LIBS="lib/prelude.srs lib/kanren.srs lib/datalog.srs tests/s2/prog/list.lib tests/s2/prog/file.lib"
+todo() { grep -qx "$1" tests/s2/todo; }
+verdict() { # name pass
+  if todo "$1"; then if [ "$2" = 1 ]; then echo "FAIL $1 passes: remove it from tests/s2/todo"; fail=1; else echo "todo $1"; fi
+  elif [ "$2" = 1 ]; then echo "ok $1"; else echo "FAIL $1 $3"; fail=1; fi
+}
+for t in tests/s2/prog/*.srs; do
   n=$(basename "$t" .srs); m=s2c1_$n; pass=0
-  timeout 5 "$B/s2c1" $LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
-    && out=$(timeout 1 "$B/$m") && [ "$out" = "$(cat tests/$n.out)" ] && pass=1
-  case "$S2C_TODO" in
-    *" $n "*) if [ $pass = 1 ]; then echo "FAIL $m passes: remove it from S2C_TODO"; fail=1; else echo "todo $m"; fi;;
-    *) if [ $pass = 1 ]; then echo "ok $m"; else echo "FAIL $m"; fail=1; fi;;
-  esac
+  timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
+    && out=$(timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+  verdict "prog/$n" $pass
+done
+for t in tests/s2/neg/*.srs; do
+  n=$(basename "$t" .srs); pass=1
+  msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
+  wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -eq 1 ] && [ -n "$wants" ] || pass=0
+  while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
+  verdict "neg/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
@@ -81,9 +91,9 @@ else echo "FAIL s2c type level errors $c1 $m1 / $c2 $m2"; fail=1; fi
 # s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }
 # self tail calls run in constant C stack with no C optimization (vic-m5r.10): tailcall at -O0 (C -O1 hides a missing loop)
-timeout 60 $CC -O0 -o "$B/tailcall0" "$B/tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/tailcall0") && [ "$out" = "$(cat tests/tailcall.out)" ] && echo "ok tailcall -O0" || { echo "FAIL tailcall -O0"; fail=1; }
+timeout 60 $CC -O0 -o "$B/tailcall0" "$B/tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/tailcall0") && [ "$out" = "$(cat tests/s1/tailcall.out)" ] && echo "ok tailcall -O0" || { echo "FAIL tailcall -O0"; fail=1; }
 # every "// expect: msg" line must be printed: errors are data, main reports them all (vic-ngq); armed: 0 lines = FAIL
-for t in tests/neg/*.srs; do
+for t in tests/s1/neg/*.srs; do
   n=$(basename "$t" .srs)
   msg=$(timeout 2 "$B/s2" $LIBS "$t" 2>&1 >/dev/null); code=$?
   bad=""; [ $code -eq 1 ] || bad=" exit=$code"
@@ -92,7 +102,7 @@ for t in tests/neg/*.srs; do
   if [ -z "$bad" ]; then echo "ok neg/$n"; else echo "FAIL neg/$n$bad msg=$msg"; fail=1; fi
 done
 # content hashes (vic-uw3 H1): `s1 --hash` prints "name hash"; each "// same: a b" / "// differ: a b" line must hold
-for t in tests/hash/*.srs; do
+for t in tests/s1/hash/*.srs; do
   n=$(basename "$t" .srs)
   timeout 2 "$B/s2" --hash lib/prelude.srs "$t" > "$B/$n.hash" 2>&1 || { echo "FAIL hash/$n $(head -1 "$B/$n.hash")"; fail=1; continue; }
   bad=""
@@ -108,7 +118,7 @@ for t in tests/hash/*.srs; do
 done
 # the comptime evaluator (vic-u2d.2): `s1 --eval` prints "name value" for each nullary pure def; each
 # "// eval: name value" line must be printed; a test whose first line is "// expect: msg" must be rejected with msg
-for t in tests/eval/*.srs; do
+for t in tests/s1/eval/*.srs; do
   n=$(basename "$t" .srs); want=$(sed -n "1s|^// expect: ||p" "$t")
   out=$(timeout 2 "$B/s2" --eval lib/prelude.srs "$t" 2>&1); code=$?
   if [ -n "$want" ]; then
@@ -125,7 +135,7 @@ for t in tests/eval/*.srs; do
 done
 # the store (vic-uw3 H2): cold writes every entry, warm writes none, a cut entry reads as bad (a miss)
 rm -rf "$SRS_STORE"
-st() { timeout 2 "$B/s2" --store-check lib/prelude.srs tests/hash/basic.srs 2>&1; }
+st() { timeout 2 "$B/s2" --store-check lib/prelude.srs tests/s1/hash/basic.srs 2>&1; }
 cold=$(st); warm=$(st)
 e=$(grep -rl I64 "$SRS_STORE" | head -1); cp "$e" "$B/store.keep"
 head -c 30 "$B/store.keep" > "$e"; cut=$(st)
