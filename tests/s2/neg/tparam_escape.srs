@@ -1,4 +1,4 @@
-// expect: line 18: value escapes the scope of its region r
+// expect: error[region-escape]
 // the callee returns its arg: the result keeps the arg region
 // a [] binder result lives in the regions of the call's args (vic-m5r.15): the callee may return its arg (pick) or
 // turn an A into a B through a given (via), so the caller's result keeps every arg region
@@ -19,3 +19,4 @@ def Esc.leak(): Esc.Box =
   Esc.pick(Esc.Box(1))
 def main(): I64 = 0
 // s1: srs:18: error: value escapes the scope of its region 'r'
+// expect: --> tests/s2/neg/tparam_escape.srs:18

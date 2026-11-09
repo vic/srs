@@ -1,7 +1,8 @@
-// expect: line 6: op not allowed in this state of capability two
+// expect: error[op-not-allowed]
 def two {r: Region} (): I64 = sum(build(2))
 def main(): I64 =
   handle r = Arena()
   r.free()
   two()
 // s1: needs 'r' in state Open, it is Freed
+// expect: --> tests/s2/neg/call_freed.srs:6

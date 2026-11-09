@@ -1,4 +1,4 @@
-// expect: line 8: a spec def calls only pure fns, not sh
+// expect: error[impure-call]
 // a method call on trait evidence: the given chosen is not known here, so sh is impure
 trait Show [A: Type]:
   def show(x: A): I64
@@ -8,3 +8,4 @@ def sh {s: Show[I64]} (x: I64): I64 = s.show(x)
 spec def g(x: I64): I64 = sh(x)
 def main(): I64 = 0
 // s1: a spec def calls only pure defs and pure externs, not 'sh'
+// expect: --> tests/s2/neg/pure_evidence.srs:8

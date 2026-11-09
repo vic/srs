@@ -1,4 +1,4 @@
-// expect: line 9: a capability ends in another state than the exit fact of d
+// expect: error[exit-state]
 protocol Door:
   state Shut, Open1, Open2
   start Shut
@@ -9,3 +9,4 @@ protocol Door:
 def once {d: Door} <at(d, Shut), reach(Shut, t)> (): I64 <at(d, t)> = d.knock()
 def main(): I64 = 0
 // s1: capability must end in its declared state
+// expect: --> tests/s2/neg/rule_reach.srs:9
