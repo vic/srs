@@ -1,0 +1,15 @@
+// expect: error[capability-not-ended]
+// Lamp must stop On: leaving it Off breaks the protocol (the facts check is the same as with `protocol`)
+capability Lamp:
+  state Off, On
+  start Off
+  stop On
+  def on <Off> (): Unit <On>
+
+handler HLamp for Lamp:
+  def on(): Unit = ()
+
+def main(): I64 =
+  handle l = HLamp()
+  0
+// expect: --> tests/s2/neg/cap_order.srs:13
