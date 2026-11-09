@@ -57,7 +57,7 @@ for t in tests/s2/*.srs; do
 done
 # tests/*.srs compiled by s2c1 (parity with s1, vic-m5r.32); S2C_TODO = not yet in s2c (type decls, TLEVEL bead
 # vic-m5r.30): each prints "todo", and one that passes is a FAIL (the list must shrink, never go stale)
-S2C_TODO=" type_evidence typelambda type_values "
+S2C_TODO=" "
 for t in tests/*.srs; do
   n=$(basename "$t" .srs); m=s2c1_$n; pass=0
   timeout 5 "$B/s2c1" $LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
@@ -71,6 +71,13 @@ done
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?
 if [ $code -eq 1 ] && [ "$msg" = "line 1: type mismatch" ] && [ ! -s "$B/s2c_bad.c" ]; then echo "ok s2c clash exit 1"; else echo "FAIL s2c clash exit=$code msg=$msg"; fail=1; fi
+# type level errors are data too: a looping alias runs out of fuel, a value match with no case for its arg is a reject
+printf 'type Loop = Loop\ndef main(): Loop = 0\n' > "$B/s2c_tl1.srs"
+printf 'type W (n: I64) = n match\n  case 1 => I64\ndef main(): W(2) = 0\n' > "$B/s2c_tl2.srs"
+m1=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_tl1.srs" 2>&1 >/dev/null); c1=$?
+m2=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_tl2.srs" 2>&1 >/dev/null); c2=$?
+if [ $c1 -eq 1 ] && [ "$m1" = "line 1: type reduction ran out of fuel at Loop" ] && [ $c2 -eq 1 ] && [ "$m2" = "line 3: no case of the match type matches in W" ]; then echo "ok s2c type level errors"
+else echo "FAIL s2c type level errors $c1 $m1 / $c2 $m2"; fail=1; fi
 # s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }
 # self tail calls run in constant C stack with no C optimization (vic-m5r.10): tailcall at -O0 (C -O1 hides a missing loop)
