@@ -1,0 +1,12 @@
+// expect: error[given-row]
+// the given's row is a subset of its trait method's capabilities (vic Q2): Show.show declares Region only
+trait Show [A: Type]:
+  def show {Region} (x: A): I64
+
+given Show[I64]:
+  def show(x: I64): I64 =
+    Console.print("x")
+    x
+
+def main(): I64 = 0
+// expect: --> tests/s2/neg/given_row.srs:8

@@ -262,6 +262,7 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Emit.suffix(Emit.grAll(cx, fi, ts))
     Console.print(")")
   case El.Op(_, recv, ty, op, args) => Emit.op(cx, fi, env, recv, Emit.gr(cx, fi, ty), op, args)
+  case El.TCall(_, ty, op, caps, args) => Emit.tcall(cx, fi, env, Emit.gr(cx, fi, ty), op, caps, args)
   case El.Bin(_, op, l, x) =>
     Console.print("(")
     Emit.ex(cx, fi, env, Emit.Inner, l)
@@ -547,15 +548,21 @@ def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, 
             else ()
             Console.print("r_; })")
           case Coll.None => Console.print("0")
-      case Coll.None =>
-        Console.print("g_")
-        Emit.id(pn)
-        Emit.suffix(targs)
-        Console.print("_")
-        Emit.id(op)
-        Console.print("(")
-        Emit.args(cx, fi, env, args, Emit.First)
-        Console.print(")")
+      case Coll.None => Console.print("0")
+  case _ => Console.print("0")
+
+// a trait method on {} evidence of a ground goal type: a static call to the given's fn, the caller's capabilities first
+def Emit.tcall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, ty: K.Term, op: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit = ty match
+  case K.Con(tn, targs) =>
+    Console.print("g_")
+    Emit.id(tn)
+    Emit.suffix(targs)
+    Console.print("_")
+    Emit.id(op)
+    Console.print("(")
+    Emit.capArgs(env, caps, Emit.First)
+    Emit.args(cx, fi, env, args, if Coll.length(caps) == 0 then Emit.First else Emit.Comma)
+    Console.print(")")
   case _ => Console.print("0")
 
 def Emit.opTys(cx: Emit.Cx, ps: Coll.List[Ast.Binder]): Unit = ps match
@@ -844,6 +851,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.New(_, en, ts, _, _, args) => Emit.exsTys(cx, fi, args, Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc))
   case El.Nullary(_, en, ts, _) => Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc)
   case El.Op(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
+  case El.TCall(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
   case El.Bin(_, _, l, x) => Emit.exTys(cx, fi, x, Emit.exTys(cx, fi, l, acc))
   case El.Un(_, _, x) => Emit.exTys(cx, fi, x, acc)
   case El.If(_, c, t, x) => Emit.exTys(cx, fi, x, Emit.exTys(cx, fi, t, Emit.exTys(cx, fi, c, acc)))

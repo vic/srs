@@ -147,6 +147,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.NotInHead(l, x) => S2c.diag(fs, "binder-not-in-head", l, "a given [] binder is not in its head:", S2c.Name(x), "use each [] binder in the given's head")
       case Ty.ExternSlot(l, t) => S2c.diag(fs, "extern-slot", l, "an extern [] binder is a pointer (void*), not", S2c.Type(t), "call the extern at an enum or Ptr type")
       case Ty.UnhandledEffect(l, p) => S2c.diag(fs, "unhandled-effect", l, "effect not handled:", S2c.Name(p), "open a handler of it in an enclosing block (handle x = H()): main must handle every effect it needs")
+      case Ty.GivenRow(l, p) => S2c.diag(fs, "given-row", l, "a given fn uses a capability its trait method does not declare:", S2c.Name(p), "add it to the trait method's {} binders (def show {Console} (x: A): Str), or remove the request")
       case Ty.RtOutsideSrs(l, f) => S2c.diag(fs, "rt-outside-srs", l, "rt_* is called only in the body of a Srs.* handler, not here:", S2c.Name(f), "request the effect (Console.print(s)) and handle it in main (handle c = Srs.Console())")
       case Ty.ValAtRunTime(l, x) => S2c.diag(fs, "val-at-run-time", l, "a top-level val is a compile-time value; run-time code cannot name it yet:", S2c.Name(x), "use it from another top-level val, or call a def")
     S2c.showClashes(fs, s, rest)
