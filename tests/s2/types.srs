@@ -132,14 +132,14 @@ def TT.calls {r: Region} (s: Coll.IMap[K.Term], e: El.Expr): Unit = e match
     rt_print("] caps")
     TT.syms(caps)
     rt_print("\n")
-  case El.New(_, en, ts, c, reg, args) =>
+  case El.New(_, en, ts, c, at, args) =>
     TT.callsAll(s, args)
     rt_print("new ")
     rt_print(Sym.str(c))
     rt_print(" : ")
     TT.term(K.reify(s, K.Con(en, ts)))
     rt_print(" in ")
-    rt_print(Sym.str(reg))
+    TT.alloc(at)
     rt_print("\n")
   case El.Nullary(_, en, ts, c) =>
     rt_print(Sym.str(c))
@@ -242,7 +242,7 @@ def TT.badsStmts(xs: Coll.List[El.Stmt]): I64 = xs match
 def TT.insts {r: Region} (is: Coll.List[Mono.Inst]): Unit = is match
   case Coll.Nil => ()
   case Coll.Cons(i, rest) =>
-    val Mono.Inst(f, sub) = i
+    val Mono.Inst(f, sub, _) = i
     val El.Fn(_, n, tps, _, _, _, _) = f
     tps match
       case Coll.Nil => ()
@@ -263,14 +263,14 @@ def TT.subArgs {r: Region} (tps: Coll.List[Sym.Sym], sub: Coll.List[Ty.Bind], ac
 def TT.genericCount(is: Coll.List[Mono.Inst], n: I64): I64 = is match
   case Coll.Nil => n
   case Coll.Cons(i, rest) =>
-    val Mono.Inst(f, _) = i
+    val Mono.Inst(f, _, _) = i
     val El.Fn(_, _, tps, _, _, _, _) = f
     TT.genericCount(rest, n + (if Coll.length(tps) > 0 then 1 else 0))
 
 def TT.openCount(is: Coll.List[Mono.Inst], n: I64): I64 = is match
   case Coll.Nil => n
   case Coll.Cons(i, rest) =>
-    val Mono.Inst(_, sub) = i
+    val Mono.Inst(_, sub, _) = i
     TT.openCount(rest, n + TT.openSub(sub))
 
 def TT.openSub(sub: Coll.List[Ty.Bind]): I64 = sub match
@@ -278,3 +278,7 @@ def TT.openSub(sub: Coll.List[Ty.Bind]): I64 = sub match
   case Coll.Cons(b, rest) =>
     val Ty.Bind(_, t) = b
     (if Ty.groundT(t) then 0 else 1) + TT.openSub(rest)
+
+def TT.alloc(a: El.Alloc): Unit = a match
+  case El.In(reg) => rt_print(Sym.str(reg))
+  case El.Comptime => rt_print("comptime")
