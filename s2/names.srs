@@ -201,7 +201,8 @@ def Names.binderNames(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, _) = b
-    Names.binderNames(rest, Coll.Cons(x, acc))
+    // `_` is not bound (vic 2026-11-09)
+    Names.binderNames(rest, if Str.eq(Sym.str(x), "_") then acc else Coll.Cons(x, acc))
 
 def Names.member(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
   case Coll.Nil => false
