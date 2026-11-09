@@ -1,0 +1,16 @@
+// pass: multi-shot handler, C3 (vic-hm63): two top-level chooses run the rest of the block 4 times; done counts each leaf
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+def count(): I64 =
+  handle nd = Count()
+  val a = NonDet.choose()
+  val b = NonDet.choose()
+  0
+def main(): I64 =
+  handle io = Srs.Console()
+  Console.printI64(count())
+  Console.print("\n")
+  0

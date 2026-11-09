@@ -13,6 +13,11 @@ enum El.Expr:
   // a constructor: its enum at targs, allocated where at says
   case El.New(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym, at: El.Alloc, args: Coll.List[El.Expr])
   case El.Nullary(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym)
+  // the rest of a block after a multi-shot handle x = h(args) (vic-hm63 C3): its value has the block type a; the whole is
+  // the handler's answer ans
+  case El.MHandled(line: I64, x: Sym.Sym, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr], rest: El.Expr, a: K.Term, ans: K.Term)
+  // resume k(arg) in a multi-shot op
+  case El.Resume(line: I64, k: Sym.Sym, arg: El.Expr)
   // recv.op(args): an op of the capability recv's protocol
   case El.Op(line: I64, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr])
   // recv.op(args) on {} evidence of trait type ty: the given's fn, with the caller's capability for each of the trait
@@ -53,7 +58,7 @@ enum El.Body:
 
 // handler name for protocol proto: its fns (init, then the ops)
 enum El.Handler:
-  case El.Handler(name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[El.Fn])
+  case El.Handler(name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[El.Fn], shots: Ast.Shots)
 
 // given [tparams] {ev} head: the trait methods for the head's args (a call through {} evidence of a ground goal type is
 // a static call to the instance of the given picked for it)

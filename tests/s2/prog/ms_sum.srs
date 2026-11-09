@@ -1,0 +1,30 @@
+// pass: multi-shot handler, C3: each leaf value comes back through resume, into a tree, in branch order (true first);
+// a (bound before the second choose) is live in the later segment. leaves (a, b) -> 2a + b: 3 2 1 0
+capability NonDet:
+  def choose(): Bool
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+def tree(): Bag[I64] =
+  handle nd = All()
+  val a = NonDet.choose()
+  val b = nd.choose()
+  val x = if a then 2 else 0
+  val y = if b then 1 else 0
+  x + y
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0

@@ -45,7 +45,6 @@ enum Ty.Clash:
   // not the answer type; a multi-shot handler (its C, selective CPS, is a later rung)
   case Ty.ResumeNotK(line: I64, k: Sym.Sym)
   case Ty.AnswerType(line: I64, op: Sym.Sym)
-  case Ty.MultishotNotEmitted(line: I64, h: Sym.Sym)
   case Ty.MultishotShape(line: I64, p: Sym.Sym)
   case Ty.TraitArity(line: I64, t: Sym.Sym)
   case Ty.NotMethod(line: I64, m: Sym.Sym)
@@ -611,7 +610,16 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
       val st0 = if Ty.isMultiShot(hs, h) then Ty.shape(cx, st, x, Ty.protoOf(hs, h), rest, last) else st
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
       val Ty.Caps(st2, caps) = Ty.rowCaps(cx, st1, bs, sl, Eff.row(rows, h), Coll.Nil)
-      Ty.block(cx, st2, Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs), line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, caps, eargs), acc))
+      val bs2 = Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs)
+      Ty.multiOf(hs, h) match
+        case Coll.None => Ty.block(cx, st2, bs2, line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, caps, eargs), acc))
+        // multi-shot (vic-hm63 Q-M2, Q-M3): the rest of the block is its own block of type a; the whole is the answer R[A := a]
+        case Coll.Some(ma) =>
+          val Ty.MA(av, ans) = ma
+          val Ty.Ex(st3, a, er) = Ty.block(cx, st2, bs2, line, rest, last, Coll.None, Coll.Nil)
+          val rt = Ty.term(ans, Coll.Cons(Ty.Bind(av, a), Coll.Nil))
+          val Ty.Ex(st4, t, ev) = Ty.lit(st3, sl, rt, want, El.MHandled(sl, x, h, caps, eargs, er, a, rt))
+          Ty.Ex(st4, t, El.Block(line, Coll.rev(acc), ev))
     case Ast.Do(e) =>
       val Ty.Ex(st1, _, ee) = Ty.expr(cx, st, bs, e, Coll.None)
       Ty.block(cx, st1, bs, line, rest, last, want, Coll.Cons(El.Do(ee), acc))
@@ -665,7 +673,7 @@ def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
     case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern))
     case Ast.Def(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
-      Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
+      Ty.FnEx(Ty.mhPlace(st1, eb), El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
 
 def Ty.rowBinds(row: Coll.List[Eff.Cap], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = row match
   case Coll.Nil => acc
@@ -771,13 +779,12 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
       shots match
         case Ast.OneShot =>
           val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
-          Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs), hacc), gacc)
+          Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
         // multi-shot (vic-hm63): typed here; its C (selective CPS) is a later rung, so it stops at this phase for now
         case Ast.MultiShot(a, ks) =>
           val ans = Ty.answerOf(fs, a)
-          val st1 = Ty.clash(st, Ty.MultishotNotEmitted(hl, hn))
-          val Ty.Fns(st2, _, _, _) = Ty.multiFns(cx, st1, hn, p, ans, ks, fs, Eff.row(rows, hn))
-          Ty.decls(cx, st2, rest, acc, hacc, gacc)
+          val Ty.Fns(st2, efs, _, _) = Ty.multiFns(cx, st, hn, p, ans, ks, fs, Eff.row(rows, hn), Coll.Nil)
+          Ty.decls(cx, st2, rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
     // a given's fns see its binders: its [] binders are theirs, its {} evidence is local
     case Ast.DGiven(g) =>
       val Ast.Given(_, gs, head, fs) = g
@@ -860,6 +867,19 @@ def Ty.byHandler(cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
 
 // ── the shape a multi-shot handle compiles today (vic-hm63 C3, interim error[multishot-shape]): in the rest of its
 // block, an op of its capability p only as the whole value of a val or a statement; no call of a fn whose row holds p ──
+// a multi-shot handler: its block type binder and its answer type (done's result, else the binder)
+enum Ty.MA:
+  case Ty.MA(a: Sym.Sym, ans: Ast.Ty)
+
+def Ty.multiOf(hs: Coll.List[Ast.Handler], h: Sym.Sym): Coll.Option[Ty.MA] = hs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(x, rest) =>
+    val Ast.Handler(_, n, _, fs, shots) = x
+    val here: Coll.Option[Ty.MA] = shots match
+      case Ast.OneShot => Coll.None
+      case Ast.MultiShot(a, _) => Coll.Some(Ty.MA(a, Ty.answerOf(fs, a)))
+    if Sym.eq(n, h) then here else Ty.multiOf(rest, h)
+
 def Ty.isMultiShot(hs: Coll.List[Ast.Handler], h: Sym.Sym): Bool = hs match
   case Coll.Nil => false
   case Coll.Cons(x, rest) =>
@@ -943,27 +963,80 @@ def Ty.answerOf(fs: Coll.List[Ast.Fn], a: Sym.Sym): Ast.Ty = Ty.fnNamed(fs, Sym.
 
 // the fns of a multi-shot handler: an op with k runs as Ty.MultiOp (resume k(v): v the op's declared result, the
 // resume the answer R) and returns R; done takes the block type A; the rest as a plain handler fn
-def Ty.multiFns(cx: Ty.Cx, st: Ty.St, hn: Sym.Sym, p: Sym.Sym, ans: Ast.Ty, ks: Coll.List[Ast.KOp], fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap]): Ty.Fns = fs match
-  case Coll.Nil => Ty.Fns(st, Coll.Nil, Coll.Nil, Coll.Nil)
+def Ty.multiFns(cx: Ty.Cx, st: Ty.St, hn: Sym.Sym, p: Sym.Sym, ans: Ast.Ty, ks: Coll.List[Ast.KOp], fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap], acc: Coll.List[El.Fn]): Ty.Fns = fs match
+  case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
     val Ast.Fn(line, n, _, _, ret, _, _) = f
     val Ty.Cx(_, _, ps, _, _, _, _, _, _) = cx
     val rt = Ty.term(ans, Coll.Nil)
-    val st1 = Ast.kOf(ks, n) match
-      case Coll.None => Ty.fnSt(Ty.byHandler(cx, hn), st, f, row)
+    val fx: Ty.FnEx = Ast.kOf(ks, n) match
+      case Coll.None => Ty.fn(Ty.byHandler(cx, hn), st, f, row)
       case Coll.Some(k) =>
-        val v: K.Term = Ty.protoOp(ps, p, n) match
-          case Coll.Some(o) =>
-            val Ast.Op(_, _, _, oret, _) = o
-            Ty.term(oret, Coll.Nil)
-          case Coll.None => Ty.con("Unit")
+        val v = Ty.opResult(ps, p, n)
         val sa = if Mono.termEq(Ty.term(ret, Coll.Nil), rt) then st else Ty.clash(st, Ty.AnswerType(line, n))
-        Ty.fnSt(Ty.byMulti(cx, k, v, rt), sa, f, row)
-    Ty.multiFns(cx, st1, hn, p, ans, ks, rest, row)
+        Ty.fn(Ty.byMulti(cx, k, v, rt), sa, f, row)
+    val Ty.FnEx(st1, ef) = fx
+    Ty.multiFns(cx, st1, hn, p, ans, ks, rest, row, Coll.Cons(ef, acc))
 
-def Ty.fnSt(cx: Ty.Cx, st: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.St =
-  val Ty.FnEx(st1, _) = Ty.fn(cx, st, f, row)
-  st1
+// the declared result of op n of capability p (what resume k(v) takes)
+def Ty.opResult(ps: Coll.List[Ast.Proto], p: Sym.Sym, n: Sym.Sym): K.Term = Ty.protoOp(ps, p, n) match
+  case Coll.Some(o) =>
+    val Ast.Op(_, _, _, oret, _) = o
+    Ty.term(oret, Coll.Nil)
+  case Coll.None => Ty.con("Unit")
+
+// where a multi-shot handle compiles today (vic-hm63 C3.3 slice 1): as the last of a fn's body block, its rest opens
+// no handle and holds no other multi-shot handle; elsewhere error[multishot-shape]
+def Ty.mhPlace(st: Ty.St, e: El.Expr): Ty.St = e match
+  case El.MHandled(_, _, _, _, args, rest, _, _) => Ty.mhRest(Ty.mhNone(st, args), rest)
+  case El.Block(_, ss, last) => last match
+    case El.MHandled(_, _, _, _, args, rest, _, _) => Ty.mhRest(Ty.mhNone(Ty.mhStmts(st, ss), args), rest)
+    case _ => Ty.mhNone(Ty.mhStmts(st, ss), Coll.Cons(last, Coll.Nil))
+  case _ => Ty.mhNone(st, Coll.Cons(e, Coll.Nil))
+
+def Ty.mhRest(st: Ty.St, rest: El.Expr): Ty.St = rest match
+  case El.Block(_, ss, last) => Ty.mhNone(Ty.mhNoHandle(Ty.mhStmts(st, ss), ss), Coll.Cons(last, Coll.Nil))
+  case _ => Ty.mhNone(st, Coll.Cons(rest, Coll.Nil))
+
+def Ty.mhNoHandle(st: Ty.St, ss: Coll.List[El.Stmt]): Ty.St = ss match
+  case Coll.Nil => st
+  case Coll.Cons(s, rest) => s match
+    case El.Handle(line, _, h, _, _) => Ty.mhNoHandle(Ty.clash(st, Ty.MultishotShape(line, h)), rest)
+    case _ => Ty.mhNoHandle(st, rest)
+
+def Ty.mhStmts(st: Ty.St, ss: Coll.List[El.Stmt]): Ty.St = ss match
+  case Coll.Nil => st
+  case Coll.Cons(s, rest) => s match
+    case El.Val(_, _, _, _, e) => Ty.mhStmts(Ty.mhNone(st, Coll.Cons(e, Coll.Nil)), rest)
+    case El.Handle(_, _, _, _, xs) => Ty.mhStmts(Ty.mhNone(st, xs), rest)
+    case El.Do(e) => Ty.mhStmts(Ty.mhNone(st, Coll.Cons(e, Coll.Nil)), rest)
+
+// no multi-shot handle anywhere in es
+def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
+  case Coll.Nil => st
+  case Coll.Cons(e, rest) =>
+    val st1 = e match
+      case El.MHandled(line, _, h, _, _, _, _, _) => Ty.clash(st, Ty.MultishotShape(line, h))
+      case El.CallFn(_, _, _, _, xs) => Ty.mhNone(st, xs)
+      case El.New(_, _, _, _, _, xs) => Ty.mhNone(st, xs)
+      case El.Op(_, _, _, _, xs) => Ty.mhNone(st, xs)
+      case El.TCall(_, _, _, _, xs) => Ty.mhNone(st, xs)
+      case El.Resume(_, _, x) => Ty.mhNone(st, Coll.Cons(x, Coll.Nil))
+      case El.Bin(_, _, l, r) => Ty.mhNone(st, Coll.Cons(l, Coll.Cons(r, Coll.Nil)))
+      case El.Un(_, _, x) => Ty.mhNone(st, Coll.Cons(x, Coll.Nil))
+      case El.If(_, c, t, f) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(t, Coll.Cons(f, Coll.Nil))))
+      case El.Match(_, s, _, arms) => Ty.mhArms(Ty.mhNone(st, Coll.Cons(s, Coll.Nil)), arms)
+      case El.Block(_, ss, l) => Ty.mhNone(Ty.mhStmts(st, ss), Coll.Cons(l, Coll.Nil))
+      case El.While(_, c, b) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(b, Coll.Nil)))
+      case El.Assign(_, _, x) => Ty.mhNone(st, Coll.Cons(x, Coll.Nil))
+      case _ => st
+    Ty.mhNone(st1, rest)
+
+def Ty.mhArms(st: Ty.St, as: Coll.List[El.Arm]): Ty.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val El.Arm(_, _, b) = a
+    Ty.mhArms(Ty.mhNone(st, Coll.Cons(b, Coll.Nil)), rest)
 
 def Ty.byMulti(cx: Ty.Cx, k: Sym.Sym, v: K.Term, ans: K.Term): Ty.Cx =
   val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals) = cx
@@ -981,8 +1054,8 @@ def Ty.resume(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, k: Sym.Sy
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.ResumeNotK(line, k)), bs, Coll.Cons(x, Coll.Nil)), line)
     case Coll.Some(t) =>
       val Ty.KVA(v, ans) = t
-      val Ty.Ex(st1, _, _) = Ty.expr(cx, st, bs, x, Coll.Some(v))
-      Ty.lit(st1, line, ans, want, El.Bad(line))
+      val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.Some(v))
+      Ty.lit(st1, line, ans, want, El.Resume(line, k, ex))
 
 enum Ty.KVA:
   case Ty.KVA(v: K.Term, ans: K.Term)
