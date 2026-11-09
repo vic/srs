@@ -55,6 +55,18 @@ for t in tests/s2/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
+# tests/*.srs compiled by s2c1 (parity with s1, vic-m5r.32); S2C_TODO = not yet in s2c (type decls, TLEVEL bead
+# vic-m5r.30): each prints "todo", and one that passes is a FAIL (the list must shrink, never go stale)
+S2C_TODO=" type_evidence typelambda type_values "
+for t in tests/*.srs; do
+  n=$(basename "$t" .srs); m=s2c1_$n; pass=0
+  timeout 5 "$B/s2c1" $LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
+    && out=$(timeout 1 "$B/$m") && [ "$out" = "$(cat tests/$n.out)" ] && pass=1
+  case "$S2C_TODO" in
+    *" $n "*) if [ $pass = 1 ]; then echo "FAIL $m passes: remove it from S2C_TODO"; fail=1; else echo "todo $m"; fi;;
+    *) if [ $pass = 1 ]; then echo "ok $m"; else echo "FAIL $m"; fail=1; fi;;
+  esac
+done
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?
