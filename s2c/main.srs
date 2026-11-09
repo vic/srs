@@ -1,0 +1,83 @@
+// the s2 compiler (self-host rung B3, vic/c/s2-selfhost.md): `s2c a.srs b.srs ... > out.c`. the decls of all files form
+// one program. errors are data until main: every one is reported on stderr, and the exit code is 1.
+
+// a file that did not read or parse
+enum S2c.Err:
+  case S2c.NoFile(path: Str)
+  case S2c.Syntax(path: Str, line: I64, want: Str)
+
+enum S2c.Read:
+  case S2c.Read(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err])
+
+// the args from i on, each a source file, in order
+def S2c.read {r: Region} (i: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err]): S2c.Read =
+  if i >= rt_argc() then S2c.Read(Coll.rev(ds), Coll.rev(errs))
+  else
+    val p = rt_arg(i)
+    val src = rt_read_file(p)
+    if rt_str_len(src) < 0 then S2c.read(i + 1, ds, Coll.Cons(S2c.NoFile(p), errs))
+    else Parse.source(src) match
+      case Parse.Ok(fds, _) => S2c.read(i + 1, Coll.revOnto(fds, ds), errs)
+      case Parse.Err(line, want) => S2c.read(i + 1, ds, Coll.Cons(S2c.Syntax(p, line, want), errs))
+
+def S2c.showErrs(es: Coll.List[S2c.Err]): Unit = es match
+  case Coll.Nil => ()
+  case Coll.Cons(e, rest) =>
+    e match
+      case S2c.NoFile(p) =>
+        rt_eprint("srs: cannot read ")
+        rt_eprint(p)
+      case S2c.Syntax(p, line, want) =>
+        rt_eprint(p)
+        rt_eprint(":")
+        rt_eprint_i64(line)
+        rt_eprint(": parse error, want ")
+        rt_eprint(want)
+    rt_eprint("\n")
+    S2c.showErrs(rest)
+
+def S2c.showClashes(cs: Coll.List[Ty.Clash]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    c match
+      case Ty.Mismatch(l, _, _) => S2c.clash(l, "type mismatch")
+      case Ty.Unknown(l, n) => S2c.clashN(l, "unknown name ", n)
+      case Ty.Arity(l, n) => S2c.clashN(l, "wrong number of args to ", n)
+      case Ty.NotEnum(l, _) => S2c.clash(l, "not an enum")
+      case Ty.NoOp(l, n) => S2c.clashN(l, "no op ", n)
+      case Ty.CannotInfer(l, n) => S2c.clashN(l, "cannot infer the type args of ", n)
+      case Ty.NoCap(l, p) => S2c.clashN(l, "no single capability of ", p)
+    S2c.showClashes(rest)
+
+def S2c.clash(l: I64, msg: Str): Unit =
+  rt_eprint("line ")
+  rt_eprint_i64(l)
+  rt_eprint(": ")
+  rt_eprint(msg)
+  rt_eprint("\n")
+
+def S2c.clashN(l: I64, msg: Str, n: Sym.Sym): Unit =
+  rt_eprint("line ")
+  rt_eprint_i64(l)
+  rt_eprint(": ")
+  rt_eprint(msg)
+  rt_eprint(Sym.str(n))
+  rt_eprint("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  val S2c.Read(ds, errs) = S2c.read(1, Coll.Nil, Coll.Nil)
+  errs match
+    case Coll.Cons(_, _) =>
+      S2c.showErrs(errs)
+      1
+    case Coll.Nil =>
+      val res = Ty.check(ds)
+      val Ty.Result(cs, _, _, _, _, _) = res
+      cs match
+        case Coll.Cons(_, _) =>
+          S2c.showClashes(Coll.rev(cs))
+          1
+        case Coll.Nil =>
+          Emit.program(ds, res)
+          0

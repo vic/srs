@@ -72,7 +72,7 @@ def Mono.inBucket(ks: Coll.List[Mono.Key], k: Mono.Key): Bool = ks match
 
 // ── the worklist: roots first, then every generic call they reach, each key once ──
 def Mono.run {r: Region} (res: Ty.Result): Coll.List[Mono.Inst] =
-  val Ty.Result(_, _, s, fs) = res
+  val Ty.Result(_, _, s, fs, _, _) = res
   Mono.loop(s, fs, Mono.roots(fs, Coll.Nil), Coll.BTip, Coll.Nil)
 
 def Mono.roots {r: Region} (fs: Coll.List[El.Fn], acc: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = fs match
@@ -90,8 +90,8 @@ def Mono.loop {r: Region} (s: Coll.IMap[K.Term], fs: Coll.List[El.Fn], todo: Col
     val Mono.Inst(f, sub) = i
     val El.Fn(_, _, _, _, _, _, body) = f
     val ks: Coll.List[Mono.Key] = body match
-      case Coll.Some(e) => Mono.calls(s, sub, e, Coll.Nil)
-      case Coll.None => Coll.Nil
+      case El.Def(e) => Mono.calls(s, sub, e, Coll.Nil)
+      case _ => Coll.Nil
     val Mono.Grow(todo2, made2) = Mono.enqueue(fs, ks, rest, made)
     Mono.loop(s, fs, todo2, made2, Coll.Cons(i, out))
 

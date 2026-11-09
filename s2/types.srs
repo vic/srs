@@ -499,13 +499,13 @@ def Ty.fn {r: Region} (cx: Ty.Cx, st: Ty.St, f: Ast.Fn): Ty.FnEx =
   val caps = Ty.capNames(protos, ev, Coll.Nil)
   val eps = Ty.elParams(ps, tv, Coll.Nil)
   body match
-    case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, Coll.None))
+    case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern))
     case Ast.Def(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
-      Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, Coll.Some(eb)))
+      Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
     case Ast.Spec(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
-      Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, Coll.Some(eb)))
+      Ty.FnEx(st1, El.Fn(line, name, tps, caps, eps, rt, El.Spec(eb)))
 
 // the {} binders of a protocol type, in written order (leading C params)
 def Ty.capNames {r: Region} (ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ev match
@@ -536,7 +536,7 @@ def Ty.evidence {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder
 
 // ── the program: every def and handler fn; then each instance must be solved ──
 enum Ty.Result:
-  case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn])
+  case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait]): Ty.Cx = ds match
   case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs)
@@ -551,36 +551,37 @@ def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Co
 
 def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result =
   val cx = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
-  val Ty.Fns(st1, fs) = Ty.decls(cx, Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil), ds, Coll.Nil)
+  val Ty.Fns(st1, fs, hs, gvs) = Ty.decls(cx, Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil), ds, Coll.Nil, Coll.Nil, Coll.Nil)
   val Ty.St(s, _, cs, is) = st1
-  Ty.Result(Ty.unsolved(s, is, cs), is, s, fs)
+  Ty.Result(Ty.unsolved(s, is, cs), is, s, fs, hs, gvs)
 
-// the elaborated defs so far (reversed while walking)
+// the elaborated defs, handlers and givens so far (reversed while walking)
 enum Ty.Fns:
-  case Ty.Fns(st: Ty.St, fs: Coll.List[El.Fn])
+  case Ty.Fns(st: Ty.St, fs: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
-// top-level defs are elaborated here; handler fns (the prelude has Arena and Heap, lib/prelude.srs:38) and given fns are
-// typed now and elaborated with rung B2 (emit of handlers)
-def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn]): Ty.Fns = ds match
-  case Coll.Nil => Ty.Fns(st, Coll.rev(acc))
+// top-level defs, handler fns (the prelude has Arena and Heap, lib/prelude.srs:38) and given fns
+def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn], hacc: Coll.List[El.Handler], gacc: Coll.List[El.Given]): Ty.Fns = ds match
+  case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.rev(hacc), Coll.rev(gacc))
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f)
-      Ty.decls(cx, st1, rest, Coll.Cons(ef, acc))
+      Ty.decls(cx, st1, rest, Coll.Cons(ef, acc), hacc, gacc)
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, _, _, fs) = h
-      Ty.decls(cx, Ty.fnsSt(cx, st, fs), rest, acc)
+      val Ast.Handler(_, hn, p, fs) = h
+      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, st, fs, Coll.Nil)
+      Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs), hacc), gacc)
     case Ast.DGiven(g) =>
-      val Ast.Given(_, _, _, fs) = g
-      Ty.decls(cx, Ty.fnsSt(cx, st, fs), rest, acc)
-    case _ => Ty.decls(cx, st, rest, acc)
+      val Ast.Given(_, _, head, fs) = g
+      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, st, fs, Coll.Nil)
+      Ty.decls(cx, st1, rest, acc, hacc, Coll.Cons(El.Given(Ty.term(head, Coll.Nil), efs), gacc))
+    case _ => Ty.decls(cx, st, rest, acc, hacc, gacc)
 
-// handler and given fns: typed (their clashes count), elaborated with B2
-def Ty.fnsSt {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn]): Ty.St = fs match
-  case Coll.Nil => st
+// fns of a handler or given, elaborated in order
+def Ty.fnsEl {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], acc: Coll.List[El.Fn]): Ty.Fns = fs match
+  case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
-    val Ty.FnEx(st1, _) = Ty.fn(cx, st, f)
-    Ty.fnsSt(cx, st1, rest)
+    val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f)
+    Ty.fnsEl(cx, st1, rest, Coll.Cons(ef, acc))
 
 // an instance with a type arg that is still a var after the whole program: CannotInfer
 def Ty.unsolved {r: Region} (s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match

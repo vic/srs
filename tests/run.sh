@@ -41,6 +41,26 @@ for t in tests/s2/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
+# s2 self-host (vic/c/s2-selfhost.md B2, B3): s1 builds s2c; s2c compiles itself to s2c1; s2c1 compiles itself to the
+# same C (fixpoint); then s2c1 compiles every tests/s2 program, and each runs with its .out
+S2C="lib/prelude.srs $S2SRC s2c/main.srs"
+if timeout 5 "$B/s2" $S2C > "$B/s2c0.c" && timeout 120 $CCS -o "$B/s2c0" "$B/s2c0.c" rt/srs_rt.c \
+  && timeout 5 "$B/s2c0" $S2C > "$B/s2c1.c" && timeout 120 $CCS -o "$B/s2c1" "$B/s2c1.c" rt/srs_rt.c \
+  && timeout 5 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
+else echo "FAIL s2c fixpoint"; fail=1; fi
+for t in tests/s2/*.srs; do
+  n=s2c_$(basename "$t" .srs)
+  timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; fail=1; continue; }
+  timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; fail=1; continue; }
+  out=$(timeout 1 "$B/$n"); code=$?
+  if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
+done
+# s2c errors are data: a clash is printed on stderr, no C, exit 1
+printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
+msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?
+if [ $code -eq 1 ] && [ "$msg" = "line 1: type mismatch" ] && [ ! -s "$B/s2c_bad.c" ]; then echo "ok s2c clash exit 1"; else echo "FAIL s2c clash exit=$code msg=$msg"; fail=1; fi
+# s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
+timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }
 # self tail calls run in constant C stack with no C optimization (vic-m5r.10): tailcall at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/tailcall0" "$B/tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/tailcall0") && [ "$out" = "$(cat tests/tailcall.out)" ] && echo "ok tailcall -O0" || { echo "FAIL tailcall -O0"; fail=1; }
 # every "// expect: msg" line must be printed: errors are data, main reports them all (vic-ngq); armed: 0 lines = FAIL
