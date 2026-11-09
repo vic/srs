@@ -111,9 +111,6 @@ def Tl.body(cx: Tl.Cx, b: Ast.Body, es: Coll.List[Tl.Err]): Tl.W[Ast.Body] = b m
   case Ast.Def(cs, e) =>
     val Tl.W(e2, es2) = Tl.expr(cx, e, es)
     Tl.W(Ast.Def(cs, e2), es2)
-  case Ast.Spec(cs, e) =>
-    val Tl.W(e2, es2) = Tl.expr(cx, e, es)
-    Tl.W(Ast.Spec(cs, e2), es2)
   case Ast.Extern => Tl.W(b, es)
 
 def Tl.groups(cx: Tl.Cx, gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Group], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Group]] = gs match
@@ -525,7 +522,6 @@ def Tl.declGoals(cx: Tl.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Tl.Goal]): C
       val acc2 = Tl.tyGoals(cx, n, ret, Tl.bindersGoals(cx, n, ps, acc))
       val acc3 = body match
         case Ast.Def(_, e) => Tl.exprGoals(cx, n, e, acc2)
-        case Ast.Spec(_, e) => Tl.exprGoals(cx, n, e, acc2)
         case Ast.Extern => acc2
       Tl.declGoals(cx, rest, acc3)
     case _ => Tl.declGoals(cx, rest, acc)

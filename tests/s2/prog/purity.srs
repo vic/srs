@@ -1,8 +1,8 @@
-// pass: vic-u2d U1b (vic: pure = no effects): a spec def calls pure defs, also mutually recursive ones
+// pass: vic-u2d U1b (vic: pure = no effects): a top-level val calls pure defs, also mutually recursive ones
 def sq(x: I64): I64 = x * x
 def isEven(n: I64): Bool = if n == 0 then true else isOdd(n - 1)
 def isOdd(n: I64): Bool = if n == 0 then false else isEven(n - 1)
-spec def sqEven(x: I64): Bool = isEven(sq(x))
+val sqEven: Bool = isEven(sq(3))
 
 def main(): I64 =
   handle io = Srs.Console()

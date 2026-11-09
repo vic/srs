@@ -5,7 +5,7 @@ trait Show [A: Type]:
 given Show[I64]:
   def show(x: I64): I64 = x
 def sh {s: Show[I64]} (x: I64): I64 = s.show(x)
-spec def g(x: I64): I64 = sh(x)
+val g: I64 = sh(1)
 def main(): I64 = 0
-// s1: a spec def calls only pure defs and pure externs, not 'sh'
+// a compile-time body calls only pure fns, not 'sh'
 // expect: --> tests/s2/neg/pure_evidence.srs:8

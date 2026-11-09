@@ -269,10 +269,10 @@ extern def rt_handle {f: File} <at(f, Opened)> (): OpenFile
 Generic parameters translate cleanly to `void*` in standard C output.
 
 ### 3. Formal Contracts & Proof Hints
-srs supports formal specification primitives (`requires`, `ensures`, `invariant`, `decreases`, `proof by induction`, `proof using`) and `spec def` constructs. These facilitate transpilation to Lean 4 for interactive theorem proving.
+srs supports formal specification primitives (`requires`, `ensures`, `invariant`, `decreases`, `proof by induction`, `proof using`). A contract names ordinary defs. These facilitate transpilation to Lean 4 for interactive theorem proving.
 
 ```scala
-spec def size(xs: List): I64
+def size(xs: List): I64
   ensures result >= 0
   proof by induction xs
 = xs match
@@ -280,7 +280,7 @@ spec def size(xs: List): I64
   case Cons(_, t) => 1 + size(t)
 ```
 
-**Tests:** [`tests/s2/prog/contracts.srs`](./tests/s2/prog/contracts.srs) (contracts parse, check, and erase in C), [`tests/s2/neg/spec_impure.srs`](./tests/s2/neg/spec_impure.srs) (a spec def calls impure code, rejected).
+**Tests:** [`tests/s2/prog/contracts.srs`](./tests/s2/prog/contracts.srs) (contracts parse, check, and erase in C), [`tests/s2/neg/cval_impure.srs`](./tests/s2/neg/cval_impure.srs) (a compile-time body calls impure code, rejected).
 
 ---
 

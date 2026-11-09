@@ -109,8 +109,6 @@ enum Ast.Clause:
 enum Ast.Body:
   case Ast.Def(cs: Coll.List[Ast.Clause], e: Ast.Expr)
   case Ast.Extern
-  // a spec def: a compile-time body, no binder groups (vic 2026-11-05), no Region
-  case Ast.Spec(cs: Coll.List[Ast.Clause], e: Ast.Expr)
 
 enum Ast.Fn:
   case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
@@ -564,7 +562,6 @@ def Ast.fn(f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
     case Ast.Extern => Console.print("extern ")
-    case Ast.Spec(_, _) => Console.print("spec ")
     case Ast.Def(_, _) => ()
   Ast.fnSig(f, ind)
 
@@ -598,7 +595,6 @@ def Ast.fnSig(f: Ast.Fn, ind: I64): Unit =
   body match
     case Ast.Extern => ()
     case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
-    case Ast.Spec(cs, e) => Ast.withClauses(cs, e, ind)
 
 // = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)
 def Ast.withClauses(cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
