@@ -264,6 +264,55 @@ def Coll.bPushT [A: Type] {r: Region} (t: Coll.BTree[Coll.List[A]], k: I64, x: A
   val n = Coll.bFind(t, k)
   if Coll.bIsNode(n) then Coll.bRep(t, k, Coll.Cons(x, Coll.bValOr(n, k, Coll.Nil))) else Coll.bIns(t, k, Coll.Cons(x, Coll.Nil))
 
+// b3: a Sym map is a tree from the Sym hash to a bucket; a hash tie compares the strings (Sym.eq). The tree has no
+// count: a bucket count is not a Sym count.
+enum Coll.SEntry [V: Type]:
+  case Coll.SEntry(s: Sym.Sym, v: V)
+
+enum Coll.SMap [V: Type]:
+  case Coll.SMap(t: Coll.BTree[Coll.List[Coll.SEntry[V]]])
+
+def Coll.sEmpty [V: Type] {r: Region} (): Coll.SMap[V] = Coll.SMap(Coll.BTip)
+
+// xs with the entry of s bound to v (added last when s is absent)
+def Coll.sSet [V: Type] {r: Region} (xs: Coll.List[Coll.SEntry[V]], s: Sym.Sym, v: V): Coll.List[Coll.SEntry[V]] = xs match
+  case Coll.Nil => Coll.Cons(Coll.SEntry(s, v), Coll.Nil)
+  case Coll.Cons(e, t) => e match
+    case Coll.SEntry(s2, _) => if Sym.eq(s, s2) then Coll.Cons(Coll.SEntry(s, v), t) else Coll.Cons(e, Coll.sSet(t, s, v))
+
+def Coll.sFind [V: Type] {r: Region} (xs: Coll.List[Coll.SEntry[V]], s: Sym.Sym): Coll.Option[V] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(e, t) => e match
+    case Coll.SEntry(s2, v) => if Sym.eq(s, s2) then Coll.Some(v) else Coll.sFind(t, s)
+
+// m with s bound to v (a binding of s is replaced): one find, then one path copy
+def Coll.sInsert [V: Type] {r: Region} (m: Coll.SMap[V], s: Sym.Sym, v: V): Coll.SMap[V] = m match
+  case Coll.SMap(t) =>
+    val h = Sym.hash(s)
+    val n = Coll.bFind(t, h)
+    if Coll.bIsNode(n) then Coll.SMap(Coll.bRep(t, h, Coll.sSet(Coll.bValOr(n, h, Coll.Nil), s, v))) else Coll.SMap(Coll.bIns(t, h, Coll.Cons(Coll.SEntry(s, v), Coll.Nil)))
+
+def Coll.sLookup [V: Type] {r: Region} (m: Coll.SMap[V], s: Sym.Sym): Coll.Option[V] = m match
+  case Coll.SMap(t) => Coll.sFind(Coll.bTGetOr(t, Sym.hash(s), Coll.Nil), s)
+
+// an I64 set: a BMap to the one value U, so its count is the set size
+enum Coll.Unit:
+  case Coll.U
+
+enum Coll.ISet:
+  case Coll.ISet(m: Coll.BMap[Coll.Unit])
+
+def Coll.setEmpty {r: Region} (): Coll.ISet = Coll.ISet(Coll.bEmpty[Coll.Unit]())
+
+def Coll.setAdd {r: Region} (s: Coll.ISet, k: I64): Coll.ISet = s match
+  case Coll.ISet(m) => Coll.ISet(Coll.bInsert(m, k, Coll.U))
+
+def Coll.setHas (s: Coll.ISet, k: I64): Bool = s match
+  case Coll.ISet(m) => Coll.bHas(m, k)
+
+def Coll.setSize (s: Coll.ISet): I64 = s match
+  case Coll.ISet(m) => Coll.bSize(m)
+
 // bPut without the answer wrapper
 def Coll.bInsert [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.BMap[V] = m match
   case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.BMap(n, Coll.bRep(t, k, v)) else Coll.BMap(n + 1, Coll.bIns(t, k, v))

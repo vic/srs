@@ -1,0 +1,37 @@
+// s2 COL b3: Coll.SMap (Sym -> value over BMap buckets) and Coll.ISet (I64 set over BMap). Three Syms are built with
+// one hash, so they share a bucket and only their strings tell them apart.
+def T.show (o: Coll.Option[I64]): Unit = o match
+  case Coll.None => rt_print("none ")
+  case Coll.Some(v) =>
+    rt_print_i64(v)
+    rt_print(" ")
+
+// every i in [i, n) put into s
+def T.adds {r: Region} (s: Coll.ISet, i: I64, n: I64, step: I64): Coll.ISet = if i >= n then s else T.adds(Coll.setAdd(s, i), i + step, n, step)
+
+// how many i in [i, n) are in s
+def T.hits (s: Coll.ISet, i: I64, n: I64, acc: I64): I64 = if i == n then acc else T.hits(s, i + 1, n, acc + (if Coll.setHas(s, i) then 1 else 0))
+
+def main(): I64 =
+  handle r = Arena()
+  val a = Sym.Sym(7, "a")
+  val b = Sym.Sym(7, "b")
+  val c = Sym.Sym(7, "c")
+  val d = Sym.of("d")
+  val m = Coll.sInsert(Coll.sInsert(Coll.sInsert(Coll.sInsert(Coll.sEmpty[I64](), a, 1), b, 2), d, 4), a, 3)
+  T.show(Coll.sLookup(m, a))
+  T.show(Coll.sLookup(m, b))
+  T.show(Coll.sLookup(m, c))
+  T.show(Coll.sLookup(m, d))
+  T.show(Coll.sLookup(Coll.sEmpty[I64](), a))
+  rt_print("\n")
+  // multiples of 3 below 3000, each added twice
+  val s = T.adds(T.adds(Coll.setEmpty(), 0, 3000, 3), 0, 3000, 3)
+  rt_print_i64(T.hits(s, 0, 3001, 0))
+  rt_print(" ")
+  rt_print_i64(Coll.setSize(s))
+  rt_print(" ")
+  // 2997 is a member, 2998 is not: 10
+  rt_print_i64((if Coll.setHas(s, 2997) then 10 else 0) + (if Coll.setHas(s, 2998) then 1 else 0))
+  rt_print("\n")
+  0
