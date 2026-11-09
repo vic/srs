@@ -364,6 +364,29 @@ def Emit.capArgs(env: Emit.Env, caps: Coll.List[Sym.Sym], s: Emit.Sep): Unit = c
     Emit.local(Emit.vs(env), c)
     Emit.capArgs(env, rest, Emit.Comma)
 
+// h_H_init(caps, args): the handler's state
+def Emit.initCall {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
+  Console.print("h_")
+  Emit.id(h)
+  Console.print("_init(")
+  Emit.capArgs(env, caps, Emit.First)
+  Emit.args(cx, fi, env, args, if Coll.length(caps) == 0 then Emit.First else Emit.Comma)
+  Console.print(")")
+
+// a handler with a row (E1b): its state and the capabilities of the handle site, the self of its ops (srs_env)
+def Emit.handleEnv {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, v: Emit.Name, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit = caps match
+  case Coll.Nil => ()
+  case Coll.Cons(_, _) =>
+    Console.print("struct { void* st; srs_cap* c[")
+    Console.printI64(Coll.length(caps))
+    Console.print("]; } ")
+    Emit.cname(v)
+    Console.print("_e = { ")
+    Emit.initCall(cx, fi, env, h, caps, args)
+    Console.print(", { ")
+    Emit.capArgs(env, caps, Emit.First)
+    Console.print(" } }; ")
+
 def Emit.args {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, xs: Coll.List[El.Expr], s: Emit.Sep): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
@@ -631,15 +654,19 @@ def Emit.block {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.P
       Emit.ex(cx, fi, env, Emit.Inner, e)
       Console.print("; ")
       Emit.block(cx, fi, Emit.bind(env, x), pos, rest, last, drops)
-    case El.Handle(_, x, h, args) =>
+    case El.Handle(_, x, h, caps, args) =>
       val v = Emit.L(x, Emit.envN(env))
+      Emit.handleEnv(cx, fi, env, v, h, caps, args)
       Console.print("srs_cap ")
       Emit.cname(v)
-      Console.print("_v = { h_")
-      Emit.id(h)
-      Console.print("_init(")
-      Emit.args(cx, fi, env, args, Emit.First)
-      Console.print("), vt_")
+      Console.print("_v = { ")
+      caps match
+        case Coll.Nil => Emit.initCall(cx, fi, env, h, caps, args)
+        case Coll.Cons(_, _) =>
+          Console.print("&")
+          Emit.cname(v)
+          Console.print("_e")
+      Console.print(", vt_")
       Emit.id(h)
       Console.print(", 1 }; srs_cap* ")
       Emit.cname(v)
@@ -705,7 +732,7 @@ def Emit.armsTail {r: Region} (cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm]):
 def Emit.hasHandle(ss: Coll.List[El.Stmt]): Bool = ss match
   case Coll.Nil => false
   case Coll.Cons(s, rest) => s match
-    case El.Handle(_, _, _, _) => true
+    case El.Handle(_, _, _, _, _) => true
     case _ => Emit.hasHandle(rest)
 
 // ── an instance as the fn emit prints ──
@@ -840,7 +867,7 @@ def Emit.stmtsTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, ss: Coll.List[El.Stmt],
   case Coll.Nil => acc
   case Coll.Cons(s, rest) => s match
     case El.Val(_, _, ty, _, e) => Emit.stmtsTys(cx, fi, rest, Emit.exTys(cx, fi, e, Coll.Cons(Emit.gr(cx, fi, ty), acc)))
-    case El.Handle(_, _, _, args) => Emit.stmtsTys(cx, fi, rest, Emit.exsTys(cx, fi, args, acc))
+    case El.Handle(_, _, _, _, args) => Emit.stmtsTys(cx, fi, rest, Emit.exsTys(cx, fi, args, acc))
     case El.Do(e) => Emit.stmtsTys(cx, fi, rest, Emit.exTys(cx, fi, e, acc))
 
 // the distinct enum terms of todo and of their fields, in the order found (seen: by hash bucket)
@@ -1039,29 +1066,88 @@ def Emit.implFns {r: Region} (cx: Emit.Cx, k: Emit.Kind, fs: Coll.List[El.Fn], w
 def Emit.vtables {r: Region} (cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
   case Coll.Nil => ()
   case Coll.Cons(h, rest) =>
-    val El.Handler(hn, p, _) = h
+    val El.Handler(hn, p, fs) = h
     val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
+    val pre: Str = if Emit.hasRow(fs) then "w_" else "h_"
+    Emit.wrappers(cx, hn, fs)
     Console.print("static void* const vt_")
     Emit.id(hn)
     Console.print("[] = {")
     Coll.sLookup(ps, p) match
       case Coll.Some(pr) =>
         val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
-        Emit.vtOps(hn, ops)
+        Emit.vtOps(pre, hn, ops)
       case Coll.None => ()
     Console.print(" 0 };\n")
     Emit.vtables(cx, rest)
 
-def Emit.vtOps(hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
+// a handler with a row (E1b): every fn takes the same implicit capabilities
+def Emit.hasRow(fs: Coll.List[El.Fn]): Bool = fs match
+  case Coll.Nil => false
+  case Coll.Cons(f, _) =>
+    val El.Fn(_, _, _, caps, _, _, _) = f
+    Coll.length(caps) > 0
+
+// its vtable entries: w_H_op(srs_env* e, args) calls h_H_op(e->c[0], .., e->st, args) (init is not in the vtable)
+def Emit.wrappers {r: Region} (cx: Emit.Cx, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, name, _, caps, _, _, _) = f
+    if Coll.length(caps) > 0 && !Str.eq(Sym.str(name), "init") then
+      val Emit.Fi(_, _, _, slots, ret) = Emit.fiOf(cx, Mono.Inst(f, Coll.Nil, Mono.Top))
+      Console.print("static ")
+      Emit.ctype(cx, ret)
+      Console.print(" w_")
+      Emit.id(hn)
+      Console.print("_")
+      Emit.id(name)
+      Console.print("(void* e_")
+      Emit.params(cx, Emit.opSlots(slots), Emit.Comma)
+      Console.print(") { srs_env* e = (srs_env*)e_; return h_")
+      Emit.id(hn)
+      Console.print("_")
+      Emit.id(name)
+      Console.print("(")
+      Emit.envCaps(0, Coll.length(caps))
+      Console.print("e->st")
+      Emit.slotArgs(Emit.opSlots(slots))
+      Console.print("); }\n")
+    else ()
+    Emit.wrappers(cx, hn, rest)
+
+// the op's own params: no capability, no self
+def Emit.opSlots(slots: Coll.List[Emit.Slot]): Coll.List[Emit.Slot] = slots match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(s, rest) => s match
+    case Emit.SCap(_) => Emit.opSlots(rest)
+    case Emit.SVal(_, _) => rest
+
+def Emit.envCaps(i: I64, n: I64): Unit =
+  if i < n then
+    Console.print("e->c[")
+    Console.printI64(i)
+    Console.print("], ")
+    Emit.envCaps(i + 1, n)
+  else ()
+
+def Emit.slotArgs(slots: Coll.List[Emit.Slot]): Unit = slots match
+  case Coll.Nil => ()
+  case Coll.Cons(s, rest) =>
+    Console.print(", p_")
+    Emit.id(Emit.slotName(s))
+    Emit.slotArgs(rest)
+
+def Emit.vtOps(pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
   case Coll.Nil => ()
   case Coll.Cons(o, rest) =>
     val Ast.Op(_, n, _, _, _) = o
-    Console.print(" (void*)h_")
+    Console.print(" (void*)")
+    Console.print(pre)
     Emit.id(hn)
     Console.print("_")
     Emit.id(n)
     Console.print(",")
-    Emit.vtOps(hn, rest)
+    Emit.vtOps(pre, hn, rest)
 
 // the inline Arena bump (spec sec 5.2): the chunk layout of rt/srs_rt.c:24-25
 def Emit.allocFast {r: Region} (cx: Emit.Cx): Unit =
@@ -1094,6 +1180,7 @@ def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   Console.print("#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n")
   Console.print("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
   Console.print("typedef struct { void* self; void* const* vt; int64_t live; } srs_cap;\n")
+  Console.print("typedef struct { void* st; srs_cap* c[]; } srs_env;\n")
   Console.print("void rt_init(int argc, char** argv);\n")
   Emit.fwds(ens)
   Emit.structs(cx, ens)
