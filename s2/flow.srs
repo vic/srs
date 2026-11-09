@@ -990,6 +990,7 @@ def Flow.facts {r: Region} (cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val walked: Flow.At = body match
     case Ast.Extern => Flow.At(st1, 0)
     case Ast.Def(e) => Flow.expr(cx, st1, 0, e)
+    case Ast.Spec(e) => Flow.expr(cx, st1, 0, e)
   val Flow.At(st2, e) = walked
   val st3 = Flow.worlds(ps, st2, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Exit(e))
   val st4 = as match
