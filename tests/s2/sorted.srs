@@ -22,10 +22,48 @@ def T.scr {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[
 def T.none(): Coll.List[Coll.KV[I64]] = Coll.Nil
 
 def T.val(s: Coll.Sorted[I64]): Coll.List[Coll.KV[I64]] = s match
-  case Coll.Sorted(_, xs) => xs
+  case Coll.Sorted(xs) => xs
 
-def T.cnt(s: Coll.Sorted[I64]): I64 = s match
-  case Coll.Sorted(n, _) => n
+// the input lists of the oracle, in list order: keys (i * 7919) % 1009 (many duplicates, short runs both ways),
+// keys i / 2 ascending (one run, adjacent duplicates), keys n - 1 down to 0 (one descending run)
+def T.genMod {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
+  if i == n then acc else T.genMod(i + 1, n, Coll.Cons(Coll.KV((i * 7919) % 1009, i), acc))
+
+def T.genUp {r: Region} (i: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
+  if i == 0 then acc else T.genUp(i - 1, Coll.Cons(Coll.KV((i - 1) / 2, i - 1), acc))
+
+def T.genDown {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
+  if i == n then acc else T.genDown(i + 1, n, Coll.Cons(Coll.KV(i, i), acc))
+
+// the second path: the same list put into a BMap in list order (a later binding replaces)
+def T.bm {r: Region} (xs: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64]): Coll.BMap[I64] = xs match
+  case Coll.Nil => m
+  case Coll.Cons(e, t) => T.bmKV(e, t, m)
+
+def T.bmKV {r: Region} (e: Coll.KV[I64], t: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64]): Coll.BMap[I64] = e match
+  case Coll.KV(k, v) => T.bm(t, Coll.bInsert(m, k, v))
+
+def T.is (o: Coll.Option[I64], v: I64): Bool = o match
+  case Coll.None => false
+  case Coll.Some(w) => w == v
+
+// keys strictly ascend above prev and every value is the one m binds
+def T.agrees {r: Region} (xs: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64], prev: I64): Bool = xs match
+  case Coll.Nil => true
+  case Coll.Cons(e, t) => T.agreeKV(e, t, m, prev)
+
+def T.agreeKV {r: Region} (e: Coll.KV[I64], t: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64], prev: I64): Bool = e match
+  case Coll.KV(k, v) => if k > prev && T.is(Coll.bLookup(m, k), v) then T.agrees(t, m, k) else false
+
+// "1 0" when sortDedup agrees with the map and has its size
+def T.oracle {r: Region} (xs: Coll.List[Coll.KV[I64]]): I64 =
+  val ys = T.val(Coll.sortDedup(xs))
+  val m = T.bm(xs, Coll.bEmpty[I64]())
+  rt_print_i64(if T.agrees(ys, m, -1) then 1 else 0)
+  rt_print(" ")
+  rt_print_i64(Coll.length(ys) - Coll.bSize(m))
+  rt_print("\n")
+  0
 
 def main(): I64 =
   handle r = Arena()
@@ -33,7 +71,7 @@ def main(): I64 =
   val s = Coll.sortDedup(l)
   T.show(T.val(s))
   rt_print("\n")
-  rt_print_i64(T.cnt(s))
+  rt_print_i64(Coll.length(T.val(s)))
   rt_print("\n")
   val w = Coll.sortDedup(Coll.Cons(Coll.KV(4, 100), Coll.Cons(Coll.KV(4, 200), Coll.Nil)))
   T.show(T.val(w))
@@ -41,9 +79,12 @@ def main(): I64 =
   val big = Coll.sortDedup(T.scr(0, 100000, Coll.Nil))
   rt_print_i64(T.asc(T.val(big), -1))
   rt_print("\n")
-  rt_print_i64(T.cnt(big) + Coll.length(T.val(big)) - 100000)
+  rt_print_i64(Coll.length(T.val(big)))
   rt_print("\n")
   val e = Coll.sortDedup(T.none())
-  rt_print_i64(T.cnt(e))
+  rt_print_i64(Coll.length(T.val(e)))
   rt_print("\n")
+  T.oracle(T.genMod(0, 20000, Coll.Nil))
+  T.oracle(T.genUp(20000, Coll.Nil))
+  T.oracle(T.genDown(0, 20000, Coll.Nil))
   0
