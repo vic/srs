@@ -14,7 +14,7 @@ def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll
 
 // the prelude and every s2 source (a new s2 file goes here too)
 def TT.sources {r: Region} (): Coll.List[Str] =
-  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/mono.srs", Coll.Nil)))))))
+  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/emit.srs", Coll.Cons("s2/mono.srs", Coll.Nil))))))))
   val b = Coll.Cons("s2/flow.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Nil)))))
   val c = Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/types.srs", Coll.Nil)))))
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
@@ -48,7 +48,7 @@ def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
 def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit =
   rt_print(name)
   rt_print(":")
-  val Ty.Result(cs, is, _, _) = Ty.check(ds)
+  val Ty.Result(cs, is, _, _, _, _) = Ty.check(ds)
   cs match
     case Coll.Nil => rt_print(" ok")
     case Coll.Cons(_, _) => TT.showAll(Coll.rev(cs))
@@ -62,7 +62,7 @@ def main(): I64 =
   handle r = Arena()
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
   TT.run("self", lib)
-  val Ty.Result(_, is, _, sfs) = Ty.check(lib)
+  val Ty.Result(_, is, _, sfs, _, _) = Ty.check(lib)
   val mi = Mono.run(Ty.check(lib))
   rt_print("mono self: generic instances over 100: ")
   rt_print_i64(if TT.genericCount(mi, 0) > 100 then 1 else 0)
@@ -181,7 +181,7 @@ def TT.stmts {r: Region} (s: Coll.IMap[K.Term], ss: Coll.List[El.Stmt]): Unit = 
     TT.stmts(s, rest)
 
 def TT.elab {r: Region} (src: Str, lib: Coll.List[Ast.Decl], name: Str): Unit =
-  val Ty.Result(cs, _, s, fs) = Ty.check(Coll.revOnto(Coll.rev(TT.src(src)), lib))
+  val Ty.Result(cs, _, s, fs, _, _) = Ty.check(Coll.revOnto(Coll.rev(TT.src(src)), lib))
   TT.showAll(cs)
   TT.fnCalls(s, fs, Sym.of(name))
 
@@ -191,8 +191,8 @@ def TT.fnCalls {r: Region} (s: Coll.IMap[K.Term], fs: Coll.List[El.Fn], name: Sy
     val El.Fn(_, n, _, _, _, _, body) = f
     if Sym.eq(n, name) then
       body match
-        case Coll.Some(e) => TT.calls(s, e)
-        case Coll.None => ()
+        case El.Def(e) => TT.calls(s, e)
+        case _ => ()
     else TT.fnCalls(s, rest, name)
 
 // El.Bad nodes in an elaborated program: 0 when it typed (a mutant that drops an elaboration shows up here)
@@ -201,8 +201,8 @@ def TT.badsFns(fs: Coll.List[El.Fn], n: I64): I64 = fs match
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, _, _, _, _, body) = f
     val k = body match
-      case Coll.Some(e) => TT.bads(e)
-      case Coll.None => 0
+      case El.Def(e) => TT.bads(e)
+      case _ => 0
     TT.badsFns(rest, n + k)
 
 def TT.bads(e: El.Expr): I64 = e match

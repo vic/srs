@@ -40,4 +40,18 @@ enum El.Param:
   case El.Param(x: Sym.Sym, ty: K.Term)
 
 enum El.Fn:
-  case El.Fn(line: I64, name: Sym.Sym, tparams: Coll.List[Sym.Sym], caps: Coll.List[Sym.Sym], params: Coll.List[El.Param], ret: K.Term, body: Coll.Option[El.Expr])
+  case El.Fn(line: I64, name: Sym.Sym, tparams: Coll.List[Sym.Sym], caps: Coll.List[Sym.Sym], params: Coll.List[El.Param], ret: K.Term, body: El.Body)
+
+// a def has C, an extern is a C symbol of the runtime, a spec body is compile time only (no C)
+enum El.Body:
+  case El.Def(e: El.Expr)
+  case El.Extern
+  case El.Spec(e: El.Expr)
+
+// handler name for protocol proto: its fns (init, then the ops)
+enum El.Handler:
+  case El.Handler(name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[El.Fn])
+
+// given head: the trait methods for the head's args (a call through {} evidence of that type is a static call)
+enum El.Given:
+  case El.Given(head: K.Term, fns: Coll.List[El.Fn])
