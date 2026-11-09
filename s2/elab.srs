@@ -1,0 +1,43 @@
+// s2 self-host rung T3 (vic/c/s2-selfhost.md "T3 design"): the elaborated program, what mono and emit read. Ty.expr
+// builds it while it infers, so the two cannot disagree. a term keeps its vars until mono reifies it with the final
+// substitution.
+enum El.Expr:
+  case El.Int(line: I64, v: I64)
+  case El.Bool(line: I64, v: Bool)
+  case El.Str(line: I64, s: Str)
+  case El.Unit(line: I64)
+  // a name bound in the fn: a param, a {} binder, a val, var, handle or pattern binder
+  case El.Local(line: I64, x: Sym.Sym)
+  // f[targs]{caps}(args): the instance and the caller's capability for each protocol {} binder ({r: Region}, ...), in written order
+  case El.CallFn(line: I64, f: Sym.Sym, targs: Coll.List[K.Term], caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr])
+  // a constructor: its enum at targs, allocated in region
+  case El.New(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym, region: Sym.Sym, args: Coll.List[El.Expr])
+  case El.Nullary(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym)
+  // recv.op(args): an op of the capability recv's protocol, or a trait method of {} evidence recv
+  case El.Op(line: I64, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr])
+  case El.Bin(line: I64, op: Ast.BinOp, l: El.Expr, rhs: El.Expr)
+  case El.Un(line: I64, op: Ast.UnOp, e: El.Expr)
+  case El.If(line: I64, c: El.Expr, t: El.Expr, e: El.Expr)
+  // scrut is an enum at targs
+  case El.Match(line: I64, s: El.Expr, en: K.Term, arms: Coll.List[El.Arm])
+  case El.Block(line: I64, stmts: Coll.List[El.Stmt], last: El.Expr)
+  case El.While(line: I64, c: El.Expr, body: El.Expr)
+  case El.Assign(line: I64, x: Sym.Sym, e: El.Expr)
+  // an expression that did not type (its clash is in the result): emit never runs on a program with clashes
+  case El.Bad(line: I64)
+
+enum El.Arm:
+  case El.Arm(line: I64, p: Ast.Pat, body: El.Expr)
+
+enum El.Stmt:
+  // a val or var with its type (emit declares the C local with it)
+  case El.Val(line: I64, x: Sym.Sym, ty: K.Term, mut: Bool, e: El.Expr)
+  case El.Handle(line: I64, x: Sym.Sym, h: Sym.Sym, args: Coll.List[El.Expr])
+  case El.Do(e: El.Expr)
+
+// a def: its [] binders (instantiated by mono), its protocol {} binders (leading C params), params with types
+enum El.Param:
+  case El.Param(x: Sym.Sym, ty: K.Term)
+
+enum El.Fn:
+  case El.Fn(line: I64, name: Sym.Sym, tparams: Coll.List[Sym.Sym], caps: Coll.List[Sym.Sym], params: Coll.List[El.Param], ret: K.Term, body: Coll.Option[El.Expr])
