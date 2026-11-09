@@ -1,0 +1,53 @@
+// pass: capability syntax (vic 2026-11-09): transition relations, defs that move by them, <A> .. <B>, no states (one
+// state Live, each def stays), and fn facts as x: T and a r b. same program as rules.srs, same output
+capability Door:
+  state Shut, Open1, Open2, Gone
+  start Shut
+  stop Gone
+  transition knocks Shut -> Open1, Open1 -> Open2
+  def knock <s knocks t> (): I64 <t>
+  def leave <s leaves t> (): Unit <t>
+  transition leaves Open1 -> Gone, Open2 -> Gone
+  rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
+  rule def reach(s, t) = next(s, knock, t)
+  rule def reach(s, t) = next(s, knock, u), reach(u, t)
+
+capability Bell:
+  def ring(): I64
+
+capability Lamp:
+  state Off, On
+  start Off
+  stop On
+  def on <Off> (): Unit <On>
+
+handler HDoor for Door:
+  def knock(): I64 = 3
+  def leave(): Unit = ()
+
+handler HBell for Bell:
+  def ring(): I64 = 0
+
+handler HLamp for Lamp:
+  def on(): Unit = ()
+
+def knockTwice {d: Door} <d: s, s twoKnocks s3> (): I64 <d: s3> =
+  val a = d.knock()
+  a + d.knock()
+
+def knockOnce {d: Door} <d: Shut, Shut reach t, next(Shut, knock, t)> (): I64 <d: t> = d.knock()
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle b = HBell()
+  handle l = HLamp()
+  l.on()
+  handle d = HDoor()
+  val x = knockTwice()
+  d.leave()
+  handle e = HDoor()
+  val y = knockOnce{e}()
+  e.leave()
+  Console.printI64(x + y + b.ring() + b.ring())
+  Console.print("\n")
+  0
