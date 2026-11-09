@@ -146,6 +146,7 @@ def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], 
       case Ty.SigDiffers(l, m) => S2c.diag(fs, "method-signature", l, "the given method's signature differs from its trait:", S2c.Name(m), "use the trait's params and result at the given's head")
       case Ty.NotInHead(l, x) => S2c.diag(fs, "binder-not-in-head", l, "a given [] binder is not in its head:", S2c.Name(x), "use each [] binder in the given's head")
       case Ty.ExternSlot(l, t) => S2c.diag(fs, "extern-slot", l, "an extern [] binder is a pointer (void*), not", S2c.Type(t), "call the extern at an enum or Ptr type")
+      case Ty.UnhandledEffect(l, p) => S2c.diag(fs, "unhandled-effect", l, "effect not handled:", S2c.Name(p), "open a handler of it in an enclosing block (handle x = H()): main must handle every effect it needs")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
@@ -202,37 +203,39 @@ def S2c.typed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[A
     case Coll.Cons(_, _) =>
       S2c.showTl(fs, Coll.rev(tes))
       1
-    case Coll.Nil =>
-      val res = Ty.checkWith(xds, Tl.typeGoals(ds))
-      val Ty.Result(cs, _, s, _, _, _) = res
-      cs match
-        case Coll.Cons(_, _) =>
-          S2c.showClashes(fs, s, Coll.rev(cs))
-          1
-        case Coll.Nil => S2c.flowed(m, fs, xds, res)
+    case Coll.Nil => Eff.rows(xds) match
+      case Eff.RulesBad(rel) => S2c.internal("effect row", rel)
+      case Eff.Got(rows) =>
+        val res = Ty.checkWith(xds, Tl.typeGoals(ds), rows)
+        val Ty.Result(cs, _, s, _, _, _) = res
+        cs match
+          case Coll.Cons(_, _) =>
+            S2c.showClashes(fs, s, Coll.rev(cs))
+            1
+          case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
 
-def S2c.flowed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
-  S2c.flowAll(S2c.flowCx(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
+def S2c.flowed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
+  S2c.flowAll(S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
         S2c.showFlow(fs, Coll.rev(cs))
         1
-      case Coll.Nil => S2c.finish(m, fs, ds, res)
+      case Coll.Nil => S2c.finish(m, fs, ds, rows, res)
 
 enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])
   case S2c.FlowBad(rel: Sym.Sym)
 
-def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
-  case Coll.Nil => Flow.Cx(ps, hs, fs, es, ts)
+def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
+  case Coll.Nil => Flow.Cx(ps, hs, fs, es, ts, rows)
   case Coll.Cons(d, rest) => d match
-    case Ast.DProto(p) => S2c.flowCx(rest, Coll.Cons(p, ps), hs, fs, es, ts)
-    case Ast.DHandler(h) => S2c.flowCx(rest, ps, Coll.Cons(h, hs), fs, es, ts)
-    case Ast.DFn(f) => S2c.flowCx(rest, ps, hs, Coll.Cons(f, fs), es, ts)
-    case Ast.DEnum(e) => S2c.flowCx(rest, ps, hs, fs, Coll.Cons(e, es), ts)
-    case Ast.DType(td) => S2c.flowCx(rest, ps, hs, fs, es, Coll.Cons(td, ts))
-    case _ => S2c.flowCx(rest, ps, hs, fs, es, ts)
+    case Ast.DProto(p) => S2c.flowCx(rest, rows, Coll.Cons(p, ps), hs, fs, es, ts)
+    case Ast.DHandler(h) => S2c.flowCx(rest, rows, ps, Coll.Cons(h, hs), fs, es, ts)
+    case Ast.DFn(f) => S2c.flowCx(rest, rows, ps, hs, Coll.Cons(f, fs), es, ts)
+    case Ast.DEnum(e) => S2c.flowCx(rest, rows, ps, hs, fs, Coll.Cons(e, es), ts)
+    case Ast.DType(td) => S2c.flowCx(rest, rows, ps, hs, fs, es, Coll.Cons(td, ts))
+    case _ => S2c.flowCx(rest, rows, ps, hs, fs, es, ts)
 
 // every def with a body: its flow clashes (all of them, in order)
 def S2c.flowAll {r: Region} (cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
@@ -299,7 +302,7 @@ enum S2c.Mode:
   // --store-check: write every hashed decl to the store, read it back, compare
   case S2c.StoreCheck
 
-def S2c.finish {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
+def S2c.finish {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 = m match
   case S2c.StoreCheck =>
     Store.check(ds)
     0
@@ -309,7 +312,7 @@ def S2c.finish {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[
   case S2c.EmitC =>
     Emit.program(ds, res)
     0
-  case S2c.EvalAll => Pure.impure(ds) match
+  case S2c.EvalAll => Pure.impure(ds, rows) match
     case Pure.RulesBad(rel) => S2c.internal("purity", rel)
     case Pure.Got(imp) => Ev.all(ds, imp) match
       case Ev.Lines(ls) =>

@@ -14,7 +14,7 @@ def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll
 
 // the prelude and every s2 source (a new s2 file goes here too)
 def TT.sources {r: Region} (): Coll.List[Str] =
-  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/emit.srs", Coll.Cons("s2/eval.srs", Coll.Cons("s2/facts.srs", Coll.Cons("s2/mono.srs", Coll.Nil))))))))))
+  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/eff.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/emit.srs", Coll.Cons("s2/eval.srs", Coll.Cons("s2/facts.srs", Coll.Cons("s2/mono.srs", Coll.Nil)))))))))))
   val b = Coll.Cons("s2/flow.srs", Coll.Cons("s2/hash.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Nil))))))
   val c = Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/pure.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/store.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/tlevel.srs", Coll.Cons("s2/types.srs", Coll.Nil))))))))
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
@@ -49,6 +49,7 @@ def TT.show(c: Ty.Clash): Unit = c match
   case Ty.SigDiffers(l, m) => TT.sayN("sigdiffers", l, m)
   case Ty.NotInHead(l, x) => TT.sayN("notinhead", l, x)
   case Ty.ExternSlot(l, _) => TT.say("externslot", l)
+  case Ty.UnhandledEffect(l, p) => TT.sayN("unhandled", l, p)
 
 def TT.say(k: Str, l: I64): Unit =
   rt_print(" ")
@@ -67,10 +68,12 @@ def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
     TT.show(c)
     TT.showAll(rest)
 
-def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit =
+def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, Ty.check(ds))
+
+def TT.report {r: Region} (name: Str, res: Ty.Result): Unit =
   rt_print(name)
   rt_print(":")
-  val Ty.Result(cs, is, _, _, _, _) = Ty.check(ds)
+  val Ty.Result(cs, _, _, _, _, _) = res
   cs match
     case Coll.Nil => rt_print(" ok")
     case Coll.Cons(_, _) => TT.showAll(Coll.rev(cs))
@@ -83,9 +86,11 @@ def TT.src {r: Region} (s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
 def main(): I64 =
   handle r = Arena()
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
-  TT.run("self", lib)
-  val Ty.Result(_, is, _, sfs, _, _) = Ty.check(lib)
-  val mi = Mono.run(Ty.check(lib))
+  // the whole self check once: its clashes, instances, defs and mono
+  val self = Ty.check(lib)
+  TT.report("self", self)
+  val Ty.Result(_, is, _, sfs, _, _) = self
+  val mi = Mono.run(self)
   rt_print("mono self: generic instances over 100: ")
   rt_print_i64(if TT.genericCount(mi, 0) > 100 then 1 else 0)
   rt_print(", open: ")
