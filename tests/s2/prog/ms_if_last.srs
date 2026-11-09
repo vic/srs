@@ -1,0 +1,40 @@
+// pass: multi-shot, branch cuts in last position: the site rest ends in an if (one arm a CPS call, one a plain value);
+// pickAB ends in an if of two CPS calls. leaves: 1 2 3 4 then 9
+capability NonDet:
+  def choose(): Bool
+  def fail(): Unit
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+  case Empty
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+  def fail(k): Bag[A] = Empty
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+  case Empty => ()
+def pickA(): I64 =
+  val c = NonDet.choose()
+  if c then 1 else 2
+def pickB(): I64 =
+  val c = NonDet.choose()
+  if c then 3 else 4
+def pickAB(): I64 =
+  val c = NonDet.choose()
+  if c then pickA() else pickB()
+def tree(): Bag[I64] =
+  handle nd = All()
+  val c = NonDet.choose()
+  if c then pickAB() else 9
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0
