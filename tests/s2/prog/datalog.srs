@@ -13,8 +13,8 @@ def cl {r: Region} (c: Clause, t: Clauses): Clauses = ClCons(c, t)
 def fc {r: Region} (f: Fact, t: Edb): Edb = EdbCons(f, t)
 
 def showVal(v: Val): Unit = v match
-  case VSym(s) => rt_print(s)
-  case VInt(n) => rt_print_i64(n)
+  case VSym(s) => Console.print(s)
+  case VInt(n) => Console.printI64(n)
 
 def showVals(vs: Vals): Unit = vs match
   case ValNil => ()
@@ -23,7 +23,7 @@ def showVals(vs: Vals): Unit = vs match
     t match
       case ValNil => ()
       case ValCons(_, _) =>
-        rt_print(", ")
+        Console.print(", ")
         showVals(t)
 
 // the facts of relation p, in model order
@@ -32,27 +32,28 @@ def showRel(db: Facts, p: Str): Unit = db match
   case FactCons(f, _, t) =>
     f match
       case Fact(q, vs) =>
-        if rt_str_eq(p, q) then
-          rt_print(q)
-          rt_print("(")
+        if Str.eq(p, q) then
+          Console.print(q)
+          Console.print("(")
           showVals(vs)
-          rt_print(") ")
+          Console.print(") ")
         else ()
     showRel(t, p)
 
 def show(m: Model, p: Str): Unit =
   m match
     case Unsafe(q) =>
-      rt_print("unsafe ")
-      rt_print(q)
+      Console.print("unsafe ")
+      Console.print(q)
     case NegCycle(q) =>
-      rt_print("negcycle ")
-      rt_print(q)
+      Console.print("negcycle ")
+      Console.print(q)
     case Model(db) => showRel(db, p)
-  rt_print("\n")
+  Console.print("\n")
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val x = AVar(0)
   val y = AVar(1)
   val z = AVar(2)
@@ -112,21 +113,21 @@ def main(): I64 =
 
 def verdict(v: Verdict): Unit =
   v match
-    case Valid => rt_print("valid")
+    case Valid => Console.print("valid")
     case Invalid(f) =>
-      rt_print("invalid ")
+      Console.print("invalid ")
       f match
         case Fact(p, vs) =>
-          rt_print(p)
-          rt_print("(")
+          Console.print(p)
+          Console.print("(")
           showVals(vs)
-          rt_print(")")
-  rt_print("\n")
+          Console.print(")")
+  Console.print("\n")
 
 def check {r: Region} (cs: Clauses, edb: Edb, m: Model): Unit = m match
   case Model(db) => verdict(checkModel(cs, edb, db))
-  case Unsafe(_) => rt_print("no model\n")
-  case NegCycle(_) => rt_print("no model\n")
+  case Unsafe(_) => Console.print("no model\n")
+  case NegCycle(_) => Console.print("no model\n")
 
 def dropLast {r: Region} (db: Facts): Facts = db match
   case FactNil => FactNil

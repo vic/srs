@@ -1,21 +1,22 @@
 // pass: BD2 type params [A: Type] (vic-9l7.4): solved by unify on args or by the expected type,
 // one C copy per instance (f_id__I64), nested generic calls, generic extern = one C symbol with void* slots
-extern def rt_same [A: Type] [B: Type] (x: A): B
+extern def ext_same [A: Type] [B: Type] (x: A): B
 
 def id [A: Type] (x: A): A = x
 def pick [A: Type] (c: Bool, a: A, b: A): A = if c then a else b
 def twice [A: Type] (x: A): A = id(id(x))
 
 def main(): I64 =
-  handle r = Arena()
-  rt_print_i64(id[I64](41) + 1)
-  rt_print("\n")
-  rt_print_i64(if pick(false, true, false) then 1 else 0)
-  rt_print("\n")
-  rt_print_i64(sum(twice(Cons(1, Cons(2, Nil)))))
-  rt_print("\n")
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(id[I64](41) + 1)
+  Console.print("\n")
+  Console.printI64(if pick(false, true, false) then 1 else 0)
+  Console.print("\n")
+  Console.printI64(sum(twice(Cons(1, Cons(2, Nil)))))
+  Console.print("\n")
   // B only in the result: the annotation solves it
-  val ys: List = rt_same(Cons(3, Nil))
-  rt_print_i64(sum(ys))
-  rt_print("\n")
+  val ys: List = ext_same(Cons(3, Nil))
+  Console.printI64(sum(ys))
+  Console.print("\n")
   0

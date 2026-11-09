@@ -60,7 +60,7 @@ def first [A: Type] [B: Type] (p: Pair[A, B]): A = p match
   case Pair(a, _) => a
 
 def main(): I64 =
-  handle r = Arena()
+  handle r = Srs.Arena()
   val n: Opt[I64] = None
   rt_print_i64(get(Some(41), 0) + get(n, 1))
   rt_print("\n")
@@ -113,14 +113,15 @@ def push {r: Region} (h: I64, xs: List): List
 = Cons(h, xs)
 
 def main(): I64 =
-  handle r = Arena()
-  rt_print_i64(count(build(5)))
-  rt_print("\n")
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(count(build(5)))
+  Console.print("\n")
   0
 
 spec def twoOf(n: I64): List = Cons(n, Cons(n, Nil))
 
-spec def strLen2(s: Str): I64 = rt_str_len(s) * 2
+spec def strLen2(s: Str): I64 = Str.len(s) * 2
 def h(p: Pair[I64, I64]): I64 =
   val y = 1
   p match

@@ -77,7 +77,7 @@ enum Model:
 // ── values and facts ──
 def valEq(a: Val, b: Val): Bool = a match
   case VSym(x) => b match
-    case VSym(y) => rt_str_eq(x, y)
+    case VSym(y) => Str.eq(x, y)
     case VInt(_) => false
   case VInt(x) => b match
     case VSym(_) => false
@@ -93,7 +93,7 @@ def valsEq(a: Vals, b: Vals): Bool = a match
 
 def factEq(a: Fact, b: Fact): Bool = a match
   case Fact(p, xs) => b match
-    case Fact(q, ys) => rt_str_eq(p, q) && valsEq(xs, ys)
+    case Fact(q, ys) => Str.eq(p, q) && valsEq(xs, ys)
 
 def hasFact(db: Facts, f: Fact): Bool = db match
   case FactNil => false
@@ -128,7 +128,7 @@ def matchFacts {r: Region} (e: Env, a: Atom, db: Facts): Envs = db match
     case Atom(p, args) => f match
       case Fact(q, vals) =>
         val rest = matchFacts(e, a, t)
-        if rt_str_eq(p, q) then envsAppend(matchArgs(e, args, vals), rest) else rest
+        if Str.eq(p, q) then envsAppend(matchArgs(e, args, vals), rest) else rest
 
 def envsAppend {r: Region} (a: Envs, b: Envs): Envs = a match
   case EnvsNil => b
@@ -204,11 +204,11 @@ def safe(c: Clause): Bool = c match
 // ── strata ──
 def stratum(st: Strata, p: Str): I64 = st match
   case StNil => 0
-  case StCons(q, k, t) => if rt_str_eq(p, q) then k else stratum(t, p)
+  case StCons(q, k, t) => if Str.eq(p, q) then k else stratum(t, p)
 
 def setStratum {r: Region} (st: Strata, p: Str, k: I64): Strata = st match
   case StNil => StCons(p, k, StNil)
-  case StCons(q, j, t) => if rt_str_eq(p, q) then StCons(q, k, t) else StCons(q, j, setStratum(t, p, k))
+  case StCons(q, j, t) => if Str.eq(p, q) then StCons(q, k, t) else StCons(q, j, setStratum(t, p, k))
 
 def relOf(a: Atom): Str = a match
   case Atom(p, _) => p
@@ -234,7 +234,7 @@ def strataSame(a: Strata, b: Strata): Bool = a match
     case StCons(_, _, _) => false
   case StCons(p, k, t) => b match
     case StNil => false
-    case StCons(q, j, u) => rt_str_eq(p, q) && k == j && strataSame(t, u)
+    case StCons(q, j, u) => Str.eq(p, q) && k == j && strataSame(t, u)
 
 def clauseCount(cs: Clauses): I64 = cs match
   case ClNil => 0
@@ -304,13 +304,13 @@ def colsAdd {r: Region} (cs: Cols, vs: Vals, f: Fact, src: Source): Cols = vs ma
 
 def factsOf(rs: Rels, p: Str, delta: Bool): Facts = rs match
   case RelNil => FactNil
-  case Rel(q, all, d, _, t) => if rt_str_eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
+  case Rel(q, all, d, _, t) => if Str.eq(p, q) then (if delta then d else all) else factsOf(t, p, delta)
 
 def addFact {r: Region} (rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
   case Fact(p, vs) => rs match
     case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, colsAdd(ColNil, vs, f, src), RelNil)
     case Rel(q, all, d, cs, t) =>
-      if rt_str_eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
+      if Str.eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
       else Rel(q, all, d, cs, addFact(t, f, src, delta))
 
 def resetDelta {r: Region} (rs: Rels): Rels = rs match
@@ -324,7 +324,7 @@ def addFacts {r: Region} (rs: Rels, fs: Facts, delta: Bool): Rels = fs match
 // the facts of p that can match args under e: the bucket of the first bound column, else all
 def candidates {r: Region} (rs: Rels, p: Str, args: ArgList, e: Env): Facts = rs match
   case RelNil => FactNil
-  case Rel(q, all, _, cs, t) => if rt_str_eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
+  case Rel(q, all, _, cs, t) => if Str.eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
 
 def boundCol {r: Region} (all: Facts, cs: Cols, args: ArgList, e: Env): Facts = args match
   case ArgNil => all

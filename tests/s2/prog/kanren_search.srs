@@ -21,30 +21,31 @@ def appendo {r: Region} (): Rules =
   RCons(r1, RCons(r2, RNil))
 
 def showStatus(st: Status): Unit = st match
-  case Ended => rt_print("ended")
-  case Limit => rt_print("limit")
-  case NoFuel => rt_print("nofuel")
+  case Ended => Console.print("ended")
+  case Limit => Console.print("limit")
+  case NoFuel => Console.print("nofuel")
 
 // each answer: the walked query variables 0..nv-1, then the status
 def show {r: Region} (run: Run, nv: I64): Unit = run match
   case Run(ans, st) =>
     showAnswers(ans, nv)
     showStatus(st)
-    rt_print("\n")
+    Console.print("\n")
 
 def showAnswers {r: Region} (ans: Answers, nv: I64): Unit = ans match
   case ANil => ()
   case ACons(st, t) =>
     var i = 0
     while i < nv do
-      if i > 0 then rt_print(" ; ") else ()
+      if i > 0 then Console.print(" ; ") else ()
       showTerm(walkAll(substOf(st), TVar(i)))
       i = i + 1
-    rt_print("\n")
+    Console.print("\n")
     showAnswers(t, nv)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val rules = appendo()
   val nil = c0("nil")
   val ab = c2("cons", c0("a"), c2("cons", c0("b"), nil))

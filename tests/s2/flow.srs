@@ -256,12 +256,12 @@ def FT.show(c: Flow.Clash): Unit = c match
   case Flow.Stale(line, x) => FT.say("stale", line, x)
 
 def FT.say(kind: Str, line: I64, cap: Sym.Sym): Unit =
-  rt_print(" ")
-  rt_print(kind)
-  rt_print(" ")
-  rt_print_i64(line)
-  rt_print(" ")
-  rt_print(Sym.str(cap))
+  Console.print(" ")
+  Console.print(kind)
+  Console.print(" ")
+  Console.printI64(line)
+  Console.print(" ")
+  Console.print(Sym.str(cap))
 
 def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
   case Coll.Nil => ()
@@ -272,21 +272,21 @@ def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
 def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), FT.fns(), FT.enums(), Coll.Nil, Eff.none()), f))
 
 def FT.verdict (name: Str, v: Flow.Verdict): Unit =
-  rt_print(name)
-  rt_print(":")
+  Console.print(name)
+  Console.print(":")
   v match
-    case Flow.Ok => rt_print(" ok")
+    case Flow.Ok => Console.print(" ok")
     case Flow.Bad(cs) => FT.showAll(cs)
     case Flow.RulesUnsafe(rel) =>
-      rt_print(" rules unsafe ")
-      rt_print(Sym.str(rel))
+      Console.print(" rules unsafe ")
+      Console.print(Sym.str(rel))
     case Flow.RulesNegCycle(rel) =>
-      rt_print(" rules negcycle ")
-      rt_print(Sym.str(rel))
+      Console.print(" rules negcycle ")
+      Console.print(Sym.str(rel))
     case Flow.RulesIllTyped(rel) =>
-      rt_print(" rules illtyped ")
-      rt_print(Sym.str(rel))
-  rt_print("\n")
+      Console.print(" rules illtyped ")
+      Console.print(Sym.str(rel))
+  Console.print("\n")
 
 // the reading of a model whose clash relation stuck holds (name, line): a rule library with the columns swapped
 def FT.illTyped {r: Region} (): Flow.Verdict =
@@ -307,7 +307,8 @@ def FT.wellTyped {r: Region} (): Flow.Verdict =
     case D.NegCycle(rel) => Flow.RulesNegCycle(rel)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   FT.run("file_ok", FT.fileOk())
   FT.run("read_three", FT.readThree())
   FT.run("close_no_read", FT.closeNoRead())

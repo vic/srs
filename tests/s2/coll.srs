@@ -8,7 +8,7 @@ given Coll.Fold[T.Sum, I64, I64]:
   def step(acc: I64, x: I64): I64 = acc + x
 
 given Coll.Fold[T.Longest, Str, I64]:
-  def step(acc: I64, x: Str): I64 = if rt_str_len(x) > acc then rt_str_len(x) else acc
+  def step(acc: I64, x: Str): I64 = if Str.len(x) > acc then Str.len(x) else acc
 
 // n, n-1, ..., 1 onto acc
 def T.range {r: Region} (n: I64, acc: Coll.List[I64]): Coll.List[I64] = if n == 0 then acc else T.range(n - 1, Coll.Cons(n, acc))
@@ -18,21 +18,22 @@ def T.firstOr(o: Coll.Option[I64], d: I64): I64 = o match
   case Coll.Some(v) => v
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val xs = T.range(5, Coll.Nil)
-  rt_print_i64(Coll.length(xs))
-  rt_print("\n")
-  rt_print_i64(Coll.foldl[T.Sum, I64, I64](xs, 0))
-  rt_print("\n")
-  rt_print_i64(T.firstOr(Coll.headOpt(Coll.rev(xs)), 0))
-  rt_print("\n")
+  Console.printI64(Coll.length(xs))
+  Console.print("\n")
+  Console.printI64(Coll.foldl[T.Sum, I64, I64](xs, 0))
+  Console.print("\n")
+  Console.printI64(T.firstOr(Coll.headOpt(Coll.rev(xs)), 0))
+  Console.print("\n")
   val none: Coll.List[I64] = Coll.Nil
-  rt_print_i64(T.firstOr(Coll.headOpt(none), 42))
-  rt_print("\n")
+  Console.printI64(T.firstOr(Coll.headOpt(none), 42))
+  Console.print("\n")
   val ws: Coll.List[Str] = Coll.Cons("ab", Coll.Cons("abcde", Coll.Cons("a", Coll.Nil)))
-  rt_print_i64(Coll.foldl[T.Longest, Str, I64](ws, 0))
-  rt_print("\n")
+  Console.printI64(Coll.foldl[T.Longest, Str, I64](ws, 0))
+  Console.print("\n")
   val big = T.range(1000000, Coll.Nil)
-  rt_print_i64(Coll.foldl[T.Sum, I64, I64](Coll.rev(big), 0))
-  rt_print("\n")
+  Console.printI64(Coll.foldl[T.Sum, I64, I64](Coll.rev(big), 0))
+  Console.print("\n")
   0

@@ -8,10 +8,9 @@ protocol Log:
   op say(n: I64): Unit : Live -> Live
 
 handler Out for Log:
-  def init(): Ptr = rt_arena_new()
-  def say(self: Ptr, n: I64): Unit =
-    rt_print_i64(n)
-    rt_print("\n")
+  def say(n: I64): Unit =
+    Console.printI64(n)
+    Console.print("\n")
 
 enum Nums:
   case NNil
@@ -35,9 +34,10 @@ def quiet(n: I64): Unit =
   tell(n)
 
 def main(): I64 =
+  handle io = Srs.Console()
   quiet(7)
   handle o = Out()
-  handle a = Arena()
+  handle a = Srs.Arena()
   val s = total(grow(3))
   Log.say(s)
   a.free()

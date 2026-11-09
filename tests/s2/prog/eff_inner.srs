@@ -7,18 +7,16 @@ protocol Log:
   op say(n: I64): Unit : Live -> Live
 
 handler Loud for Log:
-  def init(): Ptr = rt_arena_new()
-  def say(self: Ptr, n: I64): Unit =
-    rt_print("loud ")
-    rt_print_i64(n)
-    rt_print("\n")
+  def say(n: I64): Unit =
+    Console.print("loud ")
+    Console.printI64(n)
+    Console.print("\n")
 
 handler Soft for Log:
-  def init(): Ptr = rt_arena_new()
-  def say(self: Ptr, n: I64): Unit =
-    rt_print("soft ")
-    rt_print_i64(n)
-    rt_print("\n")
+  def say(n: I64): Unit =
+    Console.print("soft ")
+    Console.printI64(n)
+    Console.print("\n")
 
 def tell(n: I64): Unit = Log.say(n)
 
@@ -28,6 +26,7 @@ def inner(n: I64): Unit =
   tell(n)
 
 def main(): I64 =
+  handle io = Srs.Console()
   handle l = Loud()
   tell(1)
   inner(2)

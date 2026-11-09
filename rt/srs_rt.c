@@ -155,9 +155,9 @@ srs_str rt_str_slice(srs_str s, int64_t b, int64_t e) {
 bool rt_str_eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }
 int64_t rt_exit(int64_t code) { fflush(stdout); exit((int)code); }
 // identity on a void* slot: the test of generic externs (vic-9l7.4 BD2, tests/s2/prog/generic.srs)
-void* rt_same(void* x) { return x; }
+void* ext_same(void* x) { return x; }
 // a non-null handle for tests of facts on types (vic-jxk, tests/s2/prog/type_facts.srs)
-void* rt_handle(void) { static int64_t h; return &h; }
+void* ext_handle(void) { static int64_t h; return &h; }
 // Srs.noState: the state of a handler that keeps none (s2/parse.srs Parse.stateless)
 void* Srs__noState(void) { return 0; }
 // the pure string primitives Str.len, Str.at, Str.slice, Str.eq (lib/prelude.srs)

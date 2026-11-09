@@ -11,29 +11,29 @@ def T.le {r: Region} (x: K.Term, y: K.Term): K.Goal = K.Post(K.FBin(K.Le, x, y))
 
 def T.show(t: K.Term): Unit = t match
   case K.Var(n) =>
-    rt_print("_")
-    rt_print_i64(n)
-  case K.Int(v) => rt_print_i64(v)
+    Console.print("_")
+    Console.printI64(n)
+  case K.Int(v) => Console.printI64(v)
   case K.Con(f, args) =>
-    rt_print(Sym.str(f))
+    Console.print(Sym.str(f))
     args match
       case Coll.Nil => ()
       case Coll.Cons(h, t) =>
-        rt_print("(")
+        Console.print("(")
         T.show(h)
         T.showRest(t)
-        rt_print(")")
+        Console.print(")")
 
 def T.showRest(ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
-    rt_print(", ")
+    Console.print(", ")
     T.show(h)
     T.showRest(t)
 
 def T.vars {r: Region} (st: K.State, i: I64, nv: I64): Unit =
   if i < nv then
-    if i > 0 then rt_print(" ; ") else ()
+    if i > 0 then Console.print(" ; ") else ()
     val K.State(s, _, _, _, _) = st
     T.show(K.reify(s, K.Var(i)))
     T.vars(st, i + 1, nv)
@@ -43,11 +43,11 @@ def T.neqs {r: Region} (s: Coll.IMap[K.Term], ns: Coll.List[K.Neq]): Unit = ns m
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
     val K.Neq(a, b) = h
-    rt_print(" {")
+    Console.print(" {")
     T.show(K.reify(s, a))
-    rt_print(" =/= ")
+    Console.print(" =/= ")
     T.show(K.reify(s, b))
-    rt_print("}")
+    Console.print("}")
     T.neqs(s, t)
 
 def T.answers {r: Region} (xs: Coll.List[K.State], nv: I64, store: Bool): Unit = xs match
@@ -56,7 +56,7 @@ def T.answers {r: Region} (xs: Coll.List[K.State], nv: I64, store: Bool): Unit =
     T.vars(st, 0, nv)
     val K.State(s, ns, _, _, _) = st
     if store then T.neqs(s, ns) else ()
-    rt_print("\n")
+    Console.print("\n")
     T.answers(t, nv, store)
 
 // disequality cases: answers with their store, then --
@@ -64,7 +64,7 @@ def T.neq {r: Region} (g: K.Goal, nv: I64): Unit =
   val none: Coll.List[K.Rule] = Coll.Nil
   val K.Run(ans, _) = K.solve(none, g, nv, 100, 10)
   T.answers(ans, nv, true)
-  rt_print("--\n")
+  Console.print("--\n")
 
 // finite domain cases: answers, then the status
 def T.fd {r: Region} (g: K.Goal, nv: I64, fuel: I64): Unit =
@@ -72,9 +72,9 @@ def T.fd {r: Region} (g: K.Goal, nv: I64, fuel: I64): Unit =
   val K.Run(ans, st) = K.solve(none, g, nv, fuel, 10)
   T.answers(ans, nv, false)
   st match
-    case K.Ended => rt_print("ended\n")
-    case K.Limit => rt_print("limit\n")
-    case K.NoFuel => rt_print("nofuel\n")
+    case K.Ended => Console.print("ended\n")
+    case K.Limit => Console.print("limit\n")
+    case K.NoFuel => Console.print("nofuel\n")
 
 // X0 < X1 < ... < X(n-1)
 def T.chainLt {r: Region} (i: I64, n: I64, g: K.Goal): K.Goal = if i + 1 >= n then g else T.chainLt(i + 1, n, T.both(g, T.lt(K.Var(i), K.Var(i + 1))))
@@ -82,7 +82,8 @@ def T.allIn {r: Region} (i: I64, n: I64, a: I64, b: I64, g: K.Goal): K.Goal = if
 def T.vlist {r: Region} (i: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] = if i < 0 then acc else T.vlist(i - 1, Coll.Cons(K.Var(i), acc))
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val x = K.Var(0)
   val y = K.Var(1)
   val z = K.Var(2)

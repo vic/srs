@@ -6,31 +6,31 @@ def T.c2 {r: Region} (f: Str, a: K.Term, b: K.Term): K.Term = K.Con(Sym.of(f), C
 
 def T.show(t: K.Term): Unit = t match
   case K.Var(n) =>
-    rt_print("_")
-    rt_print_i64(n)
-  case K.Int(v) => rt_print_i64(v)
+    Console.print("_")
+    Console.printI64(n)
+  case K.Int(v) => Console.printI64(v)
   case K.Con(f, args) =>
-    rt_print(Sym.str(f))
+    Console.print(Sym.str(f))
     args match
       case Coll.Nil => ()
       case Coll.Cons(h, t) =>
-        rt_print("(")
+        Console.print("(")
         T.show(h)
         T.showRest(t)
-        rt_print(")")
+        Console.print(")")
 
 def T.showRest(ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
-    rt_print(", ")
+    Console.print(", ")
     T.show(h)
     T.showRest(t)
 
 def T.res {r: Region} (o: Coll.Option[Coll.IMap[K.Term]], t: K.Term): Unit = o match
-  case Coll.None => rt_print("fail\n")
+  case Coll.None => Console.print("fail\n")
   case Coll.Some(s) =>
     T.show(K.reify(s, t))
-    rt_print("\n")
+    Console.print("\n")
 
 def T.then {r: Region} (o: Coll.Option[Coll.IMap[K.Term]], a: K.Term, b: K.Term): Coll.Option[Coll.IMap[K.Term]] = o match
   case Coll.None => Coll.None
@@ -44,7 +44,8 @@ def T.chain {r: Region} (s: Coll.IMap[K.Term], i: I64, n: I64): Coll.IMap[K.Term
     case Coll.Some(s2) => T.chain(s2, i + 1, n)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val e: Coll.IMap[K.Term] = Coll.Tip
   val x = K.Var(0)
   val y = K.Var(1)
