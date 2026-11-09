@@ -1,0 +1,73 @@
+// s2 self-host rung T1 (vic/c/s2-selfhost.md): type inference. the oracle is s1: s2's own sources and the prelude are
+// accepted by s1, so they must type with no clash and every generic call solved; then one program per clash kind
+def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll.List[Ast.Decl] = ps match
+  case Coll.Nil => acc
+  case Coll.Cons(p, rest) => Parse.source(rt_read_file(p)) match
+    case Parse.Ok(ds, _) => TT.parseAll(rest, Coll.revOnto(Coll.rev(ds), acc))
+    case Parse.Err(line, _) =>
+      rt_print("parse error ")
+      rt_print(p)
+      rt_print(" ")
+      rt_print_i64(line)
+      rt_print("\n")
+      TT.parseAll(rest, acc)
+
+// the prelude and every s2 source (a new s2 file goes here too)
+def TT.sources {r: Region} (): Coll.List[Str] =
+  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Nil)))))
+  val b = Coll.Cons("s2/flow.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Nil)))))
+  val c = Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/types.srs", Coll.Nil)))))
+  Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
+
+def TT.show(c: Ty.Clash): Unit = c match
+  case Ty.Mismatch(l, _, _) => TT.say("mismatch", l)
+  case Ty.Unknown(l, n) => TT.sayN("unknown", l, n)
+  case Ty.Arity(l, n) => TT.sayN("arity", l, n)
+  case Ty.NotEnum(l, _) => TT.say("notenum", l)
+  case Ty.NoOp(l, n) => TT.sayN("noop", l, n)
+  case Ty.CannotInfer(l, n) => TT.sayN("cannotinfer", l, n)
+
+def TT.say(k: Str, l: I64): Unit =
+  rt_print(" ")
+  rt_print(k)
+  rt_print(" ")
+  rt_print_i64(l)
+
+def TT.sayN(k: Str, l: I64, n: Sym.Sym): Unit =
+  TT.say(k, l)
+  rt_print(" ")
+  rt_print(Sym.str(n))
+
+def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    TT.show(c)
+    TT.showAll(rest)
+
+def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit =
+  rt_print(name)
+  rt_print(":")
+  val Ty.Result(cs, is, _) = Ty.check(ds)
+  cs match
+    case Coll.Nil => rt_print(" ok")
+    case Coll.Cons(_, _) => TT.showAll(Coll.rev(cs))
+  rt_print("\n")
+
+def TT.src {r: Region} (s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
+  case Parse.Ok(ds, _) => ds
+  case Parse.Err(_, _) => Coll.Nil
+
+def main(): I64 =
+  handle r = Arena()
+  val lib = TT.parseAll(TT.sources(), Coll.Nil)
+  TT.run("self", lib)
+  val Ty.Result(_, is, _) = Ty.check(lib)
+  rt_print("instances over 1000: ")
+  rt_print_i64(if Coll.length(is) > 1000 then 1 else 0)
+  rt_print("\n")
+  TT.run("trait_args", Coll.revOnto(Coll.rev(TT.src("def fold1 [X: Type] [Y: Type] {f: Coll.Fold[Y, X, I64]} (x: X): I64 = f.step(0, x)\n")), lib))
+  TT.run("mismatch", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = true\n")), lib))
+  TT.run("arity", Coll.revOnto(Coll.rev(TT.src("def g(x: I64): I64 = x\ndef f(): I64 = g(1, 2)\n")), lib))
+  TT.run("unknown", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = nope(1)\n")), lib))
+  TT.run("cannotinfer", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = Coll.length(Coll.Nil)\n")), lib))
+  0
