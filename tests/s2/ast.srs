@@ -14,7 +14,7 @@ def AT.tr {r: Region} (a: Str, b: Str): Ast.Trans = Ast.Trans(Sym.of(a), Sym.of(
 def AT.cap {r: Region} (line: I64, x: Str, p: Str): Ast.Group = Ast.Evidence(AT.l1(Ast.Binder(line, Sym.of(x), AT.ty(p))))
 def AT.val {r: Region} (line: I64, x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(line, Sym.of(x), Coll.None, e)
 def AT.handle {r: Region} (line: I64, x: Str, h: Str): Ast.Stmt = Ast.Handle(line, Sym.of(x), Sym.of(h), Coll.Nil)
-def AT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, AT.ty("I64"), Coll.Nil, Ast.Def(body)))
+def AT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body)))
 
 def AT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
 def AT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, AT.l1(b))
@@ -33,20 +33,20 @@ def AT.door {r: Region} (): Ast.Decl =
 
 def AT.hdoor {r: Region} (): Ast.Decl =
   val self = AT.l1(Ast.Binder(15, AT.s("self"), AT.ty("Ptr")))
-  val init = Ast.Fn(14, AT.s("init"), Coll.Nil, Coll.Nil, AT.ty("Ptr"), Coll.Nil, Ast.Def(AT.call(14, "rt_arena_new", Coll.Nil)))
-  val knock = Ast.Fn(15, AT.s("knock"), Coll.Nil, self, AT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(15, 3)))
-  val leave = Ast.Fn(16, AT.s("leave"), Coll.Nil, self, AT.ty("Unit"), Coll.Nil, Ast.Def(AT.call(16, "rt_arena_free", AT.l1(AT.nm(16, "self")))))
+  val init = Ast.Fn(14, AT.s("init"), Coll.Nil, Coll.Nil, AT.ty("Ptr"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(14, "rt_arena_new", Coll.Nil)))
+  val knock = Ast.Fn(15, AT.s("knock"), Coll.Nil, self, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(15, 3)))
+  val leave = Ast.Fn(16, AT.s("leave"), Coll.Nil, self, AT.ty("Unit"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(16, "rt_arena_free", AT.l1(AT.nm(16, "self")))))
   Ast.DHandler(Ast.Handler(13, AT.s("HDoor"), AT.s("Door"), AT.l3(init, knock, leave)))
 
 def AT.knockTwice {r: Region} (): Ast.Decl =
   val gs = AT.l2(AT.cap(18, "d", "Door"), Ast.Facts(AT.l2(AT.a2(18, "at", "d", "s"), AT.a2(18, "twoKnocks", "s", "s3"))))
   val body = Ast.Block(19, AT.l1(AT.val(19, "a", AT.op(19, "d", "knock"))), Ast.Bin(20, Ast.Add, AT.nm(20, "a"), AT.op(20, "d", "knock")))
-  Ast.DFn(Ast.Fn(18, AT.s("knockTwice"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(18, "at", "d", "s3")), Ast.Def(body)))
+  Ast.DFn(Ast.Fn(18, AT.s("knockTwice"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(18, "at", "d", "s3")), Ast.Def(Coll.Nil, body)))
 
 def AT.knockOnce {r: Region} (): Ast.Decl =
   val facts = AT.l3(AT.a2(23, "at", "d", "Shut"), AT.a2(23, "reach", "Shut", "t"), AT.a3(23, "next", "Shut", "knock", "t"))
   val gs = AT.l2(AT.cap(23, "d", "Door"), Ast.Facts(facts))
-  Ast.DFn(Ast.Fn(23, AT.s("knockOnce"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(23, "at", "d", "t")), Ast.Def(AT.op(23, "d", "knock"))))
+  Ast.DFn(Ast.Fn(23, AT.s("knockOnce"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(23, "at", "d", "t")), Ast.Def(Coll.Nil, AT.op(23, "d", "knock"))))
 
 def AT.rulesMain {r: Region} (): Ast.Decl =
   val once = Ast.Call(30, AT.s("knockOnce"), Coll.Nil, AT.l1(AT.s("e")), Coll.Nil)
@@ -77,7 +77,7 @@ def AT.c1 {r: Region} (line: I64, f: Str, a: Ast.Expr): Ast.Expr = AT.call(line,
 def AT.c2 {r: Region} (line: I64, f: Str, a: Ast.Expr, b: Ast.Expr): Ast.Expr = AT.call(line, f, AT.l2(a, b))
 def AT.nl {r: Region} (line: I64): Ast.Stmt = Ast.Do(AT.c1(line, "rt_print", Ast.Str(line, "\\n")))
 def AT.pr {r: Region} (line: I64, e: Ast.Expr): Ast.Stmt = Ast.Do(AT.c1(line, "rt_print_i64", e))
-def AT.fn {r: Region} (line: I64, n: Str, gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(n), gs, ps, ret, Coll.Nil, Ast.Def(body)))
+def AT.fn {r: Region} (line: I64, n: Str, gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(n), gs, ps, ret, Coll.Nil, Ast.Def(Coll.Nil, body)))
 
 def AT.genEnums {r: Region} (): Coll.List[Ast.Decl] =
   val opt = Ast.Enum(3, AT.s("Opt"), AT.l1(AT.tp(3, "A")), AT.l2(Ast.Case(4, AT.s("None"), Coll.Nil), Ast.Case(5, AT.s("Some"), AT.l1(AT.bd(5, "v", AT.ty("A"))))))

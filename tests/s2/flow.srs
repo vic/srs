@@ -10,7 +10,7 @@ def FT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
 def FT.tr {r: Region} (a: Str, b: Str): Ast.Trans = Ast.Trans(Sym.of(a), Sym.of(b))
 def FT.handle {r: Region} (line: I64, x: Str, h: Str): Ast.Stmt = Ast.Handle(line, Sym.of(x), Sym.of(h), Coll.Nil)
 def FT.val {r: Region} (line: I64, x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(line, Sym.of(x), Coll.None, e)
-def FT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Fn = Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(body))
+def FT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Fn = Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body))
 def FT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
 def FT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, FT.l1(b))
 def FT.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, FT.l2(b, c))
@@ -83,7 +83,7 @@ def FT.at {r: Region} (cap: Str, s: Str): Ast.Atom = Ast.Atom(1, Sym.of("at"), F
 def FT.nextA {r: Region} (a: Str, op: Str, b: Str): Ast.Atom = Ast.Atom(1, Sym.of("next"), FT.l3(Ast.TName(Sym.of(a)), Ast.TName(Sym.of(op)), Ast.TName(Sym.of(b))))
 def FT.callee {r: Region} (name: Str, entry: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], body: Ast.Expr): Ast.Fn =
   val gs = FT.l2(Ast.Evidence(FT.l1(Ast.Binder(1, FT.s("f"), FT.ty("File")))), Ast.Facts(entry))
-  Ast.Fn(1, Sym.of(name), gs, Coll.Nil, FT.ty("I64"), exit, Ast.Def(body))
+  Ast.Fn(1, Sym.of(name), gs, Coll.Nil, FT.ty("I64"), exit, Ast.Def(Coll.Nil, body))
 def FT.call {r: Region} (line: I64, f: Str): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, Coll.Nil)
 def FT.callOn {r: Region} (line: I64, f: Str, cap: Str): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, FT.l1(Sym.of(cap)), Coll.Nil)
 
@@ -115,7 +115,7 @@ def FT.chosenFrame {r: Region} (): Ast.Fn =
 // two capabilities: both must be Opened (the param chain checks the second one too), both leave in Read1
 def FT.readBoth {r: Region} (): Ast.Fn =
   val gs = FT.l2(Ast.Evidence(FT.l2(Ast.Binder(1, FT.s("f"), FT.ty("File")), Ast.Binder(1, FT.s("g"), FT.ty("File")))), Ast.Facts(FT.l2(FT.at("f", "Opened"), FT.at("g", "Opened"))))
-  Ast.Fn(1, Sym.of("readBoth"), gs, Coll.Nil, FT.ty("I64"), FT.l2(FT.at("f", "Read1"), FT.at("g", "Read1")), Ast.Def(Ast.Int(1, 0)))
+  Ast.Fn(1, Sym.of("readBoth"), gs, Coll.Nil, FT.ty("I64"), FT.l2(FT.at("f", "Read1"), FT.at("g", "Read1")), Ast.Def(Coll.Nil, Ast.Int(1, 0)))
 
 def FT.callBoth {r: Region} (line: I64): Ast.Expr = Ast.Call(line, Sym.of("readBoth"), Coll.Nil, FT.l2(Sym.of("a"), Sym.of("b")), Coll.Nil)
 
@@ -130,7 +130,7 @@ def FT.twoCapsBad {r: Region} (): Ast.Fn =
 
 // ── protocol rules in entry facts (tests/rules.srs) ──
 def FT.doorFn {r: Region} (line: I64, name: Str, entry: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], body: Ast.Expr): Ast.Fn =
-  Ast.Fn(line, Sym.of(name), FT.l2(Ast.Evidence(FT.l1(Ast.Binder(line, FT.s("d"), FT.ty("Door")))), Ast.Facts(entry)), Coll.Nil, FT.ty("I64"), exit, Ast.Def(body))
+  Ast.Fn(line, Sym.of(name), FT.l2(Ast.Evidence(FT.l1(Ast.Binder(line, FT.s("d"), FT.ty("Door")))), Ast.Facts(entry)), Coll.Nil, FT.ty("I64"), exit, Ast.Def(Coll.Nil, body))
 
 def FT.ruleAtom {r: Region} (rel: Str, a: Str, b: Str): Ast.Atom = Ast.Atom(1, Sym.of(rel), FT.l2(Ast.TName(Sym.of(a)), Ast.TName(Sym.of(b))))
 
@@ -177,16 +177,16 @@ def FT.allocFreed {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l2(FT.hand
 def FT.allocOk {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l1(FT.handle(3, "r", "Arena")), Ast.Call(4, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(4)))))
 
 // tests/neg/call_freed.srs: two {r: Region} needs r in its start state Open
-def FT.two {r: Region} (): Ast.Fn = Ast.Fn(2, FT.s("two"), FT.l1(Ast.Evidence(FT.l1(Ast.Binder(2, FT.s("r"), FT.ty("Region"))))), Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Ast.Call(2, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(2)))))
+def FT.two {r: Region} (): Ast.Fn = Ast.Fn(2, FT.s("two"), FT.l1(Ast.Evidence(FT.l1(Ast.Binder(2, FT.s("r"), FT.ty("Region"))))), Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Call(2, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(2)))))
 
 def FT.callFreed {r: Region} (): Ast.Fn = FT.main(3, Ast.Block(4, FT.l2(FT.handle(4, "r", "Arena"), Ast.Do(FT.op(5, "r", "free"))), FT.call(6, "two")))
 
 // ── CAPS: the regions a value lives in (tests/list.lib build {r: Region} (n: I64): List; sum(xs: List): I64) ──
 def FT.build {r: Region} (): Ast.Fn =
   val body = Ast.If(1, Ast.Bin(1, Ast.Eq, FT.nm(1, "n"), Ast.Int(1, 0)), FT.nm(1, "Nil"), FT.cons(1))
-  Ast.Fn(1, FT.s("build"), FT.l1(Ast.Evidence(FT.l1(Ast.Binder(1, FT.s("r"), FT.ty("Region"))))), FT.l1(Ast.Binder(1, FT.s("n"), FT.ty("I64"))), FT.ty("List"), Coll.Nil, Ast.Def(body))
+  Ast.Fn(1, FT.s("build"), FT.l1(Ast.Evidence(FT.l1(Ast.Binder(1, FT.s("r"), FT.ty("Region"))))), FT.l1(Ast.Binder(1, FT.s("n"), FT.ty("I64"))), FT.ty("List"), Coll.Nil, Ast.Def(Coll.Nil, body))
 
-def FT.sumFn {r: Region} (): Ast.Fn = Ast.Fn(1, FT.s("sum"), Coll.Nil, FT.l1(Ast.Binder(1, FT.s("xs"), FT.ty("List"))), FT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(1, 0)))
+def FT.sumFn {r: Region} (): Ast.Fn = Ast.Fn(1, FT.s("sum"), Coll.Nil, FT.l1(Ast.Binder(1, FT.s("xs"), FT.ty("List"))), FT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(1, 0)))
 
 def FT.bld {r: Region} (line: I64, n: I64): Ast.Expr = Ast.Call(line, FT.s("build"), Coll.Nil, Coll.Nil, FT.l1(Ast.Int(line, n)))
 def FT.bldOn {r: Region} (line: I64, cap: Str, n: I64): Ast.Expr = Ast.Call(line, FT.s("build"), Coll.Nil, FT.l1(FT.s(cap)), FT.l1(Ast.Int(line, n)))
@@ -221,7 +221,7 @@ def FT.varLoop {r: Region} (): Ast.Fn =
   FT.main(3, Ast.Block(4, Coll.revOnto(Coll.rev(ss), Coll.Cons(FT.var(6, "xs", FT.bldOn(6, "b", 2)), Coll.Cons(FT.var(7, "ys", FT.bldOn(7, "b", 1)), FT.l3(FT.var(8, "i", Ast.Int(8, 0)), w, FT.free(13, "a"))))), FT.sumOf(14, "ys")))
 
 // tests/neg/escape.srs: leak's block returns a value of its own region
-def FT.leak {r: Region} (): Ast.Fn = Ast.Fn(2, FT.s("leak"), Coll.Nil, Coll.Nil, FT.ty("List"), Coll.Nil, Ast.Def(Ast.Block(3, FT.l1(FT.handle(3, "r", "Arena")), FT.bld(4, 3))))
+def FT.leak {r: Region} (): Ast.Fn = Ast.Fn(2, FT.s("leak"), Coll.Nil, Coll.Nil, FT.ty("List"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Block(3, FT.l1(FT.handle(3, "r", "Arena")), FT.bld(4, 3))))
 
 // a pattern binder holds what the scrutinee holds: t is read after r ends (the scrutinee was read before)
 def FT.matchUse {r: Region} (): Ast.Fn =
@@ -237,12 +237,12 @@ def FT.fn {r: Region} (name: Str): Ast.Fn = Flow.fnNamed(FT.fns(), Sym.of(name))
 // tests/neg/sig_state.srs: the body reads once but the exit fact says Closed
 def FT.sigState {r: Region} (): Ast.Fn =
   val gs = FT.l2(Ast.Evidence(FT.l1(Ast.Binder(2, FT.s("f"), FT.ty("File")))), Ast.Facts(FT.l1(FT.at("f", "Opened"))))
-  Ast.Fn(2, Sym.of("bad"), gs, Coll.Nil, FT.ty("I64"), FT.l1(FT.at("f", "Closed")), Ast.Def(FT.op(2, "f", "read")))
+  Ast.Fn(2, Sym.of("bad"), gs, Coll.Nil, FT.ty("I64"), FT.l1(FT.at("f", "Closed")), Ast.Def(Coll.Nil, FT.op(2, "f", "read")))
 
 // no state s has a read from s to s: the entry facts have no solution
 def FT.noSol {r: Region} (): Ast.Fn =
   val gs = FT.l2(Ast.Evidence(FT.l1(Ast.Binder(3, FT.s("f"), FT.ty("File")))), Ast.Facts(FT.l2(FT.at("f", "s"), FT.nextA("s", "read", "s"))))
-  Ast.Fn(3, Sym.of("never"), gs, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(3, 0)))
+  Ast.Fn(3, Sym.of("never"), gs, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(3, 0)))
 
 def FT.show(c: Flow.Clash): Unit = c match
   case Flow.Stuck(line, cap) => FT.say("stuck", line, cap)

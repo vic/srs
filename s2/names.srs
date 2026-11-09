@@ -238,8 +238,8 @@ def Names.fn {r: Region} (f: Ast.Fn, outer: Coll.List[Sym.Sym], st: Names.St): N
   val locals = Names.binderNames(params, Names.evidenceNames(gs, Coll.Nil))
   body match
     case Ast.Extern => st1
-    case Ast.Def(e) => Names.expr(e, locals, st1)
-    case Ast.Spec(e) => Names.expr(e, locals, st1)
+    case Ast.Def(cs, e) => Names.expr(e, locals, Names.clauses(cs, locals, st1))
+    case Ast.Spec(cs, e) => Names.expr(e, locals, Names.clauses(cs, locals, st1))
 
 // the types of the {} binders (a {} binder names a trait or a protocol)
 def Names.groupTys {r: Region} (gs: Coll.List[Ast.Group], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = gs match
@@ -256,6 +256,20 @@ def Names.evidenceNames {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sy
     case Ast.Types(_) => Names.evidenceNames(rest, acc)
     case Ast.Facts(_) => Names.evidenceNames(rest, acc)
 
+// contract clauses: their expressions see the params and result (s1 binds result in an ensures)
+def Names.clauses {r: Region} (cs: Coll.List[Ast.Clause], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = cs match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) => c match
+    case Ast.CondC(_, _, e) => Names.clauses(rest, ls, Names.expr(e, Coll.Cons(Sym.of("result"), ls), st))
+    case Ast.ProofUsing(line, xs) => Names.clauses(rest, ls, Names.useAll(xs, line, st))
+    case Ast.ProofInduction(_, _) => Names.clauses(rest, ls, st)
+    case Ast.ProofLean(_, _) => Names.clauses(rest, ls, st)
+
+// proof using f, g: each is a use of a def
+def Names.useAll {r: Region} (xs: Coll.List[Sym.Sym], line: I64, st: Names.St): Names.St = xs match
+  case Coll.Nil => st
+  case Coll.Cons(x, rest) => Names.useAll(rest, line, Names.add(st, Names.fUseCall(x, line)))
+
 // a body: a call or a name that is not local is a use of the call namespace (a def, a case, a nullary case)
 def Names.expr {r: Region} (e: Ast.Expr, ls: Coll.List[Sym.Sym], st: Names.St): Names.St = e match
   case Ast.Name(line, x) => if Names.member(x, ls) then st else Names.add(st, Names.fUseCall(x, line))
@@ -266,6 +280,7 @@ def Names.expr {r: Region} (e: Ast.Expr, ls: Coll.List[Sym.Sym], st: Names.St): 
   case Ast.If(_, c, t, x) => Names.expr(x, ls, Names.expr(t, ls, Names.expr(c, ls, st)))
   case Ast.While(_, c, b) => Names.expr(b, ls, Names.expr(c, ls, st))
   case Ast.Assign(_, _, x) => Names.expr(x, ls, st)
+  case Ast.Quant(_, _, x, t, b) => Names.expr(b, Coll.Cons(x, ls), Names.ty(t, Coll.Nil, st))
   case Ast.Match(_, s, arms) => Names.arms(arms, ls, Names.expr(s, ls, st))
   case Ast.Block(_, ss, last) => Names.block(ss, last, ls, st)
   case _ => st
@@ -296,6 +311,7 @@ def Names.block {r: Region} (ss: Coll.List[Ast.Stmt], last: Ast.Expr, ls: Coll.L
     case Ast.Var(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), Names.annTy(ann, Names.expr(e, ls, st)))
     case Ast.Handle(line, x, h, xs) => Names.block(rest, last, Coll.Cons(x, ls), Names.exprs(xs, ls, Names.add(st, Names.fTyRef(h, line))))
     case Ast.Do(e) => Names.block(rest, last, ls, Names.expr(e, ls, st))
+    case Ast.Check(_, _, e) => Names.block(rest, last, ls, Names.expr(e, ls, st))
 
 def Names.annTy {r: Region} (ann: Coll.Option[Ast.Ty], st: Names.St): Names.St = ann match
   case Coll.None => st
