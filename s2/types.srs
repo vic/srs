@@ -929,8 +929,8 @@ def Ty.shapeFns(cx: Ty.Cx, st: Ty.St, p: Sym.Sym, todo: Coll.List[Sym.Sym], seen
           val st1 = body match
             case Ast.Extern => st
             case Ast.Def(_, e) => e match
-              case Ast.Block(_, ss, last) => Ty.shapeIn(cx, Ty.shape(cx, st, k, p, ss, Ast.Unit(0)), k, p, last)
-              case _ => Ty.shapeIn(cx, st, k, p, e)
+              case Ast.Block(_, ss, last) => Ty.shape(cx, st, k, p, ss, last)
+              case _ => Ty.shapeTop(cx, st, k, p, e)
           Ty.shapeFns(cx, st1, p, Ty.cpsCalls(cx, p, bss, rest), Coll.Cons(f, seen))
 
 def Ty.bodyStmts(b: Ast.Body): Coll.List[Ast.Stmt] = b match
