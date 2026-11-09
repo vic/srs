@@ -1,0 +1,13 @@
+// pass: Region is no effect for purity (vic 2026-11-09): the compiler supplies it at compile time, so a val may call a
+// def whose row is {Region} (inferred, mkI) or that writes {r: Region} (mkW)
+// eval: rg1 3
+// eval: rg2 4
+enum Box:
+  case Box(v: I64)
+def mkI(x: I64): Box = Box(x)
+def mkW {r: Region} (x: I64): Box = Box(x)
+def unbox(b: Box): I64 = b match
+  case Box(v) => v
+val rg1: I64 = unbox(mkI(3))
+val rg2: I64 = unbox(mkW(4))
+def main(): I64 = 0

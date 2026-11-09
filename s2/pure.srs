@@ -126,11 +126,15 @@ def Pure.decls(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], rows: Eff.Rows, d
       Pure.decls(ps, hp, rows, rest, Pure.rowUses(Pure.In(n), Eff.row(rows, n), Pure.fns(ps, hp, Pure.In(n), fs, Coll.Cons(Pure.f2(Pure.RHandles, n, p), acc))))
     case _ => Pure.decls(ps, hp, rows, rest, acc)
 
+// Region is no effect for purity (vic 2026-11-09): at compile time the compiler supplies it. opening a handler of it
+// (handle a = Srs.Arena()) still uses it: that handler calls the runtime
+def Pure.isRegion(p: Sym.Sym): Bool = Str.eq(Sym.str(p), "Region")
+
 def Pure.rowUses(w: Pure.Who, cs: Coll.List[Eff.Cap], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = cs match
   case Coll.Nil => acc
   case Coll.Cons(c, rest) =>
     val Eff.Cap(p, _) = c
-    Pure.rowUses(w, rest, Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), p), acc))
+    Pure.rowUses(w, rest, if Pure.isRegion(p) then acc else Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), p), acc))
 
 def Pure.fns(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], w: Pure.Who, fs: Coll.List[Ast.Fn], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = fs match
   case Coll.Nil => acc
@@ -153,7 +157,8 @@ def Pure.binders(ps: Coll.List[Sym.Sym], w: Pure.Who, bs: Coll.List[Ast.Binder],
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, t) = b
     val Ast.Ty(_, tn, _, _, _) = t
-    if Ty.memberSym(tn, ps) then Pure.binders(ps, w, rest, ev, Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), tn), acc))
+    if Pure.isRegion(tn) then Pure.binders(ps, w, rest, ev, acc)
+    else if Ty.memberSym(tn, ps) then Pure.binders(ps, w, rest, ev, Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), tn), acc))
     else Pure.binders(ps, w, rest, Coll.Cons(x, ev), acc)
 
 // a call is calls(who, f); a handle uses the handler's protocol; a method on {} evidence is a direct effect (the given

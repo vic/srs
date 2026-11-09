@@ -40,6 +40,10 @@ def Ev.cxDecls(ds: Coll.List[Ast.Decl], cx: Ev.Cx): Ev.Cx = ds match
       case Ast.DFn(f) =>
         val Ast.Fn(_, n, _, _, _, _, _) = f
         Ev.cxDecls(rest, Ev.Cx(Coll.sInsert(fs, n, f), cs, imp))
+      // a top-level val is a nullary fn: another val may name it
+      case Ast.DVal(f) =>
+        val Ast.Fn(_, n, _, _, _, _, _) = f
+        Ev.cxDecls(rest, Ev.Cx(Coll.sInsert(fs, n, f), cs, imp))
       case Ast.DEnum(e) =>
         val Ast.Enum(_, _, _, cases) = e
         Ev.cxDecls(rest, Ev.Cx(fs, Ev.caseMap(cases, cs), imp))
@@ -304,7 +308,8 @@ def Ev.loop(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64
       case _ => Ev.Err(Ev.NoValue(line, f))
     case Ev.Err(x) => Ev.Err(x)
 
-// ── `s2c --eval`: "name value" for each nullary pure def but main; a fail is a reject ──
+// ── `s2c --eval`: "name value" for each top-level val (vic 2026-11-09: the types prove it pure, Region the
+// compiler's); a fail is a reject ──
 enum Ev.Line:
   case Ev.Shown(name: Sym.Sym, v: Ev.V)
 
@@ -317,21 +322,13 @@ def Ev.all(ds: Coll.List[Ast.Decl], imp: Coll.SMap[Bool]): Ev.Out = Ev.run(Ev.cx
 def Ev.run(cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Line]): Ev.Out = ds match
   case Coll.Nil => Ev.Lines(Coll.rev(acc))
   case Coll.Cons(d, rest) => d match
-    case Ast.DFn(f) =>
-      val Ast.Fn(_, n, gs, ps, _, _, body) = f
-      val Ev.Cx(_, _, imp) = cx
-      val nullary = Coll.length(ps) == 0 && Coll.length(gs) == 0 && !Str.eq(Sym.str(n), "main") && !Pure.has(imp, n)
-      val be: Coll.Option[Ast.Expr] = body match
-        case Ast.Def(_, e) => Coll.Some(e)
-        case Ast.Spec(_, e) => Coll.Some(e)
-        case Ast.Extern => Coll.None
-      be match
-        case Coll.Some(e) =>
-          if nullary then Ev.expr(cx, n, Coll.Nil, Ev.fuel(), e) match
-            case Ev.Ok(v, _, _) => Ev.run(cx, rest, Coll.Cons(Ev.Shown(n, v), acc))
-            case Ev.Err(err) => Ev.Failed(err)
-          else Ev.run(cx, rest, acc)
-        case Coll.None => Ev.run(cx, rest, acc)
+    case Ast.DVal(f) =>
+      val Ast.Fn(_, n, _, _, _, _, body) = f
+      body match
+        case Ast.Def(_, e) => Ev.expr(cx, n, Coll.Nil, Ev.fuel(), e) match
+          case Ev.Ok(v, _, _) => Ev.run(cx, rest, Coll.Cons(Ev.Shown(n, v), acc))
+          case Ev.Err(err) => Ev.Failed(err)
+        case _ => Ev.run(cx, rest, acc)
     case _ => Ev.run(cx, rest, acc)
 
 def Ev.show(v: Ev.V): Unit = v match

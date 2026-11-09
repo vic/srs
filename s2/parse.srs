@@ -104,7 +104,17 @@ def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   else if Parse.isKw(ts, "trait") then Parse.traitDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "given") then Parse.givenDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "type") then Parse.typeDecl(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "val") then Parse.topVal(Parse.valStmt(Parse.next(ts), Parse.line(ts), false))
   else Parse.Err(Parse.line(ts), "declaration")
+
+// a top-level val x: T = e (vic 2026-11-09): a compile-time value, its type written; read as a nullary fn of body e
+def Parse.topVal(rs: Parse.R[Ast.Stmt]): Parse.R[Ast.Decl] = rs match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(s, t1) => s match
+    case Ast.Val(line, x, ann, e) => ann match
+      case Coll.Some(ty) => Parse.Ok(Ast.DVal(Ast.Fn(line, x, Coll.Nil, Coll.Nil, ty, Coll.Nil, Ast.Def(Coll.Nil, e))), t1)
+      case Coll.None => Parse.Err(line, "type of a top-level val (val x: T = e)")
+    case _ => Parse.Err(Parse.line(t1), "top-level val")
 
 // type Name groups [(value binders)] = body (s1/parse.srs:297-346)
 def Parse.typeDecl(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
