@@ -226,12 +226,24 @@ def Emit.ex {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos,
     val gts = Emit.grAll(cx, fi, ts)
     if Emit.isTail(pos) && Emit.isSelf(fi, f, gts) then Emit.jump(cx, fi, env, caps, args)
     else
+      val cast = Emit.externCast(cx, f, gts)
+      cast match
+        case Coll.Some(t) =>
+          rt_print("((")
+          Emit.ctype(cx, t)
+          rt_print(")")
+        case Coll.None => ()
       Emit.fnName(cx, f, gts)
       rt_print("(")
       Emit.capArgs(env, caps, Emit.First)
       Emit.args(cx, fi, env, args, if Coll.length(caps) == 0 then Emit.First else Emit.Comma)
       rt_print(")")
-  case El.New(_, en, ts, c, reg, args) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, reg, args)
+      cast match
+        case Coll.Some(_) => rt_print(")")
+        case Coll.None => ()
+  case El.New(_, en, ts, c, at, args) => at match
+    case El.In(reg) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, reg, args)
+    case El.Comptime => rt_print("0")
   case El.Nullary(_, _, ts, c) =>
     rt_print("(&N_")
     Emit.id(c)
@@ -686,7 +698,7 @@ def Emit.hasHandle(ss: Coll.List[El.Stmt]): Bool = ss match
 
 // ── an instance as the fn emit prints ──
 def Emit.fiOf {r: Region} (cx: Emit.Cx, i: Mono.Inst): Emit.Fi =
-  val Mono.Inst(f, sub) = i
+  val Mono.Inst(f, sub, _) = i
   val El.Fn(_, name, tps, caps, ps, ret, _) = f
   Emit.Fi(name, Emit.targsOf(sub, tps, Coll.Nil), sub, Emit.slots(cx, sub, caps, ps), Mono.ground(Emit.subst(cx), sub, ret))
 
@@ -708,7 +720,7 @@ def Emit.valSlots {r: Region} (cx: Emit.Cx, sub: Coll.List[Ty.Bind], ps: Coll.Li
     Emit.valSlots(cx, sub, rest, Coll.Cons(Emit.SVal(x, Mono.ground(Emit.subst(cx), sub, t)), acc))
 
 def Emit.isDef(i: Mono.Inst): Bool =
-  val Mono.Inst(f, _) = i
+  val Mono.Inst(f, _, _) = i
   val El.Fn(_, _, _, _, _, _, body) = f
   body match
     case El.Def(_) => true
@@ -773,7 +785,7 @@ def Emit.body {r: Region} (cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind, e: El.Expr): 
 def Emit.instTys {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[K.Term]): Coll.List[K.Term] = is match
   case Coll.Nil => acc
   case Coll.Cons(i, rest) =>
-    val Mono.Inst(f, _) = i
+    val Mono.Inst(f, _, _) = i
     val El.Fn(_, _, _, _, _, _, body) = f
     body match
       case El.Def(e) =>
@@ -946,19 +958,35 @@ def Emit.externs {r: Region} (cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs matc
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, tps, _, _, _, body) = f
     body match
-      case El.Extern => tps match
-        case Coll.Nil =>
-          Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Coll.Nil)), Emit.KExtern)
-          rt_print(";\n")
-        case Coll.Cons(_, _) => ()
+      case El.Extern =>
+        // one C symbol for every instance: a [] binder slot is void* (spec sec 3 slotType)
+        Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), Emit.KExtern)
+        rt_print(";\n")
       case _ => ()
     Emit.externs(cx, rest)
+
+def Emit.ptrs {r: Region} (tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = tps match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Emit.ptrs(rest, Coll.Cons(Ty.Bind(x, Ty.con("Ptr")), acc))
+
+// a generic extern whose result is a [] binder returns void*: the call casts it to the instance's type (spec sec 4 XInst)
+def Emit.externCast {r: Region} (cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]): Coll.Option[K.Term] =
+  val Emit.Cx(_, fns, _, _, _, _, _) = cx
+  Coll.sLookup(fns, f) match
+    case Coll.Some(g) =>
+      val El.Fn(_, _, tps, _, _, ret, body) = g
+      body match
+        case El.Extern => ret match
+          case K.Con(n, xs) => if Coll.length(xs) == 0 then Ty.lookup(Ty.zipBind(tps, gts, Coll.Nil), n) else Coll.None
+          case _ => Coll.None
+        case _ => Coll.None
+    case Coll.None => Coll.None
 
 def Emit.protos {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
   case Coll.Nil => ()
   case Coll.Cons(i, rest) =>
     if Emit.isDef(i) then
-      Emit.sig(cx, Emit.fiOf(cx, i), Emit.KDef)
+      Emit.sig(cx, Emit.fiOf(cx, i), Emit.kindOf(i))
       rt_print(";\n")
     else ()
     Emit.protos(cx, rest)
@@ -966,10 +994,10 @@ def Emit.protos {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is m
 def Emit.bodies {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
   case Coll.Nil => ()
   case Coll.Cons(i, rest) =>
-    val Mono.Inst(f, _) = i
+    val Mono.Inst(f, _, _) = i
     val El.Fn(_, _, _, _, _, _, body) = f
     body match
-      case El.Def(e) => Emit.body(cx, Emit.fiOf(cx, i), Emit.KDef, e)
+      case El.Def(e) => Emit.body(cx, Emit.fiOf(cx, i), Emit.kindOf(i), e)
       case _ => ()
     Emit.bodies(cx, rest)
 
@@ -981,19 +1009,11 @@ def Emit.handlers {r: Region} (cx: Emit.Cx, hs: Coll.List[El.Handler], what: Emi
     Emit.implFns(cx, Emit.KHandler(hn), fs, what)
     Emit.handlers(cx, rest, what)
 
-// the fns of every given (spec sec 2 fname: g_<Trait><args>_<m>, a static call per instance)
-def Emit.givens {r: Region} (cx: Emit.Cx, gs: Coll.List[El.Given], what: Emit.Part): Unit = gs match
-  case Coll.Nil => ()
-  case Coll.Cons(g, rest) =>
-    val El.Given(head, fs) = g
-    Emit.implFns(cx, Emit.KGiven(head), fs, what)
-    Emit.givens(cx, rest, what)
-
 def Emit.implFns {r: Region} (cx: Emit.Cx, k: Emit.Kind, fs: Coll.List[El.Fn], what: Emit.Part): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, _, _, _, _, body) = f
-    val fi = Emit.fiOf(cx, Mono.Inst(f, Coll.Nil))
+    val fi = Emit.fiOf(cx, Mono.Inst(f, Coll.Nil, Mono.Top))
     what match
       case Emit.Layout =>
         Emit.sig(cx, fi, k)
@@ -1054,7 +1074,7 @@ def Emit.hasMain {r: Region} (cx: Emit.Cx): Bool =
 
 // ── the program (spec sec 1): one C file to stdout ──
 def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
-  val Ty.Result(_, _, s, fs, hs, gvs) = res
+  val Ty.Result(_, _, s, fs, hs, _) = res
   val cx = Emit.cxOf(ds, s, fs)
   val is = Mono.run(res)
   val ens = Emit.closeEnums(cx, Emit.instTys(cx, is, Coll.Nil), Coll.BTip, Coll.Nil)
@@ -1069,7 +1089,6 @@ def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   Emit.externs(cx, fs)
   Emit.protos(cx, is)
   Emit.handlers(cx, hs, Emit.Layout)
-  Emit.givens(cx, gvs, Emit.Layout)
   Emit.vtables(cx, hs)
   val Emit.Cx(_, _, _, _, _, _, al) = cx
   al match
@@ -1077,5 +1096,11 @@ def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
     case Emit.VTable => ()
   Emit.bodies(cx, is)
   Emit.handlers(cx, hs, Emit.Code)
-  Emit.givens(cx, gvs, Emit.Code)
   if Emit.hasMain(cx) then rt_print("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()
+
+// a def instance is f_<name><args>; a given method instance is named by its goal
+def Emit.kindOf {r: Region} (i: Mono.Inst): Emit.Kind =
+  val Mono.Inst(_, _, site) = i
+  site match
+    case Mono.Top => Emit.KDef
+    case Mono.Impl(goal) => Emit.KGiven(goal)

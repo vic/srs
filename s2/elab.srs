@@ -10,8 +10,8 @@ enum El.Expr:
   case El.Local(line: I64, x: Sym.Sym)
   // f[targs]{caps}(args): the instance and the caller's capability for each protocol {} binder ({r: Region}, ...), in written order
   case El.CallFn(line: I64, f: Sym.Sym, targs: Coll.List[K.Term], caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr])
-  // a constructor: its enum at targs, allocated in region
-  case El.New(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym, region: Sym.Sym, args: Coll.List[El.Expr])
+  // a constructor: its enum at targs, allocated where at says
+  case El.New(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym, at: El.Alloc, args: Coll.List[El.Expr])
   case El.Nullary(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym)
   // recv.op(args): an op of the capability recv's protocol, or a trait method of {} evidence recv
   case El.Op(line: I64, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr])
@@ -52,6 +52,12 @@ enum El.Body:
 enum El.Handler:
   case El.Handler(name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[El.Fn])
 
-// given head: the trait methods for the head's args (a call through {} evidence of that type is a static call)
+// given [tparams] {ev} head: the trait methods for the head's args (a call through {} evidence of a ground goal type is
+// a static call to the instance of the given picked for it)
 enum El.Given:
-  case El.Given(head: K.Term, fns: Coll.List[El.Fn])
+  case El.Given(tparams: Coll.List[Sym.Sym], ev: Coll.List[Sym.Sym], head: K.Term, fns: Coll.List[El.Fn])
+
+// where a constructor allocates: in the Region capability region, or nowhere at run time (a spec body: compile time only)
+enum El.Alloc:
+  case El.In(region: Sym.Sym)
+  case El.Comptime
