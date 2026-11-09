@@ -53,13 +53,43 @@ def T.ifill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if
 
 def T.iseq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i > n then m else T.iseq(Coll.insert(m, i, i), i + 1, n)
 
-def T.found {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, acc: I64): I64 =
+// how many keys of T.fill hold i + d
+def T.found {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, d: I64, acc: I64): I64 =
   if i == n then acc
   else
     val hit = Coll.bLookup(m, (i * 7919) % 100003) match
       case Coll.None => 0
-      case Coll.Some(v) => if v == i then 1 else 0
-    T.found(m, i + 1, n, acc + hit)
+      case Coll.Some(v) => if v == i + d then 1 else 0
+    T.found(m, i + 1, n, d, acc + hit)
+
+// every key of T.fill bound again, to i + 1
+def T.refill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i == n then m else T.refill(Coll.bInsert(m, (i * 7919) % 100003, i + 1), i + 1, n)
+
+// how many puts of the T.fill keys of [i, n) into m answer Added
+def T.adds {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, acc: I64): I64 =
+  if i == n then acc
+  else
+    val a = Coll.bPut(m, (i * 7919) % 100003, i) match
+      case Coll.Added(_) => 1
+      case Coll.Replaced(_) => 0
+    T.adds(m, i + 1, n, acc + a)
+
+def T.isTip (t: Coll.BTree[I64]): Bool = t match
+  case Coll.BTip => true
+  case _ => false
+
+// same case and keys at every node (values ignored)
+def T.shape (x: Coll.BTree[I64], y: Coll.BTree[I64]): Bool = x match
+  case Coll.BTip => T.isTip(y)
+  case Coll.B2(a, k1, _, b) => y match
+    case Coll.B2(e, j1, _, f) => k1 == j1 && T.shape(a, e) && T.shape(b, f)
+    case _ => false
+  case Coll.B3(a, k1, _, b, k2, _, c) => y match
+    case Coll.B3(e, j1, _, f, j2, _, g) => k1 == j1 && k2 == j2 && T.shape(a, e) && T.shape(b, f) && T.shape(c, g)
+    case _ => false
+  case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) => y match
+    case Coll.B4(e, j1, _, f, j2, _, g, j3, _, h) => k1 == j1 && k2 == j2 && k3 == j3 && T.shape(a, e) && T.shape(b, f) && T.shape(c, g) && T.shape(d, h)
+    case _ => false
 
 // present value, or 0 when absent (absence is counted by T.miss)
 def T.val0 {r: Region} (m: Coll.BMap[I64], k: I64): I64 = Coll.bLookup(m, k) match
@@ -97,7 +127,7 @@ def main(): I64 =
   rt_print("\n")
   rt_print_i64(if T.valid(a) then 1 else 0)
   rt_print("\n")
-  rt_print_i64(T.found(a, 0, 100000, 0))
+  rt_print_i64(T.found(a, 0, 100000, 0, 0))
   rt_print("\n")
   val b = T.seq(Coll.bEmpty[I64](), 1, 100000)
   rt_print_i64(Coll.bSize(b))
@@ -116,5 +146,14 @@ def main(): I64 =
   rt_print_i64(if T.validT(T.two(t0, 3, T.two(Coll.BTip, 9, Coll.BTip))) then 1 else 0)
   rt_print("\n")
   rt_print_i64(if T.validT(T.two(T.two(Coll.BTip, 1, Coll.BTip), 2, Coll.BTip)) then 1 else 0)
+  rt_print("\n")
+  // Put: the keys of i in [99990, 100000) are in a (Replaced), the 3 keys of i in [100000, 100003) are not (Added)
+  rt_print_i64(T.adds(a, 99990, 100003, 0))
+  rt_print("\n")
+  // a replace keeps the shape (no split) and the count; every value is replaced
+  val sa2 = T.refill(sa, 0, 5000)
+  rt_print_i64(if T.shape(T.tree(sa), T.tree(sa2)) then 1 else 0)
+  rt_print("\n")
+  rt_print_i64(Coll.bSize(sa2) + T.found(sa2, 0, 5000, 1, 0))
   rt_print("\n")
   0

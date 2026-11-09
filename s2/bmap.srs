@@ -45,14 +45,32 @@ def Coll.bHas [V: Type] (m: Coll.BMap[V], k: I64): Bool = m match
   case Coll.BMap(_, t) => Coll.bIsNode(Coll.bFind(t, k))
 
 def Coll.bLookup [V: Type] {r: Region} (m: Coll.BMap[V], k: I64): Coll.Option[V] = m match
-  case Coll.BMap(_, t) => Coll.bSome(Coll.bFind(t, k), k)
+  case Coll.BMap(_, t) => Coll.bGet(t, k)
 
-def Coll.bSome [V: Type] {r: Region} (n: Coll.BTree[V], k: I64): Coll.Option[V] = n match
+// the value of k in one descent
+def Coll.bGet [V: Type] {r: Region} (t: Coll.BTree[V], k: I64): Coll.Option[V] = t match
   case Coll.BTip => Coll.None
-  case Coll.B2(_, k1, v1, _) => if k == k1 then Coll.Some(v1) else Coll.None
-  case Coll.B3(_, k1, v1, _, k2, v2, _) => if k == k1 then Coll.Some(v1) else if k == k2 then Coll.Some(v2) else Coll.None
-  case Coll.B4(_, k1, v1, _, k2, v2, _, k3, v3, _) =>
-    if k == k1 then Coll.Some(v1) else if k == k2 then Coll.Some(v2) else if k == k3 then Coll.Some(v3) else Coll.None
+  case Coll.B2(a, k1, v1, b) => if k < k1 then Coll.bGet(a, k) else if k > k1 then Coll.bGet(b, k) else Coll.Some(v1)
+  case Coll.B3(a, k1, v1, b, k2, v2, c) =>
+    if k < k1 then Coll.bGet(a, k) else if k == k1 then Coll.Some(v1) else if k < k2 then Coll.bGet(b, k) else if k == k2 then Coll.Some(v2) else Coll.bGet(c, k)
+  case Coll.B4(a, k1, v1, b, k2, v2, c, k3, v3, d) =>
+    if k < k1 then Coll.bGet(a, k) else if k == k1 then Coll.Some(v1) else if k < k2 then Coll.bGet(b, k) else if k == k2 then Coll.Some(v2)
+    else if k < k3 then Coll.bGet(c, k) else if k == k3 then Coll.Some(v3) else Coll.bGet(d, k)
+
+// t with the value of k replaced: the path is copied and the shape is kept (no split); t when k is absent
+def Coll.bRep [V: Type] {r: Region} (t: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = t match
+  case Coll.BTip => t
+  case Coll.B2(a, k1, v1, b) =>
+    if k < k1 then Coll.B2(Coll.bRep(a, k, v), k1, v1, b) else if k > k1 then Coll.B2(a, k1, v1, Coll.bRep(b, k, v)) else Coll.B2(a, k1, v, b)
+  case Coll.B3(a, k1, v1, b, k2, v2, c) =>
+    if k < k1 then Coll.B3(Coll.bRep(a, k, v), k1, v1, b, k2, v2, c) else if k == k1 then Coll.B3(a, k1, v, b, k2, v2, c)
+    else if k < k2 then Coll.B3(a, k1, v1, Coll.bRep(b, k, v), k2, v2, c) else if k == k2 then Coll.B3(a, k1, v1, b, k2, v, c)
+    else Coll.B3(a, k1, v1, b, k2, v2, Coll.bRep(c, k, v))
+  case Coll.B4(a, k1, v1, b, k2, v2, c, k3, v3, d) =>
+    if k < k1 then Coll.B4(Coll.bRep(a, k, v), k1, v1, b, k2, v2, c, k3, v3, d) else if k == k1 then Coll.B4(a, k1, v, b, k2, v2, c, k3, v3, d)
+    else if k < k2 then Coll.B4(a, k1, v1, Coll.bRep(b, k, v), k2, v2, c, k3, v3, d) else if k == k2 then Coll.B4(a, k1, v1, b, k2, v, c, k3, v3, d)
+    else if k < k3 then Coll.B4(a, k1, v1, b, k2, v2, Coll.bRep(c, k, v), k3, v3, d) else if k == k3 then Coll.B4(a, k1, v1, b, k2, v2, c, k3, v, d)
+    else Coll.B4(a, k1, v1, b, k2, v2, c, k3, v3, Coll.bRep(d, k, v))
 
 // a B4 split around its middle key: the two halves are B2 trees (left, middle key and value, right)
 enum Coll.Split [V: Type]:
@@ -130,8 +148,14 @@ def Coll.bInto3C [V: Type] {r: Region} (a: Coll.BTree[V], k1: I64, v1: V, b: Col
   case Coll.B2(_, _, _, _) => Coll.B3(a, k1, v1, b, k2, v2, Coll.bIns(c, k, v))
   case Coll.B3(_, _, _, _, _, _, _) => Coll.B3(a, k1, v1, b, k2, v2, Coll.bIns(c, k, v))
 
-// m with k bound to v (a binding of k is replaced); the count grows only when k was absent
+// the answer of bPut: the new map, Added when k was absent (the count grew), Replaced when k was bound (same shape)
+enum Coll.Put [V: Type]:
+  case Coll.Added(m: Coll.BMap[V])
+  case Coll.Replaced(m: Coll.BMap[V])
+
+def Coll.bPut [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.Put[V] = m match
+  case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.Replaced(Coll.BMap(n, Coll.bRep(t, k, v))) else Coll.Added(Coll.BMap(n + 1, Coll.bIns(t, k, v)))
+
+// bPut without the answer wrapper
 def Coll.bInsert [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.BMap[V] = m match
-  case Coll.BMap(n, t) =>
-    val t2 = Coll.bIns(t, k, v)
-    if Coll.bHas(m, k) then Coll.BMap(n, t2) else Coll.BMap(n + 1, t2)
+  case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.BMap(n, Coll.bRep(t, k, v)) else Coll.BMap(n + 1, Coll.bIns(t, k, v))
