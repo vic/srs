@@ -140,6 +140,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.CapValue(l, x) => S2c.diag(fs, "capability-value", l, "a capability is second-class, not a value:", S2c.Name(x), "pass it as a {} binder: f{c}(x)")
       case Ty.BinderHides(l, x) => S2c.diag(fs, "binder-hides-type", l, "a [] binder hides the type", S2c.Name(x), "rename the binder")
       case Ty.CapParam(l, x) => S2c.diag(fs, "capability-param", l, "a capability is a {} binder, not a param:", S2c.Name(x), "write it as {x: P} before the params")
+      case Ty.CapErased(l, p) => S2c.diag(fs, "capability-erased", l, "a capability is erased at run time: no value type names", S2c.Name(p), "take it as a {} binder ({c: Console} or {Console}); it is never a result, a field or a type arg")
       case Ty.TraitArity(l, t) => S2c.diag(fs, "trait-arity", l, "wrong number of type args for the trait", S2c.Name(t), "give one type arg per [] binder of the trait")
       case Ty.NotMethod(l, m) => S2c.diag(fs, "not-a-method", l, "not a method of the trait:", S2c.Name(m), "a given defines exactly the trait's methods")
       case Ty.MissingMethod(l, m) => S2c.diag(fs, "missing-method", l, "the given misses the trait method", S2c.Name(m), "define it in the given")

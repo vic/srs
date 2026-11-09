@@ -37,6 +37,8 @@ enum Ty.Clash:
   case Ty.CapValue(line: I64, x: Sym.Sym)
   case Ty.BinderHides(line: I64, x: Sym.Sym)
   case Ty.CapParam(line: I64, x: Sym.Sym)
+  // a value type (a result, a field, a type arg of one) that names capability p: capabilities are erased (vic 2026-11-09)
+  case Ty.CapErased(line: I64, p: Sym.Sym)
   case Ty.TraitArity(line: I64, t: Sym.Sym)
   case Ty.NotMethod(line: I64, m: Sym.Sym)
   case Ty.MissingMethod(line: I64, m: Sym.Sym)
@@ -646,7 +648,7 @@ def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val rt = Ty.term(ret, tv)
   val caps = Coll.revOnto(Coll.rev(Ty.capNames(protos, ev, Coll.Nil)), Ty.rowNames(row))
   val eps = Ty.elParams(ps, tv, Coll.Nil)
-  val st = Ty.fnShape(cx, st0, line, tps, ps)
+  val st = Ty.fnShape(cx, st0, line, tps, ps, ret)
   body match
     case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern))
     case Ast.Def(_, e) =>
@@ -763,6 +765,9 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
       val Ty.Fns(st1, efs, _, _) = Ty.givenFns(Ty.byGiven(cx), Ty.givenShape(cx, st, g), tn, Ty.underGroups(gs, fs, Coll.Nil), Coll.Nil)
       val gv = El.Given(Ty.tparams(gs, Coll.Nil), Ty.binderNames(Ty.evidence(gs, Coll.Nil), Coll.Nil), Ty.term(head, Coll.Nil), efs)
       Ty.decls(cx, st1, rest, acc, hacc, Coll.Cons(gv, gacc))
+    case Ast.DEnum(e) =>
+      val Ast.Enum(_, _, _, cases) = e
+      Ty.decls(cx, Ty.erasedFields(cx, st, cases), rest, acc, hacc, gacc)
     case _ => Ty.decls(cx, st, rest, acc, hacc, gacc)
 
 def Ty.underGroups(gs: Coll.List[Ast.Group], fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
@@ -1110,9 +1115,32 @@ def Ty.isCapOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.
     case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
     case _ => false
 
-// a [] binder may not hide a type; a capability is a {} binder, never a value param
-def Ty.fnShape(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], ps: Coll.List[Ast.Binder]): Ty.St =
-  Ty.capParams(cx, Ty.hides(cx, st, line, tps), ps)
+// a [] binder may not hide a type; a capability is a {} binder, never a value param, and erased (vic 2026-11-09): no
+// result type names one
+def Ty.fnShape(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], ps: Coll.List[Ast.Binder], ret: Ast.Ty): Ty.St =
+  Ty.erased(cx, Ty.capParams(cx, Ty.hides(cx, st, line, tps), ps), ret)
+
+// a value type that names a capability, at any depth: error[capability-erased]
+def Ty.erased(cx: Ty.Cx, st: Ty.St, t: Ast.Ty): Ty.St =
+  val Ast.Ty(line, n, args, _, _) = t
+  val Ty.Cx(_, _, protos, _, _, _, _, _, _) = cx
+  Ty.erasedAll(cx, if Ty.isProto(protos, n) then Ty.clash(st, Ty.CapErased(line, n)) else st, args)
+
+def Ty.erasedAll(cx: Ty.Cx, st: Ty.St, ts: Coll.List[Ast.Ty]): Ty.St = ts match
+  case Coll.Nil => st
+  case Coll.Cons(t, rest) => Ty.erasedAll(cx, Ty.erased(cx, st, t), rest)
+
+def Ty.erasedFields(cx: Ty.Cx, st: Ty.St, cs: Coll.List[Ast.Case]): Ty.St = cs match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, fs) = c
+    Ty.erasedFields(cx, Ty.erasedAll(cx, st, Ty.binderTys(fs)), rest)
+
+def Ty.binderTys(bs: Coll.List[Ast.Binder]): Coll.List[Ast.Ty] = bs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Coll.Cons(t, Ty.binderTys(rest))
 
 def Ty.hides(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym]): Ty.St = tps match
   case Coll.Nil => st
