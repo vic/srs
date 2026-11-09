@@ -289,6 +289,7 @@ def S2c.showFlow(fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs 
       case Flow.Dead(l, n) => S2c.diag(fs, "use-after-free", l, "use of a value after its region ended:", S2c.Name(n), "use it before the region ends, or allocate it in a longer region")
       case Flow.Escape(l, n) => S2c.diag(fs, "region-escape", l, "a value escapes the scope of its region", S2c.Name(n), "allocate it in a region that outlives the block")
       case Flow.Stale(l, x) => S2c.diag(fs, "stale-value", l, "the value needs its capability in the state its type names; it is in another state:", S2c.Name(x), "use it before the capability changes state")
+      case Flow.MsState(l, c) => S2c.diag(fs, "multishot-state", l, "a capability from outside a multi-shot handle is in another state here than at the end of the block:", S2c.Name(c), "each resume runs the rest of the block again from here: bring the capability back to this state by the end, or open it inside the block")
     S2c.showFlow(fs, rest)
 
 // a rule library that is not a Datalog program, or a clash of another shape: a bug in s2, reported as one
