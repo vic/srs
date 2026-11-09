@@ -16,11 +16,11 @@ enum S2c.Read:
 
 // the args from i on, each a source file, in order; base = the number of the next file's first line
 def S2c.read {r: Region} (i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
-  if i >= rt_argc() then S2c.Read(Coll.rev(ds), Coll.rev(errs), fs)
+  if i >= Args.count() then S2c.Read(Coll.rev(ds), Coll.rev(errs), fs)
   else
-    val p = rt_arg(i)
-    val src = rt_read_file(p)
-    if rt_str_len(src) < 0 then S2c.read(i + 1, base, ds, Coll.Cons(S2c.NoFile(p), errs), fs)
+    val p = Args.at(i)
+    val src = Files.read(p)
+    if Str.len(src) < 0 then S2c.read(i + 1, base, ds, Coll.Cons(S2c.NoFile(p), errs), fs)
     else
       val fs2 = Coll.Cons(S2c.File(p, base, src), fs)
       val next = base + S2c.lineCount(src, 0, 1)
@@ -29,7 +29,7 @@ def S2c.read {r: Region} (i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll
         case Parse.Err(line, want) => S2c.read(i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
 
 def S2c.lineCount(s: Str, i: I64, n: I64): I64 =
-  if i >= rt_str_len(s) then n else S2c.lineCount(s, i + 1, if rt_str_at(s, i) == 10 then n + 1 else n)
+  if i >= Str.len(s) then n else S2c.lineCount(s, i + 1, if Str.at(s, i) == 10 then n + 1 else n)
 
 // ── diagnostics (vic Q-E1, 2026-11-09): error[code]: what / --> file:line / the source line / expected, found / help ──
 // what a diagnostic names after its title: nothing, a name, a type, or the type wanted and the type found
@@ -41,49 +41,49 @@ enum S2c.What:
   case S2c.Text(s: Str)
 
 def S2c.diag {r: Region} (fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.What, help: Str): Unit =
-  rt_eprint("error[")
-  rt_eprint(code)
-  rt_eprint("]: ")
-  rt_eprint(title)
+  Console.eprint("error[")
+  Console.eprint(code)
+  Console.eprint("]: ")
+  Console.eprint(title)
   w match
     case S2c.Name(n) =>
-      rt_eprint(" '")
-      rt_eprint(Sym.str(n))
-      rt_eprint("'")
+      Console.eprint(" '")
+      Console.eprint(Sym.str(n))
+      Console.eprint("'")
     case S2c.Text(x) =>
-      rt_eprint(" ")
-      rt_eprint(x)
+      Console.eprint(" ")
+      Console.eprint(x)
     case S2c.Type(t) =>
-      rt_eprint(" ")
+      Console.eprint(" ")
       S2c.term(t)
     case _ => ()
-  rt_eprint("\n")
+  Console.eprint("\n")
   S2c.fileOf(fs, line) match
     case Coll.Some(f) =>
       val S2c.File(p, base, text) = f
       val k = line - base + 1
-      rt_eprint("  --> ")
-      rt_eprint(p)
-      rt_eprint(":")
-      rt_eprint_i64(k)
-      rt_eprint("\n    |\n")
+      Console.eprint("  --> ")
+      Console.eprint(p)
+      Console.eprint(":")
+      Console.eprintI64(k)
+      Console.eprint("\n    |\n")
       S2c.pad(k)
-      rt_eprint_i64(k)
-      rt_eprint(" | ")
-      rt_eprint(S2c.lineText(text, k, 0, 1))
-      rt_eprint("\n    |\n")
+      Console.eprintI64(k)
+      Console.eprint(" | ")
+      Console.eprint(S2c.lineText(text, k, 0, 1))
+      Console.eprint("\n    |\n")
     case Coll.None => ()
   w match
     case S2c.Want(want, got) =>
-      rt_eprint("    = expected: ")
+      Console.eprint("    = expected: ")
       S2c.term(want)
-      rt_eprint("\n    = found:    ")
+      Console.eprint("\n    = found:    ")
       S2c.term(got)
-      rt_eprint("\n")
+      Console.eprint("\n")
     case _ => ()
-  rt_eprint("    = help: ")
-  rt_eprint(help)
-  rt_eprint("\n")
+  Console.eprint("    = help: ")
+  Console.eprint(help)
+  Console.eprint("\n")
 
 // the file a line is in: the last one whose first line is at or before it (files are kept latest first)
 def S2c.fileOf {r: Region} (fs: Coll.List[S2c.File], line: I64): Coll.Option[S2c.File] = fs match
@@ -92,24 +92,24 @@ def S2c.fileOf {r: Region} (fs: Coll.List[S2c.File], line: I64): Coll.Option[S2c
     val S2c.File(_, base, _) = f
     if line >= base then Coll.Some(f) else S2c.fileOf(rest, line)
 
-def S2c.pad(k: I64): Unit = if k < 10 then rt_eprint("  ") else if k < 100 then rt_eprint(" ") else ()
+def S2c.pad(k: I64): Unit = if k < 10 then Console.eprint("  ") else if k < 100 then Console.eprint(" ") else ()
 
 // line k of s (1-based), without its newline
 def S2c.lineText(s: Str, k: I64, i: I64, n: I64): Str =
-  if n == k then rt_str_slice(s, i, S2c.lineEnd(s, i))
-  else if i >= rt_str_len(s) then ""
-  else S2c.lineText(s, k, i + 1, if rt_str_at(s, i) == 10 then n + 1 else n)
+  if n == k then Str.slice(s, i, S2c.lineEnd(s, i))
+  else if i >= Str.len(s) then ""
+  else S2c.lineText(s, k, i + 1, if Str.at(s, i) == 10 then n + 1 else n)
 
-def S2c.lineEnd(s: Str, i: I64): I64 = if i >= rt_str_len(s) || rt_str_at(s, i) == 10 then i else S2c.lineEnd(s, i + 1)
+def S2c.lineEnd(s: Str, i: I64): I64 = if i >= Str.len(s) || Str.at(s, i) == 10 then i else S2c.lineEnd(s, i + 1)
 
 def S2c.showErrs {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): Unit = es match
   case Coll.Nil => ()
   case Coll.Cons(e, rest) =>
     e match
       case S2c.NoFile(p) =>
-        rt_eprint("error[no-file]: cannot read ")
-        rt_eprint(p)
-        rt_eprint("\n    = help: check the path and that the file is readable\n")
+        Console.eprint("error[no-file]: cannot read ")
+        Console.eprint(p)
+        Console.eprint("\n    = help: check the path and that the file is readable\n")
       case S2c.Syntax(line, want) => S2c.diag(fs, "parse", line, "parse error, expected", S2c.Text(want), "fix the syntax on this line")
     S2c.showErrs(fs, rest)
 
@@ -285,11 +285,11 @@ def S2c.showFlow {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]
 
 // a rule library that is not a Datalog program, or a clash of another shape: a bug in s2, reported as one
 def S2c.internal(phase: Str, rel: Sym.Sym): I64 =
-  rt_eprint("srs internal: the ")
-  rt_eprint(phase)
-  rt_eprint(" rules are ill-formed at relation ")
-  rt_eprint(Sym.str(rel))
-  rt_eprint("\n")
+  Console.eprint("srs internal: the ")
+  Console.eprint(phase)
+  Console.eprint(" rules are ill-formed at relation ")
+  Console.eprint(Sym.str(rel))
+  Console.eprint("\n")
   2
 
 // what a checked program becomes: C (the default), or the output of an s1 flag (vic 2026-11-09: s2 has every s1 flag)
@@ -329,10 +329,10 @@ def S2c.showLines(ls: Coll.List[Ev.Line]): Unit = ls match
   case Coll.Nil => ()
   case Coll.Cons(l, rest) =>
     val Ev.Shown(n, v) = l
-    rt_print(Sym.str(n))
-    rt_print(" ")
+    Console.print(Sym.str(n))
+    Console.print(" ")
     Ev.show(v)
-    rt_print("\n")
+    Console.print("\n")
     S2c.showLines(rest)
 
 // the flag in arg 1, if any; the files follow it
@@ -340,13 +340,17 @@ enum S2c.Args:
   case S2c.Args(m: S2c.Mode, first: I64)
 
 def S2c.args {r: Region} (): S2c.Args =
-  if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
-  else if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--hash") then S2c.Args(S2c.HashAll, 2)
-  else if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
+  if Args.count() > 1 && Str.eq(Args.at(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--hash") then S2c.Args(S2c.HashAll, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =
   handle r = Arena()
+  handle c = Srs.Console()
+  handle a = Srs.Args()
+  handle f = Srs.Files()
+  handle st = Srs.Store()
   val S2c.Args(m, first) = S2c.args()
   val S2c.Read(ds, errs, fs) = S2c.read(first, 1, Coll.Nil, Coll.Nil, Coll.Nil)
   errs match
@@ -358,22 +362,22 @@ def main(): I64 =
 // a type as written: Name[arg, ...]
 def S2c.term(t: K.Term): Unit = t match
   case K.Con(n, args) =>
-    rt_eprint(Sym.str(n))
+    Console.eprint(Sym.str(n))
     args match
       case Coll.Nil => ()
       case Coll.Cons(a, rest) =>
-        rt_eprint("[")
+        Console.eprint("[")
         S2c.term(a)
         S2c.terms(rest)
-        rt_eprint("]")
-  case K.Int(v) => rt_eprint_i64(v)
+        Console.eprint("]")
+  case K.Int(v) => Console.eprintI64(v)
   case K.Var(v) =>
-    rt_eprint("?")
-    rt_eprint_i64(v)
+    Console.eprint("?")
+    Console.eprintI64(v)
 
 def S2c.terms(ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(t, rest) =>
-    rt_eprint(", ")
+    Console.eprint(", ")
     S2c.term(t)
     S2c.terms(rest)

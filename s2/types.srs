@@ -542,7 +542,7 @@ def Ty.bindFields {r: Region} (xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]
     case Coll.Nil => bs
     case Coll.Cons(f, frest) =>
       val Ast.Binder(_, _, ft) = f
-      Ty.bindFields(rest, frest, tv, if rt_str_eq(Sym.str(x), "_") then bs else Coll.Cons(Ty.Bind(x, Ty.term(ft, tv)), bs))
+      Ty.bindFields(rest, frest, tv, if Str.eq(Sym.str(x), "_") then bs else Coll.Cons(Ty.Bind(x, Ty.term(ft, tv)), bs))
 
 // ── blocks: val/var bind (an annotation is the expected type), handle binds a capability of the handler's protocol;
 // acc = the elaborated statements so far, reversed ──
@@ -982,7 +982,7 @@ def Ty.isEnum(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool = es match
 
 def Ty.isBuiltin(n: Sym.Sym): Bool =
   val s = Sym.str(n)
-  rt_str_eq(s, "I64") || rt_str_eq(s, "Bool") || rt_str_eq(s, "Str") || rt_str_eq(s, "Unit") || rt_str_eq(s, "Ptr") || rt_str_eq(s, "Type")
+  Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type")
 
 // x is a local whose type is protocol p
 def Ty.isCapOf {r: Region} (s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
@@ -1097,7 +1097,7 @@ def Ty.ptrSlots {r: Region} (es: Coll.List[Ast.Enum], s: Coll.IMap[K.Term], line
   case Coll.Cons(t0, rest) =>
     val t = K.reify(s, t0)
     val ok: Bool = t match
-      case K.Con(n, _) => Ty.isEnum(es, n) || rt_str_eq(Sym.str(n), "Ptr")
+      case K.Con(n, _) => Ty.isEnum(es, n) || Str.eq(Sym.str(n), "Ptr")
       case _ => true
     Ty.ptrSlots(es, s, line, rest, if ok then cs else Coll.Cons(Ty.ExternSlot(line, t), cs))
 

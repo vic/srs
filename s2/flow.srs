@@ -589,7 +589,7 @@ def Flow.binds {r: Region} (st: Flow.St, s: I64, caps: Coll.List[Flow.Cap], i: I
     Flow.binds(st3, s, rest, i + 1)
 
 def Flow.isVar(x: Sym.Sym): Bool =
-  val c = rt_str_at(Sym.str(x), 0)
+  val c = Str.at(Sym.str(x), 0)
   c >= 'a' && c <= 'z'
 
 // the state positions of an atom: at(_, S), next(S1, _, S2), every arg of a rule atom (s1/facts.srs statePos)
@@ -1171,7 +1171,7 @@ def Flow.needAtoms {r: Region} (ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Bind
   case Coll.Nil => st
   case Coll.Cons(a, rest) =>
     val Ast.Atom(_, rel, args) = a
-    val st2 = if rt_str_eq(Sym.str(rel), "at") then Flow.needAt(ps, ev, x, args, st) else st
+    val st2 = if Str.eq(Sym.str(rel), "at") then Flow.needAt(ps, ev, x, args, st) else st
     Flow.needAtoms(ps, ev, x, rest, st2)
 
 def Flow.needAt {r: Region} (ps: Coll.List[Ast.Proto], ev: Coll.List[Ast.Binder], x: Sym.Sym, args: Coll.List[Ast.Term], st: Flow.St): Flow.St = Fx.nth(args, 0) match
