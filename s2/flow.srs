@@ -37,8 +37,6 @@ enum Flow.Clash:
   case Flow.ExitBad(line: I64, cap: Sym.Sym)
   // a def whose entry facts have no solution (s1/check.srs:502); cap = the def
   case Flow.NoSol(line: I64, cap: Sym.Sym)
-  // a clash tuple of a shape the rules do not make (a bug in Flow.rules): reported, never dropped
-  case Flow.Malformed(rel: Sym.Sym)
 
 // every relation of Flow.rules and Flow.facts; Flow.relSym is the only place a relation name is a string
 enum Flow.Rel:
@@ -150,6 +148,8 @@ enum Flow.Verdict:
   // the rule library is not a Datalog program (a bug in Flow.rules), as D.solve reports it
   case Flow.RulesUnsafe(rel: Sym.Sym)
   case Flow.RulesNegCycle(rel: Sym.Sym)
+  // a clash relation holds a tuple that is not (line, name): a bug in Flow.rules, reported, never dropped
+  case Flow.RulesIllTyped(rel: Sym.Sym)
 
 // ── facts: one constructor per relation, with its arity and column types ──
 def Flow.i {r: Region} (n: I64): D.Val = D.VInt(n)
@@ -783,23 +783,40 @@ def Flow.worldCaps {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, caps: Col
             case Coll.None => Flow.add(st, Flow.fWant(e, j, id, s))
       Flow.worldCaps(ps, st1, crest, brest, atoms, exit, a, j, end)
 
-// ── the verdict: the clash relations read back ──
-def Flow.clashes {r: Region} (m: D.Model, k: Flow.Kind, acc: Coll.List[Flow.Clash]): Coll.List[Flow.Clash] = Flow.clashList(k, D.tuples(m, Flow.relSym(Flow.relOf(k))), acc)
+// ── the verdict: the clash relations read back. a tuple of another shape than (line, name) means Flow.rules is wrong:
+// the whole reading is IllTyped (a verdict), so no clash value holds a bad tuple ──
+enum Flow.Read:
+  case Flow.Got(cs: Coll.List[Flow.Clash])
+  case Flow.IllTyped(rel: Sym.Sym)
 
-def Flow.clashList {r: Region} (k: Flow.Kind, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Flow.Clash]): Coll.List[Flow.Clash] = ts match
-  case Coll.Nil => acc
-  case Coll.Cons(t, rest) => Flow.clashList(k, rest, Coll.Cons(Flow.clashOf(k, t), acc))
+def Flow.clashes {r: Region} (m: D.Model, k: Flow.Kind, prev: Flow.Read): Flow.Read = prev match
+  case Flow.IllTyped(_) => prev
+  case Flow.Got(acc) => Flow.clashList(k, D.tuples(m, Flow.relSym(Flow.relOf(k))), acc)
 
-// a clash tuple is (line, capability name)
-def Flow.clashOf {r: Region} (k: Flow.Kind, t: Coll.List[D.Val]): Flow.Clash = t match
+def Flow.clashList {r: Region} (k: Flow.Kind, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Flow.Clash]): Flow.Read = ts match
+  case Coll.Nil => Flow.Got(acc)
+  case Coll.Cons(t, rest) => Flow.clashOf(k, t) match
+    case Coll.None => Flow.IllTyped(Flow.relSym(Flow.relOf(k)))
+    case Coll.Some(c) => Flow.clashList(k, rest, Coll.Cons(c, acc))
+
+// a clash tuple is (line, capability name), exactly two values
+def Flow.clashOf {r: Region} (k: Flow.Kind, t: Coll.List[D.Val]): Coll.Option[Flow.Clash] = t match
   case Coll.Cons(a, rest) => rest match
-    case Coll.Cons(b, _) => a match
-      case D.VInt(line) => b match
-        case D.VSym(name) => Flow.make(k, line, name)
-        case D.VInt(_) => Flow.Malformed(Flow.relSym(Flow.relOf(k)))
-      case D.VSym(_) => Flow.Malformed(Flow.relSym(Flow.relOf(k)))
-    case Coll.Nil => Flow.Malformed(Flow.relSym(Flow.relOf(k)))
-  case Coll.Nil => Flow.Malformed(Flow.relSym(Flow.relOf(k)))
+    case Coll.Cons(b, more) => more match
+      case Coll.Nil => Flow.clashLN(k, a, b)
+      case Coll.Cons(_, _) => Coll.None
+    case Coll.Nil => Coll.None
+  case Coll.Nil => Coll.None
+
+def Flow.clashLN {r: Region} (k: Flow.Kind, a: D.Val, b: D.Val): Coll.Option[Flow.Clash] = a match
+  case D.VInt(line) => b match
+    case D.VSym(name) => Coll.Some(Flow.make(k, line, name))
+    case D.VInt(_) => Coll.None
+  case D.VSym(_) => Coll.None
+
+// every clash relation of a solved model, read
+def Flow.readAll {r: Region} (m: D.Model): Flow.Read =
+  Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Flow.Got(Coll.Nil)))))))
 
 def Flow.make {r: Region} (k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash = k match
   case Flow.KStuck => Flow.Stuck(line, name)
@@ -809,12 +826,14 @@ def Flow.make {r: Region} (k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash =
   case Flow.KExitBad => Flow.ExitBad(line, name)
   case Flow.KNoSol => Flow.NoSol(line, name)
 
+def Flow.verdictOf {r: Region} (rd: Flow.Read): Flow.Verdict = rd match
+  case Flow.IllTyped(rel) => Flow.RulesIllTyped(rel)
+  case Flow.Got(cs) => cs match
+    case Coll.Nil => Flow.Ok
+    case Coll.Cons(_, _) => Flow.Bad(cs)
+
 def Flow.check {r: Region} (ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], f: Ast.Fn): Flow.Verdict =
   D.solve(Flow.rules(), Flow.facts(Flow.Cx(ps, hs, fns), f)) match
-    case D.Solved(m) =>
-      val cs = Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Coll.Nil))))))
-      cs match
-        case Coll.Nil => Flow.Ok
-        case Coll.Cons(_, _) => Flow.Bad(cs)
+    case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
     case D.Unsafe(rel) => Flow.RulesUnsafe(rel)
     case D.NegCycle(rel) => Flow.RulesNegCycle(rel)

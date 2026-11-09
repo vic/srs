@@ -141,9 +141,6 @@ def FT.show(c: Flow.Clash): Unit = c match
   case Flow.Ambig(line, cap) => FT.say("ambig", line, cap)
   case Flow.ExitBad(line, cap) => FT.say("exitbad", line, cap)
   case Flow.NoSol(line, cap) => FT.say("nosol", line, cap)
-  case Flow.Malformed(rel) =>
-    rt_print(" malformed ")
-    rt_print(Sym.str(rel))
 
 def FT.say(kind: Str, line: I64, cap: Sym.Sym): Unit =
   rt_print(" ")
@@ -159,10 +156,12 @@ def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
     FT.show(c)
     FT.showAll(rest)
 
-def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit =
+def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(FT.protos(), FT.handlers(), FT.fns(), f))
+
+def FT.verdict (name: Str, v: Flow.Verdict): Unit =
   rt_print(name)
   rt_print(":")
-  Flow.check(FT.protos(), FT.handlers(), FT.fns(), f) match
+  v match
     case Flow.Ok => rt_print(" ok")
     case Flow.Bad(cs) => FT.showAll(cs)
     case Flow.RulesUnsafe(rel) =>
@@ -171,7 +170,28 @@ def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit =
     case Flow.RulesNegCycle(rel) =>
       rt_print(" rules negcycle ")
       rt_print(Sym.str(rel))
+    case Flow.RulesIllTyped(rel) =>
+      rt_print(" rules illtyped ")
+      rt_print(Sym.str(rel))
   rt_print("\n")
+
+// the reading of a model whose clash relation stuck holds (name, line): a rule library with the columns swapped
+def FT.illTyped {r: Region} (): Flow.Verdict =
+  val swapped = D.Rule(D.Atom(Sym.of("stuck"), FT.l2(D.AVar(1), D.AVar(0))), FT.l1(D.Pos(D.Atom(Sym.of("seed"), FT.l2(D.AVar(0), D.AVar(1))))))
+  val seed = D.Fact(Sym.of("seed"), FT.l2(D.VInt(4), D.VSym(Sym.of("f"))))
+  D.solve(FT.l1(swapped), FT.l1(seed)) match
+    case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
+    case D.Unsafe(rel) => Flow.RulesUnsafe(rel)
+    case D.NegCycle(rel) => Flow.RulesNegCycle(rel)
+
+// the same library with the columns in order reads as one clash
+def FT.wellTyped {r: Region} (): Flow.Verdict =
+  val ordered = D.Rule(D.Atom(Sym.of("stuck"), FT.l2(D.AVar(0), D.AVar(1))), FT.l1(D.Pos(D.Atom(Sym.of("seed"), FT.l2(D.AVar(0), D.AVar(1))))))
+  val seed = D.Fact(Sym.of("seed"), FT.l2(D.VInt(4), D.VSym(Sym.of("f"))))
+  D.solve(FT.l1(ordered), FT.l1(seed)) match
+    case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
+    case D.Unsafe(rel) => Flow.RulesUnsafe(rel)
+    case D.NegCycle(rel) => Flow.RulesNegCycle(rel)
 
 def main(): I64 =
   handle r = Arena()
@@ -197,4 +217,6 @@ def main(): I64 =
   FT.run("def_readBoth", FT.fn("readBoth"))
   FT.run("sig_state", FT.sigState())
   FT.run("no_sol", FT.noSol())
+  FT.verdict("ill_typed", FT.illTyped())
+  FT.verdict("well_typed", FT.wellTyped())
   0
