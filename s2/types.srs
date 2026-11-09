@@ -605,7 +605,10 @@ def Ty.cxOf {r: Region} (ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Co
     case Ast.DType(_) => Ty.cxOf(rest, fns, es, ps, hs, trs)
 
 // the fns with effects first (s2/pure.srs): a spec body may call none of them
-def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result =
+def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result = Ty.checkWith(ds, Coll.Nil)
+
+// tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls
+def Ty.checkWith {r: Region} (ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal]): Ty.Result =
   val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
   val pr = if Ty.hasSpec(ds) then Pure.impure(ds) else Pure.Got(Coll.sEmpty())
   val imp: Coll.SMap[Bool] = pr match
@@ -617,7 +620,8 @@ def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result =
   val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp)
   val Ty.Fns(st1, fs, hs, gvs) = Ty.decls(cx, st0, ds, Coll.Nil, Coll.Nil, Coll.Nil)
   val Ty.St(s, _, cs, is, gs) = st1
-  val cs2 = Ty.externSlots(es0, Ty.externs(fns0, Coll.sEmpty()), s, is, Ty.goals(Ty.cands(ps0, ds, Coll.Nil), s, Coll.rev(gs), cs))
+  val allGoals = Ty.typeGoals(fns0, tgs, Coll.rev(gs))
+  val cs2 = Ty.externSlots(es0, Ty.externs(fns0, Coll.sEmpty()), s, is, Ty.goals(ps0, Ty.cands(ps0, ds, Coll.Nil), s, allGoals, cs))
   Ty.Result(Ty.unsolved(s, is, cs2), is, s, fs, hs, gvs)
 
 // the elaborated defs, handlers and givens so far (reversed while walking)
@@ -797,15 +801,16 @@ enum Ty.Res:
 def Ty.givenFuel(): I64 = 1000
 
 // every goal of the program, with the final substitution; a goal that is not ground has a CannotInfer already
-def Ty.goals {r: Region} (cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
+def Ty.goals {r: Region} (ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
   case Coll.Nil => cs
   case Coll.Cons(g, rest) =>
     val Ty.Goal(line, t0, locals, chosen) = g
     val t = K.reify(s, t0)
-    if !Ty.groundT(t) then Ty.goals(cands, s, rest, cs)
+    if !Ty.groundT(t) then Ty.goals(ps, cands, s, rest, cs)
+    else if Ty.isProtoT(ps, t) then Ty.goals(ps, cands, s, rest, if Coll.length(Ty.localsOf(s, locals, t, Coll.Nil)) == 1 then cs else Coll.Cons(Ty.NoCap(line, Ty.headOf(t)), cs))
     else chosen match
-      case Coll.Some(x) => Ty.goals(cands, s, rest, if Ty.localProves(s, locals, x, t) then cs else Coll.Cons(Ty.ChosenBad(line, t), cs))
-      case Coll.None => Ty.goals(cands, s, rest, Ty.resClash(line, t, Ty.resolve(cands, s, locals, t, Ty.givenFuel()), cs))
+      case Coll.Some(x) => Ty.goals(ps, cands, s, rest, if Ty.localProves(s, locals, x, t) then cs else Coll.Cons(Ty.ChosenBad(line, t), cs))
+      case Coll.None => Ty.goals(ps, cands, s, rest, Ty.resClash(line, t, Ty.resolve(cands, s, locals, t, Ty.givenFuel()), cs))
 
 def Ty.resClash {r: Region} (line: I64, t: K.Term, res: Ty.Res, cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = res match
   case Ty.Proved => cs
@@ -1036,3 +1041,24 @@ def Ty.hasSpec(ds: Coll.List[Ast.Decl]): Bool = ds match
         case Ast.Spec(_, _) => true
         case _ => Ty.hasSpec(rest)
     case _ => Ty.hasSpec(rest)
+
+// a protocol goal (a type's {f: File} binder) is a capability in scope, not a given
+def Ty.isProtoT(ps: Coll.List[Ast.Proto], t: K.Term): Bool = t match
+  case K.Con(n, _) => Ty.isProto(ps, n)
+  case _ => false
+
+def Ty.headOf {r: Region} (t: K.Term): Sym.Sym = t match
+  case K.Con(n, _) => n
+  case _ => Sym.of("?")
+
+// each type goal under its def's binders: [] rigid, {} the locals that may prove it
+def Ty.typeGoals {r: Region} (fns: Coll.List[Ast.Fn], tgs: Coll.List[Tl.Goal], acc: Coll.List[Ty.Goal]): Coll.List[Ty.Goal] = tgs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) =>
+    val Tl.Goal(line, f, goal) = g
+    Ty.fnNamed(fns, f) match
+      case Coll.None => Ty.typeGoals(fns, rest, acc)
+      case Coll.Some(fd) =>
+        val Ast.Fn(_, _, gs, _, _, _, _) = fd
+        val tv = Ty.rigid(Ty.tparams(gs, Coll.Nil), Coll.Nil)
+        Ty.typeGoals(fns, rest, Coll.Cons(Ty.Goal(line, Ty.term(goal, tv), Ty.binds(Ty.evidence(gs, Coll.Nil), tv, Coll.Nil), Coll.None), acc))

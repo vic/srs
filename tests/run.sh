@@ -77,6 +77,17 @@ for t in tests/s2/neg/*.srs; do
   while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
   verdict "neg/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
+# s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
+# "// expect: msg" is rejected (exit 1) with msg; a test with neither proves nothing (FAIL)
+for t in tests/s2/eval/*.srs; do
+  n=$(basename "$t" .srs); pass=1
+  out=$(timeout 2 "$B/s2c1" --eval lib/prelude.srs "$t" 2>&1); code=$?
+  want=$(sed -n "1s|^// expect: ||p" "$t"); evals=$(sed -n 's#^// eval: ##p' "$t")
+  if [ -n "$want" ]; then case "$out" in *"$want"*) [ $code -eq 1 ] || pass=0;; *) pass=0;; esac
+  elif [ -z "$evals" ] || [ $code -ne 0 ]; then pass=0
+  else while IFS= read -r line; do printf '%s\n' "$out" | grep -Fxq "$line" || pass=0; done <<< "$evals"; fi
+  verdict "eval/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
+done
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?

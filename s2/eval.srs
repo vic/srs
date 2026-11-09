@@ -1,0 +1,356 @@
+// s2 comptime evaluator (s1/eval.srs, vic-u2d.2 U2, vic/c/comptime-eval.md E3 E4): runs the Ast of pure defs. fuel (vic
+// Q-U2): 1 per call and 1 per loop turn; out of fuel and division by zero are rejects, as data. data at compile time has
+// no Region (vic Q-U4): the compiler owns it.
+
+enum Ev.V:
+  case Ev.VUnit
+  case Ev.VInt(v: I64)
+  case Ev.VBool(b: Bool)
+  case Ev.VStr(s: Str)
+  case Ev.VData(c: Sym.Sym, fs: Coll.List[Ev.V])
+
+enum Ev.Bind:
+  case Ev.Bind(x: Sym.Sym, v: Ev.V)
+
+// why a run stops: fuel out or a division by zero at fn f; an expression with no compile-time value (a call of an
+// impure fn, an op on a capability)
+enum Ev.Fail:
+  case Ev.Fuel(line: I64, f: Sym.Sym)
+  case Ev.DivZero(line: I64, f: Sym.Sym)
+  case Ev.NoValue(line: I64, f: Sym.Sym)
+
+// a value with the locals after it and the fuel left
+enum Ev.R:
+  case Ev.Ok(v: Ev.V, env: Coll.List[Ev.Bind], fuel: I64)
+  case Ev.Err(e: Ev.Fail)
+
+// the defs by name, the cases by name (with their field count), the fns with effects
+enum Ev.Cx:
+  case Ev.Cx(fns: Coll.SMap[Ast.Fn], cases: Coll.SMap[I64], impure: Coll.SMap[Bool])
+
+def Ev.fuel(): I64 = 1000000
+
+def Ev.cxOf {r: Region} (ds: Coll.List[Ast.Decl], imp: Coll.SMap[Bool]): Ev.Cx = Ev.cxDecls(ds, Ev.Cx(Coll.sEmpty(), Coll.sEmpty(), imp))
+
+def Ev.cxDecls {r: Region} (ds: Coll.List[Ast.Decl], cx: Ev.Cx): Ev.Cx = ds match
+  case Coll.Nil => cx
+  case Coll.Cons(d, rest) =>
+    val Ev.Cx(fs, cs, imp) = cx
+    d match
+      case Ast.DFn(f) =>
+        val Ast.Fn(_, n, _, _, _, _, _) = f
+        Ev.cxDecls(rest, Ev.Cx(Coll.sInsert(fs, n, f), cs, imp))
+      case Ast.DEnum(e) =>
+        val Ast.Enum(_, _, _, cases) = e
+        Ev.cxDecls(rest, Ev.Cx(fs, Ev.caseMap(cases, cs), imp))
+      case _ => Ev.cxDecls(rest, cx)
+
+def Ev.caseMap {r: Region} (cs: Coll.List[Ast.Case], m: Coll.SMap[I64]): Coll.SMap[I64] = cs match
+  case Coll.Nil => m
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, n, fs) = c
+    Ev.caseMap(rest, Coll.sInsert(m, n, Coll.length(fs)))
+
+def Ev.get {r: Region} (env: Coll.List[Ev.Bind], x: Sym.Sym): Coll.Option[Ev.V] = env match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(b, rest) =>
+    val Ev.Bind(y, v) = b
+    if Sym.eq(x, y) then Coll.Some(v) else Ev.get(rest, x)
+
+// an assignment replaces the innermost binding of x in place
+def Ev.set {r: Region} (env: Coll.List[Ev.Bind], x: Sym.Sym, v: Ev.V): Coll.List[Ev.Bind] = env match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(b, rest) =>
+    val Ev.Bind(y, w) = b
+    if Sym.eq(x, y) then Coll.Cons(Ev.Bind(y, v), rest) else Coll.Cons(b, Ev.set(rest, x, v))
+
+// the last k bindings dropped (a block ends: what it bound goes)
+def Ev.drop {r: Region} (env: Coll.List[Ev.Bind], k: I64): Coll.List[Ev.Bind] = if k <= 0 then env else env match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(_, rest) => Ev.drop(rest, k - 1)
+
+// ── e in env, inside fn f (for messages) ──
+def Ev.expr {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, e: Ast.Expr): Ev.R = e match
+  case Ast.Int(_, v) => Ev.Ok(Ev.VInt(v), env, fuel)
+  case Ast.Bool(_, v) => Ev.Ok(Ev.VBool(v), env, fuel)
+  case Ast.Str(_, s) => Ev.Ok(Ev.VStr(s), env, fuel)
+  case Ast.Unit(_) => Ev.Ok(Ev.VUnit, env, fuel)
+  case Ast.Name(line, x) => Ev.get(env, x) match
+    case Coll.Some(v) => Ev.Ok(v, env, fuel)
+    case Coll.None => Ev.call(cx, f, env, fuel, line, x, Coll.Nil)
+  case Ast.Call(line, g, _, _, xs) => Ev.call(cx, f, env, fuel, line, g, xs)
+  case Ast.Bin(line, op, l, x) => Ev.bin(cx, f, env, fuel, line, op, l, x)
+  case Ast.Un(line, op, x) => Ev.expr(cx, f, env, fuel, x) match
+    case Ev.Ok(v, env2, fuel2) => Ev.un(f, line, op, v, env2, fuel2)
+    case Ev.Err(x) => Ev.Err(x)
+  case Ast.If(line, c, t, x) => Ev.expr(cx, f, env, fuel, c) match
+    case Ev.Ok(v, env2, fuel2) => v match
+      case Ev.VBool(b) => if b then Ev.expr(cx, f, env2, fuel2, t) else Ev.expr(cx, f, env2, fuel2, x)
+      case _ => Ev.Err(Ev.NoValue(line, f))
+    case Ev.Err(x) => Ev.Err(x)
+  case Ast.Match(line, s, arms) => Ev.expr(cx, f, env, fuel, s) match
+    case Ev.Ok(v, env2, fuel2) => Ev.arms(cx, f, env2, fuel2, line, v, arms)
+    case Ev.Err(x) => Ev.Err(x)
+  case Ast.Block(_, ss, last) => Ev.block(cx, f, env, fuel, ss, last, 0)
+  case Ast.While(line, c, b) => Ev.loop(cx, f, env, fuel, line, c, b)
+  case Ast.Assign(_, x, v) => Ev.expr(cx, f, env, fuel, v) match
+    case Ev.Ok(w, env2, fuel2) => Ev.Ok(Ev.VUnit, Ev.set(env2, x, w), fuel2)
+    case Ev.Err(x) => Ev.Err(x)
+  case Ast.Method(line, _, _, _) => Ev.Err(Ev.NoValue(line, f))
+  case Ast.Quant(line, _, _, _, _) => Ev.Err(Ev.NoValue(line, f))
+
+// args left to right, values in order
+enum Ev.Rs:
+  case Ev.Vals(vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64)
+  case Ev.Errs(e: Ev.Fail)
+
+def Ev.args {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, xs: Coll.List[Ast.Expr], acc: Coll.List[Ev.V]): Ev.Rs = xs match
+  case Coll.Nil => Ev.Vals(Coll.rev(acc), env, fuel)
+  case Coll.Cons(x, rest) => Ev.expr(cx, f, env, fuel, x) match
+    case Ev.Ok(v, env2, fuel2) => Ev.args(cx, f, env2, fuel2, rest, Coll.Cons(v, acc))
+    case Ev.Err(e) => Ev.Errs(e)
+
+// a constructor, a pure extern, or a def (its params bound, its body run with 1 fuel less)
+def Ev.call {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64, g: Sym.Sym, xs: Coll.List[Ast.Expr]): Ev.R =
+  val Ev.Cx(fns, cases, imp) = cx
+  Ev.args(cx, f, env, fuel, xs, Coll.Nil) match
+    case Ev.Errs(e) => Ev.Err(e)
+    case Ev.Vals(vs, env2, fuel2) => Coll.sLookup(cases, g) match
+      case Coll.Some(_) => Ev.Ok(Ev.VData(g, vs), env2, fuel2)
+      case Coll.None =>
+        if fuel2 <= 0 then Ev.Err(Ev.Fuel(line, f))
+        else if Pure.has(imp, g) then Ev.Err(Ev.NoValue(line, g))
+        else Coll.sLookup(fns, g) match
+          case Coll.None => Ev.Err(Ev.NoValue(line, g))
+          case Coll.Some(fd) =>
+            val Ast.Fn(_, _, _, ps, _, _, body) = fd
+            val env3 = Ev.bindAll(ps, vs, Coll.Nil)
+            body match
+              case Ast.Def(_, b) => Ev.result(Ev.expr(cx, g, env3, fuel2 - 1, b), env2)
+              case Ast.Spec(_, b) => Ev.result(Ev.expr(cx, g, env3, fuel2 - 1, b), env2)
+              case Ast.Extern => Ev.extern(line, g, vs, env2, fuel2)
+
+// the callee's value with the caller's locals
+def Ev.result {r: Region} (res: Ev.R, env: Coll.List[Ev.Bind]): Ev.R = res match
+  case Ev.Ok(v, _, fuel) => Ev.Ok(v, env, fuel)
+  case Ev.Err(x) => Ev.Err(x)
+
+def Ev.bindAll {r: Region} (ps: Coll.List[Ast.Binder], vs: Coll.List[Ev.V], acc: Coll.List[Ev.Bind]): Coll.List[Ev.Bind] = ps match
+  case Coll.Nil => acc
+  case Coll.Cons(p, rest) => vs match
+    case Coll.Nil => acc
+    case Coll.Cons(v, vrest) =>
+      val Ast.Binder(_, x, _) = p
+      Ev.bindAll(rest, vrest, Coll.Cons(Ev.Bind(x, v), acc))
+
+// the pure externs (s2/pure.srs Pure.pureExtern) at compile time
+def Ev.extern {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R =
+  val n = Sym.str(g)
+  if rt_str_eq(n, "rt_str_len") then Ev.str1(line, g, vs, env, fuel)
+  else Ev.str2(line, g, n, vs, env, fuel)
+
+def Ev.str1 {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
+  case Coll.Cons(a, _) => a match
+    case Ev.VStr(s) => Ev.Ok(Ev.VInt(rt_str_len(s)), env, fuel)
+    case _ => Ev.Err(Ev.NoValue(line, g))
+  case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
+
+def Ev.str2 {r: Region} (line: I64, g: Sym.Sym, n: Str, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
+  case Coll.Cons(a, rest) => rest match
+    case Coll.Cons(b, more) => a match
+      case Ev.VStr(s) =>
+        if rt_str_eq(n, "rt_str_eq") then Ev.strEq(line, g, s, b, env, fuel)
+        else if rt_str_eq(n, "rt_str_at") then Ev.strAt(line, g, s, b, env, fuel)
+        else if rt_str_eq(n, "rt_str_slice") then Ev.strSlice(line, g, s, b, more, env, fuel)
+        else Ev.Err(Ev.NoValue(line, g))
+      case _ => Ev.Err(Ev.NoValue(line, g))
+    case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
+  case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
+
+def Ev.strEq {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
+  case Ev.VStr(t) => Ev.Ok(Ev.VBool(rt_str_eq(s, t)), env, fuel)
+  case _ => Ev.Err(Ev.NoValue(line, g))
+
+def Ev.strAt {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
+  case Ev.VInt(i) => Ev.Ok(Ev.VInt(rt_str_at(s, i)), env, fuel)
+  case _ => Ev.Err(Ev.NoValue(line, g))
+
+def Ev.strSlice {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, more: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
+  case Ev.VInt(i) => more match
+    case Coll.Cons(c, _) => c match
+      case Ev.VInt(j) => Ev.Ok(Ev.VStr(rt_str_slice(s, i, j)), env, fuel)
+      case _ => Ev.Err(Ev.NoValue(line, g))
+    case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
+  case _ => Ev.Err(Ev.NoValue(line, g))
+
+// && and || do not run their right side when the left decides
+def Ev.bin {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64, op: Ast.BinOp, l: Ast.Expr, x: Ast.Expr): Ev.R = Ev.expr(cx, f, env, fuel, l) match
+  case Ev.Ok(a, env2, fuel2) => op match
+    case Ast.And => a match
+      case Ev.VBool(b) => if b then Ev.expr(cx, f, env2, fuel2, x) else Ev.Ok(a, env2, fuel2)
+      case _ => Ev.Err(Ev.NoValue(line, f))
+    case Ast.Or => a match
+      case Ev.VBool(b) => if b then Ev.Ok(a, env2, fuel2) else Ev.expr(cx, f, env2, fuel2, x)
+      case _ => Ev.Err(Ev.NoValue(line, f))
+    case _ => Ev.expr(cx, f, env2, fuel2, x) match
+      case Ev.Ok(b, env3, fuel3) => Ev.binV(f, line, op, a, b, env3, fuel3)
+      case Ev.Err(x) => Ev.Err(x)
+  case Ev.Err(x) => Ev.Err(x)
+
+def Ev.binV {r: Region} (f: Sym.Sym, line: I64, op: Ast.BinOp, a: Ev.V, b: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = op match
+  case Ast.Eq => Ev.Ok(Ev.VBool(Ev.eq(a, b)), env, fuel)
+  case Ast.Ne => Ev.Ok(Ev.VBool(!Ev.eq(a, b)), env, fuel)
+  case _ => a match
+    case Ev.VInt(x) => b match
+      case Ev.VInt(y) => Ev.binI(f, line, op, x, y, env, fuel)
+      case _ => Ev.Err(Ev.NoValue(line, f))
+    case _ => Ev.Err(Ev.NoValue(line, f))
+
+def Ev.binI {r: Region} (f: Sym.Sym, line: I64, op: Ast.BinOp, x: I64, y: I64, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = op match
+  case Ast.Add => Ev.Ok(Ev.VInt(x + y), env, fuel)
+  case Ast.Sub => Ev.Ok(Ev.VInt(x - y), env, fuel)
+  case Ast.Mul => Ev.Ok(Ev.VInt(x * y), env, fuel)
+  case Ast.Div => if y == 0 then Ev.Err(Ev.DivZero(line, f)) else Ev.Ok(Ev.VInt(x / y), env, fuel)
+  case Ast.Mod => if y == 0 then Ev.Err(Ev.DivZero(line, f)) else Ev.Ok(Ev.VInt(x % y), env, fuel)
+  case Ast.Lt => Ev.Ok(Ev.VBool(x < y), env, fuel)
+  case Ast.Le => Ev.Ok(Ev.VBool(x <= y), env, fuel)
+  case Ast.Gt => Ev.Ok(Ev.VBool(x > y), env, fuel)
+  case Ast.Ge => Ev.Ok(Ev.VBool(x >= y), env, fuel)
+  case _ => Ev.Err(Ev.NoValue(line, f))
+
+def Ev.un {r: Region} (f: Sym.Sym, line: I64, op: Ast.UnOp, v: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = op match
+  case Ast.Neg => v match
+    case Ev.VInt(x) => Ev.Ok(Ev.VInt(0 - x), env, fuel)
+    case _ => Ev.Err(Ev.NoValue(line, f))
+  case Ast.Not => v match
+    case Ev.VBool(b) => Ev.Ok(Ev.VBool(!b), env, fuel)
+    case _ => Ev.Err(Ev.NoValue(line, f))
+
+def Ev.eq(a: Ev.V, b: Ev.V): Bool = a match
+  case Ev.VUnit => b match
+    case Ev.VUnit => true
+    case _ => false
+  case Ev.VInt(x) => b match
+    case Ev.VInt(y) => x == y
+    case _ => false
+  case Ev.VBool(x) => b match
+    case Ev.VBool(y) => x == y
+    case _ => false
+  case Ev.VStr(x) => b match
+    case Ev.VStr(y) => rt_str_eq(x, y)
+    case _ => false
+  case Ev.VData(c, fs) => b match
+    case Ev.VData(d, gs) => Sym.eq(c, d) && Ev.eqAll(fs, gs)
+    case _ => false
+
+def Ev.eqAll(xs: Coll.List[Ev.V], ys: Coll.List[Ev.V]): Bool = xs match
+  case Coll.Nil => ys match
+    case Coll.Nil => true
+    case Coll.Cons(_, _) => false
+  case Coll.Cons(x, xt) => ys match
+    case Coll.Nil => false
+    case Coll.Cons(y, yt) => if Ev.eq(x, y) then Ev.eqAll(xt, yt) else false
+
+// the first arm whose case is the value's (or `_`), its binders bound to the fields
+def Ev.arms {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64, v: Ev.V, as: Coll.List[Ast.Arm]): Ev.R = as match
+  case Coll.Nil => Ev.Err(Ev.NoValue(line, f))
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, p, b) = a
+    p match
+      case Ast.PAny => Ev.expr(cx, f, env, fuel, b)
+      case Ast.PCase(c, binds) => v match
+        case Ev.VData(d, fs) =>
+          if Sym.eq(c, d) then
+            val env2 = Ev.bindPat(binds, fs, env)
+            Ev.result(Ev.expr(cx, f, env2, fuel, b), env)
+          else Ev.arms(cx, f, env, fuel, line, v, rest)
+        case _ => Ev.Err(Ev.NoValue(line, f))
+
+def Ev.bindPat {r: Region} (xs: Coll.List[Sym.Sym], vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind]): Coll.List[Ev.Bind] = xs match
+  case Coll.Nil => env
+  case Coll.Cons(x, rest) => vs match
+    case Coll.Nil => env
+    case Coll.Cons(v, vrest) => Ev.bindPat(rest, vrest, if rt_str_eq(Sym.str(x), "_") then env else Coll.Cons(Ev.Bind(x, v), env))
+
+// a block: each statement in turn, k = the bindings it made; they go when it ends
+def Ev.block {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, k: I64): Ev.R = ss match
+  case Coll.Nil => Ev.expr(cx, f, env, fuel, last) match
+    case Ev.Ok(v, env2, fuel2) => Ev.Ok(v, Ev.drop(env2, k), fuel2)
+    case Ev.Err(x) => Ev.Err(x)
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(_, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
+    case Ast.Var(_, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
+    case Ast.Do(e) => Ev.expr(cx, f, env, fuel, e) match
+      case Ev.Ok(_, env2, fuel2) => Ev.block(cx, f, env2, fuel2, rest, last, k)
+      case Ev.Err(x) => Ev.Err(x)
+    case Ast.Check(_, _, _) => Ev.block(cx, f, env, fuel, rest, last, k)
+    case Ast.Handle(line, _, _, _) => Ev.Err(Ev.NoValue(line, f))
+
+def Ev.bindStmt {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, x: Sym.Sym, e: Ast.Expr, rest: Coll.List[Ast.Stmt], last: Ast.Expr, k: I64): Ev.R = Ev.expr(cx, f, env, fuel, e) match
+  case Ev.Ok(v, env2, fuel2) => Ev.block(cx, f, Coll.Cons(Ev.Bind(x, v), env2), fuel2, rest, last, k + 1)
+  case Ev.Err(x) => Ev.Err(x)
+
+// a loop: 1 fuel per turn
+def Ev.loop {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64, c: Ast.Expr, b: Ast.Expr): Ev.R =
+  if fuel <= 0 then Ev.Err(Ev.Fuel(line, f))
+  else Ev.expr(cx, f, env, fuel, c) match
+    case Ev.Ok(v, env2, fuel2) => v match
+      case Ev.VBool(go) =>
+        if go then Ev.expr(cx, f, env2, fuel2, b) match
+          case Ev.Ok(_, env3, fuel3) => Ev.loop(cx, f, env3, fuel3 - 1, line, c, b)
+          case Ev.Err(x) => Ev.Err(x)
+        else Ev.Ok(Ev.VUnit, env2, fuel2)
+      case _ => Ev.Err(Ev.NoValue(line, f))
+    case Ev.Err(x) => Ev.Err(x)
+
+// ── `s2c --eval`: "name value" for each nullary pure def but main; a fail is a reject ──
+enum Ev.Line:
+  case Ev.Shown(name: Sym.Sym, v: Ev.V)
+
+enum Ev.Out:
+  case Ev.Lines(ls: Coll.List[Ev.Line])
+  case Ev.Failed(e: Ev.Fail)
+
+def Ev.all {r: Region} (ds: Coll.List[Ast.Decl], imp: Coll.SMap[Bool]): Ev.Out = Ev.run(Ev.cxOf(ds, imp), ds, Coll.Nil)
+
+def Ev.run {r: Region} (cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Line]): Ev.Out = ds match
+  case Coll.Nil => Ev.Lines(Coll.rev(acc))
+  case Coll.Cons(d, rest) => d match
+    case Ast.DFn(f) =>
+      val Ast.Fn(_, n, gs, ps, _, _, body) = f
+      val Ev.Cx(_, _, imp) = cx
+      val nullary = Coll.length(ps) == 0 && Coll.length(gs) == 0 && !rt_str_eq(Sym.str(n), "main") && !Pure.has(imp, n)
+      val be: Coll.Option[Ast.Expr] = body match
+        case Ast.Def(_, e) => Coll.Some(e)
+        case Ast.Spec(_, e) => Coll.Some(e)
+        case Ast.Extern => Coll.None
+      be match
+        case Coll.Some(e) =>
+          if nullary then Ev.expr(cx, n, Coll.Nil, Ev.fuel(), e) match
+            case Ev.Ok(v, _, _) => Ev.run(cx, rest, Coll.Cons(Ev.Shown(n, v), acc))
+            case Ev.Err(err) => Ev.Failed(err)
+          else Ev.run(cx, rest, acc)
+        case Coll.None => Ev.run(cx, rest, acc)
+    case _ => Ev.run(cx, rest, acc)
+
+def Ev.show(v: Ev.V): Unit = v match
+  case Ev.VUnit => rt_print("()")
+  case Ev.VInt(n) => rt_print_i64(n)
+  case Ev.VBool(b) => rt_print(if b then "true" else "false")
+  case Ev.VStr(s) => rt_print(s)
+  case Ev.VData(c, fs) =>
+    rt_print(Sym.str(c))
+    fs match
+      case Coll.Nil => ()
+      case Coll.Cons(h, t) =>
+        rt_print("(")
+        Ev.show(h)
+        Ev.showRest(t)
+        rt_print(")")
+
+def Ev.showRest(fs: Coll.List[Ev.V]): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    rt_print(", ")
+    Ev.show(h)
+    Ev.showRest(t)

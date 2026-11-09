@@ -187,6 +187,9 @@ def Fx.decls {r: Region} (ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: F
   case Coll.Cons(d, rest) => d match
     case Ast.DProto(p) => Fx.decls(ps, rest, Fx.proto(p, st))
     case Ast.DFn(f) => Fx.decls(ps, rest, Fx.fn(ps, f, st))
+    case Ast.DType(td) =>
+      val Ast.TypeDecl(_, n, gs, _, _) = td
+      Fx.decls(ps, rest, Fx.groups(n, gs, Fx.caps(ps, n, Ty.evidence(gs, Coll.Nil), st)))
     case _ => Fx.decls(ps, rest, st)
 
 def Fx.proto {r: Region} (p: Ast.Proto, st: Fx.St): Fx.St =

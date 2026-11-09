@@ -79,6 +79,10 @@ def S2c.showTl(es: Coll.List[Tl.Err]): Unit = es match
       case Tl.NoCase(l, n) => S2c.clashN(l, "no case of the match type matches in ", n)
       case Tl.BadVal(l, n) => S2c.clashN(l, "a value arg has no compile-time value in ", n)
       case Tl.Arity(l, n) => S2c.clashN(l, "wrong number of type or value args for ", n)
+      case Tl.NoVals(l, n) => S2c.clashN(l, "value args on a type that takes none: ", n)
+      case Tl.ArgType(l, n) => S2c.clashN(l, "a value arg does not fit its binder's type in ", n)
+      case Tl.BinderType(l, x) => S2c.clashN(l, "a value binder takes I64, Bool or Str: ", x)
+      case Tl.PatType(l, n) => S2c.clashN(l, "a value match pattern does not fit its binder's type in ", n)
     S2c.showTl(rest)
 
 def S2c.clash(l: I64, msg: Str): Unit =
@@ -97,15 +101,15 @@ def S2c.clashN(l: I64, msg: Str, n: Sym.Sym): Unit =
   rt_eprint("\n")
 
 // ── the phases: names, type level, types, flow (protocols, regions), then C; the first phase with errors stops ──
-def S2c.compile {r: Region} (ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
-  case Names.Ok => S2c.facts(ds)
+def S2c.compile {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
+  case Names.Ok => S2c.facts(m, ds)
   case Names.Bad(cs) =>
     S2c.showNames(cs)
     1
   case Names.RulesBad(rel) => S2c.internal("names", rel)
 
-def S2c.facts {r: Region} (ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
-  case Fx.Ok => S2c.typed(ds)
+def S2c.facts {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
+  case Fx.Ok => S2c.typed(m, ds)
   case Fx.Bad(cs) =>
     S2c.showFx(cs)
     1
@@ -115,7 +119,7 @@ def S2c.showFx(cs: Coll.List[Fx.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Fx.NotCap(l, x) => S2c.clashN(l, "at: not a {} capability of this def: ", x)
+      case Fx.NotCap(l, x) => S2c.clashN(l, "at: not a {} capability of this def or type: ", x)
       case Fx.BadState(l, s) => S2c.clashN(l, "unknown protocol state ", s)
       case Fx.Twice(l, x) => S2c.clashN(l, "two states of one capability in a fact group: ", x)
       case Fx.NotOp(l, op) => S2c.clashN(l, "next: not an op of a capability of this def: ", op)
@@ -130,31 +134,29 @@ def S2c.showFx(cs: Coll.List[Fx.Clash]): Unit = cs match
       case Fx.RuleOp(l, op) => S2c.clashN(l, "next: not an op of the protocol: ", op)
     S2c.showFx(rest)
 
-def S2c.typed {r: Region} (ds: Coll.List[Ast.Decl]): I64 =
+def S2c.typed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 =
   val Tl.W(xds, tes) = Tl.expand(ds)
   tes match
     case Coll.Cons(_, _) =>
       S2c.showTl(Coll.rev(tes))
       1
     case Coll.Nil =>
-      val res = Ty.check(xds)
+      val res = Ty.checkWith(xds, Tl.typeGoals(ds))
       val Ty.Result(cs, _, _, _, _, _) = res
       cs match
         case Coll.Cons(_, _) =>
           S2c.showClashes(Coll.rev(cs))
           1
-        case Coll.Nil => S2c.flowed(xds, res)
+        case Coll.Nil => S2c.flowed(m, xds, res)
 
-def S2c.flowed {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
+def S2c.flowed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
   S2c.flowAll(S2c.flowCx(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
         S2c.showFlow(Coll.rev(cs))
         1
-      case Coll.Nil =>
-        Emit.program(ds, res)
-        0
+      case Coll.Nil => S2c.finish(m, ds, res)
 
 enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])
@@ -223,14 +225,55 @@ def S2c.internal(phase: Str, rel: Sym.Sym): I64 =
   rt_eprint("\n")
   2
 
+// what a checked program becomes: C (the default), or the output of an s1 flag (vic 2026-11-09: s2 has every s1 flag)
+enum S2c.Mode:
+  case S2c.EmitC
+  // --eval: "name value" for each nullary pure def but main, run at compile time
+  case S2c.EvalAll
+
+def S2c.finish {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
+  case S2c.EmitC =>
+    Emit.program(ds, res)
+    0
+  case S2c.EvalAll => Pure.impure(ds) match
+    case Pure.RulesBad(rel) => S2c.internal("purity", rel)
+    case Pure.Got(imp) => Ev.all(ds, imp) match
+      case Ev.Lines(ls) =>
+        S2c.showLines(ls)
+        0
+      case Ev.Failed(e) =>
+        e match
+          case Ev.Fuel(l, f) => S2c.clashN(l, "comptime evaluation ran out of fuel at ", f)
+          case Ev.DivZero(l, f) => S2c.clashN(l, "comptime division by zero in ", f)
+          case Ev.NoValue(l, f) => S2c.clashN(l, "no compile-time value at ", f)
+        1
+
+def S2c.showLines(ls: Coll.List[Ev.Line]): Unit = ls match
+  case Coll.Nil => ()
+  case Coll.Cons(l, rest) =>
+    val Ev.Shown(n, v) = l
+    rt_print(Sym.str(n))
+    rt_print(" ")
+    Ev.show(v)
+    rt_print("\n")
+    S2c.showLines(rest)
+
+// the flag in arg 1, if any; the files follow it
+enum S2c.Args:
+  case S2c.Args(m: S2c.Mode, first: I64)
+
+def S2c.args {r: Region} (): S2c.Args =
+  if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval") then S2c.Args(S2c.EvalAll, 2) else S2c.Args(S2c.EmitC, 1)
+
 def main(): I64 =
   handle r = Arena()
-  val S2c.Read(ds, errs) = S2c.read(1, Coll.Nil, Coll.Nil)
+  val S2c.Args(m, first) = S2c.args()
+  val S2c.Read(ds, errs) = S2c.read(first, Coll.Nil, Coll.Nil)
   errs match
     case Coll.Cons(_, _) =>
       S2c.showErrs(errs)
       1
-    case Coll.Nil => S2c.compile(ds)
+    case Coll.Nil => S2c.compile(m, ds)
 
 def S2c.clashT(l: I64, msg: Str, t: K.Term): Unit =
   rt_eprint("line ")
