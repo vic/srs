@@ -103,7 +103,91 @@ def Parse.decl {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "trait") then Parse.traitDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "given") then Parse.givenDecl(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "type") then Parse.typeDecl(Parse.next(ts), Parse.line(ts))
   else Parse.Err(Parse.line(ts), "declaration")
+
+// type Name groups [(value binders)] = body (s1/parse.srs:297-346)
+def Parse.typeDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(gs, t2) =>
+      val rv: Parse.R[Coll.List[Ast.Binder]] = if Parse.isOp(t2, "(") then Parse.params(t2) else Parse.Ok(Coll.Nil, t2)
+      rv match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(vals, t3) => Parse.op(t3, "=") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t4) => Parse.typeBody(t4, vals) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(b, t5) => Parse.Ok(Ast.DType(Ast.TypeDecl(line, name, gs, vals, b)), t5)
+
+// a value binder name followed by match: a value match; else a type, then match arms or not
+def Parse.typeBody {r: Region} (ts: Coll.List[Lex.Tok], vals: Coll.List[Ast.Binder]): Parse.R[Ast.TBody] = Parse.peek(ts) match
+  case Lex.TIdent(x, _) =>
+    if Parse.kwIs(Parse.second(ts), "match") && Parse.binderNamed(vals, x) then
+      Parse.armsOpen(Parse.next(Parse.next(ts))) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t1) => Parse.valArms(t1, Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(as, t2) => Parse.Ok(Ast.ValMatch(Sym.of(x), as), t2)
+    else Parse.tyBody(ts)
+  case _ => Parse.tyBody(ts)
+
+def Parse.binderNamed(bs: Coll.List[Ast.Binder], x: Str): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, n, _) = b
+    if rt_str_eq(Sym.str(n), x) then true else Parse.binderNamed(rest, x)
+
+def Parse.tyBody {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.TBody] = Parse.ty(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(t, t1) =>
+    if Parse.isKw(t1, "match") then
+      Parse.armsOpen(Parse.next(t1)) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t2) => Parse.tyArms(t2, Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(as, t3) => Parse.Ok(Ast.TyMatch(t, as), t3)
+    else Parse.Ok(Ast.Alias(t), t1)
+
+// NL IND after match
+def Parse.armsOpen {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[I64] =
+  if Parse.isNl(ts) && Parse.isIndent(Parse.next(ts)) then Parse.Ok(Parse.line(ts), Parse.next(Parse.next(ts))) else Parse.Err(Parse.line(ts), "match arms")
+
+def Parse.tyArms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.TyArm]): Parse.R[Coll.List[Ast.TyArm]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "case") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.ty(t1) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(p, t2) => Parse.op(t2, "=>") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t3) => Parse.ty(t3) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(res, t4) => Parse.tyArms(Parse.endLine(t4), Coll.Cons(Ast.TyArm(line, p, res), acc))
+
+def Parse.valArms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.ValArm]): Parse.R[Coll.List[Ast.ValArm]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "case") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.valuePat(t1) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(p, t2) => Parse.op(t2, "=>") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t3) => Parse.ty(t3) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(res, t4) => Parse.valArms(Parse.endLine(t4), Coll.Cons(Ast.ValArm(line, p, res), acc))
+
+// an int, a string, true, false or _
+def Parse.valuePat {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.VPat] = Parse.peek(ts) match
+  case Lex.TInt(v, _) => Parse.Ok(Ast.VInt(v), Parse.next(ts))
+  case Lex.TStr(s, _) => Parse.Ok(Ast.VStr(s), Parse.next(ts))
+  case Lex.TIdent(x, line) =>
+    if rt_str_eq(x, "true") then Parse.Ok(Ast.VBool(true), Parse.next(ts))
+    else if rt_str_eq(x, "false") then Parse.Ok(Ast.VBool(false), Parse.next(ts))
+    else if rt_str_eq(x, "_") then Parse.Ok(Ast.VAny, Parse.next(ts))
+    else Parse.Err(line, "a value pattern (int, string, true, false, _)")
+  case _ => Parse.Err(Parse.line(ts), "a value pattern (int, string, true, false, _)")
 
 // trait Name groups: NL IND (def signature, no body)* DED
 def Parse.traitDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
@@ -251,7 +335,7 @@ def Parse.terms {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Term]): 
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(t, t1) => if Parse.isOp(t1, ",") then Parse.terms(Parse.next(t1), Coll.Cons(t, acc)) else Parse.terms(t1, Coll.Cons(t, acc))
 
-// ty := name [ [ty, ...] ] [ ^<names> ]
+// ty := name [ [ty, ...] ] [ (expr, ...) ] [ ^<names> ]: type args, compile-time value args, caps
 def Parse.ty {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(name, t1) =>
@@ -259,13 +343,17 @@ def Parse.ty {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident
     targs match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(args, t2) =>
-        if Parse.isOp(t2, "^") then
-          Parse.op(Parse.next(t2), "<") match
-            case Parse.Err(l, w) => Parse.Err(l, w)
-            case Parse.Ok(_, t3) => Parse.names(t3, ">", Coll.Nil) match
-              case Parse.Err(l, w) => Parse.Err(l, w)
-              case Parse.Ok(cs, t4) => Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Stated(cs)), t4)
-        else Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Inferred), t2)
+        val tvals: Parse.R[Coll.List[Ast.Expr]] = if Parse.isOp(t2, "(") then Parse.args(t2) else Parse.Ok(Coll.Nil, t2)
+        tvals match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(vals, t3) =>
+            if Parse.isOp(t3, "^") then
+              Parse.op(Parse.next(t3), "<") match
+                case Parse.Err(l, w) => Parse.Err(l, w)
+                case Parse.Ok(_, t4) => Parse.names(t4, ">", Coll.Nil) match
+                  case Parse.Err(l, w) => Parse.Err(l, w)
+                  case Parse.Ok(cs, t5) => Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Stated(cs), vals), t5)
+            else Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Inferred, vals), t3)
 
 def Parse.tys {r: Region} (ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Ast.Ty]): Parse.R[Coll.List[Ast.Ty]] =
   if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))

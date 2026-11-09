@@ -27,7 +27,7 @@ enum Ast.Caps:
   case Ast.Stated(cs: Coll.List[Sym.Sym])
 
 enum Ast.Ty:
-  case Ast.Ty(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], caps: Ast.Caps)
+  case Ast.Ty(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr])
 
 enum Ast.Expr:
   case Ast.Int(line: I64, v: I64)
@@ -118,6 +118,29 @@ enum Ast.Trait:
 enum Ast.Given:
   case Ast.Given(line: I64, groups: Coll.List[Ast.Group], head: Ast.Ty, fns: Coll.List[Ast.Fn])
 
+// a value pattern of a type value match: an int, a string, true or false, or _
+enum Ast.VPat:
+  case Ast.VInt(v: I64)
+  case Ast.VStr(s: Str)
+  case Ast.VBool(v: Bool)
+  case Ast.VAny
+
+enum Ast.TyArm:
+  case Ast.TyArm(line: I64, pat: Ast.Ty, res: Ast.Ty)
+
+enum Ast.ValArm:
+  case Ast.ValArm(line: I64, pat: Ast.VPat, res: Ast.Ty)
+
+// the body of a type decl: a type, a match on a type, a match on a value binder
+enum Ast.TBody:
+  case Ast.Alias(t: Ast.Ty)
+  case Ast.TyMatch(scrut: Ast.Ty, arms: Coll.List[Ast.TyArm])
+  case Ast.ValMatch(x: Sym.Sym, arms: Coll.List[Ast.ValArm])
+
+// type Name groups (value binders) = body
+enum Ast.TypeDecl:
+  case Ast.TypeDecl(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody)
+
 enum Ast.Decl:
   case Ast.DFn(f: Ast.Fn)
   case Ast.DEnum(e: Ast.Enum)
@@ -125,6 +148,7 @@ enum Ast.Decl:
   case Ast.DHandler(h: Ast.Handler)
   case Ast.DTrait(t: Ast.Trait)
   case Ast.DGiven(g: Ast.Given)
+  case Ast.DType(t: Ast.TypeDecl)
 
 // ── printer: srs source, Ast.step() spaces per level ──
 def Ast.step(): I64 = 2
@@ -152,7 +176,7 @@ def Ast.syms(xs: Coll.List[Sym.Sym], sep: Str): Unit = xs match
         rt_print(sep)
         Ast.syms(t, sep)
 
-def Ast.tys(xs: Coll.List[Ast.Ty]): Unit = xs match
+def Ast.tys {r: Region} (xs: Coll.List[Ast.Ty]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
     Ast.ty(h)
@@ -162,8 +186,8 @@ def Ast.tys(xs: Coll.List[Ast.Ty]): Unit = xs match
         rt_print(", ")
         Ast.tys(t)
 
-def Ast.ty(t: Ast.Ty): Unit =
-  val Ast.Ty(_, n, args, caps) = t
+def Ast.ty {r: Region} (t: Ast.Ty): Unit =
+  val Ast.Ty(_, n, args, caps, vals) = t
   Ast.sym(n)
   args match
     case Coll.Nil => ()
@@ -171,6 +195,12 @@ def Ast.ty(t: Ast.Ty): Unit =
       rt_print("[")
       Ast.tys(args)
       rt_print("]")
+  vals match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) =>
+      rt_print("(")
+      Ast.args(vals, 0)
+      rt_print(")")
   caps match
     case Ast.Inferred => ()
     case Ast.Stated(cs) =>
@@ -434,7 +464,7 @@ def Ast.atoms(xs: Coll.List[Ast.Atom]): Unit = xs match
         rt_print(", ")
         Ast.atoms(t)
 
-def Ast.binders(xs: Coll.List[Ast.Binder]): Unit = xs match
+def Ast.binders {r: Region} (xs: Coll.List[Ast.Binder]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(b, t) =>
     val Ast.Binder(_, x, ty) = b
@@ -448,7 +478,7 @@ def Ast.binders(xs: Coll.List[Ast.Binder]): Unit = xs match
         Ast.binders(t)
 
 // each group followed by a space: ` [A: Type] {s: Show[A]} <at(t, S)> `
-def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
+def Ast.groups {r: Region} (xs: Coll.List[Ast.Group]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(g, t) =>
     rt_print(" ")
@@ -531,7 +561,7 @@ def Ast.trans(xs: Coll.List[Ast.Trans]): Unit = xs match
         rt_print(", ")
         Ast.trans(t)
 
-def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
+def Ast.ops {r: Region} (xs: Coll.List[Ast.Op]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
     val Ast.Op(_, name, ps, ret, trs) = o
@@ -559,7 +589,7 @@ def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
     Ast.atoms(body)
     Ast.rules(t)
 
-def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
+def Ast.cases {r: Region} (xs: Coll.List[Ast.Case]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(c, t) =>
     val Ast.Case(_, name, fs) = c
@@ -628,6 +658,57 @@ def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
     Ast.ty(head)
     rt_print(":")
     Ast.fns(fs, Ast.step())
+  case Ast.DType(td) =>
+    val Ast.TypeDecl(_, name, gs, vals, body) = td
+    rt_print("type ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    vals match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(" (")
+        Ast.binders(vals)
+        rt_print(")")
+    rt_print(" = ")
+    body match
+      case Ast.Alias(t) => Ast.ty(t)
+      case Ast.TyMatch(s, arms) =>
+        Ast.ty(s)
+        rt_print(" match")
+        Ast.tyArms(arms)
+      case Ast.ValMatch(x, arms) =>
+        Ast.sym(x)
+        rt_print(" match")
+        Ast.valArms(arms)
+
+def Ast.tyArms {r: Region} (xs: Coll.List[Ast.TyArm]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.TyArm(_, p, res) = a
+    Ast.line(Ast.step())
+    rt_print("case ")
+    Ast.ty(p)
+    rt_print(" => ")
+    Ast.ty(res)
+    Ast.tyArms(t)
+
+def Ast.valArms {r: Region} (xs: Coll.List[Ast.ValArm]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.ValArm(_, p, res) = a
+    Ast.line(Ast.step())
+    rt_print("case ")
+    p match
+      case Ast.VInt(v) => rt_print_i64(v)
+      case Ast.VStr(s) =>
+        rt_print("\"")
+        rt_print(s)
+        rt_print("\"")
+      case Ast.VBool(b) => rt_print(if b then "true" else "false")
+      case Ast.VAny => rt_print("_")
+    rt_print(" => ")
+    Ast.ty(res)
+    Ast.valArms(t)
 
 // a program: its decls, one blank line between two, a newline after the last
 def Ast.print {r: Region} (ds: Coll.List[Ast.Decl]): Unit = ds match

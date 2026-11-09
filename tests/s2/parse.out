@@ -96,6 +96,24 @@ given [A: Type] {o: Ord[A]} Ord[List[A]]:
   def cmp(a: A, b: A): I64 = 0
 spec def twoOf(n: I64): I64 = n + n
 error 1 a spec def without binder groups
+type Bits (n: I64) = n match
+  case 8 => Bool
+  case _ => I64
+
+type Twice (n: I64) = Bits(n * 2)
+
+type TPick (b: Bool) = b match
+  case true => Str
+  case false => I64
+
+type Wide [A: Type] = A match
+  case Bool => I64
+  case I64 => I64
+
+type OpenFile {f: File} <at(f, Opened)> = Ptr
+
+def tb3(x: Bits(dbl(4))^<r>): Bool = !x
+error 1 name
 error 4 )
 error 3 case
 error 1 else

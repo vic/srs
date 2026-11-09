@@ -3,7 +3,7 @@
 // lines of ce7 and ce9 in tests/eval/basic.srs), so the
 // printer and the Ast types must hold every shape those programs use. lines are the lines of the source files.
 def AT.s {r: Region} (x: Str): Sym.Sym = Sym.of(x)
-def AT.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred)
+def AT.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred, Coll.Nil)
 def AT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
 def AT.op {r: Region} (line: I64, recv: Str, op: Str): Ast.Expr = Ast.Method(line, Sym.of(recv), Sym.of(op), Coll.Nil)
 def AT.call {r: Region} (line: I64, f: Str, xs: Coll.List[Ast.Expr]): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, xs)
@@ -69,7 +69,7 @@ def AT.loop {r: Region} (): Ast.Decl =
 
 // tests/generic_enum.srs
 def AT.cat [A: Type] {r: Region} (a: Coll.List[A], b: Coll.List[A]): Coll.List[A] = Coll.revOnto(Coll.rev(a), b)
-def AT.tA {r: Region} (n: Str, a: Ast.Ty): Ast.Ty = Ast.Ty(0, Sym.of(n), AT.l1(a), Ast.Inferred)
+def AT.tA {r: Region} (n: Str, a: Ast.Ty): Ast.Ty = Ast.Ty(0, Sym.of(n), AT.l1(a), Ast.Inferred, Coll.Nil)
 def AT.tp {r: Region} (line: I64, a: Str): Ast.Group = Ast.Types(AT.l1(Ast.Binder(line, Sym.of(a), AT.ty("Type"))))
 def AT.bd {r: Region} (line: I64, x: Str, t: Ast.Ty): Ast.Binder = Ast.Binder(line, Sym.of(x), t)
 def AT.arm {r: Region} (line: I64, c: Str, bs: Coll.List[Sym.Sym], body: Ast.Expr): Ast.Arm = Ast.Arm(line, Ast.PCase(Sym.of(c), bs), body)
@@ -84,14 +84,14 @@ def AT.genEnums {r: Region} (): Coll.List[Ast.Decl] =
   val pair = Ast.Enum(7, AT.s("Pair"), AT.l2(AT.tp(7, "A"), AT.tp(7, "B")), AT.l1(Ast.Case(8, AT.s("Pair"), AT.l2(AT.bd(8, "a", AT.ty("A")), AT.bd(8, "b", AT.ty("B"))))))
   val get = Ast.Match(10, AT.nm(10, "o"), AT.l2(AT.arm(11, "None", Coll.Nil, AT.nm(11, "d")), AT.arm(12, "Some", AT.l1(AT.s("v")), AT.nm(12, "v"))))
   val getF = AT.fn(10, "get", AT.l1(AT.tp(10, "A")), AT.l2(AT.bd(10, "o", AT.tA("Opt", AT.ty("A"))), AT.bd(10, "d", AT.ty("A"))), AT.ty("A"), get)
-  val pairAB = Ast.Ty(0, AT.s("Pair"), AT.l2(AT.ty("A"), AT.ty("B")), Ast.Inferred)
+  val pairAB = Ast.Ty(0, AT.s("Pair"), AT.l2(AT.ty("A"), AT.ty("B")), Ast.Inferred, Coll.Nil)
   val first = Ast.Match(14, AT.nm(14, "p"), AT.l1(AT.arm(15, "Pair", AT.l2(AT.s("a"), AT.s("_")), AT.nm(15, "a"))))
   val firstF = AT.fn(14, "first", AT.l2(AT.tp(14, "A"), AT.tp(14, "B")), AT.l1(AT.bd(14, "p", pairAB)), AT.ty("A"), first)
   AT.l4(Ast.DEnum(opt), Ast.DEnum(pair), getF, firstF)
 
 def AT.genMain {r: Region} (): Ast.Decl =
   val optI = AT.tA("Opt", AT.ty("I64"))
-  val inR = Ast.Ty(0, AT.s("Opt"), AT.l1(AT.ty("I64")), Ast.Stated(AT.l1(AT.s("r"))))
+  val inR = Ast.Ty(0, AT.s("Opt"), AT.l1(AT.ty("I64")), Ast.Stated(AT.l1(AT.s("r"))), Coll.Nil)
   val sum = Ast.Bin(20, Ast.Add, AT.c2(20, "get", AT.c1(20, "Some", Ast.Int(20, 41)), Ast.Int(20, 0)), AT.c2(20, "get", AT.nm(20, "n"), Ast.Int(20, 1)))
   val cond = Ast.If(22, AT.c2(22, "get", AT.c1(22, "Some", Ast.Bool(22, true)), Ast.Bool(22, false)), Ast.Int(22, 1), Ast.Int(22, 0))
   val a = AT.l4(AT.handle(18, "r", "Arena"), Ast.Val(19, AT.s("n"), Coll.Some(optI), AT.nm(19, "None")), AT.pr(20, sum), AT.nl(21))
