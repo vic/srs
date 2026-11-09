@@ -1,0 +1,16 @@
+// expect: error[unhandled-effect]
+// a handler whose ops request Console needs a Console handler outside its handle
+protocol Out:
+  state Live
+  start Live
+  end Live
+  op put(n: I64): Unit : Live -> Live
+
+handler Std for Out:
+  def put(n: I64): Unit = Console.printI64(n)
+
+def main(): I64 =
+  handle s = Std()
+  Out.put(1)
+  0
+// expect: --> tests/s2/neg/eff_handler_row.srs:13

@@ -5,6 +5,8 @@
 //   row(F, P) :- needs(F, P), not decl(F, P)
 // req(F, P) is written only when no handle of P is in scope; scope 0 handles nothing. each row(F, P) is one implicit
 // {eff.P: P} binder of F (Ty.fn); main has none, so a request main does not handle is error[unhandled-effect].
+// a handler H is one subject F (E1b): its fns' bodies are its facts, and `handle x = H()` is calls(F, H, S) in the scope
+// outside the handle, so the handlers outside it answer what its ops request (deep handlers, kyo semantics).
 
 enum Eff.Rel:
   case Eff.RReq
@@ -153,7 +155,7 @@ def Eff.cxOf {r: Region} (ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds matc
       case Ast.DProto(p) => Eff.cxOf(rest, Eff.Cx(Coll.Cons(p, ps), hp, fns, ctors, ss))
       case Ast.DHandler(h) =>
         val Ast.Handler(_, n, p, _) = h
-        Eff.cxOf(rest, Eff.Cx(ps, Coll.sInsert(hp, n, p), fns, ctors, ss))
+        Eff.cxOf(rest, Eff.Cx(ps, Coll.sInsert(hp, n, p), Coll.sInsert(fns, n, Eff.Runs), ctors, ss))
       case Ast.DFn(f) =>
         val Ast.Fn(_, n, _, _, _, _, _) = f
         Eff.cxOf(rest, Eff.Cx(ps, hp, Coll.sInsert(fns, n, Eff.calleeOf(f)), ctors, ss))
@@ -205,17 +207,28 @@ def Eff.decls {r: Region} (cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Eff.W(n, fs, _, _) = w
-      Eff.decls(cx, rest, Eff.fn(cx, f, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
+      val Ast.Fn(_, fname, _, _, _, _, _) = f
+      Eff.decls(cx, rest, Eff.fn(cx, fname, f, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
+    // a handler is one subject: its row is what all its fns need (E1b), kept at its handle site
+    case Ast.DHandler(h) =>
+      val Eff.W(n, fs, _, _) = w
+      val Ast.Handler(_, hn, _, hfs) = h
+      Eff.decls(cx, rest, Eff.hfns(cx, hn, hfs, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
     case _ => Eff.decls(cx, rest, w)
 
 // decl(F, P) for each {} binder of a protocol; the body of a run def (a spec def is pure: it has no row)
-def Eff.fn {r: Region} (cx: Eff.Cx, f: Ast.Fn, w: Eff.W): Eff.W =
-  val Ast.Fn(_, n, gs, ps, _, _, body) = f
+// n: the subject, the def itself or its handler
+def Eff.fn {r: Region} (cx: Eff.Cx, n: Sym.Sym, f: Ast.Fn, w: Eff.W): Eff.W =
+  val Ast.Fn(_, _, gs, ps, _, _, body) = f
   val ev = Ty.evidence(gs, Coll.Nil)
   val w1 = Eff.declsOf(cx, n, ev, w)
   body match
     case Ast.Def(_, e) => Eff.expr(cx, Eff.At(n, 0, Coll.Nil, Ty.names(ps, Ty.names(ev, Coll.Nil))), e, w1)
     case _ => w1
+
+def Eff.hfns {r: Region} (cx: Eff.Cx, h: Sym.Sym, fs: Coll.List[Ast.Fn], w: Eff.W): Eff.W = fs match
+  case Coll.Nil => w
+  case Coll.Cons(f, rest) => Eff.hfns(cx, h, rest, Eff.fn(cx, h, f, w))
 
 def Eff.declsOf {r: Region} (cx: Eff.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], w: Eff.W): Eff.W = bs match
   case Coll.Nil => w
@@ -312,8 +325,9 @@ def Eff.stmts {r: Region} (cx: Eff.Cx, at: Eff.At, ss: Coll.List[Ast.Stmt], last
   case Coll.Cons(s, rest) => s match
     case Ast.Val(_, x, _, e) => Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
     case Ast.Var(_, x, _, e) => Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
+    // the handler's row is needed here, in the scope outside its own handle (deep handlers, E1b)
     case Ast.Handle(_, x, h, xs) =>
-      val Eff.W(n, fs, rq, cs) = Eff.exprs(cx, at, xs, w)
+      val Eff.W(n, fs, rq, cs) = Eff.call(cx, at, h, Eff.exprs(cx, at, xs, w))
       val Eff.Cx(_, hp, _, _, ss) = cx
       val Eff.Syms(_, _, _, hdRel, _) = ss
       val Eff.At(f, _, hd, ls) = at

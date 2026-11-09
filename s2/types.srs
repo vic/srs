@@ -553,10 +553,12 @@ def Ty.block {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I6
   case Coll.Cons(s, rest) => s match
     case Ast.Val(sl, x, ann, e) => Ty.bindStmt(cx, st, bs, line, sl, x, ann, e, false, rest, last, want, acc)
     case Ast.Var(sl, x, ann, e) => Ty.bindStmt(cx, st, bs, line, sl, x, ann, e, true, rest, last, want, acc)
+    // the handler's row takes the innermost capabilities outside this handle (E1b)
     case Ast.Handle(sl, x, h, xs) =>
-      val Ty.Cx(_, _, _, hs, _, mode, _, _) = cx
+      val Ty.Cx(_, _, _, hs, _, mode, _, rows) = cx
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st, sl, h), bs, xs, Coll.Nil)
-      Ty.block(cx, st1, Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs), line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, eargs), acc))
+      val Ty.Caps(st2, caps) = Ty.rowCaps(st1, bs, sl, Eff.row(rows, h), Coll.Nil)
+      Ty.block(cx, st2, Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs), line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, caps, eargs), acc))
     case Ast.Do(e) =>
       val Ty.Ex(st1, _, ee) = Ty.expr(cx, st, bs, e, Coll.None)
       Ty.block(cx, st1, bs, line, rest, last, want, Coll.Cons(El.Do(ee), acc))
@@ -705,14 +707,16 @@ def Ty.decls {r: Region} (cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Co
       val Ty.Cx(_, _, _, _, _, _, _, rows) = cx
       val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Eff.row(rows, fname))
       Ty.decls(cx, st1, rest, Coll.Cons(ef, acc), hacc, gacc)
+    // every fn of a handler takes the handler's row (E1b): the capabilities its handle site keeps
     case Ast.DHandler(h) =>
       val Ast.Handler(_, hn, p, fs) = h
-      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, st, fs, Coll.Nil)
+      val Ty.Cx(_, _, _, _, _, _, _, rows) = cx
+      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, st, fs, Eff.row(rows, hn), Coll.Nil)
       Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs), hacc), gacc)
     // a given's fns see its binders: its [] binders are theirs, its {} evidence is local
     case Ast.DGiven(g) =>
       val Ast.Given(_, gs, head, fs) = g
-      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, Ty.givenShape(cx, st, g), Ty.underGroups(gs, fs, Coll.Nil), Coll.Nil)
+      val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(cx, Ty.givenShape(cx, st, g), Ty.underGroups(gs, fs, Coll.Nil), Coll.Nil, Coll.Nil)
       val gv = El.Given(Ty.tparams(gs, Coll.Nil), Ty.binderNames(Ty.evidence(gs, Coll.Nil), Coll.Nil), Ty.term(head, Coll.Nil), efs)
       Ty.decls(cx, st1, rest, acc, hacc, Coll.Cons(gv, gacc))
     case _ => Ty.decls(cx, st, rest, acc, hacc, gacc)
@@ -729,12 +733,12 @@ def Ty.binderNames {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sy
     val Ast.Binder(_, x, _) = b
     Ty.binderNames(rest, Coll.Cons(x, acc))
 
-// fns of a handler or given, elaborated in order
-def Ty.fnsEl {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], acc: Coll.List[El.Fn]): Ty.Fns = fs match
+// fns of a handler or given, elaborated in order, each with row
+def Ty.fnsEl {r: Region} (cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap], acc: Coll.List[El.Fn]): Ty.Fns = fs match
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
-    val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Coll.Nil)
-    Ty.fnsEl(cx, st1, rest, Coll.Cons(ef, acc))
+    val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, row)
+    Ty.fnsEl(cx, st1, rest, row, Coll.Cons(ef, acc))
 
 // an instance with a type arg that is still a var after the whole program: CannotInfer
 def Ty.unsolved {r: Region} (s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match

@@ -205,7 +205,7 @@ def TT.stmts {r: Region} (s: Coll.IMap[K.Term], ss: Coll.List[El.Stmt]): Unit = 
     x match
       case El.Val(_, _, _, _, e) => TT.calls(s, e)
       case El.Do(e) => TT.calls(s, e)
-      case El.Handle(_, _, _, _) => ()
+      case El.Handle(_, _, _, _, _) => ()
     TT.stmts(s, rest)
 
 def TT.elab {r: Region} (src: Str, lib: Coll.List[Ast.Decl], name: Str): Unit =
@@ -263,7 +263,7 @@ def TT.badsStmts(xs: Coll.List[El.Stmt]): I64 = xs match
     val k = s match
       case El.Val(_, _, _, _, e) => TT.bads(e)
       case El.Do(e) => TT.bads(e)
-      case El.Handle(_, _, _, args) => TT.badsAll(args)
+      case El.Handle(_, _, _, _, args) => TT.badsAll(args)
     k + TT.badsStmts(rest)
 
 // ── B1 mono: the instances (callee [args]) in worklist order; ground = no var in any instance's args ──
