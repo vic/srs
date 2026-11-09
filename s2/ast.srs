@@ -48,6 +48,8 @@ enum Ast.Expr:
   case Ast.Call(line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], args: Coll.List[Ast.Expr])
   // d.knock(): an op on a capability, or a method on {} evidence (the checker tells which)
   case Ast.Method(line: I64, recv: Sym.Sym, op: Sym.Sym, args: Coll.List[Ast.Expr])
+  // resume k(arg) in a handler op: the rest of the handled block, its value (vic-hm63 Q-M2)
+  case Ast.Resume(line: I64, k: Sym.Sym, arg: Ast.Expr)
   case Ast.Bin(line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr)
   case Ast.Un(line: I64, op: Ast.UnOp, e: Ast.Expr)
   case Ast.If(line: I64, c: Ast.Expr, t: Ast.Expr, e: Ast.Expr)
@@ -126,7 +128,16 @@ enum Ast.Proto:
   case Ast.Proto(line: I64, name: Sym.Sym, states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], dropOp: Coll.Option[Sym.Sym], ops: Coll.List[Ast.Op], rules: Coll.List[Ast.RuleDef])
 
 enum Ast.Handler:
-  case Ast.Handler(line: I64, name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[Ast.Fn])
+  case Ast.Handler(line: I64, name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[Ast.Fn], shots: Ast.Shots)
+
+// a handler resumes once, at once (plain C), or names its continuations (vic-hm63): handler H [A: Type] for P, the
+// block type A, and per op its continuation k (def choose(k): R)
+enum Ast.Shots:
+  case Ast.OneShot
+  case Ast.MultiShot(ans: Sym.Sym, ks: Coll.List[Ast.KOp])
+
+enum Ast.KOp:
+  case Ast.KOp(op: Sym.Sym, k: Sym.Sym)
 
 enum Ast.Case:
   case Ast.Case(line: I64, name: Sym.Sym, fields: Coll.List[Ast.Binder])
@@ -359,6 +370,12 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
     Console.print("(")
     Ast.args(xs, ind)
     Console.print(")")
+  case Ast.Resume(_, k, x) =>
+    Console.print("resume ")
+    Ast.sym(k)
+    Console.print("(")
+    Ast.expr(x, ind)
+    Console.print(")")
   case Ast.Bin(_, op, l, rhs) =>
     Ast.operand(l, Ast.AtLeast(Ast.Infix(op)), ind)
     Console.print(" ")
@@ -587,7 +604,10 @@ def Ast.sigs(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
     Ast.sigs(t, ind)
 
 // def name groups (params): ty <exit> [= body]
-def Ast.fnSig(f: Ast.Fn, ind: I64): Unit =
+def Ast.fnSig(f: Ast.Fn, ind: I64): Unit = Ast.fnSigK(f, ind, Coll.None)
+
+// k: the continuation param of a multi-shot handler op, written first
+def Ast.fnSigK(f: Ast.Fn, ind: I64, k: Coll.Option[Sym.Sym]): Unit =
   val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
   Console.print("def ")
   Ast.sym(name)
@@ -596,6 +616,13 @@ def Ast.fnSig(f: Ast.Fn, ind: I64): Unit =
     case Coll.Nil => ()
     case Coll.Cons(_, _) => Console.print(" ")
   Console.print("(")
+  k match
+    case Coll.None => ()
+    case Coll.Some(x) =>
+      Ast.sym(x)
+      ps match
+        case Coll.Nil => ()
+        case Coll.Cons(_, _) => Console.print(", ")
   Ast.binders(ps)
   Console.print("): ")
   Ast.ty(ret)
@@ -647,6 +674,32 @@ def Ast.clauses(cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
         Console.print(s)
         Console.print("\"")
     Ast.clauses(rest, ind)
+
+// a handler's fns: an op with a continuation prints it as its first param
+def Ast.hfns(xs: Coll.List[Ast.Fn], ks: Coll.List[Ast.KOp], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, t) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    Ast.line(ind)
+    Ast.kOf(ks, n) match
+      case Coll.None => Ast.fn(f, ind)
+      case Coll.Some(k) => Ast.fnSigK(f, ind, Coll.Some(k))
+    Ast.hfns(t, ks, ind)
+
+def Ast.dropGroup(fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(l, n, gs, ps, ret, exit, body) = f
+    val gs2: Coll.List[Ast.Group] = gs match
+      case Coll.Nil => gs
+      case Coll.Cons(_, gt) => gt
+    Coll.Cons(Ast.Fn(l, n, gs2, ps, ret, exit, body), Ast.dropGroup(rest))
+
+def Ast.kOf(ks: Coll.List[Ast.KOp], op: Sym.Sym): Coll.Option[Sym.Sym] = ks match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(x, rest) =>
+    val Ast.KOp(o, k) = x
+    if Sym.eq(o, op) then Coll.Some(k) else Ast.kOf(rest, op)
 
 def Ast.fns(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
@@ -761,13 +814,24 @@ def Ast.decl(d: Ast.Decl): Unit = d match
         Ast.sym(o)
     Ast.rules(rules)
   case Ast.DHandler(h) =>
-    val Ast.Handler(_, name, proto, fs) = h
+    val Ast.Handler(_, name, proto, fs, shots) = h
     Console.print("handler ")
     Ast.sym(name)
+    val ks: Coll.List[Ast.KOp] = shots match
+      case Ast.OneShot => Coll.Nil
+      case Ast.MultiShot(a, xs) =>
+        Console.print(" [")
+        Ast.sym(a)
+        Console.print(": Type]")
+        xs
+    // the parser gives every fn of a multi-shot handler its [A: Type]: printed once, on the handler
+    val fs2: Coll.List[Ast.Fn] = shots match
+      case Ast.OneShot => fs
+      case Ast.MultiShot(_, _) => Ast.dropGroup(fs)
     Console.print(" for ")
     Ast.sym(proto)
     Console.print(":")
-    Ast.fns(fs, Ast.step())
+    Ast.hfns(fs2, ks, Ast.step())
   case Ast.DTrait(tr) =>
     val Ast.Trait(_, name, gs, sigs) = tr
     Console.print("trait ")

@@ -261,7 +261,7 @@ def Flow.capNamed(cs: Coll.List[Flow.Cap], x: Sym.Sym): Coll.Option[Flow.Cap] = 
 def Flow.protoOf(hs: Coll.List[Ast.Handler], h: Sym.Sym): Coll.Option[Sym.Sym] = hs match
   case Coll.Nil => Coll.None
   case Coll.Cons(x, rest) =>
-    val Ast.Handler(_, n, p, _) = x
+    val Ast.Handler(_, n, p, _, _) = x
     if Sym.eq(n, h) then Coll.Some(p) else Flow.protoOf(rest, h)
 
 // ── the walk: e from point p ──
@@ -278,6 +278,7 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.At = e match
     Flow.capNamed(cs, recv) match
       case Coll.None => Flow.At(st2, pa)
       case Coll.Some(c) => Flow.step(st2, pa, c, op, line)
+  case Ast.Resume(_, _, x) => Flow.expr(cx, st, p, x)
   case Ast.Bin(_, _, l, rhs) =>
     val Flow.At(st2, p2) = Flow.expr(cx, st, p, l)
     Flow.expr(cx, st2, p2, rhs)
@@ -352,6 +353,7 @@ def Flow.srcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], e: Ast.Expr, acc: Coll.List[
   case Ast.Match(_, _, arms) => Flow.srcsArms(cx, cs, arms, acc)
   // a method of {} evidence (a given turns an A into a B): its result keeps its args' regions
   case Ast.Method(_, _, _, xs) => Flow.srcsAll(cx, cs, xs, acc)
+  case Ast.Resume(_, _, x) => Flow.srcsAll(cx, cs, Coll.Cons(x, Coll.Nil), acc)
   case _ => acc
 
 def Flow.srcsAll(cx: Flow.Cx, cs: Coll.List[Flow.Cap], xs: Coll.List[Ast.Expr], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = xs match

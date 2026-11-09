@@ -278,6 +278,7 @@ def Names.expr(e: Ast.Expr, ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st:
   case Ast.Name(line, x) => if Names.member(x, ls) then st else Names.add(st, Names.fUseCall(x, line))
   case Ast.Call(line, f, targs, _, xs) => Names.exprs(xs, ls, tps, Names.tys(targs, tps, Names.add(st, Names.fUseCall(f, line))))
   case Ast.Method(_, _, _, xs) => Names.exprs(xs, ls, tps, st)
+  case Ast.Resume(_, _, x) => Names.expr(x, ls, tps, st)
   case Ast.Bin(_, _, l, rhs) => Names.expr(rhs, ls, tps, Names.expr(l, ls, tps, st))
   case Ast.Un(_, _, x) => Names.expr(x, ls, tps, st)
   case Ast.If(_, c, t, x) => Names.expr(x, ls, tps, Names.expr(t, ls, tps, Names.expr(c, ls, tps, st)))
@@ -352,7 +353,7 @@ def Names.transF(p: Sym.Sym, op: Sym.Sym, trs: Coll.List[Ast.Trans], line: I64, 
 
 // a handler: a type name for a protocol; each fn implements an op (or init) with its arity
 def Names.handler(h: Ast.Handler, st: Names.St): Names.St =
-  val Ast.Handler(line, name, p, fns) = h
+  val Ast.Handler(line, name, p, fns, _) = h
   Names.hfns(name, fns, Names.add(Names.declare(st, Names.NType, name, line), Names.fHandlerFor(name, p, line)))
 
 def Names.hfns(h: Sym.Sym, fs: Coll.List[Ast.Fn], st: Names.St): Names.St = fs match

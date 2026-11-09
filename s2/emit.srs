@@ -85,7 +85,7 @@ def Emit.cxDecls(ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = ds match
         val Ast.Proto(_, n, _, _, _, _, _, _) = p
         Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, Coll.sInsert(ps, n, p), hp, al, nm))
       case Ast.DHandler(h) =>
-        val Ast.Handler(_, n, p, _) = h
+        val Ast.Handler(_, n, p, _, _) = h
         Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, Coll.sInsert(hp, n, p), if Str.eq(Sym.str(n), "Srs.Arena") then Emit.Inline else al, nm))
       // a type with <> facts stays nominal through typing (s2/tlevel.srs Tl.nominal): in C it is its body's type
       case Ast.DType(td) =>

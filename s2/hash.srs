@@ -98,6 +98,7 @@ def Hs.expr(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, e: Ast.Expr): Hs.Dg = 
     val g1 = Hs.name(cx, env, Hs.add(Hs.add(Hs.add(g, 37), Coll.length(xs)), Coll.length(targs)), f, Hs.Global)
     Hs.exprs(cx, env, Hs.names(cx, env, Hs.tys(cx, env, g1, targs), chosen), xs)
   case Ast.Method(_, recv, op, xs) => Hs.exprs(cx, env, Hs.str(Hs.name(cx, env, Hs.add(Hs.add(g, 42), Coll.length(xs)), recv, Hs.Local), Sym.str(op)), xs)
+  case Ast.Resume(_, k, x) => Hs.expr(cx, env, Hs.name(cx, env, Hs.add(g, 72), k, Hs.Local), x)
   case Ast.Bin(_, op, l, x) => Hs.expr(cx, env, Hs.expr(cx, env, Hs.add(Hs.add(g, 43), Hs.binOp(op)), l), x)
   case Ast.Un(_, op, x) =>
     val k = op match
@@ -279,6 +280,7 @@ def Hs.eRefs(e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
   case Ast.Name(_, x) => Coll.Cons(x, acc)
   case Ast.Call(_, f, _, _, xs) => Hs.esRefs(xs, Coll.Cons(f, acc))
   case Ast.Method(_, _, _, xs) => Hs.esRefs(xs, acc)
+  case Ast.Resume(_, _, x) => Hs.eRefs(x, acc)
   case Ast.Bin(_, _, l, x) => Hs.eRefs(x, Hs.eRefs(l, acc))
   case Ast.Un(_, _, x) => Hs.eRefs(x, acc)
   case Ast.If(_, c, t, x) => Hs.eRefs(x, Hs.eRefs(t, Hs.eRefs(c, acc)))

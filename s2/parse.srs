@@ -648,17 +648,87 @@ def Parse.ruleBody(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Atom]): Parse.R[Co
   case Parse.Ok(a, t1) => if Parse.isOp(t1, ",") then Parse.ruleBody(Parse.next(t1), Coll.Cons(a, acc)) else Parse.Ok(Coll.rev(Coll.Cons(a, acc)), t1)
 
 // ── handler: handler Name for Proto: NL IND (def ...)* DED ──
+// handler H [A: Type] for P: the [A: Type] binder (the handled block's type) makes it multi-shot (vic-hm63 Q-M3)
 def Parse.handler(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
-  case Parse.Ok(name, t1) => Parse.kw(t1, "for") match
+  case Parse.Ok(name, t1) => Parse.answer(t1) match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(_, t2) => Parse.ident(t2) match
+    case Parse.Ok(ans, t1b) => Parse.kw(t1b, "for") match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(proto, t3) => Parse.layoutOpen(t3) match
+      case Parse.Ok(_, t2) => Parse.ident(t2) match
         case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(_, t4) => Parse.defs(t4, false, Coll.Nil) match
+        case Parse.Ok(proto, t3) => Parse.layoutOpen(t3) match
           case Parse.Err(l, w) => Parse.Err(l, w)
-          case Parse.Ok(fs, t5) => Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, Parse.stateless(fs, line))), t5)
+          case Parse.Ok(_, t4) => Parse.hdefs(t4, Coll.Nil, Coll.Nil) match
+            case Parse.Err(l, w) => Parse.Err(l, w)
+            case Parse.Ok(hd, t5) =>
+              val Parse.HDefs(fs, ks) = hd
+              val shots: Ast.Shots = ans match
+                case Coll.None => Ast.OneShot
+                case Coll.Some(a) => Ast.MultiShot(a, ks)
+              // the block type A is a [] binder of every fn of the handler, as a given's binders are its fns'
+              val fs2: Coll.List[Ast.Fn] = ans match
+                case Coll.None => fs
+                case Coll.Some(a) => Parse.withTypeBinder(fs, Ast.Binder(line, a, Ast.Ty(line, Sym.of("Type"), Coll.Nil, Ast.Inferred, Coll.Nil)))
+              Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, Parse.stateless(fs2, line), shots)), t5)
+
+def Parse.withTypeBinder(fs: Coll.List[Ast.Fn], b: Ast.Binder): Coll.List[Ast.Fn] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(l, n, gs, ps, ret, exit, body) = f
+    Coll.Cons(Ast.Fn(l, n, Coll.Cons(Ast.Types(Coll.Cons(b, Coll.Nil)), gs), ps, ret, exit, body), Parse.withTypeBinder(rest, b))
+
+def Parse.answer(ts: Coll.List[Lex.Tok]): Parse.R[Coll.Option[Sym.Sym]] =
+  if Parse.isOp(ts, "[") then Parse.ident(Parse.next(ts)) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(a, t1) => Parse.op(t1, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t2) => Parse.kw(t2, "Type") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t3) => Parse.op(t3, "]") match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(_, t4) => Parse.Ok(Coll.Some(a), t4)
+  else Parse.Ok(Coll.None, ts)
+
+enum Parse.HDefs:
+  case Parse.HDefs(fs: Coll.List[Ast.Fn], ks: Coll.List[Ast.KOp])
+
+// a handler's defs; def op(k, params): an untyped first param is the op's continuation (vic-hm63 Q-M1)
+def Parse.hdefs(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Fn], ks: Coll.List[Ast.KOp]): Parse.R[Parse.HDefs] =
+  if Parse.isDedent(ts) then Parse.Ok(Parse.HDefs(Coll.rev(acc), Coll.rev(ks)), Parse.next(ts))
+  else Parse.kw(ts, "def") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) =>
+      val kp: Parse.KParam = Parse.kParam(t1)
+      val Parse.KParam(k, t1b) = kp
+      Parse.fn(t1b, line, Parse.FDef) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(f, t2) =>
+          val Ast.Fn(_, n, _, _, _, _, _) = f
+          val ks2: Coll.List[Ast.KOp] = k match
+            case Coll.None => ks
+            case Coll.Some(x) => Coll.Cons(Ast.KOp(n, x), ks)
+          Parse.hdefs(Parse.endLine(t2), Coll.Cons(f, acc), ks2)
+
+// name ( k , ...  or  name ( k ): the k, and the tokens without it (name ( ...)
+enum Parse.KParam:
+  case Parse.KParam(k: Coll.Option[Sym.Sym], ts: Coll.List[Lex.Tok])
+
+def Parse.kParam(ts: Coll.List[Lex.Tok]): Parse.KParam = ts match
+  case Coll.Nil => Parse.KParam(Coll.None, ts)
+  case Coll.Cons(nameTok, t1) => t1 match
+    case Coll.Nil => Parse.KParam(Coll.None, ts)
+    case Coll.Cons(paren, t2) =>
+      val t3 = Parse.next(t2)
+      val bare = Parse.isOp(t1, "(") && (Parse.isOp(t3, ",") || Parse.isOp(t3, ")"))
+      val kn: Coll.Option[Sym.Sym] = Parse.peek(t2) match
+        case Lex.TIdent(x, _) => if bare then Coll.Some(Sym.of(x)) else Coll.None
+        case _ => Coll.None
+      kn match
+        case Coll.None => Parse.KParam(Coll.None, ts)
+        case Coll.Some(_) =>
+          val rest = if Parse.isOp(t3, ",") then Parse.next(t3) else t3
+          Parse.KParam(kn, Coll.Cons(nameTok, Coll.Cons(paren, rest)))
 
 // a handler with no init keeps no state (E5, vic 2026-11-09: `handler Srs.Console for Console: def print(s: Str): Unit =
 // ...`): it reads as init(): Ptr = Srs.noState() and a leading self: Ptr on each op, the shape every later phase knows
@@ -904,6 +974,15 @@ def Parse.charValue(s: Str): I64 =
     val c = Str.at(s, 1)
     if c == 'n' then 10 else if c == 't' then 9 else if c == 'r' then 13 else if c == '0' then 0 else c
 
+// resume k(v): exactly one value (vic-hm63 Q-M1)
+def Parse.resume(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Expr] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(k, t1) => Parse.args(t1) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(xs, t2) => xs match
+      case Coll.Cons(x, rest) => if Coll.length(rest) == 0 then Parse.Ok(Ast.Resume(line, k, x), t2) else Parse.Err(line, "one value: resume k(v)")
+      case Coll.Nil => Parse.Err(line, "one value: resume k(v)")
+
 def Parse.primary(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] = Parse.peek(ts) match
   case Lex.TInt(v, line) => Parse.Ok(Ast.Int(line, v), Parse.next(ts))
   case Lex.TStr(s, line) => Parse.Ok(Ast.Str(line, s), Parse.next(ts))
@@ -912,6 +991,7 @@ def Parse.primary(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] = Parse.peek(ts) ma
     val t1 = Parse.next(ts)
     if Str.eq(x, "true") then Parse.Ok(Ast.Bool(line, true), t1)
     else if Str.eq(x, "false") then Parse.Ok(Ast.Bool(line, false), t1)
+    else if Str.eq(x, "resume") && !Parse.isOp(t1, "(") then Parse.resume(t1, line)
     else if Parse.isOp(t1, "(") then Parse.callOf(line, Sym.of(x), Coll.Nil, Coll.Nil, Parse.args(t1))
     else if Parse.isOp(t1, "[") || Parse.isOp(t1, "{") then Parse.callGroups(t1, line, Sym.of(x), Coll.Nil, Coll.Nil)
     else if Parse.isOp(t1, ".") then

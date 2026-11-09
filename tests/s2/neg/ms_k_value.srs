@@ -1,0 +1,10 @@
+// expect: error[unknown-name]
+// k is no value: it is not bound, only resumed (erased, vic-hm63 Q-M1)
+capability NonDet:
+  def choose(): Bool
+handler AllAnswers [A: Type] for NonDet:
+  def choose(k): A =
+    val q = k
+    resume k(true)
+def main(): I64 = 0
+// expect: --> tests/s2/neg/ms_k_value.srs:7

@@ -26,7 +26,7 @@ def NT.hfn {r: Region} (line: I64, name: Str, arity: I64): Ast.Fn =
   val ps: Coll.List[Ast.Binder] = if arity == 0 then Coll.Nil else if arity == 1 then NT.l1(NT.b(line, "self", "Ptr")) else NT.l2(NT.b(line, "self", "Ptr"), NT.b(line, "x", "I64"))
   Ast.Fn(line, Sym.of(name), Coll.Nil, ps, NT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(line, 0)))
 
-def NT.handler {r: Region} (proto: Str, fns: Coll.List[Ast.Fn]): Ast.Decl = Ast.DHandler(Ast.Handler(20, NT.s("CFile"), NT.s(proto), fns))
+def NT.handler {r: Region} (proto: Str, fns: Coll.List[Ast.Fn]): Ast.Decl = Ast.DHandler(Ast.Handler(20, NT.s("CFile"), NT.s(proto), fns, Ast.OneShot))
 
 // a handler with init, read and close, each with self
 def NT.goodHandler {r: Region} (): Ast.Decl = NT.handler("File", NT.l3(NT.hfn(21, "init", 0), NT.hfn(22, "read", 1), NT.hfn(23, "close", 1)))
@@ -97,6 +97,6 @@ def main(): I64 =
   NT.run("bad_start", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Gone", "Read1", Coll.None), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
   NT.run("bad_trans", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Lost", Coll.None), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
   NT.run("no_drop", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Read1", Coll.Some(NT.s("free"))), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
-  NT.run("no_proto", NT.with(Ast.DHandler(Ast.Handler(46, NT.s("HList"), NT.s("List"), NT.l1(NT.hfn(46, "init", 0))))))
+  NT.run("no_proto", NT.with(Ast.DHandler(Ast.Handler(46, NT.s("HList"), NT.s("List"), NT.l1(NT.hfn(46, "init", 0)), Ast.OneShot))))
   NT.run("handler_ops", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Read1", Coll.None), Coll.Cons(NT.handler("File", NT.l2(NT.hfn(22, "read", 2), NT.hfn(23, "close", 1))), NT.l2(NT.one(), NT.main())))))
   0

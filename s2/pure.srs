@@ -110,7 +110,7 @@ def Pure.hprotos(ds: Coll.List[Ast.Decl], m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym.
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, n, p, _) = h
+      val Ast.Handler(_, n, p, _, _) = h
       Pure.hprotos(rest, Coll.sInsert(m, n, p))
     case _ => Pure.hprotos(rest, m)
 
@@ -122,7 +122,7 @@ def Pure.decls(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], rows: Eff.Rows, d
       val Ast.Fn(_, n, _, _, _, _, _) = f
       Pure.decls(ps, hp, rows, rest, Pure.rowUses(Pure.Def(n), Eff.row(rows, n), Pure.fn(ps, hp, Pure.Def(n), f, acc)))
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, n, p, fs) = h
+      val Ast.Handler(_, n, p, fs, _) = h
       Pure.decls(ps, hp, rows, rest, Pure.rowUses(Pure.In(n), Eff.row(rows, n), Pure.fns(ps, hp, Pure.In(n), fs, Coll.Cons(Pure.f2(Pure.RHandles, n, p), acc))))
     case _ => Pure.decls(ps, hp, rows, rest, acc)
 
@@ -168,6 +168,8 @@ def Pure.expr(hp: Coll.SMap[Sym.Sym], w: Pure.Who, ev: Coll.List[Sym.Sym], e: As
   case Ast.Method(_, recv, _, xs) =>
     val acc2 = if Ty.memberSym(recv, ev) then Coll.Cons(Pure.f1(Pure.direct(w), Pure.subj(w)), acc) else acc
     Pure.exprs(hp, w, ev, xs, acc2)
+  // resume runs the rest of a handled block: never compile-time pure
+  case Ast.Resume(_, _, x) => Pure.expr(hp, w, ev, x, Coll.Cons(Pure.f1(Pure.direct(w), Pure.subj(w)), acc))
   case Ast.Bin(_, _, l, x) => Pure.expr(hp, w, ev, x, Pure.expr(hp, w, ev, l, acc))
   case Ast.Un(_, _, x) => Pure.expr(hp, w, ev, x, acc)
   case Ast.If(_, c, t, x) => Pure.expr(hp, w, ev, x, Pure.expr(hp, w, ev, t, Pure.expr(hp, w, ev, c, acc)))

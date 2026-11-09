@@ -77,9 +77,9 @@ def Tl.decl(cx: Tl.Cx, d: Ast.Decl, es: Coll.List[Tl.Err]): Tl.W[Ast.Decl] = d m
     val Tl.W(ops2, es2) = Tl.ops(cx, ops, Coll.Nil, es)
     Tl.W(Ast.DProto(Ast.Proto(line, n, sts, st, ends, dop, ops2, rules)), es2)
   case Ast.DHandler(h) =>
-    val Ast.Handler(line, n, p, fs) = h
+    val Ast.Handler(line, n, p, fs, shots) = h
     val Tl.W(fs2, es2) = Tl.fns(cx, fs, Coll.Nil, es)
-    Tl.W(Ast.DHandler(Ast.Handler(line, n, p, fs2)), es2)
+    Tl.W(Ast.DHandler(Ast.Handler(line, n, p, fs2, shots)), es2)
   case Ast.DTrait(t) =>
     val Ast.Trait(line, n, gs, sigs) = t
     val Tl.W(gs2, es2) = Tl.groups(cx, gs, Coll.Nil, es)
@@ -163,6 +163,9 @@ def Tl.expr(cx: Tl.Cx, e: Ast.Expr, es: Coll.List[Tl.Err]): Tl.W[Ast.Expr] = e m
   case Ast.Method(line, recv, op, xs) =>
     val Tl.W(xs2, es2) = Tl.exprs(cx, xs, Coll.Nil, es)
     Tl.W(Ast.Method(line, recv, op, xs2), es2)
+  case Ast.Resume(line, k, x) =>
+    val Tl.W(x2, es2) = Tl.expr(cx, x, es)
+    Tl.W(Ast.Resume(line, k, x2), es2)
   case Ast.Bin(line, op, l, x) =>
     val Tl.W(l2, es2) = Tl.expr(cx, l, es)
     val Tl.W(x2, es3) = Tl.expr(cx, x, es2)
@@ -567,6 +570,7 @@ def Tl.evGoals(cx: Tl.Cx, f: Sym.Sym, line: I64, sub: Coll.List[Tl.Bt], ev: Coll
 def Tl.exprGoals(cx: Tl.Cx, f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Tl.Goal]): Coll.List[Tl.Goal] = e match
   case Ast.Call(_, _, targs, _, xs) => Tl.exprsGoals(cx, f, xs, Tl.tysGoals(cx, f, targs, acc))
   case Ast.Method(_, _, _, xs) => Tl.exprsGoals(cx, f, xs, acc)
+  case Ast.Resume(_, _, x) => Tl.exprGoals(cx, f, x, acc)
   case Ast.Bin(_, _, l, x) => Tl.exprGoals(cx, f, x, Tl.exprGoals(cx, f, l, acc))
   case Ast.Un(_, _, x) => Tl.exprGoals(cx, f, x, acc)
   case Ast.If(_, c, t, x) => Tl.exprGoals(cx, f, x, Tl.exprGoals(cx, f, t, Tl.exprGoals(cx, f, c, acc)))
