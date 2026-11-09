@@ -75,6 +75,26 @@ def K.shiftFd {r: Region} (c: K.Fd, k: I64): K.Fd = c match
   case K.FBin(op, x, y) => K.FBin(op, K.shift(x, k), K.shift(y, k))
   case K.FPlus(x, y, z) => K.FPlus(K.shift(x, k), K.shift(y, k), K.shift(z, k))
 
+// K.unify(s, K.shift(h, k), y) without the copy: a head subterm is shifted only when it is bound into s, so a head
+// that clashes allocates nothing. The binding direction is that of K.unify, so s is the same.
+def K.unifyOff {r: Region} (s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term): Coll.Option[Coll.IMap[K.Term]] = h match
+  case K.Var(n) => K.unify(s, K.Var(n + k), y)
+  case K.Int(_) => K.unify(s, h, y)
+  case K.Con(f, hs) => K.walk(s, y) match
+    case K.Var(m) => K.bind(s, m, K.shift(h, k))
+    case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllOff(s, hs, k, ys) else Coll.None
+    case K.Int(_) => Coll.None
+
+def K.unifyAllOff {r: Region} (s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = hs match
+  case Coll.Nil => ys match
+    case Coll.Nil => Coll.Some(s)
+    case Coll.Cons(_, _) => Coll.None
+  case Coll.Cons(h, ht) => ys match
+    case Coll.Nil => Coll.None
+    case Coll.Cons(y, yt) => K.unifyOff(s, h, k, y) match
+      case Coll.None => Coll.None
+      case Coll.Some(s2) => K.unifyAllOff(s2, ht, k, yt)
+
 // the branches of the clauses of rel whose heads unify with args (in clause order), and the clauses picked
 def K.picks {r: Region} (rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.State, rest: Coll.List[K.Goal], out: Coll.List[K.Branch], cost: I64): K.Step = rs match
   case Coll.Nil => K.Split(Coll.rev(out), cost)
@@ -82,7 +102,7 @@ def K.picks {r: Region} (rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.
     val K.Rule(f, head, body, nv) = h
     val K.State(s, ns, ds, fs, nx) = st
     if !Sym.eq(f, rel) then K.picks(t, rel, args, st, rest, out, cost)
-    else K.post(st, args, K.unifyAll(s, Coll.rev(K.shiftOnto(head, nx, Coll.Nil)), args)) match
+    else K.post(st, args, K.unifyAllOff(s, head, nx, args)) match
       case Coll.None => K.picks(t, rel, args, st, rest, out, cost + 1)
       case Coll.Some(st2) =>
         val K.State(s2, ns2, ds2, fs2, _) = st2
