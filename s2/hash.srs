@@ -13,11 +13,11 @@ def Hs.add {r: Region} (g: Hs.Dg, x: I64): Hs.Dg =
   Hs.Dg(Hs.lane(a, x, 1000000007, 4294967291), Hs.lane(b, x, 998244353, 4294967279), Hs.lane(c, x, 754974721, 4294967231), Hs.lane(d, x, 167772161, 4294967197))
 
 // a string: its length, then its bytes, 3 per step (the length keeps it prefix-free)
-def Hs.str {r: Region} (g: Hs.Dg, s: Str): Hs.Dg = Hs.bytes(Hs.add(g, rt_str_len(s)), s, 0, rt_str_len(s))
+def Hs.str {r: Region} (g: Hs.Dg, s: Str): Hs.Dg = Hs.bytes(Hs.add(g, Str.len(s)), s, 0, Str.len(s))
 
 def Hs.bytes {r: Region} (g: Hs.Dg, s: Str, i: I64, n: I64): Hs.Dg =
-  if i + 2 < n then Hs.bytes(Hs.add(g, rt_str_at(s, i) + 256 * rt_str_at(s, i + 1) + 65536 * rt_str_at(s, i + 2)), s, i + 3, n)
-  else if i < n then Hs.bytes(Hs.add(g, rt_str_at(s, i)), s, i + 1, n)
+  if i + 2 < n then Hs.bytes(Hs.add(g, Str.at(s, i) + 256 * Str.at(s, i + 1) + 65536 * Str.at(s, i + 2)), s, i + 3, n)
+  else if i < n then Hs.bytes(Hs.add(g, Str.at(s, i)), s, i + 1, n)
   else g
 
 def Hs.dg {r: Region} (g: Hs.Dg, h: Hs.Dg): Hs.Dg =
@@ -491,16 +491,16 @@ def Hs.printFrom {r: Region} (hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.Decl]): Un
 
 def Hs.show(n: Sym.Sym, g: Hs.Dg): Unit =
   val Hs.Dg(a, b, c, d) = g
-  rt_print(Sym.str(n))
-  rt_print(" ")
-  rt_print_i64(a)
-  rt_print(".")
-  rt_print_i64(b)
-  rt_print(".")
-  rt_print_i64(c)
-  rt_print(".")
-  rt_print_i64(d)
-  rt_print("\n")
+  Console.print(Sym.str(n))
+  Console.print(" ")
+  Console.printI64(a)
+  Console.print(".")
+  Console.printI64(b)
+  Console.print(".")
+  Console.printI64(c)
+  Console.print(".")
+  Console.printI64(d)
+  Console.print("\n")
 
 // on the stack now (a popped node is kept as false)
 def Hs.onStack {r: Region} (on: Coll.SMap[Bool], w: Sym.Sym): Bool = Coll.sLookup(on, w) match

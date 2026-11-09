@@ -28,26 +28,26 @@ enum Eff.Req:
 
 def Eff.reqOf {r: Region} (ps: Coll.List[Ast.Proto], f: Sym.Sym): Coll.Option[Eff.Req] =
   val s = Sym.str(f)
-  Eff.lastDot(s, rt_str_len(s) - 1) match
+  Eff.lastDot(s, Str.len(s) - 1) match
     case Coll.None => Coll.None
     case Coll.Some(i) =>
-      val p = Sym.of(rt_str_slice(s, 0, i))
-      val op = Sym.of(rt_str_slice(s, i + 1, rt_str_len(s)))
+      val p = Sym.of(Str.slice(s, 0, i))
+      val op = Sym.of(Str.slice(s, i + 1, Str.len(s)))
       Ty.protoOp(ps, p, op) match
         case Coll.Some(_) => Coll.Some(Eff.Req(p, op))
         case Coll.None => Coll.None
 
 // 46 = `.`
 def Eff.lastDot {r: Region} (s: Str, i: I64): Coll.Option[I64] =
-  if i < 0 then Coll.None else if rt_str_at(s, i) == 46 then Coll.Some(i) else Eff.lastDot(s, i - 1)
+  if i < 0 then Coll.None else if Str.at(s, i) == 46 then Coll.Some(i) else Eff.lastDot(s, i - 1)
 
 // the symbol `a.b` (srs has no string concatenation: the printer writes it)
 def Eff.dotted {r: Region} (a: Str, b: Sym.Sym): Sym.Sym =
-  rt_capture_begin()
-  rt_print(a)
-  rt_print(".")
-  rt_print(Sym.str(b))
-  Sym.of(rt_capture_end())
+  Console.captureBegin()
+  Console.print(a)
+  Console.print(".")
+  Console.print(Sym.str(b))
+  Sym.of(Console.captureEnd())
 
 // ── rows: per def, the implicit capabilities, each a protocol and its binder name eff.P ──
 enum Eff.Cap:

@@ -316,7 +316,7 @@ def Tl.fits(p: Ast.VPat, v: Tl.V): Bool = p match
     case Tl.VB(c) => b == c
     case _ => false
   case Ast.VStr(s) => v match
-    case Tl.VS(u) => rt_str_eq(s, u)
+    case Tl.VS(u) => Str.eq(s, u)
     case _ => false
 
 def Tl.tyEq(a: Ast.Ty, b: Ast.Ty): Bool =
@@ -353,9 +353,9 @@ def Tl.fitsTy(t: Ast.Ty, v: Tl.V): Bool =
   val Ast.Ty(_, n, _, _, _) = t
   val s = Sym.str(n)
   v match
-    case Tl.VI(_) => rt_str_eq(s, "I64")
-    case Tl.VB(_) => rt_str_eq(s, "Bool")
-    case Tl.VS(_) => rt_str_eq(s, "Str")
+    case Tl.VI(_) => Str.eq(s, "I64")
+    case Tl.VB(_) => Str.eq(s, "Bool")
+    case Tl.VS(_) => Str.eq(s, "Str")
 
 // a type decl: its () binders have compile-time values; each value match pattern fits its binder's type
 def Tl.typeDecl {r: Region} (td: Ast.TypeDecl, es: Coll.List[Tl.Err]): Coll.List[Tl.Err] =
@@ -373,7 +373,7 @@ def Tl.binderTys {r: Region} (line: I64, bs: Coll.List[Ast.Binder], es: Coll.Lis
     val Ast.Binder(_, x, t) = b
     val Ast.Ty(_, tn, _, _, _) = t
     val s = Sym.str(tn)
-    val ok = rt_str_eq(s, "I64") || rt_str_eq(s, "Bool") || rt_str_eq(s, "Str")
+    val ok = Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str")
     Tl.binderTys(line, rest, if ok then es else Coll.Cons(Tl.BinderType(line, x), es))
 
 def Tl.binderTyOf {r: Region} (bs: Coll.List[Ast.Binder], x: Sym.Sym): Coll.Option[Ast.Ty] = bs match
@@ -474,8 +474,8 @@ def Tl.binV {r: Region} (op: Ast.BinOp, a: Tl.V, b: Tl.V): Coll.Option[Tl.V] = a
     case _ => Coll.None
   case Tl.VS(x) => b match
     case Tl.VS(y) => op match
-      case Ast.Eq => Coll.Some(Tl.VB(rt_str_eq(x, y)))
-      case Ast.Ne => Coll.Some(Tl.VB(!rt_str_eq(x, y)))
+      case Ast.Eq => Coll.Some(Tl.VB(Str.eq(x, y)))
+      case Ast.Ne => Coll.Some(Tl.VB(!Str.eq(x, y)))
       case _ => Coll.None
     case _ => Coll.None
 

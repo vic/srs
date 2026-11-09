@@ -49,7 +49,11 @@ extern def Str.eq(a: Str, b: Str): Bool
 // the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
 // main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
 extern def rt_null(): Ptr
+// what rt_print and rt_print_i64 write between begin and end, as one string
+extern def rt_capture_begin(): Unit
+extern def rt_capture_end(): Str
 
+// captureBegin .. captureEnd: the prints between them are one string, not output
 protocol Console:
   state Live
   start Live
@@ -59,6 +63,8 @@ protocol Console:
   op printChar(c: I64): Unit : Live -> Live
   op eprint(s: Str): Unit : Live -> Live
   op eprintI64(v: I64): Unit : Live -> Live
+  op captureBegin(): Unit : Live -> Live
+  op captureEnd(): Str : Live -> Live
 
 handler Srs.Console for Console:
   def init(): Ptr = rt_null()
@@ -67,6 +73,8 @@ handler Srs.Console for Console:
   def printChar(self: Ptr, c: I64): Unit = rt_print_char(c)
   def eprint(self: Ptr, s: Str): Unit = rt_eprint(s)
   def eprintI64(self: Ptr, v: I64): Unit = rt_eprint_i64(v)
+  def captureBegin(self: Ptr): Unit = rt_capture_begin()
+  def captureEnd(self: Ptr): Str = rt_capture_end()
 
 protocol Args:
   state Live
@@ -104,8 +112,8 @@ handler Srs.Exit for Exit:
 def strHash(s: Str): I64 =
   var h = 2166136261
   var i = 0
-  val n = rt_str_len(s)
+  val n = Str.len(s)
   while i < n do
-    h = ((h + rt_str_at(s, i)) * 16777619) % 4294967296
+    h = ((h + Str.at(s, i)) * 16777619) % 4294967296
     i = i + 1
   h

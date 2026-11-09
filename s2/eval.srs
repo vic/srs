@@ -152,7 +152,7 @@ def Ev.extern {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll
 
 def Ev.str1 {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
   case Coll.Cons(a, _) => a match
-    case Ev.VStr(s) => Ev.Ok(Ev.VInt(rt_str_len(s)), env, fuel)
+    case Ev.VStr(s) => Ev.Ok(Ev.VInt(Str.len(s)), env, fuel)
     case _ => Ev.Err(Ev.NoValue(line, g))
   case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
 
@@ -169,17 +169,17 @@ def Ev.str2 {r: Region} (line: I64, g: Sym.Sym, p: Pure.Prim, vs: Coll.List[Ev.V
   case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
 
 def Ev.strEq {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
-  case Ev.VStr(t) => Ev.Ok(Ev.VBool(rt_str_eq(s, t)), env, fuel)
+  case Ev.VStr(t) => Ev.Ok(Ev.VBool(Str.eq(s, t)), env, fuel)
   case _ => Ev.Err(Ev.NoValue(line, g))
 
 def Ev.strAt {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
-  case Ev.VInt(i) => Ev.Ok(Ev.VInt(rt_str_at(s, i)), env, fuel)
+  case Ev.VInt(i) => Ev.Ok(Ev.VInt(Str.at(s, i)), env, fuel)
   case _ => Ev.Err(Ev.NoValue(line, g))
 
 def Ev.strSlice {r: Region} (line: I64, g: Sym.Sym, s: Str, b: Ev.V, more: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = b match
   case Ev.VInt(i) => more match
     case Coll.Cons(c, _) => c match
-      case Ev.VInt(j) => Ev.Ok(Ev.VStr(rt_str_slice(s, i, j)), env, fuel)
+      case Ev.VInt(j) => Ev.Ok(Ev.VStr(Str.slice(s, i, j)), env, fuel)
       case _ => Ev.Err(Ev.NoValue(line, g))
     case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
   case _ => Ev.Err(Ev.NoValue(line, g))
@@ -238,7 +238,7 @@ def Ev.eq(a: Ev.V, b: Ev.V): Bool = a match
     case Ev.VBool(y) => x == y
     case _ => false
   case Ev.VStr(x) => b match
-    case Ev.VStr(y) => rt_str_eq(x, y)
+    case Ev.VStr(y) => Str.eq(x, y)
     case _ => false
   case Ev.VData(c, fs) => b match
     case Ev.VData(d, gs) => Sym.eq(c, d) && Ev.eqAll(fs, gs)
@@ -271,7 +271,7 @@ def Ev.bindPat {r: Region} (xs: Coll.List[Sym.Sym], vs: Coll.List[Ev.V], env: Co
   case Coll.Nil => env
   case Coll.Cons(x, rest) => vs match
     case Coll.Nil => env
-    case Coll.Cons(v, vrest) => Ev.bindPat(rest, vrest, if rt_str_eq(Sym.str(x), "_") then env else Coll.Cons(Ev.Bind(x, v), env))
+    case Coll.Cons(v, vrest) => Ev.bindPat(rest, vrest, if Str.eq(Sym.str(x), "_") then env else Coll.Cons(Ev.Bind(x, v), env))
 
 // a block: each statement in turn, k = the bindings it made; they go when it ends
 def Ev.block {r: Region} (cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, k: I64): Ev.R = ss match
@@ -320,7 +320,7 @@ def Ev.run {r: Region} (cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Li
     case Ast.DFn(f) =>
       val Ast.Fn(_, n, gs, ps, _, _, body) = f
       val Ev.Cx(_, _, imp) = cx
-      val nullary = Coll.length(ps) == 0 && Coll.length(gs) == 0 && !rt_str_eq(Sym.str(n), "main") && !Pure.has(imp, n)
+      val nullary = Coll.length(ps) == 0 && Coll.length(gs) == 0 && !Str.eq(Sym.str(n), "main") && !Pure.has(imp, n)
       val be: Coll.Option[Ast.Expr] = body match
         case Ast.Def(_, e) => Coll.Some(e)
         case Ast.Spec(_, e) => Coll.Some(e)
@@ -335,23 +335,23 @@ def Ev.run {r: Region} (cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Li
     case _ => Ev.run(cx, rest, acc)
 
 def Ev.show(v: Ev.V): Unit = v match
-  case Ev.VUnit => rt_print("()")
-  case Ev.VInt(n) => rt_print_i64(n)
-  case Ev.VBool(b) => rt_print(if b then "true" else "false")
-  case Ev.VStr(s) => rt_print(s)
+  case Ev.VUnit => Console.print("()")
+  case Ev.VInt(n) => Console.printI64(n)
+  case Ev.VBool(b) => Console.print(if b then "true" else "false")
+  case Ev.VStr(s) => Console.print(s)
   case Ev.VData(c, fs) =>
-    rt_print(Sym.str(c))
+    Console.print(Sym.str(c))
     fs match
       case Coll.Nil => ()
       case Coll.Cons(h, t) =>
-        rt_print("(")
+        Console.print("(")
         Ev.show(h)
         Ev.showRest(t)
-        rt_print(")")
+        Console.print(")")
 
 def Ev.showRest(fs: Coll.List[Ev.V]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
-    rt_print(", ")
+    Console.print(", ")
     Ev.show(h)
     Ev.showRest(t)
