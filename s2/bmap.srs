@@ -256,6 +256,14 @@ def Coll.bFromSorted [V: Type] {r: Region} (s: Coll.Sorted[V]): Coll.BMap[V] = s
     case Coll.Nil => Coll.BMap(0, Coll.BTip)
     case Coll.Cons(a, rest) => Coll.BMap(Coll.length(xs), Coll.blFromD(Coll.blLeaf(a, rest, Coll.Nil)))
 
+// the value bound to k in t, d when k is absent (no allocation)
+def Coll.bTGetOr [V: Type] (t: Coll.BTree[V], k: I64, d: V): V = Coll.bValOr(Coll.bFind(t, k), k, d)
+
+// t with x consed onto the list bound to k (a one-element list when k is absent): one find, then one path copy
+def Coll.bPushT [A: Type] {r: Region} (t: Coll.BTree[Coll.List[A]], k: I64, x: A): Coll.BTree[Coll.List[A]] =
+  val n = Coll.bFind(t, k)
+  if Coll.bIsNode(n) then Coll.bRep(t, k, Coll.Cons(x, Coll.bValOr(n, k, Coll.Nil))) else Coll.bIns(t, k, Coll.Cons(x, Coll.Nil))
+
 // bPut without the answer wrapper
 def Coll.bInsert [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.BMap[V] = m match
   case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.BMap(n, Coll.bRep(t, k, v)) else Coll.BMap(n + 1, Coll.bIns(t, k, v))

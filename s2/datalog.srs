@@ -77,13 +77,11 @@ def D.stampOf(row: D.Row): I64 = row match
   case D.Made(at, _, _) => at
 
 enum D.Rel:
-  case D.Rel(ic: Coll.List[I64], set: Coll.IMap[Coll.List[D.Row]], cols: Coll.IMap[Coll.IMap[Coll.List[D.Row]]], all: Coll.List[D.Row], recent: I64, fresh: I64)
+  case D.Rel(ic: Coll.List[I64], set: Coll.BTree[Coll.List[D.Row]], cols: Coll.BTree[Coll.BTree[Coll.List[D.Row]]], all: Coll.List[D.Row], recent: I64, fresh: I64)
 
-def D.newRel {r: Region} (ic: Coll.List[I64]): D.Rel = D.Rel(ic, Coll.Tip, Coll.Tip, Coll.Nil, 0, 0)
+def D.newRel {r: Region} (ic: Coll.List[I64]): D.Rel = D.Rel(ic, Coll.BTip, Coll.BTip, Coll.Nil, 0, 0)
 
-def D.bucket {r: Region} (m: Coll.IMap[Coll.List[D.Row]], h: I64): Coll.List[D.Row] = Coll.node(m, h) match
-  case Coll.Tip => Coll.Nil
-  case Coll.Bin(_, _, rows, _, _) => rows
+def D.bucket {r: Region} (m: Coll.BTree[Coll.List[D.Row]], h: I64): Coll.List[D.Row] = Coll.bTGetOr(m, h, Coll.Nil)
 
 def D.inRows(rows: Coll.List[D.Row], t: Coll.List[D.Val]): Bool = rows match
   case Coll.Nil => false
@@ -103,23 +101,21 @@ def D.from(t: Coll.List[D.Val], c: I64): Coll.List[D.Val] =
     case Coll.Cons(_, rest) => D.from(rest, c - 1)
 
 // row added under each column of ic; a tuple without column c is not under c (no atom that probes c matches it)
-def D.indexCols {r: Region} (cols: Coll.IMap[Coll.IMap[Coll.List[D.Row]]], row: D.Row, t: Coll.List[D.Val], ic: Coll.List[I64]): Coll.IMap[Coll.IMap[Coll.List[D.Row]]] = ic match
+def D.indexCols {r: Region} (cols: Coll.BTree[Coll.BTree[Coll.List[D.Row]]], row: D.Row, t: Coll.List[D.Val], ic: Coll.List[I64]): Coll.BTree[Coll.BTree[Coll.List[D.Row]]] = ic match
   case Coll.Nil => cols
   case Coll.Cons(c, rest) => D.from(t, c) match
     case Coll.Nil => D.indexCols(cols, row, t, rest)
     case Coll.Cons(v, _) =>
-      val col: Coll.IMap[Coll.List[D.Row]] = Coll.node(cols, c) match
-        case Coll.Tip => Coll.Tip
-        case Coll.Bin(_, _, m, _, _) => m
-      val h = D.vhash(v)
-      D.indexCols(Coll.insert(cols, c, Coll.insert(col, h, Coll.Cons(row, D.bucket(col, h)))), row, t, rest)
+      val n = Coll.bFind(cols, c)
+      val col = Coll.bPushT(Coll.bValOr(n, c, Coll.BTip), D.vhash(v), row)
+      D.indexCols(if Coll.bIsNode(n) then Coll.bRep(cols, c, col) else Coll.bIns(cols, c, col), row, t, rest)
 
 // row added (the caller checked its tuple is new)
 def D.add {r: Region} (rl: D.Rel, row: D.Row): D.Rel =
   val D.Rel(ic, set, cols, all, rc, fr) = rl
   val t = D.tupleOf(row)
   val h = D.tupleHash(t)
-  D.Rel(ic, Coll.insert(set, h, Coll.Cons(row, D.bucket(set, h))), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1)
+  D.Rel(ic, Coll.bPushT(set, h, row), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1)
 
 // the rows an atom may match under a probe (a superset: the match checks values)
 def D.cands {r: Region} (rl: D.Rel, p: D.Probe): Coll.List[D.Row] =
@@ -128,9 +124,9 @@ def D.cands {r: Region} (rl: D.Rel, p: D.Probe): Coll.List[D.Row] =
     case D.Scan => all
     // no index on c: every row (in D.solve this means no rows yet; D.why binds the head first, so it can probe a
     // column that the solve never probes)
-    case D.Col(c, h) => Coll.node(cols, c) match
-      case Coll.Tip => all
-      case Coll.Bin(_, _, m, _, _) => D.bucket(m, h)
+    case D.Col(c, h) =>
+      val n = Coll.bFind(cols, c)
+      if Coll.bIsNode(n) then D.bucket(Coll.bValOr(n, c, Coll.BTip), h) else all
 
 // which rows an atom reads in round r: recent (round r-1), stable (older) or both; never rows of round r
 enum D.Use:
