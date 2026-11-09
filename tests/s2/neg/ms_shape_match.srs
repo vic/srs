@@ -1,0 +1,44 @@
+// expect: error[multishot-shape]
+// a cut inside a match arm of a CPS fn reached in last position is not compiled yet (its arm binders need C types)
+capability NonDet:
+  def choose(): Bool
+  def fail(): Unit
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+  case Empty
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+  def fail(k): Bag[A] = Empty
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+  case Empty => ()
+enum Opt:
+  case Some(x: I64)
+  case None
+def check(n: I64): Opt = if n == 2 then None else Some(n)
+def pickA(): I64 =
+  val c = NonDet.choose()
+  if c then 1 else 2
+def keep(n: I64): I64 = check(n) match
+  case Some(x) => x
+  case None =>
+    NonDet.fail()
+    0
+def tree(): Bag[I64] =
+  handle nd = All()
+  val a = pickA()
+  keep(a)
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0
+// expect: --> tests/s2/neg/ms_shape_match.srs:32

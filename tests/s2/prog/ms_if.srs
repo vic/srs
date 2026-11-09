@@ -1,0 +1,37 @@
+// pass: multi-shot, a cut inside an if arm (nested ops): each arm is its own chain, joined at v. leaves v*10: 10 20 30 40
+capability NonDet:
+  def choose(): Bool
+  def fail(): Unit
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+  case Empty
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+  def fail(k): Bag[A] = Empty
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+  case Empty => ()
+def pickA(): I64 =
+  val c = NonDet.choose()
+  if c then 1 else 2
+def pickB(): I64 =
+  val c = NonDet.choose()
+  if c then 3 else 4
+def tree(): Bag[I64] =
+  handle nd = All()
+  val c = NonDet.choose()
+  val v = if c then pickA() else pickB()
+  v * 10
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0

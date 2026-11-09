@@ -1174,7 +1174,7 @@ def Emit.mSite(cx: Emit.Cx, hs: Coll.List[El.Handler], fi: Emit.Fi, e: El.Expr, 
         val gans = Emit.gr(cx, fi, ans)
         val Emit.MS(_, caps, _, _, _, _, _) = ms
         Emit.mOps(cx, fi, p, hfs, ga, gans, what)
-        val rest2 = Emit.normLast(cx, p, x, rest)
+        val rest2 = Emit.normLast(cx, p, x, rest, ga)
         val sc = Emit.SC(fi, fi, p, hfs, gans, x, Coll.length(caps), Emit.USite(caps, rest2))
         val ss = Emit.restStmts(rest2)
         Emit.segs(cx, sc, Emit.startScope(cx, fi, ms), ss, 0, Ty.con("I64"), Coll.None, what)
@@ -1186,6 +1186,8 @@ def Emit.mSite(cx: Emit.Cx, hs: Coll.List[El.Handler], fi: Emit.Fi, e: El.Expr, 
 enum Emit.U:
   case Emit.USite(caps: Coll.List[Sym.Sym], rest: El.Expr)
   case Emit.UFn(g: Sym.Sym, gv: K.Term, last: El.Expr)
+  // an arm of an if whose arms hold cuts: its chain ends in the parent's join segment j (nested ops)
+  case Emit.UArm(parent: Emit.SC, j: I64, a: I64, last: El.Expr)
 
 // a chain: the site fn (names), the fn whose expressions are printed, the capability, the handler fns, the answer, the
 // name of the capability local that marks ops and CPS calls, the number of site caps, the unit
@@ -1193,13 +1195,45 @@ enum Emit.SC:
   case Emit.SC(sfi: Emit.Fi, efi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], gans: K.Term, k: Sym.Sym, nsc: I64, u: Emit.U)
 
 // a cut in last position (bead vic-tecg) becomes `val ms.last = cut; ms.last`: its value comes back to a segment
-def Emit.normLast(cx: Emit.Cx, p: Sym.Sym, k: Sym.Sym, e: El.Expr): El.Expr = e match
-  case El.Block(l, ss, last) => Emit.cutE(k, last) match
-    case Coll.Some(c) => El.Block(l, Coll.revOnto(Coll.rev(ss), Coll.Cons(Emit.lastVal(cx, p, l, c), Coll.Nil)), El.Local(l, Sym.of("ms.last")))
+// t: the value type of e (an if with cut arms in last position takes it)
+def Emit.normLast(cx: Emit.Cx, p: Sym.Sym, k: Sym.Sym, e: El.Expr, t: K.Term): El.Expr = e match
+  case El.Block(l, ss, last) => Emit.lastCut(cx, p, k, last, t) match
+    case Coll.Some(v) => El.Block(l, Coll.revOnto(Coll.rev(ss), Coll.Cons(v, Coll.Nil)), El.Local(l, Sym.of("ms.last")))
     case Coll.None => e
-  case _ => Emit.cutE(k, e) match
-    case Coll.Some(c) => El.Block(0, Coll.Cons(Emit.lastVal(cx, p, 0, c), Coll.Nil), El.Local(0, Sym.of("ms.last")))
+  case _ => Emit.lastCut(cx, p, k, e, t) match
+    case Coll.Some(v) => El.Block(0, Coll.Cons(v, Coll.Nil), El.Local(0, Sym.of("ms.last")))
     case Coll.None => e
+
+def Emit.lastCut(cx: Emit.Cx, p: Sym.Sym, k: Sym.Sym, e: El.Expr, t: K.Term): Coll.Option[El.Stmt] = Emit.cutE(k, e) match
+  case Coll.Some(c) => Coll.Some(Emit.lastVal(cx, p, 0, c))
+  case Coll.None => e match
+    case El.If(l, _, a, b) => if Emit.armCut(k, a) || Emit.armCut(k, b) then Coll.Some(El.Val(l, Sym.of("ms.last"), t, false, e)) else Coll.None
+    case _ => Coll.None
+
+// an arm holds a cut: it is one, or a block with one as a whole statement or last
+def Emit.armCut(k: Sym.Sym, e: El.Expr): Bool = e match
+  case El.Block(_, ss, last) => Emit.anyCut(k, ss) || Emit.isSome(Emit.cutE(k, last)) || Emit.ifCut(k, last)
+  case _ => Emit.isSome(Emit.cutE(k, e))
+
+def Emit.ifCut(k: Sym.Sym, e: El.Expr): Bool = e match
+  case El.If(_, _, a, b) => Emit.armCut(k, a) || Emit.armCut(k, b)
+  case _ => false
+
+def Emit.anyCut(k: Sym.Sym, ss: Coll.List[El.Stmt]): Bool = ss match
+  case Coll.Nil => false
+  case Coll.Cons(s, rest) => if Emit.isSome(Emit.cutOf(k, s)) || Emit.isSome(Emit.branchOf(k, s)) then true else Emit.anyCut(k, rest)
+
+def Emit.isSome(o: Coll.Option[El.Expr]): Bool = o match
+  case Coll.Some(_) => true
+  case Coll.None => false
+
+// a statement whose value is an if with cut arms (a branch cut): the if
+def Emit.branchOf(k: Sym.Sym, s: El.Stmt): Coll.Option[El.Expr] =
+  val e: El.Expr = s match
+    case El.Val(_, _, _, _, x) => x
+    case El.Do(x) => x
+    case El.Handle(l, _, _, _, _) => El.Unit(l)
+  if Emit.ifCut(k, e) then Coll.Some(e) else Coll.None
 
 def Emit.lastVal(cx: Emit.Cx, p: Sym.Sym, l: I64, c: El.Expr): El.Stmt =
   val t: K.Term = c match
@@ -1221,7 +1255,16 @@ def Emit.cpsOf(k: Sym.Sym, ss: Coll.List[El.Stmt], acc: Coll.List[Sym.Sym]): Col
     case Coll.Some(e) => e match
       case El.CallFn(_, f, _, _, _) => Emit.cpsOf(k, rest, Coll.Cons(f, acc))
       case _ => Emit.cpsOf(k, rest, acc)
-    case Coll.None => Emit.cpsOf(k, rest, acc)
+    case Coll.None => Emit.branchOf(k, s) match
+      case Coll.Some(e) => Emit.cpsOf(k, rest, Emit.cpsOfE(k, e, acc))
+      case Coll.None => Emit.cpsOf(k, rest, acc)
+
+// the CPS calls in the arms of a branch cut (whole, statements, last)
+def Emit.cpsOfE(k: Sym.Sym, e: El.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
+  case El.CallFn(_, f, _, caps, _) => if Ty.memberSym(k, caps) then Coll.Cons(f, acc) else acc
+  case El.If(_, _, a, b) => Emit.cpsOfE(k, b, Emit.cpsOfE(k, a, acc))
+  case El.Block(_, ss, last) => Emit.cpsOfE(k, last, Emit.cpsOf(k, ss, acc))
+  case _ => acc
 
 def Emit.cpsFns(cx: Emit.Cx, sfi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], gans: K.Term, nsc: I64, todo: Coll.List[Sym.Sym], seen: Coll.List[Sym.Sym], what: Emit.Part): Unit = todo match
   case Coll.Nil => ()
@@ -1239,7 +1282,7 @@ def Emit.cpsFns(cx: Emit.Cx, sfi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], ga
         val e: El.Expr = body match
           case El.Def(b) => b
           case El.Extern => El.Unit(0)
-        val e2 = Emit.normLast(cx, p, k, e)
+        val e2 = Emit.normLast(cx, p, k, e, gv)
         val gss = Emit.restStmts(e2)
         val sc = Emit.SC(sfi, gfi, p, hfs, gans, k, nsc, Emit.UFn(g, gv, Emit.restParts(e2)))
         val sc0 = Emit.Scope(Emit.paramEnv(vslots, Coll.Nil), Emit.kTNs(gans, gv, nsc, Emit.paramTN(vslots, Coll.Nil)))
@@ -1307,6 +1350,12 @@ def Emit.segName(sc: Emit.SC, i: I64): Unit =
       Emit.cgName(sfi, g)
       Console.print("_")
       Console.printI64(i)
+    case Emit.UArm(parent, j, a, _) =>
+      Emit.segName(parent, j)
+      Console.print("a")
+      Console.printI64(a)
+      Console.print("_")
+      Console.printI64(i)
 
 // the site caps as args: the site's caps by name, or a CPS fn's sc<i>
 def Emit.siteCaps(sc: Emit.SC, env: Emit.Env): Unit =
@@ -1314,6 +1363,7 @@ def Emit.siteCaps(sc: Emit.SC, env: Emit.Env): Unit =
   u match
     case Emit.USite(caps, _) => Emit.capArgs(env, caps, Emit.Comma)
     case Emit.UFn(_, _, _) => Emit.scArgs(nsc, 0)
+    case Emit.UArm(parent, _, _, _) => Emit.siteCaps(parent, env)
 
 def Emit.scArgs(n: I64, i: I64): Unit =
   if i == n then ()
@@ -1413,8 +1463,47 @@ def Emit.segsNext(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.
   case Coll.Cons(s, rest) =>
     val Emit.SC(_, efi, _, _, _, k, _, _) = sc
     Emit.cutOf(k, s) match
-      case Coll.None => Emit.segsNext(cx, sc, Emit.scopeOf(cx, efi, scope, Coll.Cons(s, Coll.Nil)), rest, i, what)
+      case Coll.None => Emit.branchOf(k, s) match
+        case Coll.None => Emit.segsNext(cx, sc, Emit.scopeOf(cx, efi, scope, Coll.Cons(s, Coll.Nil)), rest, i, what)
+        case Coll.Some(ife) =>
+          Emit.armChains(cx, sc, scope, i, s, ife, what)
+          Emit.segs(cx, sc, scope, rest, i + 1, Emit.joinV(cx, efi, s), Coll.Some(s), what)
       case Coll.Some(o) => Emit.segs(cx, sc, scope, rest, i + 1, Emit.cutV(cx, sc, o), Coll.Some(s), what)
+
+// the value type a branch cut's join takes: the val's type (a statement: Unit)
+def Emit.joinV(cx: Emit.Cx, efi: Emit.Fi, s: El.Stmt): K.Term = s match
+  case El.Val(_, _, ty, _, _) => Emit.gr(cx, efi, ty)
+  case _ => Ty.con("Unit")
+
+// the chain of arm a of a branch cut (an arm with a cut): its statements, ending in the join segment i + 1
+def Emit.armSC(cx: Emit.Cx, sc: Emit.SC, i: I64, s: El.Stmt, a: I64, arm: El.Expr): Emit.SC =
+  val Emit.SC(sfi, efi, p, hfs, gans, k, nsc, _) = sc
+  val ne = Emit.normLast(cx, p, k, arm, Emit.joinV(cx, efi, s))
+  Emit.SC(sfi, efi, p, hfs, gans, k, nsc, Emit.UArm(sc, i + 1, a, Emit.restParts(ne)))
+
+def Emit.armStmts(cx: Emit.Cx, sc: Emit.SC, s: El.Stmt, arm: El.Expr): Coll.List[El.Stmt] =
+  val Emit.SC(_, efi, p, _, _, k, _, _) = sc
+  Emit.restStmts(Emit.normLast(cx, p, k, arm, Emit.joinV(cx, efi, s)))
+
+def Emit.armChains(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, i: I64, s: El.Stmt, ife: El.Expr, what: Emit.Part): Unit =
+  val Emit.SC(_, _, _, _, _, k, _, _) = sc
+  ife match
+    case El.If(_, _, ta, fa) =>
+      if Emit.armCut(k, ta) then Emit.segs(cx, Emit.armSC(cx, sc, i, s, 0, ta), scope, Emit.armStmts(cx, sc, s, ta), 0, Ty.con("I64"), Coll.None, what) else ()
+      if Emit.armCut(k, fa) then Emit.segs(cx, Emit.armSC(cx, sc, i, s, 1, fa), scope, Emit.armStmts(cx, sc, s, fa), 0, Ty.con("I64"), Coll.None, what) else ()
+    case _ => ()
+
+// the jump of one arm of a branch cut: into its chain, or (no cut) its value straight to the join
+def Emit.armJump(cx: Emit.Cx, sc: Emit.SC, env: Emit.Env, i: I64, s: El.Stmt, a: I64, arm: El.Expr): Unit =
+  val Emit.SC(_, efi, _, _, _, k, _, _) = sc
+  if Emit.armCut(k, arm) then
+    Emit.segName(Emit.armSC(cx, sc, i, s, a, arm), 0)
+    Console.print("(e2_, 0)")
+  else
+    Emit.segName(sc, i + 1)
+    Console.print("(e2_, ")
+    Emit.ex(cx, efi, env, Emit.Inner, arm)
+    Console.print(")")
 
 // Code: statements until the next cut or the end, then the next segment fn
 def Emit.segBody(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.Stmt], i: I64): Unit =
@@ -1422,8 +1511,20 @@ def Emit.segBody(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.S
   val Emit.Scope(env, tns) = scope
   ss match
     case Coll.Nil =>
+      u match
+        case Emit.UArm(_, _, _, _) =>
+          Console.print("void* ej_[] = { ")
+          Emit.addrs(Coll.rev(tns), Emit.First)
+          Console.print(" }; ")
+        case _ => ()
       Console.print("return ")
       u match
+        // an arm's end: its value to the join segment, with the locals (the parent's come first)
+        case Emit.UArm(parent, j, _, last) =>
+          Emit.segName(parent, j)
+          Console.print("(ej_, ")
+          Emit.ex(cx, efi, env, Emit.Inner, last)
+          Console.print(")")
         case Emit.USite(caps, rest) =>
           if Emit.hasDone(hfs) then
             Emit.mhName(sfi, Sym.of("done"))
@@ -1442,9 +1543,25 @@ def Emit.segBody(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.S
           Console.print(")")
       Console.print("; }\n")
     case Coll.Cons(s, more) => Emit.cutOf(k, s) match
-      case Coll.None =>
-        Emit.stmt(cx, efi, env, s)
-        Emit.segBody(cx, sc, Emit.scopeOf(cx, efi, scope, Coll.Cons(s, Coll.Nil)), more, i)
+      case Coll.None => Emit.branchOf(k, s) match
+        case Coll.None =>
+          Emit.stmt(cx, efi, env, s)
+          Emit.segBody(cx, sc, Emit.scopeOf(cx, efi, scope, Coll.Cons(s, Coll.Nil)), more, i)
+        // a branch cut: each arm jumps to its chain (or its value to the join), the join binds the val and goes on
+        case Coll.Some(ife) => ife match
+          case El.If(_, c, ta, fa) =>
+            Console.print("void* e2_[] = { ")
+            Emit.addrs(Coll.rev(tns), Emit.First)
+            Console.print(" }; if (")
+            Emit.ex(cx, efi, env, Emit.Inner, c)
+            Console.print(") return ")
+            Emit.armJump(cx, sc, env, i, s, 0, ta)
+            Console.print("; else return ")
+            Emit.armJump(cx, sc, env, i, s, 1, fa)
+            Console.print("; }\n")
+            Emit.armChains(cx, sc, scope, i, s, ife, Emit.Code)
+            Emit.segs(cx, sc, scope, more, i + 1, Emit.joinV(cx, efi, s), Coll.Some(s), Emit.Code)
+          case _ => ()
       case Coll.Some(o) =>
         Console.print("void* e2_[] = { ")
         Emit.addrs(Coll.rev(tns), Emit.First)

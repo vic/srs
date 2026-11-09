@@ -608,7 +608,7 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
     case Ast.Handle(sl, x, h, xs) =>
       val Ty.Cx(_, _, _, hs, _, mode, _, rows, _) = cx
       val mp = Ty.protoOf(hs, h)
-      val st0 = if Ty.isMultiShot(hs, h) then Ty.shapeFns(cx, Ty.shape(cx, st, x, mp, rest, last), mp, Ty.cpsCalls(cx, mp, rest, Coll.Nil), Coll.Nil) else st
+      val st0 = if Ty.isMultiShot(hs, h) then Ty.shapeFns(cx, Ty.shape(cx, st, x, mp, rest, last), mp, Ty.cpsCallsE(cx, mp, last, Ty.cpsCalls(cx, mp, rest, Coll.Nil)), Coll.Nil) else st
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
       val Ty.Caps(st2, caps) = Ty.rowCaps(cx, st1, bs, sl, Eff.row(rows, h), Coll.Nil)
       val bs2 = Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs)
@@ -910,7 +910,14 @@ def Ty.shapeTop(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.S
     // a fn whose row holds p (C3.4): compiled in CPS for this site (its body: Ty.shapeFns)
     else if Eff.has(rows, f, p) then Ty.shapeAll(cx, st, x, p, xs)
     else Ty.shapeIn(cx, st, x, p, e)
+  // an if whose arms hold cuts (nested ops): each arm is a chain of its own, joined after the if
+  case Ast.If(_, c, t, f) => Ty.shapeArm(cx, Ty.shapeArm(cx, Ty.shapeIn(cx, st, x, p, c), x, p, t), x, p, f)
   case _ => Ty.shapeIn(cx, st, x, p, e)
+
+// an arm: a block with cuts as whole top-level vals, statements or last, or one whole cut
+def Ty.shapeArm(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
+  case Ast.Block(_, ss, last) => Ty.shape(cx, st, x, p, ss, last)
+  case _ => Ty.shapeTop(cx, st, x, p, e)
 
 // the CPS fns a multi-shot site reaches (C3.4): each body has the site's shape (ops of p and CPS calls only as whole
 // top-level vals or statements); todo: fns to check, seen: checked (recursion ends)
@@ -925,19 +932,12 @@ def Ty.shapeFns(cx: Ty.Cx, st: Ty.St, p: Sym.Sym, todo: Coll.List[Sym.Sym], seen
         case Coll.Some(g) =>
           val Ast.Fn(_, _, _, _, _, _, body) = g
           val k = Eff.dotted("eff", p)
-          val bss: Coll.List[Ast.Stmt] = Ty.bodyStmts(body)
           val st1 = body match
             case Ast.Extern => st
             case Ast.Def(_, e) => e match
               case Ast.Block(_, ss, last) => Ty.shape(cx, st, k, p, ss, last)
               case _ => Ty.shapeTop(cx, st, k, p, e)
-          Ty.shapeFns(cx, st1, p, Ty.cpsCalls(cx, p, bss, rest), Coll.Cons(f, seen))
-
-def Ty.bodyStmts(b: Ast.Body): Coll.List[Ast.Stmt] = b match
-  case Ast.Def(_, e) => e match
-    case Ast.Block(_, ss, _) => ss
-    case _ => Coll.Nil
-  case Ast.Extern => Coll.Nil
+          Ty.shapeFns(cx, st1, p, Ty.cpsCallsB(cx, p, body, rest), Coll.Cons(f, seen))
 
 // the CPS fns called as whole top-level vals or statements of ss
 def Ty.cpsCalls(cx: Ty.Cx, p: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ss match
@@ -947,11 +947,20 @@ def Ty.cpsCalls(cx: Ty.Cx, p: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[S
       case Ast.Val(_, _, _, x) => x
       case Ast.Do(x) => x
       case _ => Ast.Unit(0)
+    Ty.cpsCalls(cx, p, rest, Ty.cpsCallsE(cx, p, e, acc))
+
+def Ty.cpsCallsB(cx: Ty.Cx, p: Sym.Sym, b: Ast.Body, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = b match
+  case Ast.Def(_, e) => Ty.cpsCallsE(cx, p, e, acc)
+  case Ast.Extern => acc
+
+// the CPS fns e calls in a cut position: whole, the arms of an if, a block's statements and last (bead vic-tecg: last too)
+def Ty.cpsCallsE(cx: Ty.Cx, p: Sym.Sym, e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
+  case Ast.Call(_, f, _, _, _) =>
     val Ty.Cx(_, _, _, _, _, _, _, rows, _) = cx
-    val acc2: Coll.List[Sym.Sym] = e match
-      case Ast.Call(_, f, _, _, _) => if Eff.has(rows, f, p) && !Ty.isReqOf(cx, f, p) then Coll.Cons(f, acc) else acc
-      case _ => acc
-    Ty.cpsCalls(cx, p, rest, acc2)
+    if Eff.has(rows, f, p) && !Ty.isReqOf(cx, f, p) then Coll.Cons(f, acc) else acc
+  case Ast.If(_, _, t, f) => Ty.cpsCallsE(cx, p, f, Ty.cpsCallsE(cx, p, t, acc))
+  case Ast.Block(_, ss, last) => Ty.cpsCallsE(cx, p, last, Ty.cpsCalls(cx, p, ss, acc))
+  case _ => acc
 
 def Ty.isReqOf(cx: Ty.Cx, f: Sym.Sym, p: Sym.Sym): Bool =
   val Ty.Cx(_, _, ps, _, _, _, _, _, _) = cx
