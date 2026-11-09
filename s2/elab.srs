@@ -13,8 +13,11 @@ enum El.Expr:
   // a constructor: its enum at targs, allocated where at says
   case El.New(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym, at: El.Alloc, args: Coll.List[El.Expr])
   case El.Nullary(line: I64, en: Sym.Sym, targs: Coll.List[K.Term], c: Sym.Sym)
-  // recv.op(args): an op of the capability recv's protocol, or a trait method of {} evidence recv
+  // recv.op(args): an op of the capability recv's protocol
   case El.Op(line: I64, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr])
+  // recv.op(args) on {} evidence of trait type ty: the given's fn, with the caller's capability for each of the trait
+  // method's {} capabilities (vic Q2)
+  case El.TCall(line: I64, ty: K.Term, op: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr])
   case El.Bin(line: I64, op: Ast.BinOp, l: El.Expr, rhs: El.Expr)
   case El.Un(line: I64, op: Ast.UnOp, e: El.Expr)
   case El.If(line: I64, c: El.Expr, t: El.Expr, e: El.Expr)

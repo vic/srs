@@ -1,0 +1,28 @@
+// pass: E1c (vic Q2): a trait method declares its capabilities; a given's row is inferred, a subset of them; a call
+// through {} evidence passes the caller's innermost of each
+trait Show [A: Type]:
+  def show {Console, Region} (x: A): I64
+
+enum Box:
+  case Box(v: I64)
+
+given Show[Box]:
+  def show(x: Box): I64 =
+    Console.print("box ")
+    val Box(v) = x
+    val Box(w) = Box(v + 1)
+    w
+
+given Show[I64]:
+  def show(x: I64): I64 = x
+
+def label [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle c = Srs.Console()
+  Console.printI64(label(Box(3)))
+  Console.print(" ")
+  Console.printI64(label(7))
+  Console.print("\n")
+  0
