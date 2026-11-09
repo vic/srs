@@ -24,7 +24,7 @@ s2 is the compiler. It is purely functional (`val` and recursion, no `var` or `w
 
 * **Self-hosting**: `bootstrap/s2c-seed.c` builds s2c. s2c compiles its own source to the same C, byte for byte.
 * **Checks**: names, protocol facts and rules, type-level computation, types with givens, purity, exhaustive matches, typestate protocols, and region lifetimes. Each runs as a phase whose errors are data.
-* **Flags**: `--eval` runs pure defs at compile time, `--hash` prints content hashes, and `--store-check` writes and reads the content-addressed store.
+* **Flags**: `--eval` prints every top-level `val` (a compile-time value), `--hash` prints content hashes, and `--store-check` writes and reads the content-addressed store.
 * **Errors** have the shape of Rust's: `error[code]`, then the file and line, the source line, the expected and found types, and a help line.
 
 s1, the first compiler (imperative, written in srs), and s0, its Zig bootstrap, are historic: they stay in the tree, and nothing builds or runs them. Lean generation (`--lean`) waits until the core is stable. The known rough edges of s2 are tracked before s3.
@@ -240,7 +240,7 @@ type Bits (n: I64) = n match
   case _ => I64
 ```
 
-Pure functions with no side effects can be evaluated at compile time (`--eval` flag). Step budgets ensure compile-time evaluation always terminates safely.
+A top-level `val x: T = e` is a compile-time value. Its body may allocate (the compiler owns that memory) but may not request any other effect: nothing outside it can handle one. `--eval` evaluates every top-level `val` and prints it. Step budgets make sure compile-time evaluation always ends.
 
 **Tests:** [`tests/s2/prog/type_values.srs`](./tests/s2/prog/type_values.srs) (value parameters on types), [`tests/s2/prog/type_facts.srs`](./tests/s2/prog/type_facts.srs) (state facts carried by types), [`tests/s2/prog/type_evidence.srs`](./tests/s2/prog/type_evidence.srs) (evidence required by types), [`tests/s2/eval/basic.srs`](./tests/s2/eval/basic.srs) (compile-time evaluation), [`tests/s2/neg/tl_fuel.srs`](./tests/s2/neg/tl_fuel.srs), [`tests/s2/neg/tval_fuel.srs`](./tests/s2/neg/tval_fuel.srs), [`tests/s2/eval/neg_fuel.srs`](./tests/s2/eval/neg_fuel.srs) (fuel exhaustion rejected, never treated as unknown).
 

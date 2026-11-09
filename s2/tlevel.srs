@@ -64,6 +64,9 @@ def Tl.decl(cx: Tl.Cx, d: Ast.Decl, es: Coll.List[Tl.Err]): Tl.W[Ast.Decl] = d m
   case Ast.DFn(f) =>
     val Tl.W(f2, es2) = Tl.fn(cx, f, es)
     Tl.W(Ast.DFn(f2), es2)
+  case Ast.DVal(f) =>
+    val Tl.W(f2, es2) = Tl.fn(cx, f, es)
+    Tl.W(Ast.DVal(f2), es2)
   case Ast.DEnum(e) =>
     val Ast.Enum(line, n, gs, cases) = e
     val Tl.W(gs2, es2) = Tl.groups(cx, gs, Coll.Nil, es)
