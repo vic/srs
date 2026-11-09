@@ -144,10 +144,11 @@ def Ev.bindAll {r: Region} (ps: Coll.List[Ast.Binder], vs: Coll.List[Ev.V], acc:
       Ev.bindAll(rest, vrest, Coll.Cons(Ev.Bind(x, v), acc))
 
 // the pure externs (s2/pure.srs Pure.pureExtern) at compile time
-def Ev.extern {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R =
-  val n = Sym.str(g)
-  if rt_str_eq(n, "rt_str_len") then Ev.str1(line, g, vs, env, fuel)
-  else Ev.str2(line, g, n, vs, env, fuel)
+def Ev.extern {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = Pure.prim(g) match
+  case Coll.Some(p) => p match
+    case Pure.PLen => Ev.str1(line, g, vs, env, fuel)
+    case _ => Ev.str2(line, g, p, vs, env, fuel)
+  case Coll.None => Ev.Err(Ev.NoValue(line, g))
 
 def Ev.str1 {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
   case Coll.Cons(a, _) => a match
@@ -155,14 +156,14 @@ def Ev.str1 {r: Region} (line: I64, g: Sym.Sym, vs: Coll.List[Ev.V], env: Coll.L
     case _ => Ev.Err(Ev.NoValue(line, g))
   case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
 
-def Ev.str2 {r: Region} (line: I64, g: Sym.Sym, n: Str, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
+def Ev.str2 {r: Region} (line: I64, g: Sym.Sym, p: Pure.Prim, vs: Coll.List[Ev.V], env: Coll.List[Ev.Bind], fuel: I64): Ev.R = vs match
   case Coll.Cons(a, rest) => rest match
     case Coll.Cons(b, more) => a match
-      case Ev.VStr(s) =>
-        if rt_str_eq(n, "rt_str_eq") then Ev.strEq(line, g, s, b, env, fuel)
-        else if rt_str_eq(n, "rt_str_at") then Ev.strAt(line, g, s, b, env, fuel)
-        else if rt_str_eq(n, "rt_str_slice") then Ev.strSlice(line, g, s, b, more, env, fuel)
-        else Ev.Err(Ev.NoValue(line, g))
+      case Ev.VStr(s) => p match
+        case Pure.PEq => Ev.strEq(line, g, s, b, env, fuel)
+        case Pure.PAt => Ev.strAt(line, g, s, b, env, fuel)
+        case Pure.PSlice => Ev.strSlice(line, g, s, b, more, env, fuel)
+        case Pure.PLen => Ev.Err(Ev.NoValue(line, g))
       case _ => Ev.Err(Ev.NoValue(line, g))
     case Coll.Nil => Ev.Err(Ev.NoValue(line, g))
   case Coll.Nil => Ev.Err(Ev.NoValue(line, g))

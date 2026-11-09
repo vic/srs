@@ -1,0 +1,19 @@
+// pass: E2a prelude effects (vic 2026-11-09): a fn requests Console.print(s), Args.count(); main handles them with the
+// Srs.* handlers, the only bodies that call rt_*. Str.len, Str.at, Str.slice and Str.eq are pure primitives, no effect
+def greet(s: Str): Unit =
+  Console.print(s)
+  Console.printI64(Str.len(s))
+  Console.printChar(10)
+
+def mid(s: Str): Str = Str.slice(s, 1, 3)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle a = Srs.Args()
+  greet("hello ")
+  val t = mid("abcdef")
+  Console.print(t)
+  Console.print(if Str.eq(t, "bc") then " eq\n" else " ne\n")
+  Console.printI64(Str.at("A", 0) + Args.count())
+  Console.print("\n")
+  0

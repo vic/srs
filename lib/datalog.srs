@@ -14,12 +14,12 @@ enum Arg:
   case AVar(n: I64)
   case AVal(v: Val)
 
-enum Args:
+enum ArgList:
   case ArgNil
-  case ArgCons(h: Arg, t: Args)
+  case ArgCons(h: Arg, t: ArgList)
 
 enum Atom:
-  case Atom(rel: Str, args: Args)
+  case Atom(rel: Str, args: ArgList)
 
 enum Lit:
   case Pos(a: Atom)
@@ -105,7 +105,7 @@ def envGet {r: Region} (e: Env, n: I64): Arg = e match
   case EnvBind(m, v, t) => if m == n then AVal(v) else envGet(t, n)
 
 // e extended so args match vals, or none
-def matchArgs {r: Region} (e: Env, args: Args, vals: Vals): Envs = args match
+def matchArgs {r: Region} (e: Env, args: ArgList, vals: Vals): Envs = args match
   case ArgNil => vals match
     case ValNil => EnvsCons(e, EnvsNil)
     case ValCons(_, _) => EnvsNil
@@ -140,7 +140,7 @@ def matchEach {r: Region} (es: Envs, a: Atom, db: Facts): Envs = es match
 
 // the values of args under e. evalDatalog runs only safe rules, so every variable is bound here
 // shortcut: an unbound variable is skipped, not an error; a typed safe clause (vars proven bound) would remove it
-def ground {r: Region} (e: Env, args: Args): Vals = args match
+def ground {r: Region} (e: Env, args: ArgList): Vals = args match
   case ArgNil => ValNil
   case ArgCons(a, t) => a match
     case AVal(v) => ValCons(v, ground(e, t))
@@ -170,7 +170,7 @@ def keepAbsent {r: Region} (es: Envs, a: Atom, db: Facts): Envs = es match
     if hasFact(db, factOf(e, a)) then keepAbsent(t, a, db) else EnvsCons(e, keepAbsent(t, a, db))
 
 // ── safety ──
-def argsHave(args: Args, n: I64): Bool = args match
+def argsHave(args: ArgList, n: I64): Bool = args match
   case ArgNil => false
   case ArgCons(a, t) => a match
     case AVar(m) => m == n || argsHave(t, n)
@@ -184,7 +184,7 @@ def posHas(body: Lits, n: I64): Bool = body match
     case Neg(_) => posHas(t, n)
 
 // every variable of args is in a positive literal of body
-def argsBound(args: Args, body: Lits): Bool = args match
+def argsBound(args: ArgList, body: Lits): Bool = args match
   case ArgNil => true
   case ArgCons(a, t) => a match
     case AVar(n) => posHas(body, n) && argsBound(t, body)
@@ -322,11 +322,11 @@ def addFacts {r: Region} (rs: Rels, fs: Facts, delta: Bool): Rels = fs match
   case FactCons(f, src, t) => addFacts(addFact(rs, f, src, delta), t, delta)
 
 // the facts of p that can match args under e: the bucket of the first bound column, else all
-def candidates {r: Region} (rs: Rels, p: Str, args: Args, e: Env): Facts = rs match
+def candidates {r: Region} (rs: Rels, p: Str, args: ArgList, e: Env): Facts = rs match
   case RelNil => FactNil
   case Rel(q, all, _, cs, t) => if rt_str_eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
 
-def boundCol {r: Region} (all: Facts, cs: Cols, args: Args, e: Env): Facts = args match
+def boundCol {r: Region} (all: Facts, cs: Cols, args: ArgList, e: Env): Facts = args match
   case ArgNil => all
   case ArgCons(a, at) => cs match
     case ColNil => all
@@ -343,13 +343,13 @@ def knownFact {r: Region} (rs: Rels, f: Fact): Bool = f match
     case ValCons(v, _) => hasFact(candidates(rs, p, ArgCons(AVal(v), ArgNil), EnvNil), f)
 
 // every extension of e that matches args against a fact of fs (one relation)
-def matchRel {r: Region} (e: Env, args: Args, fs: Facts): Envs = fs match
+def matchRel {r: Region} (e: Env, args: ArgList, fs: Facts): Envs = fs match
   case FactNil => EnvsNil
   case FactCons(f, _, t) => f match
     case Fact(_, vals) => envsAppend(matchArgs(e, args, vals), matchRel(e, args, t))
 
 // each env joined with relation p: on its delta, or on the facts its bound columns select
-def matchAll {r: Region} (es: Envs, args: Args, rs: Rels, p: Str, delta: Bool): Envs = es match
+def matchAll {r: Region} (es: Envs, args: ArgList, rs: Rels, p: Str, delta: Bool): Envs = es match
   case EnvsNil => EnvsNil
   case EnvsCons(e, t) =>
     val fs = if delta then factsOf(rs, p, true) else candidates(rs, p, args, e)

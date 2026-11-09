@@ -158,3 +158,10 @@ int64_t rt_exit(int64_t code) { fflush(stdout); exit((int)code); }
 void* rt_same(void* x) { return x; }
 // a non-null handle for tests of facts on types (vic-jxk, tests/s2/prog/type_facts.srs)
 void* rt_handle(void) { static int64_t h; return &h; }
+// the state of a handler that keeps none (Srs.Console, Srs.Args, ...: lib/prelude.srs)
+void* rt_null(void) { return 0; }
+// the pure string primitives Str.len, Str.at, Str.slice, Str.eq (lib/prelude.srs)
+int64_t Str__len(srs_str s) { return rt_str_len(s); }
+int64_t Str__at(srs_str s, int64_t i) { return rt_str_at(s, i); }
+srs_str Str__slice(srs_str s, int64_t b, int64_t e) { return rt_str_slice(s, b, e); }
+bool Str__eq(srs_str a, srs_str b) { return rt_str_eq(a, b); }

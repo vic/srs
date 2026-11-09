@@ -75,10 +75,25 @@ def Pure.rules {r: Region} (): Coll.List[D.Rule] =
   val h3 = Pure.rule2(Pure.RImpureH, Pure.RHUses, Pure.REffectful)
   Coll.Cons(i1, Coll.Cons(i2, Coll.Cons(i3, Coll.Cons(e1, Coll.Cons(h1, Coll.Cons(h2, Coll.Cons(h3, Coll.Nil)))))))
 
-// the externs with no effect (s1/check.srs:640)
-def Pure.pureExtern(n: Sym.Sym): Bool =
+// the externs with no effect (s1/check.srs:640): the string primitives, by Str.* name or by their rt_str_* C name;
+// --eval runs them (s2/eval.srs Ev.extern)
+enum Pure.Prim:
+  case Pure.PLen
+  case Pure.PAt
+  case Pure.PSlice
+  case Pure.PEq
+
+def Pure.pureExtern {r: Region} (n: Sym.Sym): Bool = Pure.prim(n) match
+  case Coll.Some(_) => true
+  case Coll.None => false
+
+def Pure.prim {r: Region} (n: Sym.Sym): Coll.Option[Pure.Prim] =
   val s = Sym.str(n)
-  rt_str_eq(s, "rt_str_len") || rt_str_eq(s, "rt_str_at") || rt_str_eq(s, "rt_str_slice") || rt_str_eq(s, "rt_str_eq")
+  if rt_str_eq(s, "Str.len") || rt_str_eq(s, "rt_str_len") then Coll.Some(Pure.PLen)
+  else if rt_str_eq(s, "Str.at") || rt_str_eq(s, "rt_str_at") then Coll.Some(Pure.PAt)
+  else if rt_str_eq(s, "Str.slice") || rt_str_eq(s, "rt_str_slice") then Coll.Some(Pure.PSlice)
+  else if rt_str_eq(s, "Str.eq") || rt_str_eq(s, "rt_str_eq") then Coll.Some(Pure.PEq)
+  else Coll.None
 
 // ── facts ──
 def Pure.facts {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows): Coll.List[D.Fact] = Pure.decls(Pure.protos(ds, Coll.Nil), Pure.hprotos(ds, Coll.sEmpty()), rows, ds, Coll.Nil)
