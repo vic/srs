@@ -388,7 +388,7 @@ def Flow.call {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, p: I64, g: Ast
         val st4 = Flow.binds(st3, s, caps, 0)
         val atoms = Flow.entryAtoms(gs, Coll.Nil)
         val vars = Flow.varsOf(atoms, Coll.Nil)
-        Flow.At(Flow.sols(ps, st4, s, bs, atoms, exit, Flow.assigns(ps, bs, atoms, vars, Coll.Nil, Coll.Nil), 0), q)
+        Flow.At(Flow.sols(ps, st4, s, bs, atoms, exit, Flow.assigns(ps, Flow.ruleModels(ps, bs, Coll.Nil), bs, atoms, vars, Coll.Nil, Coll.Nil), 0), q)
 
 // bind(s, i, c), and the param chain firstParam / nextParam / lastParam
 def Flow.binds {r: Region} (st: Flow.St, s: I64, caps: Coll.List[Flow.Cap], i: I64): Flow.St = caps match
@@ -406,12 +406,12 @@ def Flow.isVar(x: Sym.Sym): Bool =
   val c = rt_str_at(Sym.str(x), 0)
   c >= 'a' && c <= 'z'
 
-// the state positions of an atom: at(_, S), next(S1, _, S2); other atoms have none here
+// the state positions of an atom: at(_, S), next(S1, _, S2), every arg of a rule atom (s1/facts.srs statePos)
 def Flow.statePos {r: Region} (a: Ast.Atom): Coll.List[Ast.Term] =
   val Ast.Atom(_, rel, args) = a
   if Sym.eq(rel, Sym.of("at")) then Flow.dropOne(args)
   else if Sym.eq(rel, Sym.of("next")) then Flow.firstLast(args)
-  else Coll.Nil
+  else args
 
 def Flow.dropOne {r: Region} (xs: Coll.List[Ast.Term]): Coll.List[Ast.Term] = xs match
   case Coll.Nil => xs
@@ -440,14 +440,14 @@ def Flow.varsIn {r: Region} (ts: Coll.List[Ast.Term], acc: Coll.List[Sym.Sym]): 
     case Coll.None => Flow.varsIn(rest, acc)
     case Coll.Some(x) => if Flow.isVar(x) && !Flow.memberSym(x, acc) then Flow.varsIn(rest, Coll.Cons(x, acc)) else Flow.varsIn(rest, acc)
 
-// every assignment of vars to states (each over the states of all binder protocols) whose next atoms hold
-def Flow.assigns {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], vars: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = vars match
-  case Coll.Nil => if Flow.nextsHold(ps, bs, atoms, a) then Coll.Cons(a, acc) else acc
-  case Coll.Cons(x, rest) => Flow.assignEach(ps, bs, atoms, x, rest, a, Flow.statesOf(ps, bs, Coll.Nil), acc)
+// every assignment of vars to states (each over the states of all binder protocols) whose next and rule atoms hold
+def Flow.assigns {r: Region} (ps: Coll.List[Ast.Proto], ms: Coll.List[Flow.PM], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], vars: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = vars match
+  case Coll.Nil => if Flow.atomsHold(ps, ms, bs, atoms, a) then Coll.Cons(a, acc) else acc
+  case Coll.Cons(x, rest) => Flow.assignEach(ps, ms, bs, atoms, x, rest, a, Flow.statesOf(ps, bs, Coll.Nil), acc)
 
-def Flow.assignEach {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], x: Sym.Sym, rest: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], ss: Coll.List[Sym.Sym], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = ss match
+def Flow.assignEach {r: Region} (ps: Coll.List[Ast.Proto], ms: Coll.List[Flow.PM], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], x: Sym.Sym, rest: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], ss: Coll.List[Sym.Sym], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = ss match
   case Coll.Nil => acc
-  case Coll.Cons(s, more) => Flow.assignEach(ps, bs, atoms, x, rest, a, more, Flow.assigns(ps, bs, atoms, rest, Coll.Cons(Flow.VS(x, s), a), acc))
+  case Coll.Cons(s, more) => Flow.assignEach(ps, ms, bs, atoms, x, rest, a, more, Flow.assigns(ps, ms, bs, atoms, rest, Coll.Cons(Flow.VS(x, s), a), acc))
 
 // the states of the binder protocols, each once
 def Flow.statesOf {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
@@ -471,15 +471,106 @@ def Flow.resolve(a: Coll.List[Flow.VS], x: Sym.Sym): Sym.Sym = a match
     val Flow.VS(y, s) = v
     if Sym.eq(x, y) then s else Flow.resolve(rest, x)
 
-// every next(S1, op, S2) atom is a transition of op in a binder protocol
-def Flow.nextsHold {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], a: Coll.List[Flow.VS]): Bool = atoms match
+// every next(S1, op, S2) atom is a transition of op in a binder protocol, and every rule atom holds in the rule model of
+// a binder protocol (at atoms are pre/post states, not filters)
+def Flow.atomsHold {r: Region} (ps: Coll.List[Ast.Proto], ms: Coll.List[Flow.PM], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], a: Coll.List[Flow.VS]): Bool = atoms match
   case Coll.Nil => true
   case Coll.Cons(at, rest) =>
     val Ast.Atom(_, rel, args) = at
-    if !Sym.eq(rel, Sym.of("next")) then Flow.nextsHold(ps, bs, rest, a)
-    else Flow.nextHolds(ps, bs, args, a) match
-      case Coll.Nil => false
-      case Coll.Cons(_, _) => Flow.nextsHold(ps, bs, rest, a)
+    if Sym.eq(rel, Sym.of("at")) then Flow.atomsHold(ps, ms, bs, rest, a)
+    else if Sym.eq(rel, Sym.of("next")) then
+      Flow.nextHolds(ps, bs, args, a) match
+        case Coll.Nil => false
+        case Coll.Cons(_, _) => Flow.atomsHold(ps, ms, bs, rest, a)
+    else if Flow.ruleHolds(ms, rel, Flow.tupleOf(args, a, Coll.Nil)) then Flow.atomsHold(ps, ms, bs, rest, a)
+    else false
+
+// ── protocol rule defs (s1/facts.srs, vic 2026-11-05: a protocol is its own Datalog program): each binder protocol with
+// rule defs is solved once over its next facts; a rule atom of a def holds when its tuple is in that model ──
+enum Flow.PM:
+  case Flow.PM(proto: Sym.Sym, m: D.Model)
+
+// the args of an atom under an assignment, as values
+def Flow.tupleOf {r: Region} (ts: Coll.List[Ast.Term], a: Coll.List[Flow.VS], acc: Coll.List[D.Val]): Coll.List[D.Val] = ts match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(t, rest) => t match
+    case Ast.TName(n) => Flow.tupleOf(rest, a, Coll.Cons(D.VSym(Flow.resolve(a, n)), acc))
+    case Ast.TNum(v) => Flow.tupleOf(rest, a, Coll.Cons(D.VInt(v), acc))
+
+def Flow.ruleHolds {r: Region} (ms: Coll.List[Flow.PM], rel: Sym.Sym, t: Coll.List[D.Val]): Bool = ms match
+  case Coll.Nil => false
+  case Coll.Cons(pm, rest) =>
+    val Flow.PM(_, m) = pm
+    if Flow.inTuples(D.tuples(m, rel), t) then true else Flow.ruleHolds(rest, rel, t)
+
+def Flow.inTuples(ts: Coll.List[Coll.List[D.Val]], t: Coll.List[D.Val]): Bool = ts match
+  case Coll.Nil => false
+  case Coll.Cons(u, rest) => if D.tupleEq(u, t) then true else Flow.inTuples(rest, t)
+
+// the rule model of every binder protocol that has rule defs (a protocol whose rules D rejects has none: the decl check
+// reports it)
+def Flow.ruleModels {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], acc: Coll.List[Flow.PM]): Coll.List[Flow.PM] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Flow.CapB(_, _, proto) = b
+    Flow.protoNamed(ps, proto) match
+      case Coll.None => Flow.ruleModels(ps, rest, acc)
+      case Coll.Some(pr) =>
+        val Ast.Proto(_, _, _, _, _, _, ops, rules) = pr
+        rules match
+          case Coll.Nil => Flow.ruleModels(ps, rest, acc)
+          case Coll.Cons(_, _) => D.solve(Flow.ruleDefs(rules, Coll.Nil), Flow.nextFacts(ops, Coll.Nil)) match
+            case D.Solved(m) => Flow.ruleModels(ps, rest, Coll.Cons(Flow.PM(proto, m), acc))
+            case D.Unsafe(_) => Flow.ruleModels(ps, rest, acc)
+            case D.NegCycle(_) => Flow.ruleModels(ps, rest, acc)
+
+// next(S1, op, S2) for every transition of every op
+def Flow.nextFacts {r: Region} (ops: Coll.List[Ast.Op], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ops match
+  case Coll.Nil => acc
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, name, _, _, trs) = o
+    Flow.nextFacts(rest, Flow.nextOf(name, trs, acc))
+
+def Flow.nextOf {r: Region} (op: Sym.Sym, trs: Coll.List[Ast.Trans], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = trs match
+  case Coll.Nil => acc
+  case Coll.Cons(t, rest) =>
+    val Ast.Trans(a, b) = t
+    Flow.nextOf(op, rest, Coll.Cons(D.Fact(Sym.of("next"), Coll.Cons(D.VSym(a), Coll.Cons(D.VSym(op), Coll.Cons(D.VSym(b), Coll.Nil)))), acc))
+
+// rule def name(params) = body as a D.Rule: variables are the lowercase names in state positions (the op of next is a
+// constant), numbered in first-seen order from the params
+def Flow.ruleDefs {r: Region} (rs: Coll.List[Ast.RuleDef], acc: Coll.List[D.Rule]): Coll.List[D.Rule] = rs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(rd, rest) =>
+    val Ast.RuleDef(_, name, params, body) = rd
+    val vs = Flow.varsOf(body, Coll.rev(params))
+    Flow.ruleDefs(rest, Coll.Cons(D.Rule(D.Atom(name, Flow.argsOfNames(params, vs, Coll.Nil)), Flow.bodyLits(body, vs, Coll.Nil)), acc))
+
+def Flow.argOf {r: Region} (x: Sym.Sym, vs: Coll.List[Sym.Sym]): D.Arg = Flow.indexSym(vs, x, 0) match
+  case Coll.Some(i) => D.AVar(i)
+  case Coll.None => D.AVal(D.VSym(x))
+
+def Flow.indexSym {r: Region} (xs: Coll.List[Sym.Sym], x: Sym.Sym, i: I64): Coll.Option[I64] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(y, rest) => if Sym.eq(x, y) then Coll.Some(i) else Flow.indexSym(rest, x, i + 1)
+
+def Flow.argsOfNames {r: Region} (xs: Coll.List[Sym.Sym], vs: Coll.List[Sym.Sym], acc: Coll.List[D.Arg]): Coll.List[D.Arg] = xs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(x, rest) => Flow.argsOfNames(rest, vs, Coll.Cons(Flow.argOf(x, vs), acc))
+
+// a body atom: next keeps its op as a constant, any other relation maps each name (variable or constant)
+def Flow.bodyLits {r: Region} (atoms: Coll.List[Ast.Atom], vs: Coll.List[Sym.Sym], acc: Coll.List[D.Lit]): Coll.List[D.Lit] = atoms match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(at, rest) =>
+    val Ast.Atom(_, rel, args) = at
+    Flow.bodyLits(rest, vs, Coll.Cons(D.Pos(D.Atom(rel, Flow.termArgs(args, vs, Coll.Nil))), acc))
+
+// the args of an atom: a name in vs is a variable, any other a constant (the op of next is never in vs: statePos skips it)
+def Flow.termArgs {r: Region} (ts: Coll.List[Ast.Term], vs: Coll.List[Sym.Sym], acc: Coll.List[D.Arg]): Coll.List[D.Arg] = ts match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(t, rest) => t match
+    case Ast.TNum(v) => Flow.termArgs(rest, vs, Coll.Cons(D.AVal(D.VInt(v)), acc))
+    case Ast.TName(n) => Flow.termArgs(rest, vs, Coll.Cons(Flow.argOf(n, vs), acc))
 
 // the binder protocols with a transition op: S1 -> S2 for the args of a next atom (empty = it does not hold)
 def Flow.nextHolds {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], args: Coll.List[Ast.Term], a: Coll.List[Flow.VS]): Coll.List[Flow.CapB] = args match
@@ -725,7 +816,7 @@ def Flow.facts {r: Region} (cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val atoms = Flow.entryAtoms(gs, Coll.Nil)
   val as: Coll.List[Coll.List[Flow.VS]] = bs match
     case Coll.Nil => Coll.Cons(Coll.Nil, Coll.Nil)
-    case Coll.Cons(_, _) => Flow.assigns(ps, bs, atoms, Flow.varsOf(atoms, Coll.Nil), Coll.Nil, Coll.Nil)
+    case Coll.Cons(_, _) => Flow.assigns(ps, Flow.ruleModels(ps, bs, Coll.Nil), bs, atoms, Flow.varsOf(atoms, Coll.Nil), Coll.Nil, Coll.Nil)
   val st0 = Flow.binderCaps(Flow.St(1, Coll.Nil, Coll.Nil), bs, line)
   val Flow.St(_, _, caps) = st0
   val st1 = Flow.worlds(ps, st0, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Entry)
