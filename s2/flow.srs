@@ -15,6 +15,14 @@ enum Flow.Cap:
 enum Flow.St:
   case Flow.St(next: I64, facts: Coll.List[D.Fact], caps: Coll.List[Flow.Cap])
 
+// what the walk reads: the protocols, the handlers, the defs (a call reads its callee's signature)
+enum Flow.Cx:
+  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn])
+
+def Flow.cxHs(cx: Flow.Cx): Coll.List[Ast.Handler] =
+  val Flow.Cx(_, hs, _) = cx
+  hs
+
 // the walk after an expression: its state and the point where control is now
 enum Flow.At:
   case Flow.At(st: Flow.St, p: I64)
@@ -23,6 +31,8 @@ enum Flow.Clash:
   case Flow.Stuck(line: I64, cap: Sym.Sym)
   case Flow.Split(line: I64, cap: Sym.Sym)
   case Flow.Unended(line: I64, cap: Sym.Sym)
+  // a call whose entry facts have more than one solution (s1/facts.srs:224); cap = the callee
+  case Flow.Ambig(line: I64, cap: Sym.Sym)
   // a clash tuple of a shape the rules do not make (a bug in Flow.rules): reported, never dropped
   case Flow.Malformed(rel: Sym.Sym)
 
@@ -51,6 +61,19 @@ enum Flow.Rel:
   case Flow.RSplitAt
   case Flow.RUnended
   case Flow.RUnendedAt
+  case Flow.RCStep
+  case Flow.RBind
+  case Flow.RPre
+  case Flow.RPost
+  case Flow.RFirst
+  case Flow.RNext
+  case Flow.RLast
+  case Flow.ROk
+  case Flow.RFits
+  case Flow.RCallee
+  case Flow.RCSeen
+  case Flow.RAmbig
+  case Flow.RAmbigAt
 
 def Flow.relSym {r: Region} (x: Flow.Rel): Sym.Sym = x match
   case Flow.RFlow => Sym.of("flow")
@@ -76,17 +99,32 @@ def Flow.relSym {r: Region} (x: Flow.Rel): Sym.Sym = x match
   case Flow.RSplitAt => Sym.of("splitAt")
   case Flow.RUnended => Sym.of("unended")
   case Flow.RUnendedAt => Sym.of("unendedAt")
+  case Flow.RCStep => Sym.of("cstep")
+  case Flow.RBind => Sym.of("bind")
+  case Flow.RPre => Sym.of("pre")
+  case Flow.RPost => Sym.of("post")
+  case Flow.RFirst => Sym.of("firstParam")
+  case Flow.RNext => Sym.of("nextParam")
+  case Flow.RLast => Sym.of("lastParam")
+  case Flow.ROk => Sym.of("ok")
+  case Flow.RFits => Sym.of("fits")
+  case Flow.RCallee => Sym.of("callee")
+  case Flow.RCSeen => Sym.of("cseen")
+  case Flow.RAmbig => Sym.of("ambig")
+  case Flow.RAmbigAt => Sym.of("ambigAt")
 
 // the clash relations of Flow.rules
 enum Flow.Kind:
   case Flow.KStuck
   case Flow.KSplit
   case Flow.KUnended
+  case Flow.KAmbig
 
 def Flow.relOf(k: Flow.Kind): Flow.Rel = k match
   case Flow.KStuck => Flow.RStuck
   case Flow.KSplit => Flow.RSplitAt
   case Flow.KUnended => Flow.RUnendedAt
+  case Flow.KAmbig => Flow.RAmbigAt
 
 enum Flow.Verdict:
   case Flow.Ok
@@ -115,6 +153,17 @@ def Flow.fStart {r: Region} (proto: Sym.Sym, s: Sym.Sym): D.Fact = Flow.fact2(Fl
 def Flow.fSame {r: Region} (a: Sym.Sym, b: Sym.Sym): D.Fact = Flow.fact2(Flow.RSame, Flow.s(a), Flow.s(b))
 def Flow.fEndOk {r: Region} (proto: Sym.Sym, s: Sym.Sym): D.Fact = Flow.fact2(Flow.REndOk, Flow.s(proto), Flow.s(s))
 def Flow.fWorld {r: Region} (w: I64): D.Fact = Flow.fact1(Flow.RWorld, Flow.i(w))
+def Flow.fact3 {r: Region} (rel: Flow.Rel, a: D.Val, b: D.Val, c: D.Val): D.Fact = D.Fact(Flow.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil))))
+def Flow.fCStep {r: Region} (p: I64, q: I64): D.Fact = Flow.fact2(Flow.RCStep, Flow.i(p), Flow.i(q))
+def Flow.fCallee {r: Region} (p: I64, f: Sym.Sym): D.Fact = Flow.fact2(Flow.RCallee, Flow.i(p), Flow.s(f))
+def Flow.fBind {r: Region} (p: I64, m: I64, cap: I64): D.Fact = Flow.fact3(Flow.RBind, Flow.i(p), Flow.i(m), Flow.i(cap))
+def Flow.fFirst {r: Region} (p: I64, m: I64): D.Fact = Flow.fact2(Flow.RFirst, Flow.i(p), Flow.i(m))
+def Flow.fNext {r: Region} (p: I64, m: I64, n: I64): D.Fact = Flow.fact3(Flow.RNext, Flow.i(p), Flow.i(m), Flow.i(n))
+def Flow.fLast {r: Region} (p: I64, m: I64): D.Fact = Flow.fact2(Flow.RLast, Flow.i(p), Flow.i(m))
+def Flow.fPre {r: Region} (p: I64, j: I64, m: I64, s: Sym.Sym): D.Fact = Flow.fact4(Flow.RPre, Flow.i(p), Flow.i(j), Flow.i(m), Flow.s(s))
+def Flow.fPost {r: Region} (p: I64, j: I64, m: I64, s: Sym.Sym): D.Fact = Flow.fact4(Flow.RPost, Flow.i(p), Flow.i(j), Flow.i(m), Flow.s(s))
+// a solution id is equal to itself (ambig compares solution ids with !same, as split compares states)
+def Flow.fSameI {r: Region} (j: I64): D.Fact = Flow.fact2(Flow.RSame, Flow.i(j), Flow.i(j))
 
 def Flow.add {r: Region} (st: Flow.St, f: D.Fact): Flow.St =
   val Flow.St(n, fs, cs) = st
@@ -147,55 +196,60 @@ def Flow.protoOf {r: Region} (hs: Coll.List[Ast.Handler], h: Sym.Sym): Coll.Opti
     if Sym.eq(n, h) then Coll.Some(p) else Flow.protoOf(rest, h)
 
 // ── the walk: e from point p ──
-def Flow.expr {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, p: I64, e: Ast.Expr): Flow.At = e match
-  case Ast.Call(_, _, _, _, xs) => Flow.exprs(hs, st, p, xs)
+def Flow.expr {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.At = e match
+  case Ast.Call(line, f, _, chosen, xs) =>
+    val Flow.At(st2, pa) = Flow.exprs(cx, st, p, xs)
+    val Flow.Cx(ps, _, fns) = cx
+    Flow.fnNamed(fns, f) match
+      case Coll.None => Flow.At(st2, pa)
+      case Coll.Some(g) => Flow.call(ps, st2, pa, g, chosen, line)
   case Ast.Method(line, recv, op, xs) =>
-    val Flow.At(st2, pa) = Flow.exprs(hs, st, p, xs)
+    val Flow.At(st2, pa) = Flow.exprs(cx, st, p, xs)
     val Flow.St(_, _, cs) = st2
     Flow.capNamed(cs, recv) match
       case Coll.None => Flow.At(st2, pa)
       case Coll.Some(c) => Flow.step(st2, pa, c, op, line)
   case Ast.Bin(_, _, l, rhs) =>
-    val Flow.At(st2, p2) = Flow.expr(hs, st, p, l)
-    Flow.expr(hs, st2, p2, rhs)
-  case Ast.Un(_, _, x) => Flow.expr(hs, st, p, x)
+    val Flow.At(st2, p2) = Flow.expr(cx, st, p, l)
+    Flow.expr(cx, st2, p2, rhs)
+  case Ast.Un(_, _, x) => Flow.expr(cx, st, p, x)
   case Ast.If(line, c, t, x) =>
-    val Flow.At(st1, pc) = Flow.expr(hs, st, p, c)
+    val Flow.At(st1, pc) = Flow.expr(cx, st, p, c)
     val Flow.At(st2, t0) = Flow.next(st1, pc)
-    val Flow.At(st3, pt) = Flow.expr(hs, st2, t0, t)
+    val Flow.At(st3, pt) = Flow.expr(cx, st2, t0, t)
     val Flow.At(st4, e0) = Flow.next(st3, pc)
-    val Flow.At(st5, pe) = Flow.expr(hs, st4, e0, x)
+    val Flow.At(st5, pe) = Flow.expr(cx, st4, e0, x)
     val Flow.At(st6, m) = Flow.next(st5, pt)
     Flow.At(Flow.merge(Flow.edge(st6, pe, m), m, line), m)
   case Ast.While(line, c, b) =>
     val Flow.At(st1, h) = Flow.next(st, p)
-    val Flow.At(st2, pc) = Flow.expr(hs, st1, h, c)
+    val Flow.At(st2, pc) = Flow.expr(cx, st1, h, c)
     val Flow.At(st3, b0) = Flow.next(st2, pc)
-    val Flow.At(st4, pb) = Flow.expr(hs, st3, b0, b)
+    val Flow.At(st4, pb) = Flow.expr(cx, st3, b0, b)
     val Flow.At(st5, x) = Flow.next(Flow.merge(Flow.edge(st4, pb, h), h, line), pc)
     Flow.At(st5, x)
-  case Ast.Block(line, ss, last) => Flow.block(hs, st, p, ss, last, line)
-  case Ast.Assign(_, _, x) => Flow.expr(hs, st, p, x)
+  case Ast.Block(line, ss, last) => Flow.block(cx, st, p, ss, last, line)
+  case Ast.Assign(_, _, x) => Flow.expr(cx, st, p, x)
   case Ast.Match(line, s, arms) =>
-    val Flow.At(st1, ps) = Flow.expr(hs, st, p, s)
+    val Flow.At(st1, ps) = Flow.expr(cx, st, p, s)
     val Flow.At(st2, m) = Flow.fresh(st1)
-    Flow.At(Flow.merge(Flow.arms(hs, st2, ps, m, arms), m, line), m)
+    Flow.At(Flow.merge(Flow.arms(cx, st2, ps, m, arms), m, line), m)
   case _ => Flow.At(st, p)
 
 // each arm a branch from ps (the point after the scrutinee) to the merge point m
-def Flow.arms {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, ps: I64, m: I64, arms: Coll.List[Ast.Arm]): Flow.St = arms match
+def Flow.arms {r: Region} (cx: Flow.Cx, st: Flow.St, ps: I64, m: I64, arms: Coll.List[Ast.Arm]): Flow.St = arms match
   case Coll.Nil => st
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, _, b) = a
     val Flow.At(st1, a0) = Flow.next(st, ps)
-    val Flow.At(st2, pa) = Flow.expr(hs, st1, a0, b)
-    Flow.arms(hs, Flow.edge(st2, pa, m), ps, m, rest)
+    val Flow.At(st2, pa) = Flow.expr(cx, st1, a0, b)
+    Flow.arms(cx, Flow.edge(st2, pa, m), ps, m, rest)
 
-def Flow.exprs {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, p: I64, xs: Coll.List[Ast.Expr]): Flow.At = xs match
+def Flow.exprs {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, xs: Coll.List[Ast.Expr]): Flow.At = xs match
   case Coll.Nil => Flow.At(st, p)
   case Coll.Cons(x, rest) =>
-    val Flow.At(st2, p2) = Flow.expr(hs, st, p, x)
-    Flow.exprs(hs, st2, p2, rest)
+    val Flow.At(st2, p2) = Flow.expr(cx, st, p, x)
+    Flow.exprs(cx, st2, p2, rest)
 
 // m is a merge point (branches or a loop meet) at line
 def Flow.merge {r: Region} (st: Flow.St, m: I64, line: I64): Flow.St =
@@ -210,11 +264,293 @@ def Flow.step {r: Region} (st: Flow.St, p: I64, c: Flow.Cap, op: Sym.Sym, line: 
   val st3 = Flow.add(st2, Flow.fStep(s, q, id, op))
   Flow.At(Flow.add(st3, Flow.fLine(s, line)), q)
 
+// ── calls (R2, flow-design.md): the step point is the kind, so pre/post/param facts are per call site ──
+// a capability binder of a callee: its {} binder name, its index among the {} binders (f{a, b}(x) picks by it), its
+// protocol
+enum Flow.CapB:
+  case Flow.CapB(x: Sym.Sym, curly: I64, proto: Sym.Sym)
+
+// a fact variable bound to a state
+enum Flow.VS:
+  case Flow.VS(x: Sym.Sym, s: Sym.Sym)
+
+def Flow.fnNamed {r: Region} (fns: Coll.List[Ast.Fn], f: Sym.Sym): Coll.Option[Ast.Fn] = fns match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(g, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = g
+    if Sym.eq(n, f) then Coll.Some(g) else Flow.fnNamed(rest, f)
+
+def Flow.protoNamed {r: Region} (ps: Coll.List[Ast.Proto], n: Sym.Sym): Coll.Option[Ast.Proto] = ps match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(p, rest) =>
+    val Ast.Proto(_, name, _, _, _, _, _, _) = p
+    if Sym.eq(name, n) then Coll.Some(p) else Flow.protoNamed(rest, n)
+
+// the {} binders of the groups gs whose type is a protocol, in written order; i = the {} index of the next binder
+def Flow.capBs {r: Region} (ps: Coll.List[Ast.Proto], gs: Coll.List[Ast.Group], i: I64, acc: Coll.List[Flow.CapB]): Coll.List[Flow.CapB] = gs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(g, rest) => g match
+    case Ast.Evidence(bs) => Flow.capBsOf(ps, rest, bs, i, acc)
+    case Ast.Types(_) => Flow.capBs(ps, rest, i, acc)
+    case Ast.Facts(_) => Flow.capBs(ps, rest, i, acc)
+
+def Flow.capBsOf {r: Region} (ps: Coll.List[Ast.Proto], gs: Coll.List[Ast.Group], bs: Coll.List[Ast.Binder], i: I64, acc: Coll.List[Flow.CapB]): Coll.List[Flow.CapB] = bs match
+  case Coll.Nil => Flow.capBs(ps, gs, i, acc)
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, x, ty) = b
+    val Ast.Ty(_, tn, _, _) = ty
+    Flow.protoNamed(ps, tn) match
+      case Coll.None => Flow.capBsOf(ps, gs, rest, i + 1, acc)
+      case Coll.Some(_) => Flow.capBsOf(ps, gs, rest, i + 1, Coll.Cons(Flow.CapB(x, i, tn), acc))
+
+// the entry atoms of f (its <> groups before the params)
+def Flow.entryAtoms {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Atom]): Coll.List[Ast.Atom] = gs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) => g match
+    case Ast.Facts(atoms) => Flow.entryAtoms(rest, Coll.revOnto(Coll.rev(atoms), acc))
+    case Ast.Types(_) => Flow.entryAtoms(rest, acc)
+    case Ast.Evidence(_) => Flow.entryAtoms(rest, acc)
+
+// the caller capability a binder takes: the chosen name (f{a}(x)), else the one capability of its protocol in scope;
+// None when there is none or more than one (the names check reports it, s1/check.srs:643-660)
+def Flow.capFor {r: Region} (cs: Coll.List[Flow.Cap], chosen: Coll.List[Sym.Sym], b: Flow.CapB): Coll.Option[Flow.Cap] =
+  val Flow.CapB(_, i, proto) = b
+  chosen match
+    case Coll.Nil => Flow.onlyCap(cs, proto, Coll.None)
+    case Coll.Cons(_, _) => Flow.nthSym(chosen, i) match
+      case Coll.None => Coll.None
+      case Coll.Some(n) => Flow.capOfProto(Flow.capNamed(cs, n), proto)
+
+def Flow.capOfProto {r: Region} (c: Coll.Option[Flow.Cap], proto: Sym.Sym): Coll.Option[Flow.Cap] = c match
+  case Coll.None => c
+  case Coll.Some(x) =>
+    val Flow.Cap(_, _, p, _) = x
+    if Sym.eq(p, proto) then c else Coll.None
+
+def Flow.nthSym {r: Region} (xs: Coll.List[Sym.Sym], i: I64): Coll.Option[Sym.Sym] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(x, rest) => if i == 0 then Coll.Some(x) else Flow.nthSym(rest, i - 1)
+
+// the one capability of protocol proto in cs (a name shadowed by an inner one counts once)
+def Flow.onlyCap {r: Region} (cs: Coll.List[Flow.Cap], proto: Sym.Sym, found: Coll.Option[Flow.Cap]): Coll.Option[Flow.Cap] = cs match
+  case Coll.Nil => found
+  case Coll.Cons(c, rest) =>
+    val Flow.Cap(n, _, p, _) = c
+    if !Sym.eq(p, proto) then Flow.onlyCap(rest, proto, found)
+    else found match
+      case Coll.None => Flow.onlyCap(rest, proto, Coll.Some(c))
+      case Coll.Some(f) =>
+        val Flow.Cap(fn, _, _, _) = f
+        if Sym.eq(fn, n) then Flow.onlyCap(rest, proto, found) else Coll.None
+
+// the caller capability of every binder, in order; None when one is missing
+def Flow.capsFor {r: Region} (cs: Coll.List[Flow.Cap], chosen: Coll.List[Sym.Sym], bs: Coll.List[Flow.CapB], acc: Coll.List[Flow.Cap]): Coll.Option[Coll.List[Flow.Cap]] = bs match
+  case Coll.Nil => Coll.Some(Coll.rev(acc))
+  case Coll.Cons(b, rest) => Flow.capFor(cs, chosen, b) match
+    case Coll.None => Coll.None
+    case Coll.Some(c) => Flow.capsFor(cs, chosen, rest, Coll.Cons(c, acc))
+
+// a call of g after point p: a step from a fresh point to a fresh point, each capability binder bound to its caller
+// capability, and the solutions of g's entry facts as pre/post states per binder
+def Flow.call {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, p: I64, g: Ast.Fn, chosen: Coll.List[Sym.Sym], line: I64): Flow.At =
+  val Ast.Fn(_, name, gs, _, _, exit, _) = g
+  val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
+  val Flow.St(_, _, cs) = st
+  bs match
+    case Coll.Nil => Flow.At(st, p)
+    case Coll.Cons(_, _) => Flow.capsFor(cs, chosen, bs, Coll.Nil) match
+      case Coll.None => Flow.At(st, p)
+      case Coll.Some(caps) =>
+        val Flow.At(st1, s) = Flow.next(st, p)
+        val Flow.At(st2, q) = Flow.fresh(st1)
+        val st3 = Flow.add(Flow.add(Flow.add(st2, Flow.fCStep(s, q)), Flow.fLine(s, line)), Flow.fCallee(s, name))
+        val st4 = Flow.binds(st3, s, caps, 0)
+        val atoms = Flow.entryAtoms(gs, Coll.Nil)
+        val vars = Flow.varsOf(atoms, Coll.Nil)
+        Flow.At(Flow.sols(ps, st4, s, bs, atoms, exit, Flow.assigns(ps, bs, atoms, vars, Coll.Nil, Coll.Nil), 0), q)
+
+// bind(s, i, c), and the param chain firstParam / nextParam / lastParam
+def Flow.binds {r: Region} (st: Flow.St, s: I64, caps: Coll.List[Flow.Cap], i: I64): Flow.St = caps match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) =>
+    val Flow.Cap(_, id, _, _) = c
+    val st1 = Flow.add(st, Flow.fBind(s, i, id))
+    val st2 = if i == 0 then Flow.add(st1, Flow.fFirst(s, i)) else Flow.add(st1, Flow.fNext(s, i - 1, i))
+    val st3 = rest match
+      case Coll.Nil => Flow.add(st2, Flow.fLast(s, i))
+      case Coll.Cons(_, _) => st2
+    Flow.binds(st3, s, rest, i + 1)
+
+def Flow.isVar(x: Sym.Sym): Bool =
+  val c = rt_str_at(Sym.str(x), 0)
+  c >= 'a' && c <= 'z'
+
+// the state positions of an atom: at(_, S), next(S1, _, S2); other atoms have none here
+def Flow.statePos {r: Region} (a: Ast.Atom): Coll.List[Ast.Term] =
+  val Ast.Atom(_, rel, args) = a
+  if Sym.eq(rel, Sym.of("at")) then Flow.dropOne(args)
+  else if Sym.eq(rel, Sym.of("next")) then Flow.firstLast(args)
+  else Coll.Nil
+
+def Flow.dropOne {r: Region} (xs: Coll.List[Ast.Term]): Coll.List[Ast.Term] = xs match
+  case Coll.Nil => xs
+  case Coll.Cons(_, rest) => rest
+
+def Flow.firstLast {r: Region} (xs: Coll.List[Ast.Term]): Coll.List[Ast.Term] = xs match
+  case Coll.Cons(a, r1) => r1 match
+    case Coll.Cons(_, r2) => r2 match
+      case Coll.Cons(b, _) => Coll.Cons(a, Coll.Cons(b, Coll.Nil))
+      case Coll.Nil => Coll.Nil
+    case Coll.Nil => Coll.Nil
+  case Coll.Nil => Coll.Nil
+
+def Flow.termSym {r: Region} (t: Ast.Term): Coll.Option[Sym.Sym] = t match
+  case Ast.TName(n) => Coll.Some(n)
+  case Ast.TNum(_) => Coll.None
+
+// the fact variables of the atoms, each once, in written order
+def Flow.varsOf {r: Region} (atoms: Coll.List[Ast.Atom], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = atoms match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(a, rest) => Flow.varsOf(rest, Flow.varsIn(Flow.statePos(a), acc))
+
+def Flow.varsIn {r: Region} (ts: Coll.List[Ast.Term], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ts match
+  case Coll.Nil => acc
+  case Coll.Cons(t, rest) => Flow.termSym(t) match
+    case Coll.None => Flow.varsIn(rest, acc)
+    case Coll.Some(x) => if Flow.isVar(x) && !Flow.memberSym(x, acc) then Flow.varsIn(rest, Coll.Cons(x, acc)) else Flow.varsIn(rest, acc)
+
+// every assignment of vars to states (each over the states of all binder protocols) whose next atoms hold
+def Flow.assigns {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], vars: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = vars match
+  case Coll.Nil => if Flow.nextsHold(ps, bs, atoms, a) then Coll.Cons(a, acc) else acc
+  case Coll.Cons(x, rest) => Flow.assignEach(ps, bs, atoms, x, rest, a, Flow.statesOf(ps, bs, Coll.Nil), acc)
+
+def Flow.assignEach {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], x: Sym.Sym, rest: Coll.List[Sym.Sym], a: Coll.List[Flow.VS], ss: Coll.List[Sym.Sym], acc: Coll.List[Coll.List[Flow.VS]]): Coll.List[Coll.List[Flow.VS]] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, more) => Flow.assignEach(ps, bs, atoms, x, rest, a, more, Flow.assigns(ps, bs, atoms, rest, Coll.Cons(Flow.VS(x, s), a), acc))
+
+// the states of the binder protocols, each once
+def Flow.statesOf {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Flow.CapB(_, _, proto) = b
+    Flow.protoNamed(ps, proto) match
+      case Coll.None => Flow.statesOf(ps, rest, acc)
+      case Coll.Some(pr) =>
+        val Ast.Proto(_, _, states, _, _, _, _, _) = pr
+        Flow.statesOf(ps, rest, Flow.addNew(states, acc))
+
+def Flow.addNew {r: Region} (xs: Coll.List[Sym.Sym], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => if Flow.memberSym(x, acc) then Flow.addNew(rest, acc) else Flow.addNew(rest, Coll.Cons(x, acc))
+
+// a name under an assignment: a variable's state, else the name itself
+def Flow.resolve(a: Coll.List[Flow.VS], x: Sym.Sym): Sym.Sym = a match
+  case Coll.Nil => x
+  case Coll.Cons(v, rest) =>
+    val Flow.VS(y, s) = v
+    if Sym.eq(x, y) then s else Flow.resolve(rest, x)
+
+// every next(S1, op, S2) atom is a transition of op in a binder protocol
+def Flow.nextsHold {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], a: Coll.List[Flow.VS]): Bool = atoms match
+  case Coll.Nil => true
+  case Coll.Cons(at, rest) =>
+    val Ast.Atom(_, rel, args) = at
+    if !Sym.eq(rel, Sym.of("next")) then Flow.nextsHold(ps, bs, rest, a)
+    else Flow.nextHolds(ps, bs, args, a) match
+      case Coll.Nil => false
+      case Coll.Cons(_, _) => Flow.nextsHold(ps, bs, rest, a)
+
+// the binder protocols with a transition op: S1 -> S2 for the args of a next atom (empty = it does not hold)
+def Flow.nextHolds {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], args: Coll.List[Ast.Term], a: Coll.List[Flow.VS]): Coll.List[Flow.CapB] = args match
+  case Coll.Cons(t1, r1) => r1 match
+    case Coll.Cons(t2, r2) => r2 match
+      case Coll.Cons(t3, _) => Flow.nextIn(ps, bs, Flow.termSym(t1), Flow.termSym(t2), Flow.termSym(t3), a, Coll.Nil)
+      case Coll.Nil => Coll.Nil
+    case Coll.Nil => Coll.Nil
+  case Coll.Nil => Coll.Nil
+
+def Flow.nextIn {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], s1: Coll.Option[Sym.Sym], op: Coll.Option[Sym.Sym], s2: Coll.Option[Sym.Sym], a: Coll.List[Flow.VS], acc: Coll.List[Flow.CapB]): Coll.List[Flow.CapB] = s1 match
+  case Coll.None => acc
+  case Coll.Some(x1) => op match
+    case Coll.None => acc
+    case Coll.Some(o) => s2 match
+      case Coll.None => acc
+      case Coll.Some(x2) => Flow.withTrans(ps, bs, Flow.resolve(a, x1), o, Flow.resolve(a, x2), acc)
+
+def Flow.withTrans {r: Region} (ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], a: Sym.Sym, op: Sym.Sym, b: Sym.Sym, acc: Coll.List[Flow.CapB]): Coll.List[Flow.CapB] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) =>
+    val Flow.CapB(_, _, proto) = x
+    val ok: Bool = Flow.protoNamed(ps, proto) match
+      case Coll.None => false
+      case Coll.Some(pr) =>
+        val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
+        Flow.opHas(ops, op, a, b)
+    if ok then Flow.withTrans(ps, rest, a, op, b, Coll.Cons(x, acc)) else Flow.withTrans(ps, rest, a, op, b, acc)
+
+def Flow.opHas(ops: Coll.List[Ast.Op], op: Sym.Sym, a: Sym.Sym, b: Sym.Sym): Bool = ops match
+  case Coll.Nil => false
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, name, _, _, trs) = o
+    if Sym.eq(name, op) && Flow.transHas(trs, a, b) then true else Flow.opHas(rest, op, a, b)
+
+def Flow.transHas(trs: Coll.List[Ast.Trans], a: Sym.Sym, b: Sym.Sym): Bool = trs match
+  case Coll.Nil => false
+  case Coll.Cons(t, rest) =>
+    val Ast.Trans(x, y) = t
+    if Sym.eq(x, a) && Sym.eq(y, b) then true else Flow.transHas(rest, a, b)
+
+// the state an at(binder, S) atom gives under a, or None when the binder has no such atom
+def Flow.atState {r: Region} (atoms: Coll.List[Ast.Atom], x: Sym.Sym, a: Coll.List[Flow.VS]): Coll.Option[Sym.Sym] = atoms match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(at, rest) =>
+    val Ast.Atom(_, rel, args) = at
+    if Sym.eq(rel, Sym.of("at")) then Flow.atArgs(args, x, a, rest) else Flow.atState(rest, x, a)
+
+def Flow.atArgs {r: Region} (args: Coll.List[Ast.Term], x: Sym.Sym, a: Coll.List[Flow.VS], rest: Coll.List[Ast.Atom]): Coll.Option[Sym.Sym] = args match
+  case Coll.Cons(t1, r1) => r1 match
+    case Coll.Cons(t2, _) => Flow.termSym(t1) match
+      case Coll.Some(c) => if Sym.eq(c, x) then Flow.resolved(Flow.termSym(t2), a) else Flow.atState(rest, x, a)
+      case Coll.None => Flow.atState(rest, x, a)
+    case Coll.Nil => Flow.atState(rest, x, a)
+  case Coll.Nil => Flow.atState(rest, x, a)
+
+def Flow.resolved {r: Region} (t: Coll.Option[Sym.Sym], a: Coll.List[Flow.VS]): Coll.Option[Sym.Sym] = t match
+  case Coll.None => t
+  case Coll.Some(s) => Coll.Some(Flow.resolve(a, s))
+
+// solution j per assignment: pre = the entry at() state, else the protocol start (s1/check.srs:899); post = the exit
+// at() state, else pre
+def Flow.sols {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, s: I64, bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], as: Coll.List[Coll.List[Flow.VS]], j: I64): Flow.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) => Flow.sols(ps, Flow.prePost(ps, Flow.add(st, Flow.fSameI(j)), s, j, bs, atoms, exit, a, 0), s, bs, atoms, exit, rest, j + 1)
+
+def Flow.prePost {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, s: I64, j: I64, bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], a: Coll.List[Flow.VS], m: I64): Flow.St = bs match
+  case Coll.Nil => st
+  case Coll.Cons(b, rest) =>
+    val Flow.CapB(x, _, proto) = b
+    val pre: Coll.Option[Sym.Sym] = Flow.atState(atoms, x, a) match
+      case Coll.Some(e) => Coll.Some(e)
+      case Coll.None => Flow.startOf(ps, proto)
+    pre match
+      case Coll.None => Flow.prePost(ps, st, s, j, rest, atoms, exit, a, m + 1)
+      case Coll.Some(e) =>
+        val post: Sym.Sym = Flow.atState(exit, x, a) match
+          case Coll.Some(o) => o
+          case Coll.None => e
+        Flow.prePost(ps, Flow.add(Flow.add(st, Flow.fPre(s, j, m, e)), Flow.fPost(s, j, m, post)), s, j, rest, atoms, exit, a, m + 1)
+
+def Flow.startOf {r: Region} (ps: Coll.List[Ast.Proto], proto: Sym.Sym): Coll.Option[Sym.Sym] = Flow.protoNamed(ps, proto) match
+  case Coll.None => Coll.None
+  case Coll.Some(pr) =>
+    val Ast.Proto(_, _, _, start, _, _, _, _) = pr
+    Coll.Some(start)
+
 // a block: its statements, its value, then a block end point where its own capabilities end their scope
-def Flow.block {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, line: I64): Flow.At =
+def Flow.block {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, line: I64): Flow.At =
   val Flow.St(_, _, outer) = st
-  val Flow.At(st1, p1) = Flow.stmts(hs, st, p, ss)
-  val Flow.At(st2, p2) = Flow.expr(hs, st1, p1, last)
+  val Flow.At(st1, p1) = Flow.stmts(cx, st, p, ss)
+  val Flow.At(st2, p2) = Flow.expr(cx, st1, p1, last)
   val Flow.At(st3, e) = Flow.next(st2, p2)
   val Flow.St(n, fs, inner) = st3
   Flow.At(Flow.St(n, Flow.closes(inner, outer, e, fs), outer), e)
@@ -228,19 +564,19 @@ def Flow.closes {r: Region} (inner: Coll.List[Flow.Cap], outer: Coll.List[Flow.C
       val Flow.Cap(_, id, _, _) = c
       Flow.closes(rest, outer, e, Coll.Cons(Flow.fClose(e, id), fs))
 
-def Flow.stmts {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt]): Flow.At = ss match
+def Flow.stmts {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt]): Flow.At = ss match
   case Coll.Nil => Flow.At(st, p)
   case Coll.Cons(s, rest) =>
-    val Flow.At(st2, p2) = Flow.stmt(hs, st, p, s)
-    Flow.stmts(hs, st2, p2, rest)
+    val Flow.At(st2, p2) = Flow.stmt(cx, st, p, s)
+    Flow.stmts(cx, st2, p2, rest)
 
-def Flow.stmt {r: Region} (hs: Coll.List[Ast.Handler], st: Flow.St, p: I64, s: Ast.Stmt): Flow.At = s match
-  case Ast.Val(_, _, _, e) => Flow.expr(hs, st, p, e)
-  case Ast.Var(_, _, _, e) => Flow.expr(hs, st, p, e)
-  case Ast.Do(e) => Flow.expr(hs, st, p, e)
+def Flow.stmt {r: Region} (cx: Flow.Cx, st: Flow.St, p: I64, s: Ast.Stmt): Flow.At = s match
+  case Ast.Val(_, _, _, e) => Flow.expr(cx, st, p, e)
+  case Ast.Var(_, _, _, e) => Flow.expr(cx, st, p, e)
+  case Ast.Do(e) => Flow.expr(cx, st, p, e)
   case Ast.Handle(line, x, h, xs) =>
-    val Flow.At(st1, pa) = Flow.exprs(hs, st, p, xs)
-    Flow.protoOf(hs, h) match
+    val Flow.At(st1, pa) = Flow.exprs(cx, st, p, xs)
+    Flow.protoOf(Flow.cxHs(cx), h) match
       case Coll.None => Flow.At(st1, pa)
       case Coll.Some(proto) =>
         val Flow.At(st2, id) = Flow.fresh(st1)
@@ -333,18 +669,38 @@ def Flow.rules {r: Region} (): Coll.List[D.Rule] =
   val splitN = Flow.rule(Flow.RSplitAt, Flow.l2(8, 9), Flow.l2(Flow.pos(Flow.RSplit, Flow.l2(8, 3)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
   val unended = Flow.rule(Flow.RUnended, Flow.l2(8, 3), Flow.l5(Flow.pos(Flow.RClose, Flow.l2(0, 3)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4)), Flow.pos(Flow.RCapOf, Flow.l2(3, 7)), Flow.neg(Flow.REndOk, Flow.l2(7, 4)), Flow.pos(Flow.RCapLine, Flow.l2(3, 8))))
   val unendedN = Flow.rule(Flow.RUnendedAt, Flow.l2(8, 9), Flow.l2(Flow.pos(Flow.RUnended, Flow.l2(8, 3)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
-  Coll.Cons(enter, Coll.Cons(frame, Coll.Cons(touch, Coll.Cons(keep, Coll.Cons(move, Coll.Cons(moved, Coll.Cons(seen, Coll.Cons(stuck, Coll.Cons(split, Coll.Cons(splitN, Coll.Cons(unended, Coll.Cons(unendedN, Coll.Nil))))))))))))
+  val f1 = Coll.Cons(enter, Coll.Cons(frame, Coll.Cons(touch, Coll.Cons(keep, Coll.Cons(move, Coll.Cons(moved, Coll.Cons(seen, Coll.Cons(stuck, Coll.Cons(split, Coll.Cons(splitN, Coll.Cons(unended, Coll.Cons(unendedN, Coll.Nil))))))))))))
+  Coll.revOnto(Coll.rev(f1), Flow.callRules())
+
+// R2 for calls (flow-design.md): the call point p is its own kind; j 10, m 11, n 12, i 13
+def Flow.callRules {r: Region} (): Coll.List[D.Rule] =
+  // a bound capability is touched: no frame across the call, its state comes from the solution that fits
+  val touchB = Flow.rule(Flow.RTouch, Flow.l2(0, 3), Flow.l1(Flow.pos(Flow.RBind, Flow.l3(0, 11, 3))))
+  val cframe = Flow.rule(Flow.RAt, Flow.l4(1, 2, 3, 4), Flow.l3(Flow.pos(Flow.RCStep, Flow.l2(0, 1)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4)), Flow.neg(Flow.RTouch, Flow.l2(0, 3))))
+  // solution j fits when every param is in its pre state: a positive chain over the params
+  val ok1 = Flow.rule(Flow.ROk, Flow.l4(0, 2, 10, 11), Flow.l4(Flow.pos(Flow.RFirst, Flow.l2(0, 11)), Flow.pos(Flow.RPre, Flow.l4(0, 10, 11, 4)), Flow.pos(Flow.RBind, Flow.l3(0, 11, 3)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4))))
+  val ok2 = Flow.rule(Flow.ROk, Flow.l4(0, 2, 10, 12), Flow.l5(Flow.pos(Flow.ROk, Flow.l4(0, 2, 10, 11)), Flow.pos(Flow.RNext, Flow.l3(0, 11, 12)), Flow.pos(Flow.RPre, Flow.l4(0, 10, 12, 4)), Flow.pos(Flow.RBind, Flow.l3(0, 12, 3)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4))))
+  val fits = Flow.rule(Flow.RFits, Flow.l3(0, 2, 10), Flow.l2(Flow.pos(Flow.ROk, Flow.l4(0, 2, 10, 11)), Flow.pos(Flow.RLast, Flow.l2(0, 11))))
+  val cmove = Flow.rule(Flow.RAt, Flow.l4(1, 2, 3, 4), Flow.l4(Flow.pos(Flow.RFits, Flow.l3(0, 2, 10)), Flow.pos(Flow.RCStep, Flow.l2(0, 1)), Flow.pos(Flow.RPost, Flow.l4(0, 10, 11, 4)), Flow.pos(Flow.RBind, Flow.l3(0, 11, 3))))
+  val cmoved = Flow.rule(Flow.RMoved, Flow.l2(0, 2), Flow.l1(Flow.pos(Flow.RFits, Flow.l3(0, 2, 10))))
+  val cseen = Flow.rule(Flow.RCSeen, Flow.l2(0, 2), Flow.l2(Flow.pos(Flow.RBind, Flow.l3(0, 11, 3)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4))))
+  // clashes: no solution fits (stuck, as an op), more than one fits (ambig); the name is the callee
+  val cstuck = Flow.rule(Flow.RStuck, Flow.l2(8, 9), Flow.l4(Flow.pos(Flow.RCSeen, Flow.l2(0, 2)), Flow.neg(Flow.RMoved, Flow.l2(0, 2)), Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.pos(Flow.RCallee, Flow.l2(0, 9))))
+  val ambig = Flow.rule(Flow.RAmbig, Flow.l2(0, 2), Flow.l3(Flow.pos(Flow.RFits, Flow.l3(0, 2, 10)), Flow.pos(Flow.RFits, Flow.l3(0, 2, 13)), Flow.neg(Flow.RSame, Flow.l2(10, 13))))
+  val ambigN = Flow.rule(Flow.RAmbigAt, Flow.l2(8, 9), Flow.l3(Flow.pos(Flow.RAmbig, Flow.l2(0, 2)), Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.pos(Flow.RCallee, Flow.l2(0, 9))))
+  Coll.Cons(touchB, Coll.Cons(cframe, Coll.Cons(ok1, Coll.Cons(ok2, Coll.Cons(fits, Coll.Cons(cmove, Coll.Cons(cmoved, Coll.Cons(cseen, Coll.Cons(cstuck, Coll.Cons(ambig, Coll.Cons(ambigN, Coll.Nil)))))))))))
 
 // the facts of fn f: its walk from a first point, the protocols, one world
-def Flow.facts {r: Region} (ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], f: Ast.Fn): Coll.List[D.Fact] =
+def Flow.facts {r: Region} (cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val Ast.Fn(line, _, _, _, _, _, body) = f
   val st0 = Flow.St(1, Coll.Cons(Flow.fWorld(0), Coll.Nil), Coll.Nil)
   val walked: Flow.St = body match
     case Ast.Extern => st0
     case Ast.Def(e) =>
-      val Flow.At(st1, _) = Flow.expr(hs, st0, 0, e)
+      val Flow.At(st1, _) = Flow.expr(cx, st0, 0, e)
       st1
   val Flow.St(_, fs, _) = walked
+  val Flow.Cx(ps, _, _) = cx
   Flow.protoFacts(ps, fs)
 
 // ── the verdict: the clash relations read back ──
@@ -369,11 +725,12 @@ def Flow.make {r: Region} (k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash =
   case Flow.KStuck => Flow.Stuck(line, name)
   case Flow.KSplit => Flow.Split(line, name)
   case Flow.KUnended => Flow.Unended(line, name)
+  case Flow.KAmbig => Flow.Ambig(line, name)
 
-def Flow.check {r: Region} (ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], f: Ast.Fn): Flow.Verdict =
-  D.solve(Flow.rules(), Flow.facts(ps, hs, f)) match
+def Flow.check {r: Region} (ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], f: Ast.Fn): Flow.Verdict =
+  D.solve(Flow.rules(), Flow.facts(Flow.Cx(ps, hs, fns), f)) match
     case D.Solved(m) =>
-      val cs = Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Coll.Nil)))
+      val cs = Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Coll.Nil))))
       cs match
         case Coll.Nil => Flow.Ok
         case Coll.Cons(_, _) => Flow.Bad(cs)
