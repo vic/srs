@@ -1,0 +1,12 @@
+// expect: error[multishot-shape]
+// the method form nd.choose() nested in an expression is not compiled yet either
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+def main(): I64 =
+  handle nd = Count()
+  val x = if nd.choose() then 1 else 2
+  x
+// expect: --> tests/s2/neg/ms_shape_method.srs:10

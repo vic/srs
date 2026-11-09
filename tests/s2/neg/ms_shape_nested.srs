@@ -1,0 +1,12 @@
+// expect: error[multishot-shape]
+// an op of a multi-shot handler only as a whole val or statement of the handled block (vic-hm63 C3 interim)
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+def main(): I64 =
+  handle nd = Count()
+  val x = if NonDet.choose() then 1 else 2
+  x
+// expect: --> tests/s2/neg/ms_shape_nested.srs:10
