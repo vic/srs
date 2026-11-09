@@ -43,49 +43,13 @@ in
         "${build}; bash tests/bench.sh update"
       )
       (cmd "srs" "seed-update"
-        "after an S1 change: bootstrap/seed.c = the S1 self-compile of the last srs-test"
-        ''${build}; cp "$B/s2.c" bootstrap/seed.c''
-      )
-      (cmd "srs" "s2c-seed-update"
         "after an s2 change: bootstrap/s2c-seed.c = the s2c self-compile (s2c1.c) of the last srs-test"
         ''${build}; cp "$B/s2c1.c" bootstrap/s2c-seed.c''
       )
-      (cmd "test" "srs-test" "the gate (s2 only): s2c seed -> s2c -> fixpoint, then tests/s2 (components, prog, neg, eval, hash, store)"
+      (cmd "test" "srs-test"
+        "the gate (s2 only): s2c seed -> s2c -> fixpoint, then tests/s2 (components, prog, neg, eval, hash, store)"
         "./tests/run.sh"
       )
-      (cmd "test" "lean-check"
-        "Lean: Impl = s1/*.srs via s1 --lean (fresh, must match the committed file), Impl verdicts = S1, model soundness proof (no sorry)"
-        ''
-          ${build}
-          ${cc} -o "$B/seed" bootstrap/seed.c rt/srs_rt.c
-          S1SRC="lib/prelude.srs lib/kanren.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/leanspec.srs"
-          gen() { # gen NS OUT files...: generated Lean must match the committed file
-            ns=$1; out=$2; shift 2
-            timeout 10 "$B/seed" --lean "$ns" "$@" > "$B/gen.lean" || exit 1
-            cmp -s "$B/gen.lean" "$out" || { cp "$B/gen.lean" "$out"; echo "$out was stale: regenerated, commit it" >&2; exit 1; }
-          }
-          gen Impl lean/Srs/Impl/S1.lean $S1SRC
-          gen Contracts lean/Srs/Contracts.lean lib/prelude.srs tests/s1/list.lib tests/s1/contracts.srs
-          gen Kanren lean/Srs/Kanren.lean lib/prelude.srs lib/kanren.srs
-          gen Datalog lean/Srs/Datalog.lean lib/prelude.srs lib/datalog.srs
-          echo "proof lean (debt): $(grep -cE '^ +proof lean' s1/*.srs lib/*.srs tests/s1/*.srs | awk -F: '{s+=$2} END{print s}')"
-          ! grep -rn --include='*.lean' -w -e sorry -e admit -e axiom lean/Srs || { echo "unproven step" >&2; exit 1; }
-          # ImplRun reads tests/s1/ by IO, which lake does not track: drop its outputs so the verdicts always run again
-          rm -f lean/.lake/build/lib/lean/Srs/ImplRun.*
-          cd lean && timeout 600 lake build
-        ''
-      )
-      # bootstrap only when absolutely necessary (C10): the seed cannot build the S1 src
-      (cmd "bootstrap" "s0-bootstrap" "S0 (zig) -> S1 -> bootstrap/seed.c, then srs-test" ''
-        ${build}
-        timeout 120 zig test s0/main.zig
-        timeout 120 zig build-exe s0/main.zig -femit-bin="$B/s0"
-        S1SRC="lib/prelude.srs lib/kanren.srs lib/datalog.srs s1/node.srs s1/lex.srs s1/parse.srs s1/check.srs s1/types.srs s1/given.srs s1/facts.srs s1/purity.srs s1/hash.srs s1/eval.srs s1/mono.srs s1/emit.srs s1/lean.srs s1/store.srs s1/main.srs"
-        "$B/s0" $S1SRC > "$B/s1.c"
-        ${cc} -o "$B/s1" "$B/s1.c" rt/srs_rt.c
-        "$B/s1" $S1SRC > bootstrap/seed.c
-        ./tests/run.sh
-      '')
       (cmd "fmt" "fmt" "format every tracked nix file (nixfmt)"
         "git ls-files -z '*.nix' | xargs -0 nixfmt"
       )
@@ -99,7 +63,7 @@ in
         "nix run .#write-files"
       )
       (cmd "ci" "ci" "run the CI jobs locally, in order"
-        ''for c in fmt-check lint srs-test lean-check; do echo "== $c"; $c; done''
+        ''for c in fmt-check lint srs-test; do echo "== $c"; $c; done''
       )
     ];
   };

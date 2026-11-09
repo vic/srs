@@ -27,7 +27,7 @@ s2 is the compiler. It is purely functional (`val` and recursion, no `var` or `w
 * **Flags**: `--eval` runs pure defs at compile time, `--hash` prints content hashes, and `--store-check` writes and reads the content-addressed store.
 * **Errors** have the shape of Rust's: `error[code]`, then the file and line, the source line, the expected and found types, and a help line.
 
-s1, the first compiler (imperative, written in srs), and s0, its Zig bootstrap, are still in the tree and are being removed. Lean generation (`--lean`) waits until the core is stable. The known rough edges of s2 are tracked before s3.
+s1, the first compiler (imperative, written in srs), and s0, its Zig bootstrap, are historic: they stay in the tree, and nothing builds or runs them. Lean generation (`--lean`) waits until the core is stable. The known rough edges of s2 are tracked before s3.
 
 The s2 libraries live in `s2/`: persistent collections, miniKanren with disequality and finite domains, and Datalog with stratified negation. The checker phases also live there, and the driver lives in `s2c/`.
 
@@ -314,7 +314,7 @@ The test runner validates every feature across positive and negative cases:
 * `tests/s2/neg/`: Programs that s2 must reject. Each one names the error code and the exact file and line it expects.
 * `tests/s2/eval/` and `tests/s2/hash/`: the compile-time values and the content hashes they must give.
 * `tests/s2/*.srs`: tests of the s2 components themselves.
-* `tests/s1/` is the suite of the old compiler, removed with it.
+* `tests/s1/` is the historic suite of s1.
 
 ---
 
