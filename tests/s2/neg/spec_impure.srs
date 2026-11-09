@@ -1,4 +1,4 @@
-// expect: line 7: a spec def calls only pure fns, not f
+// expect: error[impure-call]
 // f is impure through say: rt_print is an impure extern
 def say(x: I64): Unit = rt_print("a")
 def f(x: I64): I64 =
@@ -7,3 +7,4 @@ def f(x: I64): I64 =
 spec def g(x: I64): I64 = f(x)
 def main(): I64 = 0
 // s1: a spec def calls only pure defs and pure externs, not 'f'
+// expect: --> tests/s2/neg/spec_impure.srs:7

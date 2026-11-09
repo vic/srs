@@ -74,7 +74,13 @@ for t in tests/s2/neg/*.srs; do
   n=$(basename "$t" .srs); pass=1
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
   wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -eq 1 ] && [ -n "$wants" ] || pass=0
-  while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
+  # "error[code]" is in the message; "--> file:line" is a whole line of it (so :1 does not match :12)
+  while IFS= read -r w; do
+    case "$w" in
+      "-->"*) printf '%s\n' "$msg" | sed 's/^ *//' | grep -Fxq -- "$w" || pass=0;;
+      *) case "$msg" in *"$w"*) ;; *) pass=0;; esac;;
+    esac
+  done <<< "$wants"
   verdict "neg/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
 # s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
@@ -115,13 +121,13 @@ else echo "FAIL s2c store cold=[$cold] warm=[$warm] cut=[$cut] flip=[$flip] trai
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?
-if [ $code -eq 1 ] && [ "$msg" = "line 1: type mismatch" ] && [ ! -s "$B/s2c_bad.c" ]; then echo "ok s2c clash exit 1"; else echo "FAIL s2c clash exit=$code msg=$msg"; fail=1; fi
+if [ $code -eq 1 ] && [ "$(printf '%s\n' "$msg" | head -1)" = "error[mismatch]: the value has the wrong type" ] && [ ! -s "$B/s2c_bad.c" ]; then echo "ok s2c clash exit 1"; else echo "FAIL s2c clash exit=$code msg=$msg"; fail=1; fi
 # type level errors are data too: a looping alias runs out of fuel, a value match with no case for its arg is a reject
 printf 'type Loop = Loop\ndef main(): Loop = 0\n' > "$B/s2c_tl1.srs"
 printf 'type W (n: I64) = n match\n  case 1 => I64\ndef main(): W(2) = 0\n' > "$B/s2c_tl2.srs"
 m1=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_tl1.srs" 2>&1 >/dev/null); c1=$?
 m2=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_tl2.srs" 2>&1 >/dev/null); c2=$?
-if [ $c1 -eq 1 ] && [ "$m1" = "line 1: type reduction ran out of fuel at Loop" ] && [ $c2 -eq 1 ] && [ "$m2" = "line 3: no case of the match type matches in W" ]; then echo "ok s2c type level errors"
+if [ $c1 -eq 1 ] && [ "$(printf '%s\n' "$m1" | head -1)" = "error[type-fuel]: type reduction ran out of fuel at 'Loop'" ] && [ $c2 -eq 1 ] && [ "$(printf '%s\n' "$m2" | head -1)" = "error[no-type-case]: no case of the match type matches in 'W'" ]; then echo "ok s2c type level errors"
 else echo "FAIL s2c type level errors $c1 $m1 / $c2 $m2"; fail=1; fi
 # s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }

@@ -69,7 +69,10 @@ def Lex.top(ind: Coll.List[I64]): I64 = ind match
   case Coll.Nil => 0
   case Coll.Cons(c, _) => c
 
-def Lex.lex {r: Region} (src: Str): Lex.Result = Lex.go(src, rt_str_len(src), 0, 1, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
+def Lex.lex {r: Region} (src: Str): Lex.Result = Lex.lexFrom(src, 1)
+
+// src whose first line has number line (a file after others: its lines continue the numbering, so a line names a file)
+def Lex.lexFrom {r: Region} (src: Str, line: I64): Lex.Result = Lex.go(src, rt_str_len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
 
 // the scan from i: depth = open ( and [, bol = at the start of a line, ind = the indent stack, out = tokens, newest first
 def Lex.go {r: Region} (src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =

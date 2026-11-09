@@ -1,162 +1,224 @@
 // the s2 compiler (self-host rung B3, vic/c/s2-selfhost.md): `s2c a.srs b.srs ... > out.c`. the decls of all files form
 // one program. errors are data until main: every one is reported on stderr, and the exit code is 1.
 
-// a file that did not read or parse
+// a file that did not read or parse (line: numbered across files, as every line of the program)
 enum S2c.Err:
   case S2c.NoFile(path: Str)
-  case S2c.Syntax(path: Str, line: I64, want: Str)
+  case S2c.Syntax(line: I64, want: Str)
+
+// a source file: its path, the number of its first line, its text. lines are numbered across the files, so a line
+// names its file (Parse.sourceFrom)
+enum S2c.File:
+  case S2c.File(path: Str, base: I64, text: Str)
 
 enum S2c.Read:
-  case S2c.Read(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err])
+  case S2c.Read(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], files: Coll.List[S2c.File])
 
-// the args from i on, each a source file, in order
-def S2c.read {r: Region} (i: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err]): S2c.Read =
-  if i >= rt_argc() then S2c.Read(Coll.rev(ds), Coll.rev(errs))
+// the args from i on, each a source file, in order; base = the number of the next file's first line
+def S2c.read {r: Region} (i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
+  if i >= rt_argc() then S2c.Read(Coll.rev(ds), Coll.rev(errs), fs)
   else
     val p = rt_arg(i)
     val src = rt_read_file(p)
-    if rt_str_len(src) < 0 then S2c.read(i + 1, ds, Coll.Cons(S2c.NoFile(p), errs))
-    else Parse.source(src) match
-      case Parse.Ok(fds, _) => S2c.read(i + 1, Coll.revOnto(fds, ds), errs)
-      case Parse.Err(line, want) => S2c.read(i + 1, ds, Coll.Cons(S2c.Syntax(p, line, want), errs))
+    if rt_str_len(src) < 0 then S2c.read(i + 1, base, ds, Coll.Cons(S2c.NoFile(p), errs), fs)
+    else
+      val fs2 = Coll.Cons(S2c.File(p, base, src), fs)
+      val next = base + S2c.lineCount(src, 0, 1)
+      Parse.sourceFrom(src, base) match
+        case Parse.Ok(fds, _) => S2c.read(i + 1, next, Coll.revOnto(fds, ds), errs, fs2)
+        case Parse.Err(line, want) => S2c.read(i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
 
-def S2c.showErrs(es: Coll.List[S2c.Err]): Unit = es match
+def S2c.lineCount(s: Str, i: I64, n: I64): I64 =
+  if i >= rt_str_len(s) then n else S2c.lineCount(s, i + 1, if rt_str_at(s, i) == 10 then n + 1 else n)
+
+// ── diagnostics (vic Q-E1, 2026-11-09): error[code]: what / --> file:line / the source line / expected, found / help ──
+// what a diagnostic names after its title: nothing, a name, a type, or the type wanted and the type found
+enum S2c.What:
+  case S2c.Plain
+  case S2c.Name(n: Sym.Sym)
+  case S2c.Type(t: K.Term)
+  case S2c.Want(want: K.Term, got: K.Term)
+  case S2c.Text(s: Str)
+
+def S2c.diag {r: Region} (fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.What, help: Str): Unit =
+  rt_eprint("error[")
+  rt_eprint(code)
+  rt_eprint("]: ")
+  rt_eprint(title)
+  w match
+    case S2c.Name(n) =>
+      rt_eprint(" '")
+      rt_eprint(Sym.str(n))
+      rt_eprint("'")
+    case S2c.Text(x) =>
+      rt_eprint(" ")
+      rt_eprint(x)
+    case S2c.Type(t) =>
+      rt_eprint(" ")
+      S2c.term(t)
+    case _ => ()
+  rt_eprint("\n")
+  S2c.fileOf(fs, line) match
+    case Coll.Some(f) =>
+      val S2c.File(p, base, text) = f
+      val k = line - base + 1
+      rt_eprint("  --> ")
+      rt_eprint(p)
+      rt_eprint(":")
+      rt_eprint_i64(k)
+      rt_eprint("\n    |\n")
+      S2c.pad(k)
+      rt_eprint_i64(k)
+      rt_eprint(" | ")
+      rt_eprint(S2c.lineText(text, k, 0, 1))
+      rt_eprint("\n    |\n")
+    case Coll.None => ()
+  w match
+    case S2c.Want(want, got) =>
+      rt_eprint("    = expected: ")
+      S2c.term(want)
+      rt_eprint("\n    = found:    ")
+      S2c.term(got)
+      rt_eprint("\n")
+    case _ => ()
+  rt_eprint("    = help: ")
+  rt_eprint(help)
+  rt_eprint("\n")
+
+// the file a line is in: the last one whose first line is at or before it (files are kept latest first)
+def S2c.fileOf {r: Region} (fs: Coll.List[S2c.File], line: I64): Coll.Option[S2c.File] = fs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(f, rest) =>
+    val S2c.File(_, base, _) = f
+    if line >= base then Coll.Some(f) else S2c.fileOf(rest, line)
+
+def S2c.pad(k: I64): Unit = if k < 10 then rt_eprint("  ") else if k < 100 then rt_eprint(" ") else ()
+
+// line k of s (1-based), without its newline
+def S2c.lineText(s: Str, k: I64, i: I64, n: I64): Str =
+  if n == k then rt_str_slice(s, i, S2c.lineEnd(s, i))
+  else if i >= rt_str_len(s) then ""
+  else S2c.lineText(s, k, i + 1, if rt_str_at(s, i) == 10 then n + 1 else n)
+
+def S2c.lineEnd(s: Str, i: I64): I64 = if i >= rt_str_len(s) || rt_str_at(s, i) == 10 then i else S2c.lineEnd(s, i + 1)
+
+def S2c.showErrs {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): Unit = es match
   case Coll.Nil => ()
   case Coll.Cons(e, rest) =>
     e match
       case S2c.NoFile(p) =>
-        rt_eprint("srs: cannot read ")
+        rt_eprint("error[no-file]: cannot read ")
         rt_eprint(p)
-      case S2c.Syntax(p, line, want) =>
-        rt_eprint(p)
-        rt_eprint(": line ")
-        rt_eprint_i64(line)
-        rt_eprint(": parse error, want ")
-        rt_eprint(want)
-    rt_eprint("\n")
-    S2c.showErrs(rest)
+        rt_eprint("\n    = help: check the path and that the file is readable\n")
+      case S2c.Syntax(line, want) => S2c.diag(fs, "parse", line, "parse error, expected", S2c.Text(want), "fix the syntax on this line")
+    S2c.showErrs(fs, rest)
 
-def S2c.showClashes(cs: Coll.List[Ty.Clash]): Unit = cs match
+def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List[Ty.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Ty.Mismatch(l, _, _) => S2c.clash(l, "type mismatch")
-      case Ty.Unknown(l, n) => S2c.clashN(l, "unknown name ", n)
-      case Ty.Arity(l, n) => S2c.clashN(l, "wrong number of args to ", n)
-      case Ty.NotEnum(l, _) => S2c.clash(l, "not an enum")
-      case Ty.NoOp(l, n) => S2c.clashN(l, "no op ", n)
-      case Ty.CannotInfer(l, n) => S2c.clashN(l, "cannot infer the type args of ", n)
-      case Ty.NoCap(l, p) => S2c.clashN(l, "no single capability of ", p)
-      case Ty.Impure(l, n) => S2c.clashN(l, "a spec def calls only pure fns, not ", n)
-      case Ty.SpecHandle(l, h) => S2c.clashN(l, "a spec def is pure: no handle of ", h)
-      case Ty.PureRules(rel) => S2c.clashN(0, "srs internal: the purity rules are ill-formed at ", rel)
-      case Ty.NotExhaustive(l, c) => S2c.clashN(l, "match is not exhaustive, missing case ", c)
-      case Ty.PatArity(l, c) => S2c.clashN(l, "the pattern binds another number of fields than its case has: ", c)
-      case Ty.NoGiven(l, t) => S2c.clashT(l, "no given for ", t)
-      case Ty.AmbigGivens(l, t) => S2c.clashT(l, "ambiguous givens for ", t)
-      case Ty.AmbigEvidence(l, t) => S2c.clashT(l, "ambiguous evidence for ", t)
-      case Ty.GivenFuel(l, t) => S2c.clashT(l, "given search ran out of fuel at ", t)
-      case Ty.ChosenBad(l, t) => S2c.clashT(l, "chosen evidence does not prove ", t)
-      case Ty.ChosenCount(l, f) => S2c.clashN(l, "wrong number of chosen evidence for ", f)
-      case Ty.ChosenNotCap(l, p) => S2c.clashN(l, "the chosen name is not a capability of ", p)
-      case Ty.EvidenceValue(l, x) => S2c.clashN(l, "evidence is only a method receiver, not a value: ", x)
-      case Ty.CapValue(l, x) => S2c.clashN(l, "a capability is second-class, not a value: ", x)
-      case Ty.BinderHides(l, x) => S2c.clashN(l, "a [] binder hides a type: ", x)
-      case Ty.CapParam(l, x) => S2c.clashN(l, "a capability is a {} binder, not a param: ", x)
-      case Ty.TraitArity(l, t) => S2c.clashN(l, "wrong number of type args for the trait ", t)
-      case Ty.NotMethod(l, m) => S2c.clashN(l, "not a method of the trait: ", m)
-      case Ty.MissingMethod(l, m) => S2c.clashN(l, "the given misses the trait method ", m)
-      case Ty.SigDiffers(l, m) => S2c.clashN(l, "the given method signature differs from its trait: ", m)
-      case Ty.NotInHead(l, x) => S2c.clashN(l, "a given [] binder not in its head: ", x)
-      case Ty.ExternSlot(l, t) => S2c.clashT(l, "an extern [] binder needs a pointer type (void*), not ", t)
-    S2c.showClashes(rest)
+      case Ty.Mismatch(l, got, want) => S2c.diag(fs, "mismatch", l, "the value has the wrong type", S2c.Want(K.reify(s, want), K.reify(s, got)), "give a value of the expected type, or change the declared type")
+      case Ty.Unknown(l, n) => S2c.diag(fs, "unknown-name", l, "unknown name", S2c.Name(n), "declare it, or fix its spelling (module members are written qualified: Foo.bar)")
+      case Ty.Arity(l, n) => S2c.diag(fs, "arity", l, "wrong number of args to", S2c.Name(n), "pass one arg per param of its declaration")
+      case Ty.NotEnum(l, t) => S2c.diag(fs, "not-enum", l, "a match needs an enum, not", S2c.Type(K.reify(s, t)), "match on a value of an enum type")
+      case Ty.NoOp(l, n) => S2c.diag(fs, "no-op", l, "no op or trait method", S2c.Name(n), "call an op of the capability's protocol, or a method of the evidence's trait")
+      case Ty.CannotInfer(l, n) => S2c.diag(fs, "cannot-infer", l, "cannot infer the type args of", S2c.Name(n), "write them: f[T](x), or annotate the val")
+      case Ty.NoCap(l, p) => S2c.diag(fs, "no-capability", l, "no single capability in scope of", S2c.Name(p), "open one (handle r = Arena()) or take it as a {} binder; with two, choose one: f{a}(x)")
+      case Ty.Impure(l, n) => S2c.diag(fs, "impure-call", l, "a spec def calls only pure fns, not", S2c.Name(n), "a spec def runs at compile time: call only fns with no effects")
+      case Ty.SpecHandle(l, h) => S2c.diag(fs, "spec-handle", l, "a spec def opens no handler, not", S2c.Name(h), "a spec def has no Region: build data without one")
+      case Ty.PureRules(rel) => S2c.diag(fs, "internal", 0, "the purity rules are ill-formed at", S2c.Name(rel), "a bug in s2: report it")
+      case Ty.NotExhaustive(l, n) => S2c.diag(fs, "not-exhaustive", l, "the match misses the case", S2c.Name(n), "add an arm for it, or a `_` arm")
+      case Ty.PatArity(l, n) => S2c.diag(fs, "pattern-arity", l, "the pattern binds another number of fields than", S2c.Name(n), "bind one name (or _) per field of the case")
+      case Ty.NoGiven(l, t) => S2c.diag(fs, "no-given", l, "no given for", S2c.Type(t), "declare a given for this type, or take the evidence as a {} binder")
+      case Ty.AmbigGivens(l, t) => S2c.diag(fs, "ambiguous-givens", l, "two givens tie for", S2c.Type(t), "make one head more specific, or choose the evidence: f{e}(x)")
+      case Ty.AmbigEvidence(l, t) => S2c.diag(fs, "ambiguous-evidence", l, "two local evidences prove", S2c.Type(t), "choose one: f{e}(x)")
+      case Ty.GivenFuel(l, t) => S2c.diag(fs, "given-fuel", l, "the given search ran out of fuel at", S2c.Type(t), "a given clause needs itself at a bigger type: break the loop")
+      case Ty.ChosenBad(l, t) => S2c.diag(fs, "chosen-evidence", l, "the chosen evidence does not prove", S2c.Type(t), "choose a local whose type is the goal")
+      case Ty.ChosenCount(l, n) => S2c.diag(fs, "chosen-count", l, "wrong number of chosen evidence for", S2c.Name(n), "choose one name per {} binder of the callee")
+      case Ty.ChosenNotCap(l, p) => S2c.diag(fs, "chosen-not-capability", l, "the chosen name is not a capability of", S2c.Name(p), "choose a local opened by a handler of this protocol")
+      case Ty.EvidenceValue(l, x) => S2c.diag(fs, "evidence-value", l, "evidence is only a method receiver, not a value:", S2c.Name(x), "call its methods: e.m(x)")
+      case Ty.CapValue(l, x) => S2c.diag(fs, "capability-value", l, "a capability is second-class, not a value:", S2c.Name(x), "pass it as a {} binder: f{c}(x)")
+      case Ty.BinderHides(l, x) => S2c.diag(fs, "binder-hides-type", l, "a [] binder hides the type", S2c.Name(x), "rename the binder")
+      case Ty.CapParam(l, x) => S2c.diag(fs, "capability-param", l, "a capability is a {} binder, not a param:", S2c.Name(x), "write it as {x: P} before the params")
+      case Ty.TraitArity(l, t) => S2c.diag(fs, "trait-arity", l, "wrong number of type args for the trait", S2c.Name(t), "give one type arg per [] binder of the trait")
+      case Ty.NotMethod(l, m) => S2c.diag(fs, "not-a-method", l, "not a method of the trait:", S2c.Name(m), "a given defines exactly the trait's methods")
+      case Ty.MissingMethod(l, m) => S2c.diag(fs, "missing-method", l, "the given misses the trait method", S2c.Name(m), "define it in the given")
+      case Ty.SigDiffers(l, m) => S2c.diag(fs, "method-signature", l, "the given method's signature differs from its trait:", S2c.Name(m), "use the trait's params and result at the given's head")
+      case Ty.NotInHead(l, x) => S2c.diag(fs, "binder-not-in-head", l, "a given [] binder is not in its head:", S2c.Name(x), "use each [] binder in the given's head")
+      case Ty.ExternSlot(l, t) => S2c.diag(fs, "extern-slot", l, "an extern [] binder is a pointer (void*), not", S2c.Type(t), "call the extern at an enum or Ptr type")
+    S2c.showClashes(fs, s, rest)
 
-def S2c.showTl(es: Coll.List[Tl.Err]): Unit = es match
+def S2c.showTl {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
   case Coll.Nil => ()
   case Coll.Cons(e, rest) =>
     e match
-      case Tl.Fuel(l, n) => S2c.clashN(l, "type reduction ran out of fuel at ", n)
-      case Tl.NoCase(l, n) => S2c.clashN(l, "no case of the match type matches in ", n)
-      case Tl.BadVal(l, n) => S2c.clashN(l, "a value arg has no compile-time value in ", n)
-      case Tl.Arity(l, n) => S2c.clashN(l, "wrong number of type or value args for ", n)
-      case Tl.NoVals(l, n) => S2c.clashN(l, "value args on a type that takes none: ", n)
-      case Tl.ArgType(l, n) => S2c.clashN(l, "a value arg does not fit its binder's type in ", n)
-      case Tl.BinderType(l, x) => S2c.clashN(l, "a value binder takes I64, Bool or Str: ", x)
-      case Tl.PatType(l, n) => S2c.clashN(l, "a value match pattern does not fit its binder's type in ", n)
-    S2c.showTl(rest)
-
-def S2c.clash(l: I64, msg: Str): Unit =
-  rt_eprint("line ")
-  rt_eprint_i64(l)
-  rt_eprint(": ")
-  rt_eprint(msg)
-  rt_eprint("\n")
-
-def S2c.clashN(l: I64, msg: Str, n: Sym.Sym): Unit =
-  rt_eprint("line ")
-  rt_eprint_i64(l)
-  rt_eprint(": ")
-  rt_eprint(msg)
-  rt_eprint(Sym.str(n))
-  rt_eprint("\n")
+      case Tl.Fuel(l, n) => S2c.diag(fs, "type-fuel", l, "type reduction ran out of fuel at", S2c.Name(n), "a type that names itself never ends: break the loop")
+      case Tl.NoCase(l, n) => S2c.diag(fs, "no-type-case", l, "no case of the match type matches in", S2c.Name(n), "add a case for this arg, or a `_` case")
+      case Tl.BadVal(l, n) => S2c.diag(fs, "no-compile-time-value", l, "a value arg has no compile-time value in", S2c.Name(n), "use literals, value params and pure defs (no effects, fuel bounded)")
+      case Tl.Arity(l, n) => S2c.diag(fs, "type-arity", l, "wrong number of type or value args for", S2c.Name(n), "give one arg per binder of the type")
+      case Tl.NoVals(l, n) => S2c.diag(fs, "value-args", l, "value args on a type that takes none:", S2c.Name(n), "drop the (...) after the type")
+      case Tl.ArgType(l, n) => S2c.diag(fs, "value-arg-type", l, "a value arg does not fit its binder's type in", S2c.Name(n), "give a value of the binder's type")
+      case Tl.BinderType(l, x) => S2c.diag(fs, "value-binder-type", l, "a value binder takes I64, Bool or Str:", S2c.Name(x), "use one of those types")
+      case Tl.PatType(l, n) => S2c.diag(fs, "value-pattern-type", l, "a value match pattern does not fit its binder's type in", S2c.Name(n), "use patterns of the binder's type")
+    S2c.showTl(fs, rest)
 
 // ── the phases: names, type level, types, flow (protocols, regions), then C; the first phase with errors stops ──
-def S2c.compile {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
-  case Names.Ok => S2c.facts(m, ds)
+def S2c.compile {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
+  case Names.Ok => S2c.facts(m, fs, ds)
   case Names.Bad(cs) =>
-    S2c.showNames(cs)
+    S2c.showNames(fs, cs)
     1
   case Names.RulesBad(rel) => S2c.internal("names", rel)
 
-def S2c.facts {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
-  case Fx.Ok => S2c.typed(m, ds)
+def S2c.facts {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
+  case Fx.Ok => S2c.typed(m, fs, ds)
   case Fx.Bad(cs) =>
-    S2c.showFx(cs)
+    S2c.showFx(fs, cs)
     1
   case Fx.RulesBad(rel) => S2c.internal("facts", rel)
 
-def S2c.showFx(cs: Coll.List[Fx.Clash]): Unit = cs match
+def S2c.showFx {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Fx.NotCap(l, x) => S2c.clashN(l, "at: not a {} capability of this def or type: ", x)
-      case Fx.BadState(l, s) => S2c.clashN(l, "unknown protocol state ", s)
-      case Fx.Twice(l, x) => S2c.clashN(l, "two states of one capability in a fact group: ", x)
-      case Fx.NotOp(l, op) => S2c.clashN(l, "next: not an op of a capability of this def: ", op)
-      case Fx.UnknownRel(l, rel) => S2c.clashN(l, "unknown relation in facts: ", rel)
-      case Fx.RelArity(l, rel) => S2c.clashN(l, "wrong number of args for relation ", rel)
-      case Fx.Unbound(l, v) => S2c.clashN(l, "fact variable not bound by the entry facts: ", v)
-      case Fx.ExitOther(l, rel) => S2c.clashN(l, "an exit fact is an at, not ", rel)
-      case Fx.Reserved(l, rel) => S2c.clashN(l, "reserved relation name: ", rel)
-      case Fx.ClauseArity(l, rel) => S2c.clashN(l, "rule defs of one relation differ in arity: ", rel)
-      case Fx.Unsafe(l, x) => S2c.clashN(l, "rule def param not in its body: ", x)
-      case Fx.RuleUnknown(l, rel) => S2c.clashN(l, "unknown relation in rule: ", rel)
-      case Fx.RuleOp(l, op) => S2c.clashN(l, "next: not an op of the protocol: ", op)
-    S2c.showFx(rest)
+      case Fx.NotCap(l, x) => S2c.diag(fs, "fact-not-capability", l, "at: not a {} capability of this def or type:", S2c.Name(x), "name a {} capability binder of the def or type")
+      case Fx.BadState(l, s) => S2c.diag(fs, "unknown-state", l, "unknown protocol state", S2c.Name(s), "use a state the protocol declares")
+      case Fx.Twice(l, x) => S2c.diag(fs, "fact-twice", l, "two states of one capability in a fact group:", S2c.Name(x), "give each capability one state per group")
+      case Fx.NotOp(l, op) => S2c.diag(fs, "fact-not-op", l, "next: not an op of a capability of this def:", S2c.Name(op), "use an op of the protocol of one of the def's capabilities")
+      case Fx.UnknownRel(l, rel) => S2c.diag(fs, "unknown-relation", l, "unknown relation in facts:", S2c.Name(rel), "use at, next, or a rule def of a capability's protocol")
+      case Fx.RelArity(l, rel) => S2c.diag(fs, "relation-arity", l, "wrong number of args for relation", S2c.Name(rel), "give the rule def's number of args")
+      case Fx.Unbound(l, v) => S2c.diag(fs, "fact-unbound", l, "an exit fact variable is not bound by the entry facts:", S2c.Name(v), "bind it in an entry fact")
+      case Fx.ExitOther(l, rel) => S2c.diag(fs, "exit-fact", l, "an exit fact is an at, not", S2c.Name(rel), "write the exit state as at(cap, State)")
+      case Fx.Reserved(l, rel) => S2c.diag(fs, "reserved-relation", l, "reserved relation name:", S2c.Name(rel), "at and next are built in: rename the rule def")
+      case Fx.ClauseArity(l, rel) => S2c.diag(fs, "rule-arity", l, "rule defs of one relation differ in arity:", S2c.Name(rel), "give every rule def of a relation one arity")
+      case Fx.Unsafe(l, x) => S2c.diag(fs, "rule-unsafe", l, "a rule def param is not in its body:", S2c.Name(x), "use each param in the body")
+      case Fx.RuleUnknown(l, rel) => S2c.diag(fs, "rule-unknown", l, "unknown relation in rule:", S2c.Name(rel), "use next, at, or a rule def of this protocol")
+      case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the protocol:", S2c.Name(op), "use an op of this protocol")
+    S2c.showFx(fs, rest)
 
-def S2c.typed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 =
+def S2c.typed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
   val Tl.W(xds, tes) = Tl.expand(ds)
   tes match
     case Coll.Cons(_, _) =>
-      S2c.showTl(Coll.rev(tes))
+      S2c.showTl(fs, Coll.rev(tes))
       1
     case Coll.Nil =>
       val res = Ty.checkWith(xds, Tl.typeGoals(ds))
-      val Ty.Result(cs, _, _, _, _, _) = res
+      val Ty.Result(cs, _, s, _, _, _) = res
       cs match
         case Coll.Cons(_, _) =>
-          S2c.showClashes(Coll.rev(cs))
+          S2c.showClashes(fs, s, Coll.rev(cs))
           1
-        case Coll.Nil => S2c.flowed(m, xds, res)
+        case Coll.Nil => S2c.flowed(m, fs, xds, res)
 
-def S2c.flowed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
+def S2c.flowed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
   S2c.flowAll(S2c.flowCx(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
-        S2c.showFlow(Coll.rev(cs))
+        S2c.showFlow(fs, Coll.rev(cs))
         1
-      case Coll.Nil => S2c.finish(m, ds, res)
+      case Coll.Nil => S2c.finish(m, fs, ds, res)
 
 enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])
@@ -188,35 +250,35 @@ def S2c.flowAll {r: Region} (cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.Lis
         case _ => S2c.flowAll(cx, rest, acc)
     case _ => S2c.flowAll(cx, rest, acc)
 
-def S2c.showNames(cs: Coll.List[Names.Clash]): Unit = cs match
+def S2c.showNames {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Names.Dup(l, n) => S2c.clashN(l, "duplicate name ", n)
-      case Names.Unknown(l, n) => S2c.clashN(l, "unknown name ", n)
-      case Names.NoType(l, n) => S2c.clashN(l, "unknown type ", n)
-      case Names.BadState(l, n) => S2c.clashN(l, "unknown protocol state ", n)
-      case Names.NoDrop(l, n) => S2c.clashN(l, "unknown drop op ", n)
-      case Names.NoProto(l, n) => S2c.clashN(l, "a handler of a name that is not a protocol: ", n)
-      case Names.NoInit(l, n) => S2c.clashN(l, "a handler without init: ", n)
-      case Names.NoOp(l, n) => S2c.clashN(l, "a handler misses the op ", n)
-      case Names.BadArity(l, n) => S2c.clashN(l, "a handler fn has the wrong arity: ", n)
-    S2c.showNames(rest)
+      case Names.Dup(l, n) => S2c.diag(fs, "duplicate", l, "duplicate name", S2c.Name(n), "rename one of them")
+      case Names.Unknown(l, n) => S2c.diag(fs, "unknown-name", l, "unknown name", S2c.Name(n), "declare it, or fix its spelling (module members are written qualified: Foo.bar)")
+      case Names.NoType(l, n) => S2c.diag(fs, "unknown-type", l, "unknown type", S2c.Name(n), "declare it, or fix its spelling")
+      case Names.BadState(l, n) => S2c.diag(fs, "unknown-state", l, "unknown protocol state", S2c.Name(n), "use a state the protocol declares")
+      case Names.NoDrop(l, n) => S2c.diag(fs, "unknown-drop", l, "unknown drop op", S2c.Name(n), "drop one of the protocol's ops")
+      case Names.NoProto(l, n) => S2c.diag(fs, "not-a-protocol", l, "a handler of a name that is not a protocol:", S2c.Name(n), "write a handler for a protocol")
+      case Names.NoInit(l, n) => S2c.diag(fs, "handler-no-init", l, "a handler without init:", S2c.Name(n), "define def init(...): Ptr")
+      case Names.NoOp(l, n) => S2c.diag(fs, "handler-missing-op", l, "a handler misses the op", S2c.Name(n), "define every op of the protocol")
+      case Names.BadArity(l, n) => S2c.diag(fs, "handler-arity", l, "a handler fn has the wrong arity:", S2c.Name(n), "take self: Ptr first, then the op's params")
+    S2c.showNames(fs, rest)
 
-def S2c.showFlow(cs: Coll.List[Flow.Clash]): Unit = cs match
+def S2c.showFlow {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Flow.Stuck(l, n) => S2c.clashN(l, "op not allowed in this state of capability ", n)
-      case Flow.Split(l, n) => S2c.clashN(l, "branches leave the capability in different states: ", n)
-      case Flow.Unended(l, n) => S2c.clashN(l, "capability does not end in its declared state: ", n)
-      case Flow.Ambig(l, n) => S2c.clashN(l, "entry facts with more than one solution at the call of ", n)
-      case Flow.ExitBad(l, n) => S2c.clashN(l, "a capability ends in another state than the exit fact of ", n)
-      case Flow.NoSol(l, n) => S2c.clashN(l, "entry facts with no solution in ", n)
-      case Flow.Dead(l, n) => S2c.clashN(l, "use of value after its region ended: ", n)
-      case Flow.Escape(l, n) => S2c.clashN(l, "value escapes the scope of its region ", n)
-      case Flow.Stale(l, x) => S2c.clashN(l, "the value needs its capability in the state its type names; it is in another state: ", x)
-    S2c.showFlow(rest)
+      case Flow.Stuck(l, n) => S2c.diag(fs, "op-not-allowed", l, "op not allowed in this state of the capability", S2c.Name(n), "call the ops in the order the protocol allows")
+      case Flow.Split(l, n) => S2c.diag(fs, "branch-states", l, "branches leave the capability in different states:", S2c.Name(n), "bring it to one state on every branch")
+      case Flow.Unended(l, n) => S2c.diag(fs, "capability-not-ended", l, "the capability does not end in its declared state:", S2c.Name(n), "end it (its drop op or an op into an end state) before its scope ends")
+      case Flow.Ambig(l, n) => S2c.diag(fs, "entry-facts-ambiguous", l, "entry facts with more than one solution at the call of", S2c.Name(n), "fix the capability states before the call")
+      case Flow.ExitBad(l, n) => S2c.diag(fs, "exit-state", l, "a capability ends in another state than the exit fact of", S2c.Name(n), "end it in the state the exit fact names")
+      case Flow.NoSol(l, n) => S2c.diag(fs, "entry-facts-unsolvable", l, "entry facts with no solution in", S2c.Name(n), "make the entry facts satisfiable")
+      case Flow.Dead(l, n) => S2c.diag(fs, "use-after-free", l, "use of a value after its region ended:", S2c.Name(n), "use it before the region ends, or allocate it in a longer region")
+      case Flow.Escape(l, n) => S2c.diag(fs, "region-escape", l, "a value escapes the scope of its region", S2c.Name(n), "allocate it in a region that outlives the block")
+      case Flow.Stale(l, x) => S2c.diag(fs, "stale-value", l, "the value needs its capability in the state its type names; it is in another state:", S2c.Name(x), "use it before the capability changes state")
+    S2c.showFlow(fs, rest)
 
 // a rule library that is not a Datalog program, or a clash of another shape: a bug in s2, reported as one
 def S2c.internal(phase: Str, rel: Sym.Sym): I64 =
@@ -237,7 +299,7 @@ enum S2c.Mode:
   // --store-check: write every hashed decl to the store, read it back, compare
   case S2c.StoreCheck
 
-def S2c.finish {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
+def S2c.finish {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
   case S2c.StoreCheck =>
     Store.check(ds)
     0
@@ -255,9 +317,9 @@ def S2c.finish {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result
         0
       case Ev.Failed(e) =>
         e match
-          case Ev.Fuel(l, f) => S2c.clashN(l, "comptime evaluation ran out of fuel at ", f)
-          case Ev.DivZero(l, f) => S2c.clashN(l, "comptime division by zero in ", f)
-          case Ev.NoValue(l, f) => S2c.clashN(l, "no compile-time value at ", f)
+          case Ev.Fuel(l, f) => S2c.diag(fs, "comptime-fuel", l, "comptime evaluation ran out of fuel at", S2c.Name(f), "the evaluation loops or runs too long: bound it")
+          case Ev.DivZero(l, f) => S2c.diag(fs, "comptime-div-zero", l, "comptime division by zero in", S2c.Name(f), "divide by a nonzero value")
+          case Ev.NoValue(l, f) => S2c.diag(fs, "comptime-no-value", l, "no compile-time value at", S2c.Name(f), "call only pure fns at compile time")
         1
 
 def S2c.showLines(ls: Coll.List[Ev.Line]): Unit = ls match
@@ -283,20 +345,12 @@ def S2c.args {r: Region} (): S2c.Args =
 def main(): I64 =
   handle r = Arena()
   val S2c.Args(m, first) = S2c.args()
-  val S2c.Read(ds, errs) = S2c.read(first, Coll.Nil, Coll.Nil)
+  val S2c.Read(ds, errs, fs) = S2c.read(first, 1, Coll.Nil, Coll.Nil, Coll.Nil)
   errs match
     case Coll.Cons(_, _) =>
-      S2c.showErrs(errs)
+      S2c.showErrs(fs, errs)
       1
-    case Coll.Nil => S2c.compile(m, ds)
-
-def S2c.clashT(l: I64, msg: Str, t: K.Term): Unit =
-  rt_eprint("line ")
-  rt_eprint_i64(l)
-  rt_eprint(": ")
-  rt_eprint(msg)
-  S2c.term(t)
-  rt_eprint("\n")
+    case Coll.Nil => S2c.compile(m, fs, ds)
 
 // a type as written: Name[arg, ...]
 def S2c.term(t: K.Term): Unit = t match

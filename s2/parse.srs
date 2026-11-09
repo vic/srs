@@ -825,6 +825,9 @@ def Parse.exprs {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Expr]): 
     case Parse.Ok(e, t1) => if Parse.isOp(t1, ",") then Parse.exprs(Parse.next(t1), Coll.Cons(e, acc)) else Parse.exprs(t1, Coll.Cons(e, acc))
 
 // a source: lex, then parse; a lex error is a parse error at its line
-def Parse.source {r: Region} (src: Str): Parse.R[Coll.List[Ast.Decl]] = Lex.lex(src) match
-  case Lex.Bad(line, _) => Parse.Err(line, "lexable source")
+def Parse.source {r: Region} (src: Str): Parse.R[Coll.List[Ast.Decl]] = Parse.sourceFrom(src, 1)
+
+// src whose first line has number line (Lex.lexFrom)
+def Parse.sourceFrom {r: Region} (src: Str, line: I64): Parse.R[Coll.List[Ast.Decl]] = Lex.lexFrom(src, line) match
+  case Lex.Bad(l, _) => Parse.Err(l, "lexable source")
   case Lex.Toks(ts) => Parse.file(ts)
