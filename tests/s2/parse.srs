@@ -1,0 +1,23 @@
+// s2 P6 FRONT (vic-m5r.27): the parser. tests/s2/ast.out is the Ast printer's text of hand-built Asts (rung P1); parsing it and
+// printing the result gives it back byte for byte, except one blank line: ast.srs prints ce7 and ce9 in two Ast.print calls
+// (tests/s2/ast.srs:120-121), one call separates them. then parse errors are data (the line and what was expected)
+def PT.err(line: I64, want: Str): Unit =
+  rt_print("error ")
+  rt_print_i64(line)
+  rt_print(" ")
+  rt_print(want)
+  rt_print("\n")
+
+def PT.run {r: Region} (src: Str): Unit = Parse.source(src) match
+  case Parse.Ok(ds, _) => Ast.print(ds)
+  case Parse.Err(line, want) => PT.err(line, want)
+
+def main(): I64 =
+  handle r = Arena()
+  PT.run(rt_read_file("tests/s2/ast.out"))
+  PT.run("def h(p: Pair[I64, I64]): I64 =\n  val y = 1\n  val Pair(a, b) = p\n  a + b * y\n")
+  PT.run("def k(): I64 = 10 - 3 - 2\ndef m(b: Bool): I64 =\n  if b then 1\n  else 2\n")
+  PT.run("def f(): I64 =\n  val x = (1 + \n  x\n")
+  PT.run("enum E:\n  case A\n  kase B\n")
+  PT.run("def g(): I64 = if true then 1\n")
+  0
