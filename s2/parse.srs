@@ -101,7 +101,40 @@ def Parse.decl {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "protocol") then Parse.proto(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "trait") then Parse.traitDecl(Parse.next(ts), Parse.line(ts))
+  else if Parse.isKw(ts, "given") then Parse.givenDecl(Parse.next(ts), Parse.line(ts))
   else Parse.Err(Parse.line(ts), "declaration")
+
+// trait Name groups: NL IND (def signature, no body)* DED
+def Parse.traitDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(gs, t2) => Parse.layoutOpen(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t3) => Parse.defs(t3, true, Coll.Nil) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(sigs, t4) => Parse.Ok(Ast.DTrait(Ast.Trait(line, name, gs, sigs)), t4)
+
+// given groups Head[args]: NL IND (def ...)* DED
+def Parse.givenDecl {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.groups(ts, Coll.Nil) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(gs, t1) => Parse.ty(t1) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(head, t2) => Parse.layoutOpen(t2) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t3) => Parse.defs(t3, false, Coll.Nil) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(fs, t4) => Parse.Ok(Ast.DGiven(Ast.Given(line, gs, head, fs)), t4)
+
+// defs until DED; sig = signatures only (a trait)
+def Parse.defs {r: Region} (ts: Coll.List[Lex.Tok], sig: Bool, acc: Coll.List[Ast.Fn]): Parse.R[Coll.List[Ast.Fn]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.kw(ts, "def") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(line, t1) => Parse.fn(t1, line, sig) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(f, t2) => Parse.defs(Parse.endLine(t2), sig, Coll.Cons(f, acc))
 
 def Parse.wrapFn {r: Region} (rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
   case Parse.Err(l, w) => Parse.Err(l, w)
@@ -356,17 +389,9 @@ def Parse.handler {r: Region} (ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.D
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(proto, t3) => Parse.layoutOpen(t3) match
         case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(_, t4) => Parse.hfns(t4, Coll.Nil) match
+        case Parse.Ok(_, t4) => Parse.defs(t4, false, Coll.Nil) match
           case Parse.Err(l, w) => Parse.Err(l, w)
           case Parse.Ok(fs, t5) => Parse.Ok(Ast.DHandler(Ast.Handler(line, name, proto, fs)), t5)
-
-def Parse.hfns {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Fn]): Parse.R[Coll.List[Ast.Fn]] =
-  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
-  else Parse.kw(ts, "def") match
-    case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(line, t1) => Parse.fn(t1, line, false) match
-      case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(f, t2) => Parse.hfns(Parse.endLine(t2), Coll.Cons(f, acc))
 
 // ── bodies: rhs := NL IND block | expr ──
 def Parse.rhs {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =

@@ -86,6 +86,14 @@ def k(): I64 = 10 - 3 - 2
 
 def m(b: Bool): I64 =
   if b then 1 else 2
+trait Ho.Fold [F: Type] [A: Type] [B: Type]:
+  def step(acc: B, x: A): B
+
+given Ho.Fold[Ho.Sum, I64, I64]:
+  def step(acc: I64, x: I64): I64 = acc + x
+
+given [A: Type] {o: Ord[A]} Ord[List[A]]:
+  def cmp(a: A, b: A): I64 = 0
 error 4 )
 error 3 case
 error 1 else
