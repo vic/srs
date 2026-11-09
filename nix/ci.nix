@@ -59,7 +59,7 @@ in
           run = "nix flake check -L";
         }
       ];
-      # lean-check = job 30 [ (dev "Lean soundness proofs of the effect checker" "lean-check") ];
+      # lean-check returns with s2 --lean, once vic rules the core stable
       srs-test = job 20 [ (dev "srs gate: fixpoint, seed, programs" "srs-test") ];
     };
   };

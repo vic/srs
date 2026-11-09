@@ -19,14 +19,14 @@ elif grep -nE "$FX" s2/*.srs; then echo "FAIL s2 functional: var/while/assignmen
 else echo "ok s2 functional (no var, while, assignment)"; fi
 S2SRC=$(ls s2/*.srs | tr '\n' ' ')
 # s2 self-host (vic/c/s2-selfhost.md B2, B3): bootstrap/s2c-seed.c (s2c's own C) builds s2c0; s2c0 compiles s2c to
-# s2c1.c, which must be the seed (else s2c-seed-update); s2c1 compiles itself to the same C (fixpoint); then s2c1
+# s2c1.c, which must be the seed (else seed-update); s2c1 compiles itself to the same C (fixpoint); then s2c1
 # compiles every tests/s2 program. no s0 or s1 on this path
 S2C="lib/prelude.srs $S2SRC s2c/main.srs"
 if timeout 120 $CCS -o "$B/s2c0" bootstrap/s2c-seed.c rt/srs_rt.c \
   && timeout 5 "$B/s2c0" $S2C > "$B/s2c1.c" && timeout 120 $CCS -o "$B/s2c1" "$B/s2c1.c" rt/srs_rt.c \
   && timeout 5 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
 else echo "FAIL s2c fixpoint"; fail=1; fi
-if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; else echo "FAIL s2c seed stale: s2c-seed-update"; fail=1; fi
+if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; else echo "FAIL s2c seed stale: seed-update"; fail=1; fi
 for t in tests/s2/*.srs; do
   n=s2c_$(basename "$t" .srs)
   timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; fail=1; continue; }
