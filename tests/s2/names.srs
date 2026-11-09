@@ -1,0 +1,101 @@
+// s2 P4 NAMES + DECL (vic-m5r.25): whole-program declaration checks as Datalog. a program that passes, then one program
+// per clash kind (the shapes of tests/neg/dup_def, dup_case, dup_type, mod_unknown and the untested s1 checks of
+// check.srs:382-415): every clash is reported with its line and name
+def NT.s {r: Region} (x: Str): Sym.Sym = Sym.of(x)
+def NT.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred)
+def NT.tyAt {r: Region} (line: I64, n: Str): Ast.Ty = Ast.Ty(line, Sym.of(n), Coll.Nil, Ast.Inferred)
+def NT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
+def NT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, NT.l1(b))
+def NT.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, NT.l2(b, c))
+def NT.fn {r: Region} (line: I64, name: Str, params: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(name), Coll.Nil, params, ret, Coll.Nil, Ast.Def(body)))
+def NT.call {r: Region} (line: I64, f: Str, xs: Coll.List[Ast.Expr]): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, xs)
+def NT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
+def NT.b {r: Region} (line: I64, x: Str, t: Str): Ast.Binder = Ast.Binder(line, Sym.of(x), NT.tyAt(line, t))
+
+// enum List: case Cons(h: I64, t: List) case Nil
+def NT.list {r: Region} (line: I64): Ast.Decl =
+  Ast.DEnum(Ast.Enum(line, NT.s("List"), Coll.Nil, NT.l2(Ast.Case(line + 1, NT.s("Cons"), NT.l2(NT.b(line + 1, "h", "I64"), NT.b(line + 1, "t", "List"))), Ast.Case(line + 2, NT.s("Nil"), Coll.Nil))))
+
+// protocol File: states Opened, Read1, Closed; start Opened; read: Opened -> Read1; close: Read1 -> Closed
+def NT.file {r: Region} (start: Str, to: Str, drop: Coll.Option[Sym.Sym]): Ast.Decl =
+  val read = Ast.Op(11, NT.s("read"), Coll.Nil, NT.ty("I64"), NT.l1(Ast.Trans(NT.s("Opened"), NT.s(to))))
+  val close = Ast.Op(12, NT.s("close"), Coll.Nil, NT.ty("Unit"), NT.l1(Ast.Trans(NT.s("Read1"), NT.s("Closed"))))
+  Ast.DProto(Ast.Proto(10, NT.s("File"), NT.l3(NT.s("Opened"), NT.s("Read1"), NT.s("Closed")), NT.s(start), NT.l1(NT.s("Closed")), drop, NT.l2(read, close), Coll.Nil))
+
+def NT.hfn {r: Region} (line: I64, name: Str, arity: I64): Ast.Fn =
+  val ps: Coll.List[Ast.Binder] = if arity == 0 then Coll.Nil else if arity == 1 then NT.l1(NT.b(line, "self", "Ptr")) else NT.l2(NT.b(line, "self", "Ptr"), NT.b(line, "x", "I64"))
+  Ast.Fn(line, Sym.of(name), Coll.Nil, ps, NT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(line, 0)))
+
+def NT.handler {r: Region} (proto: Str, fns: Coll.List[Ast.Fn]): Ast.Decl = Ast.DHandler(Ast.Handler(20, NT.s("CFile"), NT.s(proto), fns))
+
+// a handler with init, read and close, each with self
+def NT.goodHandler {r: Region} (): Ast.Decl = NT.handler("File", NT.l3(NT.hfn(21, "init", 0), NT.hfn(22, "read", 1), NT.hfn(23, "close", 1)))
+
+// main: a local val, a call of a def, a constructor, a nullary case, a match over the cases, a handle
+def NT.main {r: Region} (): Ast.Decl =
+  val m = Ast.Match(33, NT.nm(33, "xs"), NT.l2(Ast.Arm(33, Ast.PCase(NT.s("Cons"), NT.l2(NT.s("h"), NT.s("t"))), NT.nm(33, "h")), Ast.Arm(34, Ast.PCase(NT.s("Nil"), Coll.Nil), Ast.Int(34, 0))))
+  val ss = NT.l3(Ast.Handle(31, NT.s("f"), NT.s("CFile"), Coll.Nil), Ast.Val(32, NT.s("xs"), Coll.Some(NT.tyAt(32, "List")), NT.call(32, "Cons", NT.l2(NT.call(32, "one", Coll.Nil), NT.nm(32, "Nil")))), Ast.Do(Ast.Method(33, NT.s("f"), NT.s("read"), Coll.Nil)))
+  NT.fn(30, "main", Coll.Nil, NT.ty("I64"), Ast.Block(31, ss, m))
+
+def NT.one {r: Region} (): Ast.Decl = NT.fn(25, "one", Coll.Nil, NT.ty("I64"), Ast.Int(25, 1))
+
+def NT.box {r: Region} (): Ast.Decl = Ast.DEnum(Ast.Enum(5, NT.s("Box"), NT.l1(Ast.Types(NT.l1(Ast.Binder(5, NT.s("A"), NT.ty("Type"))))), NT.l1(Ast.Case(6, NT.s("Box"), NT.l1(NT.b(6, "v", "A"))))))
+
+def NT.good {r: Region} (): Coll.List[Ast.Decl] = Coll.Cons(NT.box(), Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Read1", Coll.None), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
+
+def NT.with {r: Region} (d: Ast.Decl): Coll.List[Ast.Decl] = Coll.Cons(d, NT.good())
+
+def NT.show(c: Names.Clash): Unit = c match
+  case Names.Dup(line, n) => NT.say("dup", line, n)
+  case Names.Unknown(line, n) => NT.say("unknown", line, n)
+  case Names.NoType(line, n) => NT.say("notype", line, n)
+  case Names.BadState(line, n) => NT.say("badstate", line, n)
+  case Names.NoDrop(line, n) => NT.say("nodrop", line, n)
+  case Names.NoProto(line, n) => NT.say("noproto", line, n)
+  case Names.NoInit(line, n) => NT.say("noinit", line, n)
+  case Names.NoOp(line, n) => NT.say("noop", line, n)
+  case Names.BadArity(line, n) => NT.say("badarity", line, n)
+
+def NT.say(kind: Str, line: I64, n: Sym.Sym): Unit =
+  rt_print(" ")
+  rt_print(kind)
+  rt_print(" ")
+  rt_print_i64(line)
+  rt_print(" ")
+  rt_print(Sym.str(n))
+
+def NT.showAll(cs: Coll.List[Names.Clash]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    NT.show(c)
+    NT.showAll(rest)
+
+def NT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit =
+  rt_print(name)
+  rt_print(":")
+  Names.check(ds) match
+    case Names.Ok => rt_print(" ok")
+    case Names.Bad(cs) => NT.showAll(cs)
+    case Names.RulesBad(rel) =>
+      rt_print(" rules bad ")
+      rt_print(Sym.str(rel))
+  rt_print("\n")
+
+def main(): I64 =
+  handle r = Arena()
+  NT.run("good", NT.good())
+  // tests/neg/dup_def.srs: a second def one
+  NT.run("dup_def", NT.with(NT.fn(40, "one", Coll.Nil, NT.ty("I64"), Ast.Int(40, 2))))
+  // tests/neg/dup_case.srs: a def named like a case
+  NT.run("dup_case", NT.with(NT.fn(41, "Nil", Coll.Nil, NT.ty("I64"), Ast.Int(41, 0))))
+  // tests/neg/dup_type.srs: an enum named like the protocol
+  NT.run("dup_type", NT.with(Ast.DEnum(Ast.Enum(42, NT.s("File"), Coll.Nil, NT.l1(Ast.Case(42, NT.s("FOne"), Coll.Nil))))))
+  NT.run("unknown_call", NT.with(NT.fn(43, "g", Coll.Nil, NT.ty("I64"), NT.call(43, "nope", Coll.Nil))))
+  NT.run("unknown_name", NT.with(NT.fn(44, "g", Coll.Nil, NT.ty("I64"), NT.nm(44, "y"))))
+  NT.run("no_type", NT.with(NT.fn(45, "g", NT.l1(NT.b(45, "x", "Nope")), NT.ty("I64"), Ast.Int(45, 0))))
+  NT.run("bad_start", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Gone", "Read1", Coll.None), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
+  NT.run("bad_trans", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Lost", Coll.None), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
+  NT.run("no_drop", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Read1", Coll.Some(NT.s("free"))), Coll.Cons(NT.goodHandler(), NT.l2(NT.one(), NT.main())))))
+  NT.run("no_proto", NT.with(Ast.DHandler(Ast.Handler(46, NT.s("HList"), NT.s("List"), NT.l1(NT.hfn(46, "init", 0))))))
+  NT.run("handler_ops", Coll.Cons(NT.list(1), Coll.Cons(NT.file("Opened", "Read1", Coll.None), Coll.Cons(NT.handler("File", NT.l2(NT.hfn(22, "read", 2), NT.hfn(23, "close", 1))), NT.l2(NT.one(), NT.main())))))
+  0
