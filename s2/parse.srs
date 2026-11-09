@@ -93,11 +93,11 @@ def Parse.decls {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Decl]): 
     case Parse.Ok(d, t1) => Parse.decls(t1, Coll.Cons(d, acc))
 
 def Parse.decl {r: Region} (ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
-  if Parse.isKw(ts, "def") then Parse.wrapFn(Parse.fn(Parse.next(ts), Parse.line(ts), false))
-  else if Parse.isKw(ts, "extern") then
+  if Parse.isKw(ts, "def") then Parse.wrapFn(Parse.fn(Parse.next(ts), Parse.line(ts), Parse.FDef))
+  else if Parse.isKw(ts, "extern") || Parse.isKw(ts, "spec") then
     Parse.kw(Parse.next(ts), "def") match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), true))
+      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), if Parse.isKw(ts, "spec") then Parse.FSpec else Parse.FExtern))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "protocol") then Parse.proto(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
@@ -132,7 +132,7 @@ def Parse.defs {r: Region} (ts: Coll.List[Lex.Tok], sig: Bool, acc: Coll.List[As
   if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
   else Parse.kw(ts, "def") match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(line, t1) => Parse.fn(t1, line, sig) match
+    case Parse.Ok(line, t1) => Parse.fn(t1, line, if sig then Parse.FExtern else Parse.FDef) match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(f, t2) => Parse.defs(Parse.endLine(t2), sig, Coll.Cons(f, acc))
 
@@ -140,8 +140,14 @@ def Parse.wrapFn {r: Region} (rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(f, t1) => Parse.Ok(Ast.DFn(f), t1)
 
-// def name groups (params) groups : ty [<atoms>] [= rhs]; an extern def has no body
-def Parse.fn {r: Region} (ts: Coll.List[Lex.Tok], line: I64, ext: Bool): Parse.R[Ast.Fn] = Parse.ident(ts) match
+// which def: a def with a body, an extern def (or a trait method: no body), a spec def (a body, no binder groups)
+enum Parse.FnKind:
+  case Parse.FDef
+  case Parse.FExtern
+  case Parse.FSpec
+
+// def name groups (params) groups : ty [<atoms>] [= rhs]
+def Parse.fn {r: Region} (ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
     case Parse.Err(l, w) => Parse.Err(l, w)
@@ -155,13 +161,25 @@ def Parse.fn {r: Region} (ts: Coll.List[Lex.Tok], line: I64, ext: Bool): Parse.R
             case Parse.Err(l, w) => Parse.Err(l, w)
             case Parse.Ok(ret, t6) => Parse.exitFacts(t6) match
               case Parse.Err(l, w) => Parse.Err(l, w)
-              case Parse.Ok(exit, t7) =>
-                if ext then Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern), t7)
-                else Parse.op(t7, "=") match
-                  case Parse.Err(l, w) => Parse.Err(l, w)
-                  case Parse.Ok(_, t8) => Parse.rhs(t8) match
-                    case Parse.Err(l, w) => Parse.Err(l, w)
-                    case Parse.Ok(e, t9) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, Ast.Def(e)), t9)
+              case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern), k)
+
+// the body of a def by its kind; a spec def with binder groups is an error (vic 2026-11-05)
+def Parse.fnBody {r: Region} (ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind): Parse.R[Ast.Fn] =
+  val Ast.Fn(line, name, gs, ps, ret, exit, _) = f
+  k match
+    case Parse.FExtern => Parse.Ok(f, ts)
+    case Parse.FDef => Parse.bodyOf(ts, f, false)
+    case Parse.FSpec => gs match
+      case Coll.Nil => Parse.bodyOf(ts, f, true)
+      case Coll.Cons(_, _) => Parse.Err(line, "a spec def without binder groups")
+
+def Parse.bodyOf {r: Region} (ts: Coll.List[Lex.Tok], f: Ast.Fn, spec: Bool): Parse.R[Ast.Fn] =
+  val Ast.Fn(line, name, gs, ps, ret, exit, _) = f
+  Parse.op(ts, "=") match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(_, t1) => Parse.rhs(t1) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(e, t2) => Parse.Ok(Ast.Fn(line, name, gs, ps, ret, exit, if spec then Ast.Spec(e) else Ast.Def(e)), t2)
 
 // binder groups in written order: [binders] {binders} <atoms>; acc holds them reversed
 def Parse.groups {r: Region} (ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Group]): Parse.R[Coll.List[Ast.Group]] =

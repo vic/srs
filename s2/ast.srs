@@ -83,6 +83,8 @@ enum Ast.Group:
 enum Ast.Body:
   case Ast.Def(e: Ast.Expr)
   case Ast.Extern
+  // a spec def: a compile-time body, no binder groups (vic 2026-11-05), no Region
+  case Ast.Spec(e: Ast.Expr)
 
 enum Ast.Fn:
   case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
@@ -469,6 +471,7 @@ def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
     case Ast.Extern => rt_print("extern ")
+    case Ast.Spec(_) => rt_print("spec ")
     case Ast.Def(_) => ()
   Ast.fnSig(f, ind)
 
@@ -502,6 +505,9 @@ def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
   body match
     case Ast.Extern => ()
     case Ast.Def(e) =>
+      rt_print(" =")
+      Ast.body(e, ind)
+    case Ast.Spec(e) =>
       rt_print(" =")
       Ast.body(e, ind)
 
