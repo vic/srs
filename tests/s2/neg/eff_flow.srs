@@ -1,10 +1,10 @@
 // expect: error[op-not-allowed]
 // a request is an op on the innermost capability of its protocol: Flow checks its state as for d.shut()
-protocol Door:
+capability Door:
   state Open, Shut
   start Open
-  end Shut
-  op shut(): Unit : Open -> Shut
+  stop Shut
+  def shut <Open> (): Unit <Shut>
 
 handler Hinge for Door:
   def shut(): Unit = ()

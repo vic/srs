@@ -1,9 +1,11 @@
-protocol Door:
+capability Door:
   state Shut, Open1, Open2, Gone
   start Shut
-  end Gone
-  op knock(): I64 : Shut -> Open1, Open1 -> Open2
-  op leave(): Unit : Open1 -> Gone, Open2 -> Gone
+  stop Gone
+  transition knock Shut -> Open1, Open1 -> Open2
+  def knock <s knock t> (): I64 <t>
+  transition leave Open1 -> Gone, Open2 -> Gone
+  def leave <s leave t> (): Unit <t>
   rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
   rule def reach(s, t) = next(s, knock, t)
   rule def reach(s, t) = next(s, knock, u), reach(u, t)
@@ -13,11 +15,11 @@ handler HDoor for Door:
   def knock(self: Ptr): I64 = 3
   def leave(self: Ptr): Unit = rt_arena_free(self)
 
-def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
+def knockTwice {d: Door} <d: s, twoKnocks(s, s3)> (): I64 <d: s3> =
   val a = d.knock()
   a + d.knock()
 
-def knockOnce {d: Door} <at(d, Shut), reach(Shut, t), next(Shut, knock, t)> (): I64 <at(d, t)> = d.knock()
+def knockOnce {d: Door} <d: Shut, reach(Shut, t), next(Shut, knock, t)> (): I64 <d: t> = d.knock()
 
 def main(): I64 =
   handle d = HDoor()

@@ -1,12 +1,13 @@
 // expect: error[exit-state]
-protocol Door:
+capability Door:
   state Shut, Open1, Open2
   start Shut
-  end Open2
-  op knock(): I64 : Shut -> Open1, Open1 -> Open2
+  stop Open2
+  transition knocks Shut -> Open1, Open1 -> Open2
+  def knock <s knocks t> (): I64 <t>
   rule def reach(s, t) = next(s, knock, t)
   rule def reach(s, t) = next(s, knock, u), reach(u, t)
-def once {d: Door} <at(d, Shut), reach(Shut, t)> (): I64 <at(d, t)> = d.knock()
+def once {d: Door} <d: Shut, reach(Shut, t)> (): I64 <d: t> = d.knock()
 def main(): I64 = 0
 // s1: capability must end in its declared state
-// expect: --> tests/s2/neg/rule_reach.srs:9
+// expect: --> tests/s2/neg/rule_reach.srs:10

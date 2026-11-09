@@ -511,14 +511,27 @@ def Ast.terms(xs: Coll.List[Ast.Term]): Unit = xs match
         Console.print(", ")
         Ast.terms(t)
 
+// at(x, T) is written x: T (vic 2026-11-09)
+def Ast.atom(rel: Sym.Sym, ts: Coll.List[Ast.Term]): Unit =
+  if Str.eq(Sym.str(rel), "at") && Coll.length(ts) == 2 then ts match
+    case Coll.Cons(x, rest) =>
+      Ast.term(x)
+      Console.print(": ")
+      Ast.terms(rest)
+    case Coll.Nil => ()
+  else Ast.atomCall(rel, ts)
+
+def Ast.atomCall(rel: Sym.Sym, ts: Coll.List[Ast.Term]): Unit =
+  Ast.sym(rel)
+  Console.print("(")
+  Ast.terms(ts)
+  Console.print(")")
+
 def Ast.atoms(xs: Coll.List[Ast.Atom]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
     val Ast.Atom(_, rel, ts) = a
-    Ast.sym(rel)
-    Console.print("(")
-    Ast.terms(ts)
-    Console.print(")")
+    Ast.atom(rel, ts)
     t match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
@@ -658,16 +671,23 @@ def Ast.trans(xs: Coll.List[Ast.Trans]): Unit = xs match
 def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
+    // each def moves by a transition named as itself: parsing the text back gives the same transitions
     val Ast.Op(_, name, ps, ret, trs) = o
     Ast.line(Ast.step())
-    Console.print("op ")
+    Console.print("transition ")
     Ast.sym(name)
-    Console.print("(")
+    Console.print(" ")
+    Ast.trans(trs)
+    Ast.line(Ast.step())
+    Console.print("def ")
+    Ast.sym(name)
+    Console.print(" <s ")
+    Ast.sym(name)
+    Console.print(" t> (")
     Ast.binders(ps)
     Console.print("): ")
     Ast.ty(ret)
-    Console.print(" : ")
-    Ast.trans(trs)
+    Console.print(" <t>")
     Ast.ops(t)
 
 def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
@@ -720,7 +740,7 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     Ast.cases(cs)
   case Ast.DProto(p) =>
     val Ast.Proto(_, name, sts, start, ends, dropOp, ops, rules) = p
-    Console.print("protocol ")
+    Console.print("capability ")
     Ast.sym(name)
     Console.print(":")
     Ast.line(Ast.step())
@@ -730,7 +750,7 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     Console.print("start ")
     Ast.sym(start)
     Ast.line(Ast.step())
-    Console.print("end ")
+    Console.print("stop ")
     Ast.syms(ends, ", ")
     Ast.ops(ops)
     dropOp match

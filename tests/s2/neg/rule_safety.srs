@@ -1,9 +1,9 @@
 // expect: error[rule-unsafe]
-protocol Door:
+capability Door:
   state Shut, Open1
   start Shut
-  end Open1
-  op knock(): I64 : Shut -> Open1
+  stop Open1
+  def knock <Shut> (): I64 <Open1>
   rule def bad(s, t) = next(s, knock, s2)
 def main(): I64 = 0
 // s1: rule def param not in its body: 't'

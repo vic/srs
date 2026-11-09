@@ -1,0 +1,25 @@
+// expect: error[capability-not-ended]
+// a b{1,2} a c: `a b a` stops in S4, not Done
+capability Seq:
+  state S0, S1, S2, S3, S4, Done
+  start S0
+  stop Done
+  transition as S0 -> S1, S2 -> S4, S3 -> S4
+  transition bs S1 -> S2, S2 -> S3
+  transition cs S4 -> Done
+  def a <s as t> (): Unit <t>
+  def b <s bs t> (): Unit <t>
+  def c <s cs t> (): Unit <t>
+
+handler HSeq for Seq:
+  def a(): Unit = ()
+  def b(): Unit = ()
+  def c(): Unit = ()
+
+def main(): I64 =
+  handle x = HSeq()
+  x.a()
+  x.b()
+  x.a()
+  0
+// expect: --> tests/s2/neg/cap_seq_open.srs:20

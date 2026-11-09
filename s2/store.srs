@@ -9,24 +9,21 @@ extern def rt_out_commit(self: Ptr): Unit
 extern def rt_store_read(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
 
 // the store's root and its entries, read (the authority of the store: SRS_STORE, else $HOME/.srs/store)
-protocol Store:
-  state Live
-  start Live
-  end Live
-  op dir(): Str : Live -> Live
-  op load(dir: Str, a: I64, b: I64, c: I64, d: I64): Str : Live -> Live
+capability Store:
+  def dir(): Str
+  def load(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
 
 handler Srs.Store for Store:
   def dir(): Str = rt_store_dir()
   def load(dir: Str, a: I64, b: I64, c: I64, d: I64): Str = rt_store_read(dir, a, b, c, d)
 
 // an entry is open until commit renames it into place
-protocol StoreOut:
+capability StoreOut:
   state Writing, Done
   start Writing
-  end Done
-  op put(s: Str): Unit : Writing -> Writing
-  op commit(): Unit : Writing -> Done
+  stop Done
+  def put <Writing> (s: Str): Unit <Writing>
+  def commit <Writing> (): Unit <Done>
 
 handler Srs.StoreFile for StoreOut:
   def init(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr = rt_out_new(dir, a, b, c, d)
