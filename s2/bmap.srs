@@ -156,6 +156,106 @@ enum Coll.Put [V: Type]:
 def Coll.bPut [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.Put[V] = m match
   case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.Replaced(Coll.BMap(n, Coll.bRep(t, k, v))) else Coll.Added(Coll.BMap(n + 1, Coll.bIns(t, k, v)))
 
+// b4: a BMap from a Sorted batch in O(n), built bottom-up one level at a time. A level of r entries becomes nodes of
+// 2 to 4 children: r = 1, 2, 3 give one B2, B3, B4; r >= 4 gives a B3, promotes the next key and goes on with r - 3 >= 1
+// entries, so every leaf is at one depth. Each pass takes the first entry as its own argument (a group is never empty)
+// and the passes alternate direction, so no level is reversed. The order of a level is in its type:
+// BLvlA = the leftmost tree, then ascending BKT (a key and the tree right of it);
+// BLvlD = descending BTK (a key and the tree left of it), then the rightmost tree.
+enum Coll.BKT [V: Type]:
+  case Coll.BKT(k: I64, v: V, t: Coll.BTree[V])
+
+enum Coll.BTK [V: Type]:
+  case Coll.BTK(t: Coll.BTree[V], k: I64, v: V)
+
+enum Coll.BLvlA [V: Type]:
+  case Coll.BLvlA(t: Coll.BTree[V], es: Coll.List[Coll.BKT[V]])
+
+enum Coll.BLvlD [V: Type]:
+  case Coll.BLvlD(es: Coll.List[Coll.BTK[V]], t: Coll.BTree[V])
+
+def Coll.blL2 [V: Type] {r: Region} (a: Coll.KV[V]): Coll.BTree[V] = a match
+  case Coll.KV(k1, v1) => Coll.B2(Coll.BTip, k1, v1, Coll.BTip)
+
+def Coll.blL3 [V: Type] {r: Region} (a: Coll.KV[V], b: Coll.KV[V]): Coll.BTree[V] = a match
+  case Coll.KV(k1, v1) => b match
+    case Coll.KV(k2, v2) => Coll.B3(Coll.BTip, k1, v1, Coll.BTip, k2, v2, Coll.BTip)
+
+def Coll.blL4 [V: Type] {r: Region} (a: Coll.KV[V], b: Coll.KV[V], c: Coll.KV[V]): Coll.BTree[V] = a match
+  case Coll.KV(k1, v1) => b match
+    case Coll.KV(k2, v2) => c match
+      case Coll.KV(k3, v3) => Coll.B4(Coll.BTip, k1, v1, Coll.BTip, k2, v2, Coll.BTip, k3, v3, Coll.BTip)
+
+// the leaf level: ascending pairs, a first; acc holds the promoted keys, descending
+def Coll.blLeaf [V: Type] {r: Region} (a: Coll.KV[V], rest: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.BTK[V]]): Coll.BLvlD[V] = rest match
+  case Coll.Nil => Coll.BLvlD(acc, Coll.blL2(a))
+  case Coll.Cons(b, r2) => r2 match
+    case Coll.Nil => Coll.BLvlD(acc, Coll.blL3(a, b))
+    case Coll.Cons(c, r3) => r3 match
+      case Coll.Nil => Coll.BLvlD(acc, Coll.blL4(a, b, c))
+      case Coll.Cons(d, r4) => c match
+        case Coll.KV(kc, vc) => Coll.blLeaf(d, r4, Coll.Cons(Coll.BTK(Coll.blL3(a, b), kc, vc), acc))
+
+def Coll.blA2 [V: Type] {r: Region} (t: Coll.BTree[V], a: Coll.BKT[V]): Coll.BTree[V] = a match
+  case Coll.BKT(k1, v1, t1) => Coll.B2(t, k1, v1, t1)
+
+def Coll.blA3 [V: Type] {r: Region} (t: Coll.BTree[V], a: Coll.BKT[V], b: Coll.BKT[V]): Coll.BTree[V] = a match
+  case Coll.BKT(k1, v1, t1) => b match
+    case Coll.BKT(k2, v2, t2) => Coll.B3(t, k1, v1, t1, k2, v2, t2)
+
+def Coll.blA4 [V: Type] {r: Region} (t: Coll.BTree[V], a: Coll.BKT[V], b: Coll.BKT[V], c: Coll.BKT[V]): Coll.BTree[V] = a match
+  case Coll.BKT(k1, v1, t1) => b match
+    case Coll.BKT(k2, v2, t2) => c match
+      case Coll.BKT(k3, v3, t3) => Coll.B4(t, k1, v1, t1, k2, v2, t2, k3, v3, t3)
+
+// an ascending level: t is the leftmost tree of the group, a its first entry
+def Coll.blPassA [V: Type] {r: Region} (t: Coll.BTree[V], a: Coll.BKT[V], rest: Coll.List[Coll.BKT[V]], acc: Coll.List[Coll.BTK[V]]): Coll.BLvlD[V] = rest match
+  case Coll.Nil => Coll.BLvlD(acc, Coll.blA2(t, a))
+  case Coll.Cons(b, r2) => r2 match
+    case Coll.Nil => Coll.BLvlD(acc, Coll.blA3(t, a, b))
+    case Coll.Cons(c, r3) => r3 match
+      case Coll.Nil => Coll.BLvlD(acc, Coll.blA4(t, a, b, c))
+      case Coll.Cons(d, r4) => c match
+        case Coll.BKT(kc, vc, tc) => Coll.blPassA(tc, d, r4, Coll.Cons(Coll.BTK(Coll.blA3(t, a, b), kc, vc), acc))
+
+// the entries in ascending order (a left of b left of c), t is the rightmost tree
+def Coll.blD2 [V: Type] {r: Region} (a: Coll.BTK[V], t: Coll.BTree[V]): Coll.BTree[V] = a match
+  case Coll.BTK(t1, k1, v1) => Coll.B2(t1, k1, v1, t)
+
+def Coll.blD3 [V: Type] {r: Region} (a: Coll.BTK[V], b: Coll.BTK[V], t: Coll.BTree[V]): Coll.BTree[V] = a match
+  case Coll.BTK(t1, k1, v1) => b match
+    case Coll.BTK(t2, k2, v2) => Coll.B3(t1, k1, v1, t2, k2, v2, t)
+
+def Coll.blD4 [V: Type] {r: Region} (a: Coll.BTK[V], b: Coll.BTK[V], c: Coll.BTK[V], t: Coll.BTree[V]): Coll.BTree[V] = a match
+  case Coll.BTK(t1, k1, v1) => b match
+    case Coll.BTK(t2, k2, v2) => c match
+      case Coll.BTK(t3, k3, v3) => Coll.B4(t1, k1, v1, t2, k2, v2, t3, k3, v3, t)
+
+// a descending level: t is the rightmost tree of the group, a its last entry; acc holds the promoted keys, ascending
+def Coll.blPassD [V: Type] {r: Region} (t: Coll.BTree[V], a: Coll.BTK[V], rest: Coll.List[Coll.BTK[V]], acc: Coll.List[Coll.BKT[V]]): Coll.BLvlA[V] = rest match
+  case Coll.Nil => Coll.BLvlA(Coll.blD2(a, t), acc)
+  case Coll.Cons(b, r2) => r2 match
+    case Coll.Nil => Coll.BLvlA(Coll.blD3(b, a, t), acc)
+    case Coll.Cons(c, r3) => r3 match
+      case Coll.Nil => Coll.BLvlA(Coll.blD4(c, b, a, t), acc)
+      case Coll.Cons(d, r4) => c match
+        case Coll.BTK(tc, kc, vc) => Coll.blPassD(tc, d, r4, Coll.Cons(Coll.BKT(kc, vc, Coll.blD3(b, a, t)), acc))
+
+def Coll.blFromA [V: Type] {r: Region} (l: Coll.BLvlA[V]): Coll.BTree[V] = l match
+  case Coll.BLvlA(t, es) => es match
+    case Coll.Nil => t
+    case Coll.Cons(a, rest) => Coll.blFromD(Coll.blPassA(t, a, rest, Coll.Nil))
+
+def Coll.blFromD [V: Type] {r: Region} (l: Coll.BLvlD[V]): Coll.BTree[V] = l match
+  case Coll.BLvlD(es, t) => es match
+    case Coll.Nil => t
+    case Coll.Cons(a, rest) => Coll.blFromA(Coll.blPassD(t, a, rest, Coll.Nil))
+
+def Coll.bFromSorted [V: Type] {r: Region} (s: Coll.Sorted[V]): Coll.BMap[V] = s match
+  case Coll.Sorted(xs) => xs match
+    case Coll.Nil => Coll.BMap(0, Coll.BTip)
+    case Coll.Cons(a, rest) => Coll.BMap(Coll.length(xs), Coll.blFromD(Coll.blLeaf(a, rest, Coll.Nil)))
+
 // bPut without the answer wrapper
 def Coll.bInsert [V: Type] {r: Region} (m: Coll.BMap[V], k: I64, v: V): Coll.BMap[V] = m match
   case Coll.BMap(n, t) => if Coll.bIsNode(Coll.bFind(t, k)) then Coll.BMap(n, Coll.bRep(t, k, v)) else Coll.BMap(n + 1, Coll.bIns(t, k, v))
