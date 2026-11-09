@@ -93,7 +93,7 @@ def FT.fns {r: Region} (): Coll.List[Ast.Fn] =
   val readAny = FT.callee("readAny", FT.l2(FT.at("f", "s"), FT.nextA("s", "read", "s2")), FT.l1(FT.at("f", "s2")), FT.op(3, "f", "read"))
   // no at() for f: f must be in the start state, and s is free: two solutions (Opened -> Read1, Read1 -> Read2)
   val anyStep = FT.callee("anyStep", FT.l1(FT.nextA("s", "read", "s2")), Coll.Nil, Ast.Int(1, 0))
-  Coll.Cons(readOnce, Coll.Cons(closeAfter, Coll.Cons(readAny, Coll.Cons(anyStep, Coll.Cons(FT.readBoth(), FT.l4(FT.knockTwice(), FT.knockOnce(), FT.farReach(), FT.onward()))))))
+  Coll.Cons(readOnce, Coll.Cons(closeAfter, Coll.Cons(readAny, Coll.Cons(anyStep, Coll.Cons(FT.readBoth(), Coll.Cons(FT.knockTwice(), Coll.Cons(FT.knockOnce(), Coll.Cons(FT.farReach(), FT.l2(FT.onward(), FT.two())))))))))
 
 // tests/facts.srs main
 def FT.callsOk {r: Region} (): Ast.Fn = FT.main(5, Ast.Block(6, FT.l3(FT.handle(6, "f", "CFile"), FT.val(7, "a", FT.call(7, "readOnce")), Ast.Do(FT.call(8, "closeAfter"))), FT.nm(11, "a")))
@@ -163,6 +163,24 @@ def FT.rulesBad {r: Region} (): Ast.Fn =
   val ss = Coll.Cons(FT.handle(3, "d", "HDoor"), Coll.Cons(Ast.Do(FT.op(4, "d", "knock")), Coll.Cons(FT.val(5, "x", FT.call(5, "knockTwice")), FT.l1(Ast.Do(FT.op(6, "d", "leave"))))))
   FT.main(2, Ast.Block(3, ss, Ast.Int(7, 0)))
 
+// ── constructors allocate in the one Region in scope (tests/list.lib: enum List: Cons(h, t) | Nil) ──
+def FT.enums {r: Region} (): Coll.List[Ast.Enum] =
+  val cons = Ast.Case(2, FT.s("Cons"), FT.l2(Ast.Binder(2, FT.s("h"), FT.ty("I64")), Ast.Binder(2, FT.s("t"), FT.ty("List"))))
+  FT.l1(Ast.Enum(1, FT.s("List"), Coll.Nil, FT.l2(cons, Ast.Case(3, FT.s("Nil"), Coll.Nil))))
+
+def FT.cons {r: Region} (line: I64): Ast.Expr = Ast.Call(line, FT.s("Cons"), Coll.Nil, Coll.Nil, FT.l2(Ast.Int(line, 1), FT.nm(line, "Nil")))
+
+// tests/neg/alloc_after_free.srs: Cons after r.free()
+def FT.allocFreed {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l2(FT.handle(3, "r", "Arena"), Ast.Do(FT.op(4, "r", "free"))), Ast.Call(5, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(5)))))
+
+// a constructor in an open region, then the region ends by its drop op
+def FT.allocOk {r: Region} (): Ast.Fn = FT.main(2, Ast.Block(3, FT.l1(FT.handle(3, "r", "Arena")), Ast.Call(4, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(4)))))
+
+// tests/neg/call_freed.srs: two {r: Region} needs r in its start state Open
+def FT.two {r: Region} (): Ast.Fn = Ast.Fn(2, FT.s("two"), FT.l1(Ast.Evidence(FT.l1(Ast.Binder(2, FT.s("r"), FT.ty("Region"))))), Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Ast.Call(2, FT.s("sum"), Coll.Nil, Coll.Nil, FT.l1(FT.cons(2)))))
+
+def FT.callFreed {r: Region} (): Ast.Fn = FT.main(3, Ast.Block(4, FT.l2(FT.handle(4, "r", "Arena"), Ast.Do(FT.op(5, "r", "free"))), FT.call(6, "two")))
+
 // ── the def side: a def with capability binders checks its own body, once per solution (world) ──
 def FT.fn {r: Region} (name: Str): Ast.Fn = Flow.fnNamed(FT.fns(), Sym.of(name)) match
   case Coll.Some(f) => f
@@ -200,7 +218,7 @@ def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
     FT.show(c)
     FT.showAll(rest)
 
-def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(FT.protos(), FT.handlers(), FT.fns(), f))
+def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), FT.fns(), FT.enums()), f))
 
 def FT.verdict (name: Str, v: Flow.Verdict): Unit =
   rt_print(name)
@@ -267,6 +285,10 @@ def main(): I64 =
   FT.run("def_knockOnce", FT.fn("knockOnce"))
   FT.run("reach_rec", FT.reachRec())
   FT.run("op_const", FT.onwardCall())
+  FT.run("alloc_after_free", FT.allocFreed())
+  FT.run("alloc_ok", FT.allocOk())
+  FT.run("call_freed", FT.callFreed())
+  FT.run("def_two", FT.fn("two"))
   FT.verdict("ill_typed", FT.illTyped())
   FT.verdict("well_typed", FT.wellTyped())
   0
