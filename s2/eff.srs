@@ -154,7 +154,7 @@ def Eff.cxOf(ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds match
     d match
       case Ast.DProto(p) => Eff.cxOf(rest, Eff.Cx(Coll.Cons(p, ps), hp, fns, ctors, ss, trs))
       case Ast.DHandler(h) =>
-        val Ast.Handler(_, n, p, _) = h
+        val Ast.Handler(_, n, p, _, _) = h
         Eff.cxOf(rest, Eff.Cx(ps, Coll.sInsert(hp, n, p), Coll.sInsert(fns, n, Eff.Runs), ctors, ss, trs))
       case Ast.DFn(f) =>
         val Ast.Fn(_, n, _, _, _, _, _) = f
@@ -213,7 +213,7 @@ def Eff.decls(cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.List[D.Fact] 
     // a handler is one subject: its row is what all its fns need (E1b), kept at its handle site
     case Ast.DHandler(h) =>
       val Eff.W(n, fs, _, _) = w
-      val Ast.Handler(_, hn, _, hfs) = h
+      val Ast.Handler(_, hn, _, hfs, _) = h
       Eff.decls(cx, rest, Eff.hfns(cx, hn, hfs, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
     case _ => Eff.decls(cx, rest, w)
 
@@ -318,6 +318,8 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
       case Coll.Some(tn) => Ty.methodCaps(ps, trs, tn, op)
       case Coll.None => Coll.Nil
     Eff.capReqs(cx, at, caps, Eff.exprs(cx, at, xs, w))
+  // what the rest of the block requests is the handle site's, not the op's
+  case Ast.Resume(_, _, x) => Eff.expr(cx, at, x, w)
   case Ast.Bin(_, _, l, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, l, w))
   case Ast.Un(_, _, x) => Eff.expr(cx, at, x, w)
   case Ast.If(_, c, t, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, t, Eff.expr(cx, at, c, w)))

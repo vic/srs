@@ -166,5 +166,9 @@ def g(b: Bool): I64 =
     x
   else 2
 error 4 )
+handler Count [A: Type] for NonDet:
+  def init(): Ptr = Srs.noState()
+  def done(self: Ptr, x: A): I64 = 1
+  def choose(k, self: Ptr): I64 = resume k(true) + resume k(false)
 error 3 case
 error 1 else
