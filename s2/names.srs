@@ -145,6 +145,9 @@ def Names.decl(d: Ast.Decl, st: Names.St): Names.St = d match
   case Ast.DFn(f) =>
     val Ast.Fn(line, name, _, _, _, _, _) = f
     Names.fn(f, Coll.Nil, Names.declare(st, Names.NCall, name, line))
+  case Ast.DVal(f) =>
+    val Ast.Fn(line, name, _, _, _, _, _) = f
+    Names.fn(f, Coll.Nil, Names.declare(st, Names.NCall, name, line))
   case Ast.DEnum(e) =>
     val Ast.Enum(line, name, gs, cases) = e
     Names.cases(cases, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))

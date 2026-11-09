@@ -124,7 +124,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.NoOp(l, n) => S2c.diag(fs, "no-op", l, "no op or trait method", S2c.Name(n), "call an op of the capability's protocol, or a method of the evidence's trait")
       case Ty.CannotInfer(l, n) => S2c.diag(fs, "cannot-infer", l, "cannot infer the type args of", S2c.Name(n), "write them: f[T](x), or annotate the val")
       case Ty.NoCap(l, p) => S2c.diag(fs, "no-capability", l, "no single capability in scope of", S2c.Name(p), "open one (handle r = Srs.Arena()) or take it as a {} binder; with two, choose one: f{a}(x)")
-      case Ty.Impure(l, n) => S2c.diag(fs, "impure-call", l, "a spec def calls only pure fns, not", S2c.Name(n), "a spec def runs at compile time: call only fns with no effects")
+      case Ty.Impure(l, n) => S2c.diag(fs, "impure-call", l, "a compile-time body (a top-level val, a spec def) calls only pure fns, not", S2c.Name(n), "it runs at compile time: call only fns with no effect but Region")
       case Ty.SpecHandle(l, h) => S2c.diag(fs, "spec-handle", l, "a spec def opens no handler, not", S2c.Name(h), "a spec def has no Region: build data without one")
       case Ty.PureRules(rel) => S2c.diag(fs, "internal", 0, "the purity rules are ill-formed at", S2c.Name(rel), "a bug in s2: report it")
       case Ty.NotExhaustive(l, n) => S2c.diag(fs, "not-exhaustive", l, "the match misses the case", S2c.Name(n), "add an arm for it, or a `_` arm")
@@ -148,6 +148,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.ExternSlot(l, t) => S2c.diag(fs, "extern-slot", l, "an extern [] binder is a pointer (void*), not", S2c.Type(t), "call the extern at an enum or Ptr type")
       case Ty.UnhandledEffect(l, p) => S2c.diag(fs, "unhandled-effect", l, "effect not handled:", S2c.Name(p), "open a handler of it in an enclosing block (handle x = H()): main must handle every effect it needs")
       case Ty.RtOutsideSrs(l, f) => S2c.diag(fs, "rt-outside-srs", l, "rt_* is called only in the body of a Srs.* handler, not here:", S2c.Name(f), "request the effect (Console.print(s)) and handle it in main (handle c = Srs.Console())")
+      case Ty.ValAtRunTime(l, x) => S2c.diag(fs, "val-at-run-time", l, "a top-level val is a compile-time value; run-time code cannot name it yet:", S2c.Name(x), "use it from another top-level val, or call a def")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match

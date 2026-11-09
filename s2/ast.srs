@@ -175,6 +175,8 @@ enum Ast.Decl:
   case Ast.DTrait(t: Ast.Trait)
   case Ast.DGiven(g: Ast.Given)
   case Ast.DType(t: Ast.TypeDecl)
+  // a top-level val x: T = e, a compile-time value: a nullary fn whose body is e (vic 2026-11-09)
+  case Ast.DVal(v: Ast.Fn)
 
 // ── printer: srs source, Ast.step() spaces per level ──
 def Ast.step(): I64 = 2
@@ -702,6 +704,17 @@ def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
 
 def Ast.decl(d: Ast.Decl): Unit = d match
   case Ast.DFn(f) => Ast.fn(f, 0)
+  case Ast.DVal(v) =>
+    val Ast.Fn(_, name, _, _, ret, _, body) = v
+    Console.print("val ")
+    Ast.sym(name)
+    Console.print(": ")
+    Ast.ty(ret)
+    body match
+      case Ast.Def(_, e) =>
+        Console.print(" =")
+        Ast.body(e, 0)
+      case _ => ()
   case Ast.DEnum(en) =>
     val Ast.Enum(_, name, gs, cs) = en
     Console.print("enum ")
