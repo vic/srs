@@ -1174,8 +1174,9 @@ def Emit.mSite(cx: Emit.Cx, hs: Coll.List[El.Handler], fi: Emit.Fi, e: El.Expr, 
         val gans = Emit.gr(cx, fi, ans)
         val Emit.MS(_, caps, _, _, _, _, _) = ms
         Emit.mOps(cx, fi, p, hfs, ga, gans, what)
-        val sc = Emit.SC(fi, fi, p, hfs, gans, x, Coll.length(caps), Emit.USite(caps, rest))
-        val ss = Emit.restStmts(rest)
+        val rest2 = Emit.normLast(cx, p, x, rest)
+        val sc = Emit.SC(fi, fi, p, hfs, gans, x, Coll.length(caps), Emit.USite(caps, rest2))
+        val ss = Emit.restStmts(rest2)
         Emit.segs(cx, sc, Emit.startScope(cx, fi, ms), ss, 0, Ty.con("I64"), Coll.None, what)
         Emit.cpsFns(cx, fi, p, hfs, gans, Coll.length(caps), Emit.cpsOf(x, ss, Coll.Nil), Coll.Nil, what)
 
@@ -1190,6 +1191,28 @@ enum Emit.U:
 // name of the capability local that marks ops and CPS calls, the number of site caps, the unit
 enum Emit.SC:
   case Emit.SC(sfi: Emit.Fi, efi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], gans: K.Term, k: Sym.Sym, nsc: I64, u: Emit.U)
+
+// a cut in last position (bead vic-tecg) becomes `val ms.last = cut; ms.last`: its value comes back to a segment
+def Emit.normLast(cx: Emit.Cx, p: Sym.Sym, k: Sym.Sym, e: El.Expr): El.Expr = e match
+  case El.Block(l, ss, last) => Emit.cutE(k, last) match
+    case Coll.Some(c) => El.Block(l, Coll.revOnto(Coll.rev(ss), Coll.Cons(Emit.lastVal(cx, p, l, c), Coll.Nil)), El.Local(l, Sym.of("ms.last")))
+    case Coll.None => e
+  case _ => Emit.cutE(k, e) match
+    case Coll.Some(c) => El.Block(0, Coll.Cons(Emit.lastVal(cx, p, 0, c), Coll.Nil), El.Local(0, Sym.of("ms.last")))
+    case Coll.None => e
+
+def Emit.lastVal(cx: Emit.Cx, p: Sym.Sym, l: I64, c: El.Expr): El.Stmt =
+  val t: K.Term = c match
+    case El.Op(_, _, _, op, _) => Emit.opV(cx, p, op)
+    case El.CallFn(_, f, _, _, _) =>
+      val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
+      Coll.sLookup(fns, f) match
+        case Coll.Some(gf) =>
+          val Emit.Fi(_, _, _, _, gv) = Emit.fiOf(cx, Mono.Inst(gf, Coll.Nil, Mono.Top))
+          gv
+        case Coll.None => Ty.con("Unit")
+    case _ => Ty.con("Unit")
+  El.Val(l, Sym.of("ms.last"), t, false, c)
 
 // the CPS fns called as whole top-level vals or statements of ss (their caps hold k)
 def Emit.cpsOf(k: Sym.Sym, ss: Coll.List[El.Stmt], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ss match
@@ -1216,8 +1239,9 @@ def Emit.cpsFns(cx: Emit.Cx, sfi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], ga
         val e: El.Expr = body match
           case El.Def(b) => b
           case El.Extern => El.Unit(0)
-        val gss = Emit.restStmts(e)
-        val sc = Emit.SC(sfi, gfi, p, hfs, gans, k, nsc, Emit.UFn(g, gv, Emit.restParts(e)))
+        val e2 = Emit.normLast(cx, p, k, e)
+        val gss = Emit.restStmts(e2)
+        val sc = Emit.SC(sfi, gfi, p, hfs, gans, k, nsc, Emit.UFn(g, gv, Emit.restParts(e2)))
         val sc0 = Emit.Scope(Emit.paramEnv(vslots, Coll.Nil), Emit.kTNs(gans, gv, nsc, Emit.paramTN(vslots, Coll.Nil)))
         Emit.cgSig(cx, sfi, g, gans, gv, nsc, vslots)
         what match
