@@ -119,11 +119,28 @@ def FT.twoCapsBad {r: Region} (): Ast.Fn =
   val ss = Coll.Cons(FT.handle(3, "a", "CFile"), Coll.Cons(FT.handle(4, "b", "CFile"), Coll.Cons(Ast.Do(FT.op(5, "b", "read")), Coll.Cons(Ast.Do(FT.callBoth(6)), FT.l2(Ast.Do(FT.op(7, "a", "close")), Ast.Do(FT.op(8, "b", "close")))))))
   FT.main(2, Ast.Block(3, ss, Ast.Int(9, 0)))
 
+// ── the def side: a def with capability binders checks its own body, once per solution (world) ──
+def FT.fn {r: Region} (name: Str): Ast.Fn = Flow.fnNamed(FT.fns(), Sym.of(name)) match
+  case Coll.Some(f) => f
+  case Coll.None => FT.main(0, Ast.Int(0, 0))
+
+// tests/neg/sig_state.srs: the body reads once but the exit fact says Closed
+def FT.sigState {r: Region} (): Ast.Fn =
+  val gs = FT.l2(Ast.Evidence(FT.l1(Ast.Binder(2, FT.s("f"), FT.ty("File")))), Ast.Facts(FT.l1(FT.at("f", "Opened"))))
+  Ast.Fn(2, Sym.of("bad"), gs, Coll.Nil, FT.ty("I64"), FT.l1(FT.at("f", "Closed")), Ast.Def(FT.op(2, "f", "read")))
+
+// no state s has a read from s to s: the entry facts have no solution
+def FT.noSol {r: Region} (): Ast.Fn =
+  val gs = FT.l2(Ast.Evidence(FT.l1(Ast.Binder(3, FT.s("f"), FT.ty("File")))), Ast.Facts(FT.l2(FT.at("f", "s"), FT.nextA("s", "read", "s"))))
+  Ast.Fn(3, Sym.of("never"), gs, Coll.Nil, FT.ty("I64"), Coll.Nil, Ast.Def(Ast.Int(3, 0)))
+
 def FT.show(c: Flow.Clash): Unit = c match
   case Flow.Stuck(line, cap) => FT.say("stuck", line, cap)
   case Flow.Split(line, cap) => FT.say("split", line, cap)
   case Flow.Unended(line, cap) => FT.say("unended", line, cap)
   case Flow.Ambig(line, cap) => FT.say("ambig", line, cap)
+  case Flow.ExitBad(line, cap) => FT.say("exitbad", line, cap)
+  case Flow.NoSol(line, cap) => FT.say("nosol", line, cap)
   case Flow.Malformed(rel) =>
     rt_print(" malformed ")
     rt_print(Sym.str(rel))
@@ -175,4 +192,9 @@ def main(): I64 =
   FT.run("chosen_frame", FT.chosenFrame())
   FT.run("two_caps", FT.twoCaps())
   FT.run("two_caps_bad", FT.twoCapsBad())
+  FT.run("def_readOnce", FT.fn("readOnce"))
+  FT.run("def_readAny", FT.fn("readAny"))
+  FT.run("def_readBoth", FT.fn("readBoth"))
+  FT.run("sig_state", FT.sigState())
+  FT.run("no_sol", FT.noSol())
   0

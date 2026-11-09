@@ -33,6 +33,10 @@ enum Flow.Clash:
   case Flow.Unended(line: I64, cap: Sym.Sym)
   // a call whose entry facts have more than one solution (s1/facts.srs:224); cap = the callee
   case Flow.Ambig(line: I64, cap: Sym.Sym)
+  // a def whose body leaves a capability binder in another state than its exit fact says (s1/check.srs:525)
+  case Flow.ExitBad(line: I64, cap: Sym.Sym)
+  // a def whose entry facts have no solution (s1/check.srs:502); cap = the def
+  case Flow.NoSol(line: I64, cap: Sym.Sym)
   // a clash tuple of a shape the rules do not make (a bug in Flow.rules): reported, never dropped
   case Flow.Malformed(rel: Sym.Sym)
 
@@ -74,6 +78,11 @@ enum Flow.Rel:
   case Flow.RCSeen
   case Flow.RAmbig
   case Flow.RAmbigAt
+  case Flow.REnter
+  case Flow.RWant
+  case Flow.RExitBad
+  case Flow.RNoSol
+  case Flow.RNoSolAt
 
 def Flow.relSym {r: Region} (x: Flow.Rel): Sym.Sym = x match
   case Flow.RFlow => Sym.of("flow")
@@ -112,6 +121,11 @@ def Flow.relSym {r: Region} (x: Flow.Rel): Sym.Sym = x match
   case Flow.RCSeen => Sym.of("cseen")
   case Flow.RAmbig => Sym.of("ambig")
   case Flow.RAmbigAt => Sym.of("ambigAt")
+  case Flow.REnter => Sym.of("enter")
+  case Flow.RWant => Sym.of("want")
+  case Flow.RExitBad => Sym.of("exitBad")
+  case Flow.RNoSol => Sym.of("nosol")
+  case Flow.RNoSolAt => Sym.of("noSolAt")
 
 // the clash relations of Flow.rules
 enum Flow.Kind:
@@ -119,12 +133,16 @@ enum Flow.Kind:
   case Flow.KSplit
   case Flow.KUnended
   case Flow.KAmbig
+  case Flow.KExitBad
+  case Flow.KNoSol
 
 def Flow.relOf(k: Flow.Kind): Flow.Rel = k match
   case Flow.KStuck => Flow.RStuck
   case Flow.KSplit => Flow.RSplitAt
   case Flow.KUnended => Flow.RUnendedAt
   case Flow.KAmbig => Flow.RAmbigAt
+  case Flow.KExitBad => Flow.RExitBad
+  case Flow.KNoSol => Flow.RNoSolAt
 
 enum Flow.Verdict:
   case Flow.Ok
@@ -164,6 +182,9 @@ def Flow.fPre {r: Region} (p: I64, j: I64, m: I64, s: Sym.Sym): D.Fact = Flow.fa
 def Flow.fPost {r: Region} (p: I64, j: I64, m: I64, s: Sym.Sym): D.Fact = Flow.fact4(Flow.RPost, Flow.i(p), Flow.i(j), Flow.i(m), Flow.s(s))
 // a solution id is equal to itself (ambig compares solution ids with !same, as split compares states)
 def Flow.fSameI {r: Region} (j: I64): D.Fact = Flow.fact2(Flow.RSame, Flow.i(j), Flow.i(j))
+def Flow.fEnter {r: Region} (p: I64, w: I64, cap: I64, s: Sym.Sym): D.Fact = Flow.fact4(Flow.REnter, Flow.i(p), Flow.i(w), Flow.i(cap), Flow.s(s))
+def Flow.fWant {r: Region} (p: I64, w: I64, cap: I64, s: Sym.Sym): D.Fact = Flow.fact4(Flow.RWant, Flow.i(p), Flow.i(w), Flow.i(cap), Flow.s(s))
+def Flow.fNoSol {r: Region} (line: I64, f: Sym.Sym): D.Fact = Flow.fact2(Flow.RNoSol, Flow.i(line), Flow.s(f))
 
 def Flow.add {r: Region} (st: Flow.St, f: D.Fact): Flow.St =
   val Flow.St(n, fs, cs) = st
@@ -688,20 +709,79 @@ def Flow.callRules {r: Region} (): Coll.List[D.Rule] =
   val cstuck = Flow.rule(Flow.RStuck, Flow.l2(8, 9), Flow.l4(Flow.pos(Flow.RCSeen, Flow.l2(0, 2)), Flow.neg(Flow.RMoved, Flow.l2(0, 2)), Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.pos(Flow.RCallee, Flow.l2(0, 9))))
   val ambig = Flow.rule(Flow.RAmbig, Flow.l2(0, 2), Flow.l3(Flow.pos(Flow.RFits, Flow.l3(0, 2, 10)), Flow.pos(Flow.RFits, Flow.l3(0, 2, 13)), Flow.neg(Flow.RSame, Flow.l2(10, 13))))
   val ambigN = Flow.rule(Flow.RAmbigAt, Flow.l2(8, 9), Flow.l3(Flow.pos(Flow.RAmbig, Flow.l2(0, 2)), Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.pos(Flow.RCallee, Flow.l2(0, 9))))
-  Coll.Cons(touchB, Coll.Cons(cframe, Coll.Cons(ok1, Coll.Cons(ok2, Coll.Cons(fits, Coll.Cons(cmove, Coll.Cons(cmoved, Coll.Cons(cseen, Coll.Cons(cstuck, Coll.Cons(ambig, Coll.Cons(ambigN, Coll.Nil)))))))))))
+  // the def side: a binder enters in its world's pre state; it must leave in the world's post state (exitBad)
+  val enterB = Flow.rule(Flow.RAt, Flow.l4(0, 2, 3, 4), Flow.l1(Flow.pos(Flow.REnter, Flow.l4(0, 2, 3, 4))))
+  val exitBad = Flow.rule(Flow.RExitBad, Flow.l2(8, 9), Flow.l5(Flow.pos(Flow.RWant, Flow.l4(0, 2, 3, 4)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 5)), Flow.neg(Flow.RSame, Flow.l2(4, 5)), Flow.pos(Flow.RCapLine, Flow.l2(3, 8)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
+  val noSol = Flow.rule(Flow.RNoSolAt, Flow.l2(8, 9), Flow.l1(Flow.pos(Flow.RNoSol, Flow.l2(8, 9))))
+  Coll.Cons(touchB, Coll.Cons(cframe, Coll.Cons(ok1, Coll.Cons(ok2, Coll.Cons(fits, Coll.Cons(cmove, Coll.Cons(cmoved, Coll.Cons(cseen, Coll.Cons(cstuck, Coll.Cons(ambig, Coll.Cons(ambigN, Coll.Cons(enterB, Coll.Cons(exitBad, Coll.Cons(noSol, Coll.Nil))))))))))))))
 
-// the facts of fn f: its walk from a first point, the protocols, one world
+// the facts of fn f: its walk from a first point, the protocols. each solution j of f's entry facts is world j: the
+// capability binders enter point 0 in their pre states and must leave the body in their post states (s1/check.srs:498);
+// no binders: one world. no solution: the def has none (NoSol)
 def Flow.facts {r: Region} (cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
-  val Ast.Fn(line, _, _, _, _, _, body) = f
-  val st0 = Flow.St(1, Coll.Cons(Flow.fWorld(0), Coll.Nil), Coll.Nil)
-  val walked: Flow.St = body match
-    case Ast.Extern => st0
-    case Ast.Def(e) =>
-      val Flow.At(st1, _) = Flow.expr(cx, st0, 0, e)
-      st1
-  val Flow.St(_, fs, _) = walked
+  val Ast.Fn(line, name, gs, _, _, exit, body) = f
   val Flow.Cx(ps, _, _) = cx
+  val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
+  val atoms = Flow.entryAtoms(gs, Coll.Nil)
+  val as: Coll.List[Coll.List[Flow.VS]] = bs match
+    case Coll.Nil => Coll.Cons(Coll.Nil, Coll.Nil)
+    case Coll.Cons(_, _) => Flow.assigns(ps, bs, atoms, Flow.varsOf(atoms, Coll.Nil), Coll.Nil, Coll.Nil)
+  val st0 = Flow.binderCaps(Flow.St(1, Coll.Nil, Coll.Nil), bs, line)
+  val Flow.St(_, _, caps) = st0
+  val st1 = Flow.worlds(ps, st0, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Entry)
+  val walked: Flow.At = body match
+    case Ast.Extern => Flow.At(st1, 0)
+    case Ast.Def(e) => Flow.expr(cx, st1, 0, e)
+  val Flow.At(st2, e) = walked
+  val st3 = Flow.worlds(ps, st2, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Exit(e))
+  val st4 = as match
+    case Coll.Nil => Flow.add(st3, Flow.fNoSol(line, name))
+    case Coll.Cons(_, _) => st3
+  val Flow.St(_, fs, _) = st4
   Flow.protoFacts(ps, fs)
+
+// which end of the body world facts are for: the entry (world, enter) or the exit at point e (want)
+enum Flow.End:
+  case Flow.Entry
+  case Flow.Exit(e: I64)
+
+// each capability binder is a capability in scope from point 0, named and lined by the def
+def Flow.binderCaps {r: Region} (st: Flow.St, bs: Coll.List[Flow.CapB], line: I64): Flow.St = bs match
+  case Coll.Nil => st
+  case Coll.Cons(b, rest) =>
+    val Flow.CapB(x, _, proto) = b
+    val Flow.At(st1, id) = Flow.fresh(st)
+    val Flow.St(n, fs, cs) = st1
+    val st2 = Flow.St(n, fs, Coll.Cons(Flow.Cap(x, id, proto, line), cs))
+    Flow.binderCaps(Flow.add(Flow.add(Flow.add(st2, Flow.fCapOf(id, proto)), Flow.fCapName(id, x)), Flow.fCapLine(id, line)), rest, line)
+
+// per solution j: world(j) and enter(0, j, c, pre) at the entry, want(e, j, c, post) at the exit
+def Flow.worlds {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, caps: Coll.List[Flow.Cap], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], as: Coll.List[Coll.List[Flow.VS]], j: I64, end: Flow.End): Flow.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val st1 = end match
+      case Flow.Entry => Flow.add(st, Flow.fWorld(j))
+      case Flow.Exit(_) => st
+    Flow.worlds(ps, Flow.worldCaps(ps, st1, caps, bs, atoms, exit, a, j, end), caps, bs, atoms, exit, rest, j + 1, end)
+
+def Flow.worldCaps {r: Region} (ps: Coll.List[Ast.Proto], st: Flow.St, caps: Coll.List[Flow.Cap], bs: Coll.List[Flow.CapB], atoms: Coll.List[Ast.Atom], exit: Coll.List[Ast.Atom], a: Coll.List[Flow.VS], j: I64, end: Flow.End): Flow.St = caps match
+  case Coll.Nil => st
+  case Coll.Cons(c, crest) => bs match
+    case Coll.Nil => st
+    case Coll.Cons(b, brest) =>
+      val Flow.Cap(_, id, _, _) = c
+      val Flow.CapB(x, _, proto) = b
+      val pre: Coll.Option[Sym.Sym] = Flow.atState(atoms, x, a) match
+        case Coll.Some(s) => Coll.Some(s)
+        case Coll.None => Flow.startOf(ps, proto)
+      val st1: Flow.St = pre match
+        case Coll.None => st
+        case Coll.Some(s) => end match
+          case Flow.Entry => Flow.add(st, Flow.fEnter(0, j, id, s))
+          case Flow.Exit(e) => Flow.atState(exit, x, a) match
+            case Coll.Some(o) => Flow.add(st, Flow.fWant(e, j, id, o))
+            case Coll.None => Flow.add(st, Flow.fWant(e, j, id, s))
+      Flow.worldCaps(ps, st1, crest, brest, atoms, exit, a, j, end)
 
 // ── the verdict: the clash relations read back ──
 def Flow.clashes {r: Region} (m: D.Model, k: Flow.Kind, acc: Coll.List[Flow.Clash]): Coll.List[Flow.Clash] = Flow.clashList(k, D.tuples(m, Flow.relSym(Flow.relOf(k))), acc)
@@ -726,11 +806,13 @@ def Flow.make {r: Region} (k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash =
   case Flow.KSplit => Flow.Split(line, name)
   case Flow.KUnended => Flow.Unended(line, name)
   case Flow.KAmbig => Flow.Ambig(line, name)
+  case Flow.KExitBad => Flow.ExitBad(line, name)
+  case Flow.KNoSol => Flow.NoSol(line, name)
 
 def Flow.check {r: Region} (ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], f: Ast.Fn): Flow.Verdict =
   D.solve(Flow.rules(), Flow.facts(Flow.Cx(ps, hs, fns), f)) match
     case D.Solved(m) =>
-      val cs = Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Coll.Nil))))
+      val cs = Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Coll.Nil))))))
       cs match
         case Coll.Nil => Flow.Ok
         case Coll.Cons(_, _) => Flow.Bad(cs)
