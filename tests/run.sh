@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# srs gate, self-hosted (C10): bootstrap/seed.c (srs, C) builds S1; S1 compiles its own src (fixpoint);
-# tests/s1/*.srs: S1 compile + run, stdout == .out; tests/s1/neg/*.srs: S1 rejects with "// expect:" text.
-# S0 (zig) only when the seed cannot build the src: s0-bootstrap.
+# srs gate. s2 (the compiler): bootstrap/s2c-seed.c builds s2c, s2c compiles itself (fixpoint, seed fresh), then
+# tests/s2: prog (compile, run, == .out), neg (rejected with the expected error[code] and location), eval, hash, store.
+# s1 (being removed by vic): bootstrap/seed.c builds S1 (fixpoint), tests/s1 the same way. S0 (zig): s0-bootstrap.
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}; mkdir -p "$B"
 # tests never touch the user store (vic 2026-11-06): the store of this run lives under $B
@@ -41,13 +41,15 @@ for t in tests/s2/*.srs; do
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
 done
-# s2 self-host (vic/c/s2-selfhost.md B2, B3): s1 builds s2c; s2c compiles itself to s2c1; s2c1 compiles itself to the
-# same C (fixpoint); then s2c1 compiles every tests/s2 program, and each runs with its .out
+# s2 self-host (vic/c/s2-selfhost.md B2, B3): bootstrap/s2c-seed.c (s2c's own C) builds s2c0; s2c0 compiles s2c to
+# s2c1.c, which must be the seed (else s2c-seed-update); s2c1 compiles itself to the same C (fixpoint); then s2c1
+# compiles every tests/s2 program. no s0 or s1 on this path
 S2C="lib/prelude.srs $S2SRC s2c/main.srs"
-if timeout 5 "$B/s2" $S2C > "$B/s2c0.c" && timeout 120 $CCS -o "$B/s2c0" "$B/s2c0.c" rt/srs_rt.c \
+if timeout 120 $CCS -o "$B/s2c0" bootstrap/s2c-seed.c rt/srs_rt.c \
   && timeout 5 "$B/s2c0" $S2C > "$B/s2c1.c" && timeout 120 $CCS -o "$B/s2c1" "$B/s2c1.c" rt/srs_rt.c \
   && timeout 5 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
 else echo "FAIL s2c fixpoint"; fail=1; fi
+if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; else echo "FAIL s2c seed stale: s2c-seed-update"; fail=1; fi
 for t in tests/s2/*.srs; do
   n=s2c_$(basename "$t" .srs)
   timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; fail=1; continue; }
@@ -131,6 +133,7 @@ if [ $c1 -eq 1 ] && [ "$(printf '%s\n' "$m1" | head -1)" = "error[type-fuel]: ty
 else echo "FAIL s2c type level errors $c1 $m1 / $c2 $m2"; fail=1; fi
 # s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }
+timeout 60 $CC -O0 -o "$B/s2c1_tailcall0" "$B/s2c1_tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c1_tailcall0") && [ "$out" = "$(cat tests/s2/prog/tailcall.out)" ] && echo "ok s2c prog tailcall -O0" || { echo "FAIL s2c prog tailcall -O0"; fail=1; }
 # self tail calls run in constant C stack with no C optimization (vic-m5r.10): tailcall at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/tailcall0" "$B/tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/tailcall0") && [ "$out" = "$(cat tests/s1/tailcall.out)" ] && echo "ok tailcall -O0" || { echo "FAIL tailcall -O0"; fail=1; }
 # every "// expect: msg" line must be printed: errors are data, main reports them all (vic-ngq); armed: 0 lines = FAIL
