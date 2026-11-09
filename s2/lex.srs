@@ -69,13 +69,13 @@ def Lex.top(ind: Coll.List[I64]): I64 = ind match
   case Coll.Nil => 0
   case Coll.Cons(c, _) => c
 
-def Lex.lex {r: Region} (src: Str): Lex.Result = Lex.lexFrom(src, 1)
+def Lex.lex(src: Str): Lex.Result = Lex.lexFrom(src, 1)
 
 // src whose first line has number line (a file after others: its lines continue the numbering, so a line names a file)
-def Lex.lexFrom {r: Region} (src: Str, line: I64): Lex.Result = Lex.go(src, Str.len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
+def Lex.lexFrom(src: Str, line: I64): Lex.Result = Lex.go(src, Str.len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
 
 // the scan from i: depth = open ( and [, bol = at the start of a line, ind = the indent stack, out = tokens, newest first
-def Lex.go {r: Region} (src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
+def Lex.go(src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
   if i >= n then Lex.finish(line, ind, out)
   else if bol && depth == 0 then
     val j = Lex.spaces(src, i)
@@ -107,7 +107,7 @@ def Lex.go {r: Region} (src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bo
         Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(Lex.TOp(Str.slice(src, i, i + w), line), out))
 
 // a line at column col, shallower than or as deep as the indent: close every deeper indent; col must be on the stack
-def Lex.dedent {r: Region} (src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
+def Lex.dedent(src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
   case Coll.Nil => Lex.Bad(line, Lex.BadDedent)
   case Coll.Cons(t, rest) =>
     if col < t then Lex.dedent(src, n, j, line, col, rest, Coll.Cons(Lex.TDedent(line), out))
@@ -115,7 +115,7 @@ def Lex.dedent {r: Region} (src: Str, n: I64, j: I64, line: I64, col: I64, ind: 
     else Lex.Bad(line, Lex.BadDedent)
 
 // the end: a last TNl, a TDedent for each open indent, TEof
-def Lex.finish {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
+def Lex.finish(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
   val out1: Coll.List[Lex.Tok] = out match
     case Coll.Nil => out
     case Coll.Cons(t, _) => t match
@@ -124,6 +124,6 @@ def Lex.finish {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.T
       case _ => Coll.Cons(Lex.TNl(line), out)
   Lex.Toks(Lex.closeAll(line, ind, out1))
 
-def Lex.closeAll {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ind match
+def Lex.closeAll(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ind match
   case Coll.Nil => Coll.rev(Coll.Cons(Lex.TEof(line), out))
   case Coll.Cons(t, rest) => if t > 0 then Lex.closeAll(line, rest, Coll.Cons(Lex.TDedent(line), out)) else Coll.rev(Coll.Cons(Lex.TEof(line), out))

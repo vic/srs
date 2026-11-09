@@ -202,7 +202,7 @@ def Ast.syms(xs: Coll.List[Sym.Sym], sep: Str): Unit = xs match
         Console.print(sep)
         Ast.syms(t, sep)
 
-def Ast.tys {r: Region} (xs: Coll.List[Ast.Ty]): Unit = xs match
+def Ast.tys(xs: Coll.List[Ast.Ty]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
     Ast.ty(h)
@@ -212,7 +212,7 @@ def Ast.tys {r: Region} (xs: Coll.List[Ast.Ty]): Unit = xs match
         Console.print(", ")
         Ast.tys(t)
 
-def Ast.ty {r: Region} (t: Ast.Ty): Unit =
+def Ast.ty(t: Ast.Ty): Unit =
   val Ast.Ty(_, n, args, caps, vals) = t
   Ast.sym(n)
   args match
@@ -283,7 +283,7 @@ def Ast.rank(b: Ast.Bind): I64 = b match
   case Ast.Prefix => 7
   case Ast.Atomic => 8
 
-def Ast.bindOf {r: Region} (e: Ast.Expr): Ast.Bind = e match
+def Ast.bindOf(e: Ast.Expr): Ast.Bind = e match
   case Ast.Bin(_, op, _, _) => Ast.Infix(op)
   case Ast.Un(_, _, _) => Ast.Prefix
   case Ast.If(_, _, _, _) => Ast.Loose
@@ -294,19 +294,19 @@ def Ast.bindOf {r: Region} (e: Ast.Expr): Ast.Bind = e match
   case Ast.Quant(_, _, _, _, _) => Ast.Loose
   case _ => Ast.Atomic
 
-def Ast.fits {r: Region} (e: Ast.Expr, n: Ast.Need): Bool = n match
+def Ast.fits(e: Ast.Expr, n: Ast.Need): Bool = n match
   case Ast.AtLeast(b) => Ast.rank(Ast.bindOf(e)) >= Ast.rank(b)
   case Ast.Above(b) => Ast.rank(Ast.bindOf(e)) > Ast.rank(b)
 
 // e in an operand position: in ( ) when it does not fit
-def Ast.operand {r: Region} (e: Ast.Expr, n: Ast.Need, ind: I64): Unit =
+def Ast.operand(e: Ast.Expr, n: Ast.Need, ind: I64): Unit =
   if Ast.fits(e, n) then Ast.expr(e, ind)
   else
     Console.print("(")
     Ast.expr(e, ind)
     Console.print(")")
 
-def Ast.args {r: Region} (xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
+def Ast.args(xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(h, t) =>
     Ast.expr(h, ind)
@@ -317,7 +317,7 @@ def Ast.args {r: Region} (xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
         Ast.args(t, ind)
 
 // e after `=`, `then`, `else`, `do` or `=>`: a block on its own lines one level in, anything else on this line
-def Ast.body {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
+def Ast.body(e: Ast.Expr, ind: I64): Unit = e match
   case Ast.Block(_, ss, last) =>
     Ast.stmts(ss, ind + Ast.step())
     Ast.line(ind + Ast.step())
@@ -326,7 +326,7 @@ def Ast.body {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
     Console.print(" ")
     Ast.expr(e, ind)
 
-def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
+def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
   case Ast.Int(_, v) => Console.printI64(v)
   case Ast.Bool(_, v) => Console.print(if v then "true" else "false")
   case Ast.Str(_, s) =>
@@ -412,7 +412,7 @@ def Ast.unText(op: Ast.UnOp): Str = op match
 // `else` on the line of a one-line then, on its own line after a block then
 // else starts a new line when either branch takes more than one line (a block, a match, a multi-line if or while):
 // after one, a same-line else would read as part of its last line
-def Ast.elseBody {r: Region} (t: Ast.Expr, x: Ast.Expr, ind: I64): Unit =
+def Ast.elseBody(t: Ast.Expr, x: Ast.Expr, ind: I64): Unit =
   if Ast.multiLine(t) || Ast.multiLine(x) then
     Ast.line(ind)
     Console.print("else")
@@ -428,7 +428,7 @@ def Ast.multiLine(e: Ast.Expr): Bool = e match
   case Ast.If(_, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x)
   case _ => false
 
-def Ast.arms {r: Region} (xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
+def Ast.arms(xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
     val Ast.Arm(_, p, b) = a
@@ -451,14 +451,14 @@ def Ast.pat(p: Ast.Pat): Unit = p match
         Console.print(")")
 
 // each statement on its own line at ind
-def Ast.stmts {r: Region} (xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
+def Ast.stmts(xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(s, t) =>
     Ast.line(ind)
     Ast.stmt(s, ind)
     Ast.stmts(t, ind)
 
-def Ast.stmt {r: Region} (s: Ast.Stmt, ind: I64): Unit = s match
+def Ast.stmt(s: Ast.Stmt, ind: I64): Unit = s match
   case Ast.Val(_, x, ann, e) =>
     Console.print("val ")
     Ast.binding(x, ann, e, ind)
@@ -487,7 +487,7 @@ def Ast.loopText(k: Ast.LoopCond): Str = k match
   case Ast.LInvariant => "invariant"
   case Ast.LDecreases => "decreases"
 
-def Ast.binding {r: Region} (x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
+def Ast.binding(x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
   Ast.sym(x)
   ann match
     case Coll.None => ()
@@ -525,7 +525,7 @@ def Ast.atoms(xs: Coll.List[Ast.Atom]): Unit = xs match
         Console.print(", ")
         Ast.atoms(t)
 
-def Ast.binders {r: Region} (xs: Coll.List[Ast.Binder]): Unit = xs match
+def Ast.binders(xs: Coll.List[Ast.Binder]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(b, t) =>
     val Ast.Binder(_, x, ty) = b
@@ -539,7 +539,7 @@ def Ast.binders {r: Region} (xs: Coll.List[Ast.Binder]): Unit = xs match
         Ast.binders(t)
 
 // each group followed by a space: ` [A: Type] {s: Show[A]} <at(t, S)> `
-def Ast.groups {r: Region} (xs: Coll.List[Ast.Group]): Unit = xs match
+def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(g, t) =>
     Console.print(" ")
@@ -558,7 +558,7 @@ def Ast.groups {r: Region} (xs: Coll.List[Ast.Group]): Unit = xs match
         Console.print(">")
     Ast.groups(t)
 
-def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
+def Ast.fn(f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
     case Ast.Extern => Console.print("extern ")
@@ -567,7 +567,7 @@ def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
   Ast.fnSig(f, ind)
 
 // a trait method signature: a def without body and without extern
-def Ast.sigs {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+def Ast.sigs(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
     Ast.line(ind)
@@ -575,7 +575,7 @@ def Ast.sigs {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
     Ast.sigs(t, ind)
 
 // def name groups (params): ty <exit> [= body]
-def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
+def Ast.fnSig(f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
   Console.print("def ")
   Ast.sym(name)
@@ -599,7 +599,7 @@ def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
     case Ast.Spec(cs, e) => Ast.withClauses(cs, e, ind)
 
 // = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)
-def Ast.withClauses {r: Region} (cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
+def Ast.withClauses(cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
   case Coll.Nil =>
     Console.print(" =")
     Ast.body(e, ind)
@@ -616,7 +616,7 @@ def Ast.condText(k: Ast.Cond): Str = k match
   case Ast.Decreases => "decreases"
   case Ast.Invariant => "invariant"
 
-def Ast.clauses {r: Region} (cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
+def Ast.clauses(cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     Ast.line(ind)
@@ -637,7 +637,7 @@ def Ast.clauses {r: Region} (cs: Coll.List[Ast.Clause], ind: I64): Unit = cs mat
         Console.print("\"")
     Ast.clauses(rest, ind)
 
-def Ast.fns {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+def Ast.fns(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
     Ast.line(ind)
@@ -657,7 +657,7 @@ def Ast.trans(xs: Coll.List[Ast.Trans]): Unit = xs match
         Console.print(", ")
         Ast.trans(t)
 
-def Ast.ops {r: Region} (xs: Coll.List[Ast.Op]): Unit = xs match
+def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
     val Ast.Op(_, name, ps, ret, trs) = o
@@ -685,7 +685,7 @@ def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
     Ast.atoms(body)
     Ast.rules(t)
 
-def Ast.cases {r: Region} (xs: Coll.List[Ast.Case]): Unit = xs match
+def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(c, t) =>
     val Ast.Case(_, name, fs) = c
@@ -700,7 +700,7 @@ def Ast.cases {r: Region} (xs: Coll.List[Ast.Case]): Unit = xs match
         Console.print(")")
     Ast.cases(t)
 
-def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
+def Ast.decl(d: Ast.Decl): Unit = d match
   case Ast.DFn(f) => Ast.fn(f, 0)
   case Ast.DEnum(en) =>
     val Ast.Enum(_, name, gs, cs) = en
@@ -777,7 +777,7 @@ def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
         Console.print(" match")
         Ast.valArms(arms)
 
-def Ast.tyArms {r: Region} (xs: Coll.List[Ast.TyArm]): Unit = xs match
+def Ast.tyArms(xs: Coll.List[Ast.TyArm]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
     val Ast.TyArm(_, p, res) = a
@@ -788,7 +788,7 @@ def Ast.tyArms {r: Region} (xs: Coll.List[Ast.TyArm]): Unit = xs match
     Ast.ty(res)
     Ast.tyArms(t)
 
-def Ast.valArms {r: Region} (xs: Coll.List[Ast.ValArm]): Unit = xs match
+def Ast.valArms(xs: Coll.List[Ast.ValArm]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
     val Ast.ValArm(_, p, res) = a
@@ -807,7 +807,7 @@ def Ast.valArms {r: Region} (xs: Coll.List[Ast.ValArm]): Unit = xs match
     Ast.valArms(t)
 
 // a program: its decls, one blank line between two, a newline after the last
-def Ast.print {r: Region} (ds: Coll.List[Ast.Decl]): Unit = ds match
+def Ast.print(ds: Coll.List[Ast.Decl]): Unit = ds match
   case Coll.Nil => ()
   case Coll.Cons(d, t) =>
     Ast.decl(d)

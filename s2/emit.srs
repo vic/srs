@@ -64,16 +64,16 @@ enum Emit.Part:
   case Emit.Code
 
 // ── the declarations by name ──
-def Emit.cxOf {r: Region} (ds: Coll.List[Ast.Decl], s: Coll.IMap[K.Term], fs: Coll.List[El.Fn]): Emit.Cx =
+def Emit.cxOf(ds: Coll.List[Ast.Decl], s: Coll.IMap[K.Term], fs: Coll.List[El.Fn]): Emit.Cx =
   Emit.cxDecls(ds, Emit.Cx(s, Emit.fnMap(fs, Coll.sEmpty()), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Emit.VTable, Coll.sEmpty()))
 
-def Emit.fnMap {r: Region} (fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
+def Emit.fnMap(fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
   case Coll.Nil => m
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, _, _, _, _, _) = f
     Emit.fnMap(rest, Coll.sInsert(m, n, f))
 
-def Emit.cxDecls {r: Region} (ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = ds match
+def Emit.cxDecls(ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = ds match
   case Coll.Nil => cx
   case Coll.Cons(d, rest) =>
     val Emit.Cx(s, fns, cs, es, ps, hp, al, nm) = cx
@@ -95,19 +95,19 @@ def Emit.cxDecls {r: Region} (ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = d
           case _ => Emit.cxDecls(rest, cx)
       case _ => Emit.cxDecls(rest, cx)
 
-def Emit.caseMap {r: Region} (cs: Coll.List[Ast.Case], e: Ast.Enum, i: I64, m: Coll.SMap[Emit.CaseAt]): Coll.SMap[Emit.CaseAt] = cs match
+def Emit.caseMap(cs: Coll.List[Ast.Case], e: Ast.Enum, i: I64, m: Coll.SMap[Emit.CaseAt]): Coll.SMap[Emit.CaseAt] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, _) = c
     Emit.caseMap(rest, e, i + 1, Coll.sInsert(m, n, Emit.CaseAt(i, e, c)))
 
-def Emit.isProto {r: Region} (cx: Emit.Cx, n: Sym.Sym): Bool =
+def Emit.isProto(cx: Emit.Cx, n: Sym.Sym): Bool =
   val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
   Coll.sLookup(ps, n) match
     case Coll.Some(_) => true
     case Coll.None => false
 
-def Emit.caseAt {r: Region} (cx: Emit.Cx, c: Sym.Sym): Coll.Option[Emit.CaseAt] =
+def Emit.caseAt(cx: Emit.Cx, c: Sym.Sym): Coll.Option[Emit.CaseAt] =
   val Emit.Cx(_, _, cs, _, _, _, _, _) = cx
   Coll.sLookup(cs, c)
 
@@ -115,11 +115,11 @@ def Emit.subst(cx: Emit.Cx): Coll.IMap[K.Term] =
   val Emit.Cx(s, _, _, _, _, _, _, _) = cx
   s
 
-def Emit.grAll {r: Region} (cx: Emit.Cx, fi: Emit.Fi, ts: Coll.List[K.Term]): Coll.List[K.Term] =
+def Emit.grAll(cx: Emit.Cx, fi: Emit.Fi, ts: Coll.List[K.Term]): Coll.List[K.Term] =
   val Emit.Fi(_, _, sub, _, _) = fi
   Mono.groundAll(Emit.subst(cx), sub, ts, Coll.Nil)
 
-def Emit.gr {r: Region} (cx: Emit.Cx, fi: Emit.Fi, t: K.Term): K.Term =
+def Emit.gr(cx: Emit.Cx, fi: Emit.Fi, t: K.Term): K.Term =
   val Emit.Fi(_, _, sub, _, _) = fi
   Mono.ground(Emit.subst(cx), sub, t)
 
@@ -194,12 +194,12 @@ def Emit.envN(env: Emit.Env): I64 =
   val Emit.Env(_, n) = env
   n
 
-def Emit.bind {r: Region} (env: Emit.Env, x: Sym.Sym): Emit.Env =
+def Emit.bind(env: Emit.Env, x: Sym.Sym): Emit.Env =
   val Emit.Env(vs, n) = env
   Emit.Env(Coll.Cons(Emit.L(x, n), vs), n + 1)
 
 // ── types (spec sec 3): a ground term ──
-def Emit.ctype {r: Region} (cx: Emit.Cx, t: K.Term): Unit = t match
+def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
   case K.Con(n, args) =>
     val x = Sym.str(n)
     if Str.eq(x, "I64") || Str.eq(x, "Unit") then Console.print("int64_t")
@@ -215,12 +215,12 @@ def Emit.ctype {r: Region} (cx: Emit.Cx, t: K.Term): Unit = t match
         Console.print("*")
   case _ => Console.print("int64_t")
 
-def Emit.nominalOf {r: Region} (cx: Emit.Cx, n: Sym.Sym): Coll.Option[K.Term] =
+def Emit.nominalOf(cx: Emit.Cx, n: Sym.Sym): Coll.Option[K.Term] =
   val Emit.Cx(_, _, _, _, _, _, _, nm) = cx
   Coll.sLookup(nm, n)
 
 // ── expressions (spec sec 4) ──
-def Emit.ex {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr): Unit = e match
+def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr): Unit = e match
   case El.Int(_, v) =>
     Console.print("((int64_t)")
     Console.printI64(v)
@@ -338,7 +338,7 @@ def Emit.isSelf(fi: Emit.Fi, f: Sym.Sym, ts: Coll.List[K.Term]): Bool =
   val Emit.Fi(self, sts, _, _, _) = fi
   Sym.eq(f, self) && Mono.termsEq(ts, sts)
 
-def Emit.fnName {r: Region} (cx: Emit.Cx, f: Sym.Sym, ts: Coll.List[K.Term]): Unit =
+def Emit.fnName(cx: Emit.Cx, f: Sym.Sym, ts: Coll.List[K.Term]): Unit =
   val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, f) match
     case Coll.Some(g) =>
@@ -365,7 +365,7 @@ def Emit.capArgs(env: Emit.Env, caps: Coll.List[Sym.Sym], s: Emit.Sep): Unit = c
     Emit.capArgs(env, rest, Emit.Comma)
 
 // h_H_init(caps, args): the handler's state
-def Emit.initCall {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
+def Emit.initCall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
   Console.print("h_")
   Emit.id(h)
   Console.print("_init(")
@@ -374,7 +374,7 @@ def Emit.initCall {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, h: Sym.S
   Console.print(")")
 
 // a handler with a row (E1b): its state and the capabilities of the handle site, the self of its ops (srs_env)
-def Emit.handleEnv {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, v: Emit.Name, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit = caps match
+def Emit.handleEnv(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, v: Emit.Name, h: Sym.Sym, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit = caps match
   case Coll.Nil => ()
   case Coll.Cons(_, _) =>
     Console.print("struct { void* st; srs_cap* c[")
@@ -387,7 +387,7 @@ def Emit.handleEnv {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, v: Emit
     Emit.capArgs(env, caps, Emit.First)
     Console.print(" } }; ")
 
-def Emit.args {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, xs: Coll.List[El.Expr], s: Emit.Sep): Unit = xs match
+def Emit.args(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, xs: Coll.List[El.Expr], s: Emit.Sep): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
     Emit.sep(s)
@@ -395,7 +395,7 @@ def Emit.args {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, xs: Coll.Lis
     Emit.args(cx, fi, env, rest, Emit.Comma)
 
 // a self tail call (spec sec 4.4): every arg to a temp, then to its param, then back to the top of the body
-def Emit.jump {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
+def Emit.jump(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
   val Emit.Fi(_, _, _, slots, ret) = fi
   Console.print("({ ")
   Emit.temps(cx, fi, env, slots, caps, args, 0)
@@ -404,7 +404,7 @@ def Emit.jump {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, caps: Coll.L
   Emit.ctype(cx, ret)
   Console.print("){0}; })")
 
-def Emit.temps {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, slots: Coll.List[Emit.Slot], caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr], i: I64): Unit = slots match
+def Emit.temps(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, slots: Coll.List[Emit.Slot], caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr], i: I64): Unit = slots match
   case Coll.Nil => ()
   case Coll.Cons(sl, rest) => sl match
     case Emit.SCap(_) => caps match
@@ -442,7 +442,7 @@ def Emit.slotName(sl: Emit.Slot): Sym.Sym = sl match
   case Emit.SVal(x, _) => x
 
 // a constructor (spec sec 4.3): its own case's size in the region reg, then the fields in order
-def Emit.ctor {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, reg: Sym.Sym, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
+def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, reg: Sym.Sym, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
   case Coll.None => Console.print("0")
   case Coll.Some(ca) =>
     val Emit.CaseAt(tag, _, cs) = ca
@@ -485,7 +485,7 @@ def Emit.ctor {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym,
     Console.printI64(n)
     Console.print("; })")
 
-def Emit.fieldSets {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, n: I64, c: Sym.Sym, fs: Coll.List[Ast.Binder], xs: Coll.List[El.Expr]): Unit = fs match
+def Emit.fieldSets(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, n: I64, c: Sym.Sym, fs: Coll.List[Ast.Binder], xs: Coll.List[El.Expr]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, frest) => xs match
     case Coll.Nil => ()
@@ -503,7 +503,7 @@ def Emit.fieldSets {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, n: I64,
       Emit.fieldSets(cx, fi, env, n, c, frest, xrest)
 
 // the index of op in protocol p's op list
-def Emit.opIndex {r: Region} (cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): I64 =
+def Emit.opIndex(cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): I64 =
   val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
   Coll.sLookup(ps, p) match
     case Coll.None => 0
@@ -519,7 +519,7 @@ def Emit.opIn(os: Coll.List[Ast.Op], op: Sym.Sym, i: I64): I64 = os match
 
 // recv.op(args): through the capability's vtable (an op whose every transition ends the protocol clears live), or a
 // trait method of {} evidence: the given's static fn (rung T2)
-def Emit.op {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr]): Unit = ty match
+def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr]): Unit = ty match
   case K.Con(pn, targs) =>
     val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
     Coll.sLookup(ps, pn) match
@@ -558,7 +558,7 @@ def Emit.op {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym,
         Console.print(")")
   case _ => Console.print("0")
 
-def Emit.opTys {r: Region} (cx: Emit.Cx, ps: Coll.List[Ast.Binder]): Unit = ps match
+def Emit.opTys(cx: Emit.Cx, ps: Coll.List[Ast.Binder]): Unit = ps match
   case Coll.Nil => ()
   case Coll.Cons(p, rest) =>
     val Ast.Binder(_, _, t) = p
@@ -578,7 +578,7 @@ def Emit.allEnd(ts: Coll.List[Ast.Trans], ends: Coll.List[Sym.Sym]): Bool = ts m
     if Ty.memberSym(to, ends) then Emit.allEnd(rest, ends) else false
 
 // match (spec sec 4.1): the scrutinee once in s<n>; the last arm has no tag test
-def Emit.arms {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, as: Coll.List[El.Arm]): Unit = as match
+def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, as: Coll.List[El.Arm]): Unit = as match
   case Coll.Nil => ()
   case Coll.Cons(a, rest) =>
     val El.Arm(_, p, b) = a
@@ -617,7 +617,7 @@ def Emit.test(rest: Coll.List[El.Arm], n: I64, g: Emit.Guard): Unit = rest match
       Console.print(" ? ")
 
 // each binder of an arm (not `_`) to its case field of s<n>
-def Emit.binds {r: Region} (env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]): Emit.Env = xs match
+def Emit.binds(env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]): Emit.Env = xs match
   case Coll.Nil => env
   case Coll.Cons(x, rest) => fs match
     case Coll.Nil => env
@@ -638,7 +638,7 @@ def Emit.binds {r: Region} (env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym
         Emit.binds(env2, n, c, rest, frest)
 
 // a block (spec sec 4.2): statements in order, the last expression in res_, then the drops of its handles (latest first)
-def Emit.block {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, ss: Coll.List[El.Stmt], last: El.Expr, drops: Coll.List[Emit.Drop]): Unit = ss match
+def Emit.block(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, ss: Coll.List[El.Stmt], last: El.Expr, drops: Coll.List[Emit.Drop]): Unit = ss match
   case Coll.Nil =>
     Console.print("__auto_type res_ = ")
     Emit.ex(cx, fi, env, Emit.lastPos(drops, pos), last)
@@ -685,7 +685,7 @@ def Emit.lastPos(drops: Coll.List[Emit.Drop], pos: Emit.Pos): Emit.Pos = drops m
   case Coll.Nil => pos
   case Coll.Cons(_, _) => Emit.Inner
 
-def Emit.drops {r: Region} (cx: Emit.Cx, ds: Coll.List[Emit.Drop]): Unit = ds match
+def Emit.drops(cx: Emit.Cx, ds: Coll.List[Emit.Drop]): Unit = ds match
   case Coll.Nil => ()
   case Coll.Cons(d, rest) =>
     val Emit.Drop(v, p) = d
@@ -709,21 +709,21 @@ def Emit.drops {r: Region} (cx: Emit.Cx, ds: Coll.List[Emit.Drop]): Unit = ds ma
     Emit.drops(cx, rest)
 
 // the protocol of handler h
-def Emit.protoOfH {r: Region} (cx: Emit.Cx, h: Sym.Sym): Sym.Sym =
+def Emit.protoOfH(cx: Emit.Cx, h: Sym.Sym): Sym.Sym =
   val Emit.Cx(_, _, _, _, _, hp, _, _) = cx
   Coll.sLookup(hp, h) match
     case Coll.Some(p) => p
     case Coll.None => h
 
 // ── a self call in tail position (spec sec 4.4): the body then gets the srs_tail label ──
-def Emit.hasTail {r: Region} (cx: Emit.Cx, fi: Emit.Fi, e: El.Expr): Bool = e match
+def Emit.hasTail(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr): Bool = e match
   case El.CallFn(_, f, ts, _, _) => Emit.isSelf(fi, f, Emit.grAll(cx, fi, ts))
   case El.If(_, _, t, x) => Emit.hasTail(cx, fi, t) || Emit.hasTail(cx, fi, x)
   case El.Match(_, _, _, arms) => Emit.armsTail(cx, fi, arms)
   case El.Block(_, ss, last) => if Emit.hasHandle(ss) then false else Emit.hasTail(cx, fi, last)
   case _ => false
 
-def Emit.armsTail {r: Region} (cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm]): Bool = as match
+def Emit.armsTail(cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm]): Bool = as match
   case Coll.Nil => false
   case Coll.Cons(a, rest) =>
     val El.Arm(_, _, b) = a
@@ -736,23 +736,23 @@ def Emit.hasHandle(ss: Coll.List[El.Stmt]): Bool = ss match
     case _ => Emit.hasHandle(rest)
 
 // ── an instance as the fn emit prints ──
-def Emit.fiOf {r: Region} (cx: Emit.Cx, i: Mono.Inst): Emit.Fi =
+def Emit.fiOf(cx: Emit.Cx, i: Mono.Inst): Emit.Fi =
   val Mono.Inst(f, sub, _) = i
   val El.Fn(_, name, tps, caps, ps, ret, _) = f
   Emit.Fi(name, Emit.targsOf(sub, tps, Coll.Nil), sub, Emit.slots(cx, sub, caps, ps), Mono.ground(Emit.subst(cx), sub, ret))
 
-def Emit.targsOf {r: Region} (sub: Coll.List[Ty.Bind], tps: Coll.List[Sym.Sym], acc: Coll.List[K.Term]): Coll.List[K.Term] = tps match
+def Emit.targsOf(sub: Coll.List[Ty.Bind], tps: Coll.List[Sym.Sym], acc: Coll.List[K.Term]): Coll.List[K.Term] = tps match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(x, rest) => Ty.lookup(sub, x) match
     case Coll.Some(t) => Emit.targsOf(sub, rest, Coll.Cons(t, acc))
     case Coll.None => Emit.targsOf(sub, rest, Coll.Cons(K.Con(x, Coll.Nil), acc))
 
 // the capabilities first, then the params
-def Emit.slots {r: Region} (cx: Emit.Cx, sub: Coll.List[Ty.Bind], caps: Coll.List[Sym.Sym], ps: Coll.List[El.Param]): Coll.List[Emit.Slot] = caps match
+def Emit.slots(cx: Emit.Cx, sub: Coll.List[Ty.Bind], caps: Coll.List[Sym.Sym], ps: Coll.List[El.Param]): Coll.List[Emit.Slot] = caps match
   case Coll.Cons(c, rest) => Coll.Cons(Emit.SCap(c), Emit.slots(cx, sub, rest, ps))
   case Coll.Nil => Emit.valSlots(cx, sub, ps, Coll.Nil)
 
-def Emit.valSlots {r: Region} (cx: Emit.Cx, sub: Coll.List[Ty.Bind], ps: Coll.List[El.Param], acc: Coll.List[Emit.Slot]): Coll.List[Emit.Slot] = ps match
+def Emit.valSlots(cx: Emit.Cx, sub: Coll.List[Ty.Bind], ps: Coll.List[El.Param], acc: Coll.List[Emit.Slot]): Coll.List[Emit.Slot] = ps match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(p, rest) =>
     val El.Param(x, t) = p
@@ -766,7 +766,7 @@ def Emit.isDef(i: Mono.Inst): Bool =
     case _ => false
 
 // ── signatures (spec sec 3) and bodies (sec 4.4) ──
-def Emit.sig {r: Region} (cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind): Unit =
+def Emit.sig(cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind): Unit =
   val Emit.Fi(self, targs, _, slots, ret) = fi
   k match
     case Emit.KExtern => ()
@@ -792,7 +792,7 @@ def Emit.sig {r: Region} (cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind): Unit =
     case Coll.Cons(_, _) => Emit.params(cx, slots, Emit.First)
   Console.print(")")
 
-def Emit.params {r: Region} (cx: Emit.Cx, slots: Coll.List[Emit.Slot], s: Emit.Sep): Unit = slots match
+def Emit.params(cx: Emit.Cx, slots: Coll.List[Emit.Slot], s: Emit.Sep): Unit = slots match
   case Coll.Nil => ()
   case Coll.Cons(sl, rest) =>
     Emit.sep(s)
@@ -803,12 +803,12 @@ def Emit.params {r: Region} (cx: Emit.Cx, slots: Coll.List[Emit.Slot], s: Emit.S
     Emit.id(Emit.slotName(sl))
     Emit.params(cx, rest, Emit.Comma)
 
-def Emit.paramEnv {r: Region} (slots: Coll.List[Emit.Slot], acc: Coll.List[Emit.Name]): Emit.Env = slots match
+def Emit.paramEnv(slots: Coll.List[Emit.Slot], acc: Coll.List[Emit.Name]): Emit.Env = slots match
   case Coll.Nil => Emit.Env(acc, 0)
   case Coll.Cons(sl, rest) => Emit.paramEnv(rest, Coll.Cons(Emit.P(Emit.slotName(sl)), acc))
 
 // a def loops on its self tail calls; a handler fn does not (s1 emit.srs:270-275)
-def Emit.body {r: Region} (cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind, e: El.Expr): Unit =
+def Emit.body(cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind, e: El.Expr): Unit =
   val Emit.Fi(_, _, _, slots, _) = fi
   Emit.sig(cx, fi, k)
   val pos = k match
@@ -821,7 +821,7 @@ def Emit.body {r: Region} (cx: Emit.Cx, fi: Emit.Fi, k: Emit.Kind, e: El.Expr): 
   Console.print("; }\n")
 
 // ── the enum instances the C names: of every signature and expression, closed over their fields (spec sec 1 B, C) ──
-def Emit.instTys {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[K.Term]): Coll.List[K.Term] = is match
+def Emit.instTys(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[K.Term]): Coll.List[K.Term] = is match
   case Coll.Nil => acc
   case Coll.Cons(i, rest) =>
     val Mono.Inst(f, _, _) = i
@@ -833,13 +833,13 @@ def Emit.instTys {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.L
         Emit.instTys(cx, rest, Emit.exTys(cx, fi, e, Emit.slotTys(slots, Coll.Cons(ret, acc))))
       case _ => Emit.instTys(cx, rest, acc)
 
-def Emit.slotTys {r: Region} (slots: Coll.List[Emit.Slot], acc: Coll.List[K.Term]): Coll.List[K.Term] = slots match
+def Emit.slotTys(slots: Coll.List[Emit.Slot], acc: Coll.List[K.Term]): Coll.List[K.Term] = slots match
   case Coll.Nil => acc
   case Coll.Cons(sl, rest) => sl match
     case Emit.SCap(_) => Emit.slotTys(rest, acc)
     case Emit.SVal(_, t) => Emit.slotTys(rest, Coll.Cons(t, acc))
 
-def Emit.exTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Coll.List[K.Term] = e match
+def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Coll.List[K.Term] = e match
   case El.CallFn(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
   case El.New(_, en, ts, _, _, args) => Emit.exsTys(cx, fi, args, Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc))
   case El.Nullary(_, en, ts, _) => Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc)
@@ -853,17 +853,17 @@ def Emit.exTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List
   case El.Assign(_, _, x) => Emit.exTys(cx, fi, x, acc)
   case _ => acc
 
-def Emit.exsTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
+def Emit.exsTys(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Emit.exsTys(cx, fi, rest, Emit.exTys(cx, fi, x, acc))
 
-def Emit.armsTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm], acc: Coll.List[K.Term]): Coll.List[K.Term] = as match
+def Emit.armsTys(cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm], acc: Coll.List[K.Term]): Coll.List[K.Term] = as match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
     val El.Arm(_, _, b) = a
     Emit.armsTys(cx, fi, rest, Emit.exTys(cx, fi, b, acc))
 
-def Emit.stmtsTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, ss: Coll.List[El.Stmt], acc: Coll.List[K.Term]): Coll.List[K.Term] = ss match
+def Emit.stmtsTys(cx: Emit.Cx, fi: Emit.Fi, ss: Coll.List[El.Stmt], acc: Coll.List[K.Term]): Coll.List[K.Term] = ss match
   case Coll.Nil => acc
   case Coll.Cons(s, rest) => s match
     case El.Val(_, _, ty, _, e) => Emit.stmtsTys(cx, fi, rest, Emit.exTys(cx, fi, e, Coll.Cons(Emit.gr(cx, fi, ty), acc)))
@@ -871,7 +871,7 @@ def Emit.stmtsTys {r: Region} (cx: Emit.Cx, fi: Emit.Fi, ss: Coll.List[El.Stmt],
     case El.Do(e) => Emit.stmtsTys(cx, fi, rest, Emit.exTys(cx, fi, e, acc))
 
 // the distinct enum terms of todo and of their fields, in the order found (seen: by hash bucket)
-def Emit.closeEnums {r: Region} (cx: Emit.Cx, todo: Coll.List[K.Term], seen: Coll.BTree[Coll.List[K.Term]], out: Coll.List[K.Term]): Coll.List[K.Term] = todo match
+def Emit.closeEnums(cx: Emit.Cx, todo: Coll.List[K.Term], seen: Coll.BTree[Coll.List[K.Term]], out: Coll.List[K.Term]): Coll.List[K.Term] = todo match
   case Coll.Nil => Coll.rev(out)
   case Coll.Cons(t, rest) => t match
     case K.Con(n, args) =>
@@ -889,17 +889,17 @@ def Emit.inTerms(ts: Coll.List[K.Term], t: K.Term): Bool = ts match
   case Coll.Cons(x, rest) => if Mono.termEq(x, t) then true else Emit.inTerms(rest, t)
 
 // the field types of enum e at args
-def Emit.fieldTys {r: Region} (e: Ast.Enum, args: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] =
+def Emit.fieldTys(e: Ast.Enum, args: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] =
   val Ast.Enum(_, _, gs, cases) = e
   Emit.casesTys(cases, Ty.zipBind(Ty.tparams(gs, Coll.Nil), args, Coll.Nil), acc)
 
-def Emit.casesTys {r: Region} (cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = cs match
+def Emit.casesTys(cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = cs match
   case Coll.Nil => acc
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, _, fs) = c
     Emit.casesTys(rest, tv, Emit.bindersTys(fs, tv, acc))
 
-def Emit.bindersTys {r: Region} (fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = fs match
+def Emit.bindersTys(fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = fs match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
     val Ast.Binder(_, _, t) = f
@@ -918,20 +918,20 @@ def Emit.termName(t: K.Term): Unit = t match
   case K.Con(n, args) => Emit.enumName(n, args)
   case _ => Emit.mangle(t)
 
-def Emit.structs {r: Region} (cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
+def Emit.structs(cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(t, rest) =>
     Emit.withEnum(cx, t, Emit.Layout)
     Emit.structs(cx, rest)
 
-def Emit.statics {r: Region} (cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
+def Emit.statics(cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
   case Coll.Nil => ()
   case Coll.Cons(t, rest) =>
     Emit.withEnum(cx, t, Emit.Code)
     Emit.statics(cx, rest)
 
 // the struct (Layout) or the nullary statics (Code) of enum term t
-def Emit.withEnum {r: Region} (cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
+def Emit.withEnum(cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
   case K.Con(n, args) =>
     val Emit.Cx(_, _, _, es, _, _, _, _) = cx
     Coll.sLookup(es, n) match
@@ -949,7 +949,7 @@ def Emit.withEnum {r: Region} (cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = 
           case Emit.Code => Emit.nullaries(n, args, cases, 0)
   case _ => ()
 
-def Emit.caseStructs {r: Region} (cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind]): Unit = cs match
+def Emit.caseStructs(cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, cn, fs) = c
@@ -963,7 +963,7 @@ def Emit.caseStructs {r: Region} (cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll
         Console.print(";")
     Emit.caseStructs(cx, rest, tv)
 
-def Emit.fieldDecls {r: Region} (cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind]): Unit = fs match
+def Emit.fieldDecls(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val Ast.Binder(_, x, t) = f
@@ -992,7 +992,7 @@ def Emit.nullaries(n: Sym.Sym, args: Coll.List[K.Term], cs: Coll.List[Ast.Case],
     Emit.nullaries(n, args, rest, i + 1)
 
 // ── prototypes (spec sec 1 D), vtables (E), bodies (G) ──
-def Emit.externs {r: Region} (cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs match
+def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, tps, _, _, _, body) = f
@@ -1004,12 +1004,12 @@ def Emit.externs {r: Region} (cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs matc
       case _ => ()
     Emit.externs(cx, rest)
 
-def Emit.ptrs {r: Region} (tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = tps match
+def Emit.ptrs(tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = tps match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Emit.ptrs(rest, Coll.Cons(Ty.Bind(x, Ty.con("Ptr")), acc))
 
 // a generic extern whose result is a [] binder returns void*: the call casts it to the instance's type (spec sec 4 XInst)
-def Emit.externCast {r: Region} (cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]): Coll.Option[K.Term] =
+def Emit.externCast(cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]): Coll.Option[K.Term] =
   val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, f) match
     case Coll.Some(g) =>
@@ -1021,7 +1021,7 @@ def Emit.externCast {r: Region} (cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]
         case _ => Coll.None
     case Coll.None => Coll.None
 
-def Emit.protos {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
+def Emit.protos(cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
   case Coll.Nil => ()
   case Coll.Cons(i, rest) =>
     if Emit.isDef(i) then
@@ -1030,7 +1030,7 @@ def Emit.protos {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is m
     else ()
     Emit.protos(cx, rest)
 
-def Emit.bodies {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
+def Emit.bodies(cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is match
   case Coll.Nil => ()
   case Coll.Cons(i, rest) =>
     val Mono.Inst(f, _, _) = i
@@ -1041,14 +1041,14 @@ def Emit.bodies {r: Region} (cx: Emit.Cx, is: Coll.List[Mono.Inst]): Unit = is m
     Emit.bodies(cx, rest)
 
 // the fns of every handler: prototypes (Layout) or bodies (Code)
-def Emit.handlers {r: Region} (cx: Emit.Cx, hs: Coll.List[El.Handler], what: Emit.Part): Unit = hs match
+def Emit.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], what: Emit.Part): Unit = hs match
   case Coll.Nil => ()
   case Coll.Cons(h, rest) =>
     val El.Handler(hn, _, fs) = h
     Emit.implFns(cx, Emit.KHandler(hn), fs, what)
     Emit.handlers(cx, rest, what)
 
-def Emit.implFns {r: Region} (cx: Emit.Cx, k: Emit.Kind, fs: Coll.List[El.Fn], what: Emit.Part): Unit = fs match
+def Emit.implFns(cx: Emit.Cx, k: Emit.Kind, fs: Coll.List[El.Fn], what: Emit.Part): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, _, _, _, _, body) = f
@@ -1063,7 +1063,7 @@ def Emit.implFns {r: Region} (cx: Emit.Cx, k: Emit.Kind, fs: Coll.List[El.Fn], w
     Emit.implFns(cx, k, rest, what)
 
 // the vtable of a handler: its fn per op of its protocol, in the protocol's op order (spec sec 5.1)
-def Emit.vtables {r: Region} (cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
+def Emit.vtables(cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
   case Coll.Nil => ()
   case Coll.Cons(h, rest) =>
     val El.Handler(hn, p, fs) = h
@@ -1089,7 +1089,7 @@ def Emit.hasRow(fs: Coll.List[El.Fn]): Bool = fs match
     Coll.length(caps) > 0
 
 // its vtable entries: w_H_op(srs_env* e, args) calls h_H_op(e->c[0], .., e->st, args) (init is not in the vtable)
-def Emit.wrappers {r: Region} (cx: Emit.Cx, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs match
+def Emit.wrappers(cx: Emit.Cx, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, name, _, caps, _, _, _) = f
@@ -1150,7 +1150,7 @@ def Emit.vtOps(pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
     Emit.vtOps(pre, hn, rest)
 
 // the inline Arena bump (spec sec 5.2): the chunk layout of rt/srs_rt.c:24-25
-def Emit.allocFast {r: Region} (cx: Emit.Cx): Unit =
+def Emit.allocFast(cx: Emit.Cx): Unit =
   Console.print("typedef struct srs_chunk { struct srs_chunk* next; size_t used, cap; } srs_chunk;\n")
   Console.print("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n")
   Console.print("  if (c->vt == vt_Srs__Arena) {\n")
@@ -1164,14 +1164,14 @@ def Emit.allocFast {r: Region} (cx: Emit.Cx): Unit =
   Console.print("])(c->self, size);\n")
   Console.print("}\n")
 
-def Emit.hasMain {r: Region} (cx: Emit.Cx): Bool =
+def Emit.hasMain(cx: Emit.Cx): Bool =
   val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, Sym.of("main")) match
     case Coll.Some(_) => true
     case Coll.None => false
 
 // ── the program (spec sec 1): one C file to stdout ──
-def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
+def Emit.program(ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   val Ty.Result(_, _, s, fs, hs, _) = res
   val cx = Emit.cxOf(ds, s, fs)
   val is = Mono.run(res)
@@ -1198,7 +1198,7 @@ def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   if Emit.hasMain(cx) then Console.print("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()
 
 // a def instance is f_<name><args>; a given method instance is named by its goal
-def Emit.kindOf {r: Region} (i: Mono.Inst): Emit.Kind =
+def Emit.kindOf(i: Mono.Inst): Emit.Kind =
   val Mono.Inst(_, _, site) = i
   site match
     case Mono.Top => Emit.KDef

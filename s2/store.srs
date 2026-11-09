@@ -34,23 +34,23 @@ handler Srs.StoreFile for StoreOut:
   def commit(self: Ptr): Unit = rt_out_commit(self)
 
 // a decl as the printer writes it
-def Store.text {r: Region} (d: Ast.Decl): Str =
+def Store.text(d: Ast.Decl): Str =
   Console.captureBegin()
   Ast.decl(d)
   Console.captureEnd()
 
-def Store.write {r: Region} (dir: Str, g: Hs.Dg, s: Str): Unit =
+def Store.write(dir: Str, g: Hs.Dg, s: Str): Unit =
   val Hs.Dg(a, b, c, d) = g
   handle o = Srs.StoreFile(dir, a, b, c, d)
   o.put(s)
   o.commit()
 
-def Store.read {r: Region} (dir: Str, g: Hs.Dg): Str =
+def Store.read(dir: Str, g: Hs.Dg): Str =
   val Hs.Dg(a, b, c, d) = g
   Store.load(dir, a, b, c, d)
 
 // an entry reads back as the decl when it parses to exactly one decl that prints as the original
-def Store.same {r: Region} (entry: Str, want: Str): Bool =
+def Store.same(entry: Str, want: Str): Bool =
   if Str.len(entry) < 0 then false
   else Parse.source(entry) match
     case Parse.Ok(ds, _) => ds match
@@ -69,7 +69,7 @@ def Store.seen(gs: Coll.List[Hs.Dg], g: Hs.Dg): Bool = gs match
 
 // `s2c --store-check`: write every hashed decl, read each back, compare (vic-uw3 H2 oracle); a later decl with a hash
 // met before shares the entry (names are metadata)
-def Store.check {r: Region} (ds: Coll.List[Ast.Decl]): Unit =
+def Store.check(ds: Coll.List[Ast.Decl]): Unit =
   val Store.Tally(w, s, sh, b, _) = Store.decls(Store.dir(), Hs.all(ds), ds, Store.Tally(0, 0, 0, 0, Coll.Nil))
   Console.print("store: wrote ")
   Console.printI64(w)
@@ -81,7 +81,7 @@ def Store.check {r: Region} (ds: Coll.List[Ast.Decl]): Unit =
   Console.printI64(b)
   Console.print("\n")
 
-def Store.decls {r: Region} (dir: Str, hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.Decl], t: Store.Tally): Store.Tally = ds match
+def Store.decls(dir: Str, hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.Decl], t: Store.Tally): Store.Tally = ds match
   case Coll.Nil => t
   case Coll.Cons(d, rest) =>
     val n: Coll.Option[Sym.Sym] = d match
@@ -99,7 +99,7 @@ def Store.decls {r: Region} (dir: Str, hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.D
       case Coll.None => Store.decls(dir, hm, rest, t)
       case Coll.Some(h) => Store.decls(dir, hm, rest, Store.one(dir, h, Store.text(d), t))
 
-def Store.one {r: Region} (dir: Str, g: Hs.Dg, want: Str, t: Store.Tally): Store.Tally =
+def Store.one(dir: Str, g: Hs.Dg, want: Str, t: Store.Tally): Store.Tally =
   val Store.Tally(w, s, sh, b, seen) = t
   val w2 = if Str.len(Store.read(dir, g)) < 0 then Store.wrote(dir, g, want, w) else w
   val seen2 = Coll.Cons(g, seen)
@@ -107,6 +107,6 @@ def Store.one {r: Region} (dir: Str, g: Hs.Dg, want: Str, t: Store.Tally): Store
   else if Store.same(Store.read(dir, g), want) then Store.Tally(w2, s + 1, sh, b, seen2)
   else Store.Tally(w2, s, sh, b + 1, seen2)
 
-def Store.wrote {r: Region} (dir: Str, g: Hs.Dg, s: Str, w: I64): I64 =
+def Store.wrote(dir: Str, g: Hs.Dg, s: Str, w: I64): I64 =
   Store.write(dir, g, s)
   w + 1

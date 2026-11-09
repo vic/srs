@@ -10,11 +10,11 @@ enum Coll.Option [A: Type]:
   case Coll.Some(v: A)
 
 // xs reversed onto acc
-def Coll.revOnto [A: Type] {r: Region} (xs: Coll.List[A], acc: Coll.List[A]): Coll.List[A] = xs match
+def Coll.revOnto [A: Type] (xs: Coll.List[A], acc: Coll.List[A]): Coll.List[A] = xs match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => Coll.revOnto(t, Coll.Cons(h, acc))
 
-def Coll.rev [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.revOnto(xs, Coll.Nil)
+def Coll.rev [A: Type] (xs: Coll.List[A]): Coll.List[A] = Coll.revOnto(xs, Coll.Nil)
 
 def Coll.lengthFrom [A: Type] (xs: Coll.List[A], n: I64): I64 = xs match
   case Coll.Nil => n
@@ -22,7 +22,7 @@ def Coll.lengthFrom [A: Type] (xs: Coll.List[A], n: I64): I64 = xs match
 
 def Coll.length [A: Type] (xs: Coll.List[A]): I64 = Coll.lengthFrom(xs, 0)
 
-def Coll.headOpt [A: Type] {r: Region} (xs: Coll.List[A]): Coll.Option[A] = xs match
+def Coll.headOpt [A: Type] (xs: Coll.List[A]): Coll.Option[A] = xs match
   case Coll.Nil => Coll.None
   case Coll.Cons(h, _) => Coll.Some(h)
 
@@ -50,16 +50,16 @@ def Coll.size [V: Type] (m: Coll.IMap[V]): I64 = m match
   case Coll.Tip => 0
   case Coll.Bin(s, _, _, _, _) => s
 
-def Coll.lookup [V: Type] {r: Region} (m: Coll.IMap[V], k: I64): Coll.Option[V] = m match
+def Coll.lookup [V: Type] (m: Coll.IMap[V], k: I64): Coll.Option[V] = m match
   case Coll.Tip => Coll.None
   case Coll.Bin(_, k2, v, l, r2) => if k < k2 then Coll.lookup(l, k) else if k > k2 then Coll.lookup(r2, k) else Coll.Some(v)
 
 // a node over l and r (their sizes known)
-def Coll.bin [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+def Coll.bin [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
   Coll.Bin(Coll.size(l) + Coll.size(r2) + 1, k, v, l, r2)
 
 // k, v over l and r where one side grew or shrank by at most one element: rotate back into balance
-def Coll.balance [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+def Coll.balance [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
   val sl = Coll.size(l)
   val sr = Coll.size(r2)
   if sl + sr <= 1 then Coll.bin(k, v, l, r2)
@@ -67,7 +67,7 @@ def Coll.balance [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.
   else if sl > Coll.delta() * sr then Coll.rotateR(k, v, l, r2)
   else Coll.bin(k, v, l, r2)
 
-def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = r2 match
+def Coll.rotateL [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = r2 match
   case Coll.Tip => Coll.bin(k, v, l, r2)
   case Coll.Bin(_, k2, v2, rl, rr) =>
     if Coll.size(rl) < Coll.ratio() * Coll.size(rr) then Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
@@ -75,7 +75,7 @@ def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.
       case Coll.Tip => Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
       case Coll.Bin(_, k3, v3, rll, rlr) => Coll.bin(k3, v3, Coll.bin(k, v, l, rll), Coll.bin(k2, v2, rlr, rr))
 
-def Coll.rotateR [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
+def Coll.rotateR [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
   case Coll.Tip => Coll.bin(k, v, l, r2)
   case Coll.Bin(_, k2, v2, ll, lr) =>
     if Coll.size(lr) < Coll.ratio() * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
@@ -84,7 +84,7 @@ def Coll.rotateR [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.
       case Coll.Bin(_, k3, v3, lrl, lrr) => Coll.bin(k3, v3, Coll.bin(k2, v2, ll, lrl), Coll.bin(k, v, lrr, r2))
 
 // m with k bound to v (a binding of k is replaced)
-def Coll.insert [V: Type] {r: Region} (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m match
+def Coll.insert [V: Type] (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m match
   case Coll.Tip => Coll.Bin(1, k, v, Coll.Tip, Coll.Tip)
   case Coll.Bin(s, k2, v2, l, r2) =>
     if k < k2 then Coll.balance(k2, v2, Coll.insert(l, k, v), r2)
@@ -114,18 +114,18 @@ enum Coll.Dir:
   case Coll.Down
 
 // the run Cons(h, rt) as a strictly descending run
-def Coll.closeRun [V: Type] {r: Region} (d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = d match
+def Coll.closeRun [V: Type] (d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = d match
   case Coll.Up => Coll.Cons(h, rt)
   case Coll.Down => Coll.revOnto(rt, Coll.Cons(h, Coll.Nil))
 
 // the natural runs of xs, each strictly descending, the latest run first. In an Up run an equal key replaces the run
 // head (the later binding wins); a one-element Up run turns Down when the next key is smaller.
-def Coll.runs [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+def Coll.runs [V: Type] (xs: Coll.List[Coll.KV[V]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(x, t) => Coll.runStep(t, Coll.Up, x, Coll.Nil, Coll.Nil)
 
 // h is the last element taken into the current run Cons(h, rt)
-def Coll.runStep [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]], d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+def Coll.runStep [V: Type] (xs: Coll.List[Coll.KV[V]], d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
   case Coll.Nil => Coll.Cons(Coll.closeRun(d, h, rt), acc)
   case Coll.Cons(y, t) =>
     val ky = Coll.kvKey(y)
@@ -142,7 +142,7 @@ def Coll.runStep [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]], d: Coll.Dir, 
         else Coll.runStep(t, Coll.Up, y, Coll.Nil, Coll.Cons(Coll.closeRun(d, h, rt), acc))
 
 // merge of two ascending runs onto acc, giving a descending run; equal keys: the element of b (the later run) wins
-def Coll.mergeRev [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
+def Coll.mergeRev [V: Type] (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
   case Coll.Nil => Coll.revOnto(b, acc)
   case Coll.Cons(x, ta) => b match
     case Coll.Nil => Coll.revOnto(a, acc)
@@ -154,7 +154,7 @@ def Coll.mergeRev [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List[
       else Coll.mergeRev(a, tb, Coll.Cons(y, acc))
 
 // merge of two descending runs onto acc, giving an ascending run; equal keys: the element of a (the later run) wins
-def Coll.mergeRevD [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
+def Coll.mergeRevD [V: Type] (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
   case Coll.Nil => Coll.revOnto(b, acc)
   case Coll.Cons(x, ta) => b match
     case Coll.Nil => Coll.revOnto(a, acc)
@@ -166,31 +166,31 @@ def Coll.mergeRevD [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List
       else Coll.mergeRevD(a, tb, Coll.Cons(y, acc))
 
 // one pass over ascending runs, earliest first: descending runs, latest first (a last odd run is reversed)
-def Coll.passA [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
+def Coll.passA [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
   case Coll.Nil => acc
   case Coll.Cons(a, t) => t match
     case Coll.Nil => Coll.Cons(Coll.rev(a), acc)
     case Coll.Cons(b, t2) => Coll.passA(t2, Coll.Cons(Coll.mergeRev(a, b, Coll.Nil), acc))
 
 // one pass over descending runs, latest first: ascending runs, earliest first (a last odd run is reversed)
-def Coll.passD [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
+def Coll.passD [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
   case Coll.Nil => acc
   case Coll.Cons(a, t) => t match
     case Coll.Nil => Coll.Cons(Coll.rev(a), acc)
     case Coll.Cons(b, t2) => Coll.passD(t2, Coll.Cons(Coll.mergeRevD(a, b, Coll.Nil), acc))
 
 // the run order is in the function: mergeAllA gets ascending runs earliest first, mergeAllD descending runs latest first
-def Coll.mergeAllA [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
+def Coll.mergeAllA [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(a, t) => t match
     case Coll.Nil => a
     case Coll.Cons(_, _) => Coll.mergeAllD(Coll.passA(runs, Coll.Nil))
 
-def Coll.mergeAllD [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
+def Coll.mergeAllD [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(a, t) => t match
     case Coll.Nil => Coll.rev(a)
     case Coll.Cons(_, _) => Coll.mergeAllA(Coll.passD(runs, Coll.Nil))
 
 // natural bottom-up merge sort, O(n log r) for r runs; a duplicate key keeps the last binding of the input
-def Coll.sortDedup [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]]): Coll.Sorted[V] = Coll.Sorted(Coll.mergeAllD(Coll.runs(xs)))
+def Coll.sortDedup [V: Type] (xs: Coll.List[Coll.KV[V]]): Coll.Sorted[V] = Coll.Sorted(Coll.mergeAllD(Coll.runs(xs)))

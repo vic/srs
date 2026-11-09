@@ -111,7 +111,7 @@ def main(): I64 =
   TT.run("unknown", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = nope(1)\n")), lib))
   TT.run("cannotinfer", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = Coll.length(Coll.Nil)\n")), lib))
   Console.print("elab usem:\n")
-  TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  handle b = Srs.Heap()\n  val xs = mk{b}(3)\n  Coll.length(Coll.rev{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", lib, "usem")
+  TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef rv [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.rev(xs)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  handle b = Srs.Heap()\n  val xs = mk{b}(3)\n  Coll.length(rv{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", lib, "usem")
   Console.print("mono usem:\n")
   TT.insts(Mono.run(Ty.check(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)))))
   0

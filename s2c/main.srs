@@ -15,7 +15,7 @@ enum S2c.Read:
   case S2c.Read(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], files: Coll.List[S2c.File])
 
 // the args from i on, each a source file, in order; base = the number of the next file's first line
-def S2c.read {r: Region} (i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
+def S2c.read(i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
   if i >= Args.count() then S2c.Read(Coll.rev(ds), Coll.rev(errs), fs)
   else
     val p = Args.at(i)
@@ -40,7 +40,7 @@ enum S2c.What:
   case S2c.Want(want: K.Term, got: K.Term)
   case S2c.Text(s: Str)
 
-def S2c.diag {r: Region} (fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.What, help: Str): Unit =
+def S2c.diag(fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.What, help: Str): Unit =
   Console.eprint("error[")
   Console.eprint(code)
   Console.eprint("]: ")
@@ -86,7 +86,7 @@ def S2c.diag {r: Region} (fs: Coll.List[S2c.File], code: Str, line: I64, title: 
   Console.eprint("\n")
 
 // the file a line is in: the last one whose first line is at or before it (files are kept latest first)
-def S2c.fileOf {r: Region} (fs: Coll.List[S2c.File], line: I64): Coll.Option[S2c.File] = fs match
+def S2c.fileOf(fs: Coll.List[S2c.File], line: I64): Coll.Option[S2c.File] = fs match
   case Coll.Nil => Coll.None
   case Coll.Cons(f, rest) =>
     val S2c.File(_, base, _) = f
@@ -102,7 +102,7 @@ def S2c.lineText(s: Str, k: I64, i: I64, n: I64): Str =
 
 def S2c.lineEnd(s: Str, i: I64): I64 = if i >= Str.len(s) || Str.at(s, i) == 10 then i else S2c.lineEnd(s, i + 1)
 
-def S2c.showErrs {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): Unit = es match
+def S2c.showErrs(fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): Unit = es match
   case Coll.Nil => ()
   case Coll.Cons(e, rest) =>
     e match
@@ -113,7 +113,7 @@ def S2c.showErrs {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): 
       case S2c.Syntax(line, want) => S2c.diag(fs, "parse", line, "parse error, expected", S2c.Text(want), "fix the syntax on this line")
     S2c.showErrs(fs, rest)
 
-def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List[Ty.Clash]): Unit = cs match
+def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List[Ty.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
@@ -150,7 +150,7 @@ def S2c.showClashes {r: Region} (fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], 
       case Ty.RtOutsideSrs(l, f) => S2c.diag(fs, "rt-outside-srs", l, "rt_* is called only in the body of a Srs.* handler, not here:", S2c.Name(f), "request the effect (Console.print(s)) and handle it in main (handle c = Srs.Console())")
     S2c.showClashes(fs, s, rest)
 
-def S2c.showTl {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
+def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
   case Coll.Nil => ()
   case Coll.Cons(e, rest) =>
     e match
@@ -165,21 +165,21 @@ def S2c.showTl {r: Region} (fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Uni
     S2c.showTl(fs, rest)
 
 // ── the phases: names, type level, types, flow (protocols, regions), then C; the first phase with errors stops ──
-def S2c.compile {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
+def S2c.compile(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
   case Names.Ok => S2c.facts(m, fs, ds)
   case Names.Bad(cs) =>
     S2c.showNames(fs, cs)
     1
   case Names.RulesBad(rel) => S2c.internal("names", rel)
 
-def S2c.facts {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
+def S2c.facts(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Fx.check(ds) match
   case Fx.Ok => S2c.typed(m, fs, ds)
   case Fx.Bad(cs) =>
     S2c.showFx(fs, cs)
     1
   case Fx.RulesBad(rel) => S2c.internal("facts", rel)
 
-def S2c.showFx {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs match
+def S2c.showFx(fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
@@ -198,7 +198,7 @@ def S2c.showFx {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): U
       case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the protocol:", S2c.Name(op), "use an op of this protocol")
     S2c.showFx(fs, rest)
 
-def S2c.typed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
+def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
   val Tl.W(xds, tes) = Tl.expand(ds)
   tes match
     case Coll.Cons(_, _) =>
@@ -215,7 +215,7 @@ def S2c.typed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[A
             1
           case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
 
-def S2c.flowed {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
+def S2c.flowed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
   S2c.flowAll(S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
@@ -228,7 +228,7 @@ enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])
   case S2c.FlowBad(rel: Sym.Sym)
 
-def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
+def S2c.flowCx(ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
   case Coll.Nil => Flow.Cx(ps, hs, fs, es, ts, rows)
   case Coll.Cons(d, rest) => d match
     case Ast.DProto(p) => S2c.flowCx(rest, rows, Coll.Cons(p, ps), hs, fs, es, ts)
@@ -239,7 +239,7 @@ def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.Li
     case _ => S2c.flowCx(rest, rows, ps, hs, fs, es, ts)
 
 // every def with a body: its flow clashes (all of them, in order)
-def S2c.flowAll {r: Region} (cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
+def S2c.flowAll(cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
   case Coll.Nil => S2c.FlowOk(acc)
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
@@ -254,7 +254,7 @@ def S2c.flowAll {r: Region} (cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.Lis
         case _ => S2c.flowAll(cx, rest, acc)
     case _ => S2c.flowAll(cx, rest, acc)
 
-def S2c.showNames {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = cs match
+def S2c.showNames(fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
@@ -269,7 +269,7 @@ def S2c.showNames {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Names.Clas
       case Names.BadArity(l, n) => S2c.diag(fs, "handler-arity", l, "a handler fn has the wrong arity:", S2c.Name(n), "take self: Ptr first, then the op's params")
     S2c.showNames(fs, rest)
 
-def S2c.showFlow {r: Region} (fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs match
+def S2c.showFlow(fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
@@ -303,7 +303,7 @@ enum S2c.Mode:
   // --store-check: write every hashed decl to the store, read it back, compare
   case S2c.StoreCheck
 
-def S2c.finish {r: Region} (m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 = m match
+def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 = m match
   case S2c.StoreCheck =>
     Store.check(ds)
     0
@@ -340,7 +340,7 @@ def S2c.showLines(ls: Coll.List[Ev.Line]): Unit = ls match
 enum S2c.Args:
   case S2c.Args(m: S2c.Mode, first: I64)
 
-def S2c.args {r: Region} (): S2c.Args =
+def S2c.args(): S2c.Args =
   if Args.count() > 1 && Str.eq(Args.at(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--hash") then S2c.Args(S2c.HashAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)

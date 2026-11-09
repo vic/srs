@@ -8,18 +8,18 @@ enum Queue.Popped [A: Type]:
   case Queue.Empty
   case Queue.Got(x: A, rest: Queue.Queue[A])
 
-def Queue.empty [A: Type] {r: Region} (): Queue.Queue[A] = Queue.Queue(Coll.Nil, Coll.Nil)
+def Queue.empty [A: Type] (): Queue.Queue[A] = Queue.Queue(Coll.Nil, Coll.Nil)
 
-def Queue.push [A: Type] {r: Region} (q: Queue.Queue[A], x: A): Queue.Queue[A] =
+def Queue.push [A: Type] (q: Queue.Queue[A], x: A): Queue.Queue[A] =
   val Queue.Queue(f, b) = q
   Queue.Queue(f, Coll.Cons(x, b))
 
 // each of xs pushed, in order
-def Queue.pushAll [A: Type] {r: Region} (q: Queue.Queue[A], xs: Coll.List[A]): Queue.Queue[A] = xs match
+def Queue.pushAll [A: Type] (q: Queue.Queue[A], xs: Coll.List[A]): Queue.Queue[A] = xs match
   case Coll.Nil => q
   case Coll.Cons(x, t) => Queue.pushAll(Queue.push(q, x), t)
 
-def Queue.pop [A: Type] {r: Region} (q: Queue.Queue[A]): Queue.Popped[A] =
+def Queue.pop [A: Type] (q: Queue.Queue[A]): Queue.Popped[A] =
   val Queue.Queue(f, b) = q
   f match
     case Coll.Cons(x, t) => Queue.Got(x, Queue.Queue(t, b))
