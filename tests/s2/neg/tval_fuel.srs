@@ -1,0 +1,12 @@
+// expect: line 10: a value arg has no compile-time value in Bits
+type Bits (n: I64) = n match
+  case 8 => Bool
+  case _ => I64
+def spin(n: I64): I64 =
+  var i = 0
+  while true do
+    i = i + 1
+  i
+def tf(x: Bits(spin(1))): I64 = x
+def main(): I64 = 0
+// s1: comptime evaluation ran out of fuel at

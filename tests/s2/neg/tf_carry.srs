@@ -1,0 +1,9 @@
+// expect: value does not carry the fact of its type: state of 'f'
+type OpenFile {f: File} <at(f, Opened)> = Ptr
+extern def rt_handle {f: File} <at(f, Opened)> (): OpenFile
+def use {f: File} <at(f, Opened)> (h: OpenFile): I64 = 1
+extern def raw(): Ptr
+def g {f: File} <at(f, Opened)> (): I64 =
+  val h: Ptr = raw()
+  use(h)
+def main(): I64 = 0

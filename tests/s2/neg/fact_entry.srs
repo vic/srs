@@ -1,0 +1,9 @@
+// expect: line 6: op not allowed in this state of capability readOnce
+def readOnce {f: File} <at(f, Opened)> (): I64 <at(f, Read1)> = f.read()
+def main(): I64 =
+  handle f = CFile()
+  val a = readOnce()
+  val b = readOnce()
+  f.close()
+  0
+// s1: 'readOnce' needs 'f' in state Opened, it is Read1

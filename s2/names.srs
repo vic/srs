@@ -210,7 +210,7 @@ def Names.ty {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], st: Names.St): Nam
 // a type with the locals ls in scope of its value args (the value binders of a type decl)
 def Names.tyIn {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St =
   val Ast.Ty(line, n, args, _, vs) = t
-  Names.exprs(vs, ls, Names.tys(args, tps, if Names.member(n, tps) then st else Names.add(st, Names.fTyRef(n, line))))
+  Names.exprs(vs, ls, tps, Names.tys(args, tps, if Names.member(n, tps) then st else Names.add(st, Names.fTyRef(n, line))))
 
 def Names.tys {r: Region} (ts: Coll.List[Ast.Ty], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ts match
   case Coll.Nil => st
@@ -238,8 +238,8 @@ def Names.fn {r: Region} (f: Ast.Fn, outer: Coll.List[Sym.Sym], st: Names.St): N
   val locals = Names.binderNames(params, Names.evidenceNames(gs, Coll.Nil))
   body match
     case Ast.Extern => st1
-    case Ast.Def(cs, e) => Names.expr(e, locals, Names.clauses(cs, locals, st1))
-    case Ast.Spec(cs, e) => Names.expr(e, locals, Names.clauses(cs, locals, st1))
+    case Ast.Def(cs, e) => Names.expr(e, locals, tps, Names.clauses(cs, locals, tps, st1))
+    case Ast.Spec(cs, e) => Names.expr(e, locals, tps, Names.clauses(cs, locals, tps, st1))
 
 // the types of the {} binders (a {} binder names a trait or a protocol)
 def Names.groupTys {r: Region} (gs: Coll.List[Ast.Group], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = gs match
@@ -257,13 +257,13 @@ def Names.evidenceNames {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sy
     case Ast.Facts(_) => Names.evidenceNames(rest, acc)
 
 // contract clauses: their expressions see the params and result (s1 binds result in an ensures)
-def Names.clauses {r: Region} (cs: Coll.List[Ast.Clause], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = cs match
+def Names.clauses {r: Region} (cs: Coll.List[Ast.Clause], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = cs match
   case Coll.Nil => st
   case Coll.Cons(c, rest) => c match
-    case Ast.CondC(_, _, e) => Names.clauses(rest, ls, Names.expr(e, Coll.Cons(Sym.of("result"), ls), st))
-    case Ast.ProofUsing(line, xs) => Names.clauses(rest, ls, Names.useAll(xs, line, st))
-    case Ast.ProofInduction(_, _) => Names.clauses(rest, ls, st)
-    case Ast.ProofLean(_, _) => Names.clauses(rest, ls, st)
+    case Ast.CondC(_, _, e) => Names.clauses(rest, ls, tps, Names.expr(e, Coll.Cons(Sym.of("result"), ls), tps, st))
+    case Ast.ProofUsing(line, xs) => Names.clauses(rest, ls, tps, Names.useAll(xs, line, st))
+    case Ast.ProofInduction(_, _) => Names.clauses(rest, ls, tps, st)
+    case Ast.ProofLean(_, _) => Names.clauses(rest, ls, tps, st)
 
 // proof using f, g: each is a use of a def
 def Names.useAll {r: Region} (xs: Coll.List[Sym.Sym], line: I64, st: Names.St): Names.St = xs match
@@ -271,51 +271,51 @@ def Names.useAll {r: Region} (xs: Coll.List[Sym.Sym], line: I64, st: Names.St): 
   case Coll.Cons(x, rest) => Names.useAll(rest, line, Names.add(st, Names.fUseCall(x, line)))
 
 // a body: a call or a name that is not local is a use of the call namespace (a def, a case, a nullary case)
-def Names.expr {r: Region} (e: Ast.Expr, ls: Coll.List[Sym.Sym], st: Names.St): Names.St = e match
+def Names.expr {r: Region} (e: Ast.Expr, ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = e match
   case Ast.Name(line, x) => if Names.member(x, ls) then st else Names.add(st, Names.fUseCall(x, line))
-  case Ast.Call(line, f, targs, _, xs) => Names.exprs(xs, ls, Names.tys(targs, Coll.Nil, Names.add(st, Names.fUseCall(f, line))))
-  case Ast.Method(_, _, _, xs) => Names.exprs(xs, ls, st)
-  case Ast.Bin(_, _, l, rhs) => Names.expr(rhs, ls, Names.expr(l, ls, st))
-  case Ast.Un(_, _, x) => Names.expr(x, ls, st)
-  case Ast.If(_, c, t, x) => Names.expr(x, ls, Names.expr(t, ls, Names.expr(c, ls, st)))
-  case Ast.While(_, c, b) => Names.expr(b, ls, Names.expr(c, ls, st))
-  case Ast.Assign(_, _, x) => Names.expr(x, ls, st)
-  case Ast.Quant(_, _, x, t, b) => Names.expr(b, Coll.Cons(x, ls), Names.ty(t, Coll.Nil, st))
-  case Ast.Match(_, s, arms) => Names.arms(arms, ls, Names.expr(s, ls, st))
-  case Ast.Block(_, ss, last) => Names.block(ss, last, ls, st)
+  case Ast.Call(line, f, targs, _, xs) => Names.exprs(xs, ls, tps, Names.tys(targs, tps, Names.add(st, Names.fUseCall(f, line))))
+  case Ast.Method(_, _, _, xs) => Names.exprs(xs, ls, tps, st)
+  case Ast.Bin(_, _, l, rhs) => Names.expr(rhs, ls, tps, Names.expr(l, ls, tps, st))
+  case Ast.Un(_, _, x) => Names.expr(x, ls, tps, st)
+  case Ast.If(_, c, t, x) => Names.expr(x, ls, tps, Names.expr(t, ls, tps, Names.expr(c, ls, tps, st)))
+  case Ast.While(_, c, b) => Names.expr(b, ls, tps, Names.expr(c, ls, tps, st))
+  case Ast.Assign(_, _, x) => Names.expr(x, ls, tps, st)
+  case Ast.Quant(_, _, x, t, b) => Names.expr(b, Coll.Cons(x, ls), tps, Names.ty(t, tps, st))
+  case Ast.Match(_, s, arms) => Names.arms(arms, ls, tps, Names.expr(s, ls, tps, st))
+  case Ast.Block(_, ss, last) => Names.block(ss, last, ls, tps, st)
   case _ => st
 
-def Names.exprs {r: Region} (xs: Coll.List[Ast.Expr], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = xs match
+def Names.exprs {r: Region} (xs: Coll.List[Ast.Expr], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = xs match
   case Coll.Nil => st
-  case Coll.Cons(x, rest) => Names.exprs(rest, ls, Names.expr(x, ls, st))
+  case Coll.Cons(x, rest) => Names.exprs(rest, ls, tps, Names.expr(x, ls, tps, st))
 
 // an arm: its case is a use; its binders are locals of its body
-def Names.arms {r: Region} (as: Coll.List[Ast.Arm], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+def Names.arms {r: Region} (as: Coll.List[Ast.Arm], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
   case Coll.Nil => st
   case Coll.Cons(a, rest) =>
     val Ast.Arm(line, p, b) = a
     val st1: Names.St = p match
-      case Ast.PCase(c, binds) => Names.expr(b, Names.binderSyms(binds, ls), Names.add(st, Names.fUseCall(c, line)))
-      case Ast.PAny => Names.expr(b, ls, st)
-    Names.arms(rest, ls, st1)
+      case Ast.PCase(c, binds) => Names.expr(b, Names.binderSyms(binds, ls), tps, Names.add(st, Names.fUseCall(c, line)))
+      case Ast.PAny => Names.expr(b, ls, tps, st)
+    Names.arms(rest, ls, tps, st1)
 
 def Names.binderSyms {r: Region} (xs: Coll.List[Sym.Sym], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Names.binderSyms(rest, Coll.Cons(x, acc))
 
 // a block: each statement in turn; a val, var or handle binds its name for the statements after it and the value
-def Names.block {r: Region} (ss: Coll.List[Ast.Stmt], last: Ast.Expr, ls: Coll.List[Sym.Sym], st: Names.St): Names.St = ss match
-  case Coll.Nil => Names.expr(last, ls, st)
+def Names.block {r: Region} (ss: Coll.List[Ast.Stmt], last: Ast.Expr, ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ss match
+  case Coll.Nil => Names.expr(last, ls, tps, st)
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), Names.annTy(ann, Names.expr(e, ls, st)))
-    case Ast.Var(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), Names.annTy(ann, Names.expr(e, ls, st)))
-    case Ast.Handle(line, x, h, xs) => Names.block(rest, last, Coll.Cons(x, ls), Names.exprs(xs, ls, Names.add(st, Names.fTyRef(h, line))))
-    case Ast.Do(e) => Names.block(rest, last, ls, Names.expr(e, ls, st))
-    case Ast.Check(_, _, e) => Names.block(rest, last, ls, Names.expr(e, ls, st))
+    case Ast.Val(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.annTy(ann, tps, Names.expr(e, ls, tps, st)))
+    case Ast.Var(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.annTy(ann, tps, Names.expr(e, ls, tps, st)))
+    case Ast.Handle(line, x, h, xs) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.exprs(xs, ls, tps, Names.add(st, Names.fTyRef(h, line))))
+    case Ast.Do(e) => Names.block(rest, last, ls, tps, Names.expr(e, ls, tps, st))
+    case Ast.Check(_, _, e) => Names.block(rest, last, ls, tps, Names.expr(e, ls, tps, st))
 
-def Names.annTy {r: Region} (ann: Coll.Option[Ast.Ty], st: Names.St): Names.St = ann match
+def Names.annTy {r: Region} (ann: Coll.Option[Ast.Ty], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ann match
   case Coll.None => st
-  case Coll.Some(t) => Names.ty(t, Coll.Nil, st)
+  case Coll.Some(t) => Names.ty(t, tps, st)
 
 // a protocol: a type name; its states, start, transitions, ops and drop op as facts; its op signatures' types
 def Names.proto {r: Region} (p: Ast.Proto, st: Names.St): Names.St =

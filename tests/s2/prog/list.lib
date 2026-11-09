@@ -1,0 +1,11 @@
+enum List:
+  case Nil
+  case Cons(h: I64, t: List)
+
+def build {r: Region} (n: I64): List =
+  if n == 0 then Nil else Cons(n, build(n - 1))
+
+def sum(xs: List): I64 =
+  xs match
+    case Nil => 0
+    case Cons(h, t) => h + sum(t)

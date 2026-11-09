@@ -1,0 +1,12 @@
+// pass: BD5a <> facts (vic-9l7.8): <at(f, S)> before the params = the entry state, after the result = the exit state
+def readOnce {f: File} <at(f, Opened)> (): I64 <at(f, Read1)> = f.read()
+
+def closeAfter {f: File} <at(f, Read1)> (): Unit <at(f, Closed)> = f.close()
+
+def main(): I64 =
+  handle f = CFile()
+  val a = readOnce()
+  closeAfter()
+  rt_print_i64(a)
+  rt_print("\n")
+  0

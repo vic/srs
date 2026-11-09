@@ -1,0 +1,15 @@
+// expect: line 14: use of value after its region ended: a
+// ys takes a only on the 2nd turn: needs the loop fixpoint
+def main(): I64 =
+  handle a = Arena()
+  handle b = Heap()
+  var xs = build{b}(2)
+  var ys = build{b}(1)
+  var i = 0
+  while i < 2 do
+    ys = xs
+    xs = build{a}(1)
+    i = i + 1
+  a.free()
+  sum(ys)
+// s1: use of value after its region ended

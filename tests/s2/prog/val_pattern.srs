@@ -1,0 +1,34 @@
+// pass: val patterns (vic-m5r.11): `val C(a, b) = e` binds the fields of a single-case enum, so state threads through
+// vals with no var; nested pattern vals, a dotted case, a generic case, a pattern val as the last statement
+enum Acc:
+  case Acc(sum: I64, count: I64)
+
+enum Gen.Pair [A: Type] [B: Type]:
+  case Gen.Pair(a: A, b: B)
+
+def add {r: Region} (s: Acc, x: I64): Acc =
+  val Acc(sum, count) = s
+  Acc(sum + x, count + 1)
+
+def run {r: Region} (n: I64, s: Acc): Acc = if n == 0 then s else run(n - 1, add(s, n))
+
+def swapped [A: Type] [B: Type] {r: Region} (p: Gen.Pair[A, B]): Gen.Pair[B, A] =
+  val Gen.Pair(a, b) = p
+  Gen.Pair(b, a)
+
+def lastVal(s: Acc): Unit =
+  val Acc(x, _y) = s
+
+def main(): I64 =
+  handle r = Arena()
+  val Acc(total, n) = run(10, Acc(0, 0))
+  rt_print_i64(total)
+  rt_print("\n")
+  rt_print_i64(n)
+  rt_print("\n")
+  val Gen.Pair(k, v) = swapped(Gen.Pair(true, 42))
+  val Acc(t2, _c) = add(Acc(k, 1), 0)
+  rt_print_i64(if v then t2 + 1 else 0)
+  rt_print("\n")
+  lastVal(Acc(1, 2))
+  0

@@ -1,0 +1,24 @@
+// pass: vic-jxk {} evidence on a type: SortedBox[A] can only be named where Ord[A] is proven (local evidence or
+// a given), as a call's evidence
+trait Ord [A: Type]:
+  def lt(a: A, b: A): Bool
+
+enum Box [A: Type]:
+  case Box(v: A)
+
+given Ord[I64]:
+  def lt(a: I64, b: I64): Bool = a < b
+
+type SortedBox [A: Type] {o: Ord[A]} = Box[A]
+
+// local evidence o proves Ord[A] for SortedBox[A]
+def first [A: Type] {o: Ord[A]} (b: SortedBox[A]): A = b match
+  case Box(v) => v
+
+def main(): I64 =
+  handle r = Arena()
+  // the given Ord[I64] proves it here
+  val b: SortedBox[I64] = Box(41)
+  rt_print_i64(first(b) + 1)
+  rt_print("\n")
+  0
