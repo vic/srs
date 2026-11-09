@@ -39,6 +39,8 @@ enum Ty.Clash:
   case Ty.CapParam(line: I64, x: Sym.Sym)
   // a value type (a result, a field, a type arg of one) that names capability p: capabilities are erased (vic 2026-11-09)
   case Ty.CapErased(line: I64, p: Sym.Sym)
+  // a given whose head is not a trait (a capability is implemented by a handler)
+  case Ty.NotTrait(line: I64, n: Sym.Sym)
   case Ty.TraitArity(line: I64, t: Sym.Sym)
   case Ty.NotMethod(line: I64, m: Sym.Sym)
   case Ty.MissingMethod(line: I64, m: Sym.Sym)
@@ -1165,7 +1167,7 @@ def Ty.givenShape(cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
   val Ty.Cx(_, _, _, _, trs, _, _, _, _) = cx
   val st1 = Ty.inHead(st, line, Ty.tparams(gs, Coll.Nil), head)
   Ty.traitNamed(trs, tn) match
-    case Coll.None => Ty.clash(st1, Ty.Unknown(line, tn))
+    case Coll.None => Ty.clash(st1, Ty.NotTrait(line, tn))
     case Coll.Some(tr) =>
       val Ast.Trait(_, _, tgs, sigs) = tr
       val ttps = Ty.tparams(tgs, Coll.Nil)

@@ -121,7 +121,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.Unknown(l, n) => S2c.diag(fs, "unknown-name", l, "unknown name", S2c.Name(n), "declare it, or fix its spelling (module members are written qualified: Foo.bar)")
       case Ty.Arity(l, n) => S2c.diag(fs, "arity", l, "wrong number of args to", S2c.Name(n), "pass one arg per param of its declaration")
       case Ty.NotEnum(l, t) => S2c.diag(fs, "not-enum", l, "a match needs an enum, not", S2c.Type(K.reify(s, t)), "match on a value of an enum type")
-      case Ty.NoOp(l, n) => S2c.diag(fs, "no-op", l, "no op or trait method", S2c.Name(n), "call an op of the capability's protocol, or a method of the evidence's trait")
+      case Ty.NoOp(l, n) => S2c.diag(fs, "no-op", l, "no op or trait method", S2c.Name(n), "call an op of the capability, or a method of the evidence's trait")
       case Ty.CannotInfer(l, n) => S2c.diag(fs, "cannot-infer", l, "cannot infer the type args of", S2c.Name(n), "write them: f[T](x), or annotate the val")
       case Ty.NoCap(l, p) => S2c.diag(fs, "no-capability", l, "no single capability in scope of", S2c.Name(p), "open one (handle r = Srs.Arena()) or take it as a {} binder; with two, choose one: f{a}(x)")
       case Ty.Impure(l, n) => S2c.diag(fs, "impure-call", l, "a compile-time body (a top-level val) calls only pure fns, not", S2c.Name(n), "it runs at compile time: call only fns with no effect but Region")
@@ -135,12 +135,13 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.GivenFuel(l, t) => S2c.diag(fs, "given-fuel", l, "the given search ran out of fuel at", S2c.Type(t), "a given clause needs itself at a bigger type: break the loop")
       case Ty.ChosenBad(l, t) => S2c.diag(fs, "chosen-evidence", l, "the chosen evidence does not prove", S2c.Type(t), "choose a local whose type is the goal")
       case Ty.ChosenCount(l, n) => S2c.diag(fs, "chosen-count", l, "wrong number of chosen evidence for", S2c.Name(n), "choose one name per {} binder of the callee")
-      case Ty.ChosenNotCap(l, p) => S2c.diag(fs, "chosen-not-capability", l, "the chosen name is not a capability of", S2c.Name(p), "choose a local opened by a handler of this protocol")
+      case Ty.ChosenNotCap(l, p) => S2c.diag(fs, "chosen-not-capability", l, "the chosen name is not a capability of", S2c.Name(p), "choose a local opened by a handler of this capability")
       case Ty.EvidenceValue(l, x) => S2c.diag(fs, "evidence-value", l, "evidence is only a method receiver, not a value:", S2c.Name(x), "call its methods: e.m(x)")
       case Ty.CapValue(l, x) => S2c.diag(fs, "capability-value", l, "a capability is second-class, not a value:", S2c.Name(x), "pass it as a {} binder: f{c}(x)")
       case Ty.BinderHides(l, x) => S2c.diag(fs, "binder-hides-type", l, "a [] binder hides the type", S2c.Name(x), "rename the binder")
       case Ty.CapParam(l, x) => S2c.diag(fs, "capability-param", l, "a capability is a {} binder, not a param:", S2c.Name(x), "write it as {x: P} before the params")
       case Ty.CapErased(l, p) => S2c.diag(fs, "capability-erased", l, "a capability is erased at run time: no value type names", S2c.Name(p), "take it as a {} binder ({c: Console} or {Console}); it is never a result, a field or a type arg")
+      case Ty.NotTrait(l, n) => S2c.diag(fs, "not-a-trait", l, "a given of a name that is not a trait:", S2c.Name(n), "a given implements a trait (given Show[I64]); a capability is implemented by a handler (handler H for Console)")
       case Ty.TraitArity(l, t) => S2c.diag(fs, "trait-arity", l, "wrong number of type args for the trait", S2c.Name(t), "give one type arg per [] binder of the trait")
       case Ty.NotMethod(l, m) => S2c.diag(fs, "not-a-method", l, "not a method of the trait:", S2c.Name(m), "a given defines exactly the trait's methods")
       case Ty.MissingMethod(l, m) => S2c.diag(fs, "missing-method", l, "the given misses the trait method", S2c.Name(m), "define it in the given")
@@ -167,7 +168,7 @@ def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match
       case Tl.PatType(l, n) => S2c.diag(fs, "value-pattern-type", l, "a value match pattern does not fit its binder's type in", S2c.Name(n), "use patterns of the binder's type")
     S2c.showTl(fs, rest)
 
-// ── the phases: names, type level, types, flow (protocols, regions), then C; the first phase with errors stops ──
+// ── the phases: names, type level, types, flow (capability states, regions), then C; the first phase with errors stops ──
 def S2c.compile(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 = Names.check(ds) match
   case Names.Ok => S2c.facts(m, fs, ds)
   case Names.Bad(cs) =>
@@ -187,18 +188,18 @@ def S2c.showFx(fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs matc
   case Coll.Cons(c, rest) =>
     c match
       case Fx.NotCap(l, x) => S2c.diag(fs, "fact-not-capability", l, "at: not a {} capability of this def or type:", S2c.Name(x), "name a {} capability binder of the def or type")
-      case Fx.BadState(l, s) => S2c.diag(fs, "unknown-state", l, "unknown protocol state", S2c.Name(s), "use a state the protocol declares")
+      case Fx.BadState(l, s) => S2c.diag(fs, "unknown-state", l, "unknown capability state", S2c.Name(s), "use a state the capability declares")
       case Fx.Twice(l, x) => S2c.diag(fs, "fact-twice", l, "two states of one capability in a fact group:", S2c.Name(x), "give each capability one state per group")
-      case Fx.NotOp(l, op) => S2c.diag(fs, "fact-not-op", l, "next: not an op of a capability of this def:", S2c.Name(op), "use an op of the protocol of one of the def's capabilities")
-      case Fx.UnknownRel(l, rel) => S2c.diag(fs, "unknown-relation", l, "unknown relation in facts:", S2c.Name(rel), "use at, next, or a rule def of a capability's protocol")
+      case Fx.NotOp(l, op) => S2c.diag(fs, "fact-not-op", l, "next: not an op of a capability of this def:", S2c.Name(op), "use an op of one of the def's capabilities")
+      case Fx.UnknownRel(l, rel) => S2c.diag(fs, "unknown-relation", l, "unknown relation in facts:", S2c.Name(rel), "use at, next, or a rule def of a capability")
       case Fx.RelArity(l, rel) => S2c.diag(fs, "relation-arity", l, "wrong number of args for relation", S2c.Name(rel), "give the rule def's number of args")
       case Fx.Unbound(l, v) => S2c.diag(fs, "fact-unbound", l, "an exit fact variable is not bound by the entry facts:", S2c.Name(v), "bind it in an entry fact")
       case Fx.ExitOther(l, rel) => S2c.diag(fs, "exit-fact", l, "an exit fact is an at, not", S2c.Name(rel), "write the exit state as at(cap, State)")
       case Fx.Reserved(l, rel) => S2c.diag(fs, "reserved-relation", l, "reserved relation name:", S2c.Name(rel), "at and next are built in: rename the rule def")
       case Fx.ClauseArity(l, rel) => S2c.diag(fs, "rule-arity", l, "rule defs of one relation differ in arity:", S2c.Name(rel), "give every rule def of a relation one arity")
       case Fx.Unsafe(l, x) => S2c.diag(fs, "rule-unsafe", l, "a rule def param is not in its body:", S2c.Name(x), "use each param in the body")
-      case Fx.RuleUnknown(l, rel) => S2c.diag(fs, "rule-unknown", l, "unknown relation in rule:", S2c.Name(rel), "use next, at, or a rule def of this protocol")
-      case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the protocol:", S2c.Name(op), "use an op of this protocol")
+      case Fx.RuleUnknown(l, rel) => S2c.diag(fs, "rule-unknown", l, "unknown relation in rule:", S2c.Name(rel), "use next, at, or a rule def of this capability")
+      case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the capability:", S2c.Name(op), "use an op of this capability")
     S2c.showFx(fs, rest)
 
 def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
@@ -264,11 +265,11 @@ def S2c.showNames(fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = c
       case Names.Dup(l, n) => S2c.diag(fs, "duplicate", l, "duplicate name", S2c.Name(n), "rename one of them")
       case Names.Unknown(l, n) => S2c.diag(fs, "unknown-name", l, "unknown name", S2c.Name(n), "declare it, or fix its spelling (module members are written qualified: Foo.bar)")
       case Names.NoType(l, n) => S2c.diag(fs, "unknown-type", l, "unknown type", S2c.Name(n), "declare it, or fix its spelling")
-      case Names.BadState(l, n) => S2c.diag(fs, "unknown-state", l, "unknown protocol state", S2c.Name(n), "use a state the protocol declares")
-      case Names.NoDrop(l, n) => S2c.diag(fs, "unknown-drop", l, "unknown drop op", S2c.Name(n), "drop one of the protocol's ops")
-      case Names.NoProto(l, n) => S2c.diag(fs, "not-a-protocol", l, "a handler of a name that is not a protocol:", S2c.Name(n), "write a handler for a protocol")
+      case Names.BadState(l, n) => S2c.diag(fs, "unknown-state", l, "unknown capability state", S2c.Name(n), "use a state the capability declares")
+      case Names.NoDrop(l, n) => S2c.diag(fs, "unknown-drop", l, "unknown drop op", S2c.Name(n), "drop one of the capability's ops")
+      case Names.NoProto(l, n) => S2c.diag(fs, "not-a-capability", l, "a handler of a name that is not a capability:", S2c.Name(n), "write a handler for a capability")
       case Names.NoInit(l, n) => S2c.diag(fs, "handler-no-init", l, "a handler without init:", S2c.Name(n), "define def init(...): Ptr")
-      case Names.NoOp(l, n) => S2c.diag(fs, "handler-missing-op", l, "a handler misses the op", S2c.Name(n), "define every op of the protocol")
+      case Names.NoOp(l, n) => S2c.diag(fs, "handler-missing-op", l, "a handler misses the op", S2c.Name(n), "define every op of the capability")
       case Names.BadArity(l, n) => S2c.diag(fs, "handler-arity", l, "a handler fn has the wrong arity:", S2c.Name(n), "take self: Ptr first, then the op's params")
     S2c.showNames(fs, rest)
 
@@ -276,7 +277,7 @@ def S2c.showFlow(fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs 
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     c match
-      case Flow.Stuck(l, n) => S2c.diag(fs, "op-not-allowed", l, "op not allowed in this state of the capability", S2c.Name(n), "call the ops in the order the protocol allows")
+      case Flow.Stuck(l, n) => S2c.diag(fs, "op-not-allowed", l, "op not allowed in this state of the capability", S2c.Name(n), "call the ops in the order the capability allows")
       case Flow.Split(l, n) => S2c.diag(fs, "branch-states", l, "branches leave the capability in different states:", S2c.Name(n), "bring it to one state on every branch")
       case Flow.Unended(l, n) => S2c.diag(fs, "capability-not-ended", l, "the capability does not end in its declared state:", S2c.Name(n), "end it (its drop op or an op into an end state) before its scope ends")
       case Flow.Ambig(l, n) => S2c.diag(fs, "entry-facts-ambiguous", l, "entry facts with more than one solution at the call of", S2c.Name(n), "fix the capability states before the call")
