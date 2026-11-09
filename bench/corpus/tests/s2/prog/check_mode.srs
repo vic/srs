@@ -1,0 +1,26 @@
+// pass: check mode at a generic case and call (vic-m5r.18): the expected type binds the [] binders before the args,
+// so args that are all nullary generic cases (G.N) get their types; was 'cannot infer A'
+enum G.L [A: Type]:
+  case G.N
+  case G.C(h: A, t: G.L[A])
+
+enum G.P [A: Type]:
+  case G.P(a: G.L[A], b: G.L[A])
+
+def G.two [A: Type] {r: Region} (a: G.L[A], b: G.L[A]): G.P[A] = G.P(a, b)
+def G.mk [A: Type] {r: Region} (x: A): G.P[A] = G.P(G.N, G.N)
+def G.mk2 [A: Type] {r: Region} (x: A): G.P[A] = G.two(G.N, G.N)
+
+def G.len(xs: G.L[I64]): I64 = xs match
+  case G.N => 0
+  case G.C(_, t) => 1 + G.len(t)
+
+def G.lens(p: G.P[I64]): I64 = p match
+  case G.P(a, b) => G.len(a) * 10 + G.len(b)
+
+def main(): I64 =
+  handle r = Arena()
+  val p: G.P[I64] = G.P(G.N, G.C(7, G.N))
+  rt_print_i64(G.lens(G.mk(1)) + G.lens(G.mk2(2)) + G.lens(p))
+  rt_print("\n")
+  0

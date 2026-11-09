@@ -1,0 +1,37 @@
+// pass: modules as dotted symbols (vic 2026-11-06: "`Foo.bar` is a symbol (string constant) for us. the `.` is part of
+// the symbol."): two modules define the same short names (Term, TInt, step) with no clash; a generic member; C names
+// print `.` as `__`
+enum Kanren.Term:
+  case Kanren.TVar(n: I64)
+  case Kanren.TInt(v: I64)
+
+enum S1.Term:
+  case S1.TInt(v: I64)
+  case S1.TName(n: I64)
+
+def Kanren.step(t: Kanren.Term): I64 = t match
+  case Kanren.TVar(n) => n
+  case Kanren.TInt(v) => v + 100
+
+def S1.step(t: S1.Term): I64 = t match
+  case S1.TInt(v) => v * 2
+  case S1.TName(n) => n
+
+enum Gen.Opt [A: Type]:
+  case Gen.None
+  case Gen.Some(v: A)
+
+def Gen.get [A: Type] (o: Gen.Opt[A], d: A): A = o match
+  case Gen.None => d
+  case Gen.Some(v) => v
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(Kanren.step(Kanren.TInt(1)) + Kanren.step(Kanren.TVar(2)))
+  rt_print("\n")
+  rt_print_i64(S1.step(S1.TInt(21)))
+  rt_print("\n")
+  val n: Gen.Opt[I64] = Gen.None
+  rt_print_i64(Gen.get(Gen.Some(5), 0) + Gen.get(n, 1))
+  rt_print("\n")
+  0

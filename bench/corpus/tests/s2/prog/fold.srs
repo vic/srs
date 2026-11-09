@@ -1,0 +1,33 @@
+// pass: higher-order without closures (vic-m5r.12): a function is a given of a trait (defunctionalization, Reynolds
+// 1972); a marker type F picks which one, so two folds over the same types do not clash; Ho.fold is a generic self tail call
+enum Ho.List [A: Type]:
+  case Ho.Nil
+  case Ho.Cons(h: A, t: Ho.List[A])
+
+enum Ho.Sum:
+  case Ho.Sum
+enum Ho.Longest:
+  case Ho.Longest
+
+trait Ho.Fold [F: Type] [A: Type] [B: Type]:
+  def step(acc: B, x: A): B
+
+given Ho.Fold[Ho.Sum, I64, I64]:
+  def step(acc: I64, x: I64): I64 = acc + x
+
+given Ho.Fold[Ho.Longest, Str, I64]:
+  def step(acc: I64, x: Str): I64 = if rt_str_len(x) > acc then rt_str_len(x) else acc
+
+def Ho.fold [F: Type] [A: Type] [B: Type] {f: Ho.Fold[F, A, B]} (xs: Ho.List[A], acc: B): B = xs match
+  case Ho.Nil => acc
+  case Ho.Cons(h, t) => Ho.fold[F, A, B](t, f.step(acc, h))
+
+def main(): I64 =
+  handle r = Arena()
+  val ns: Ho.List[I64] = Ho.Cons(1, Ho.Cons(2, Ho.Cons(3, Ho.Nil)))
+  rt_print_i64(Ho.fold[Ho.Sum, I64, I64](ns, 0))
+  rt_print("\n")
+  val ws: Ho.List[Str] = Ho.Cons("a", Ho.Cons("abcd", Ho.Cons("ab", Ho.Nil)))
+  rt_print_i64(Ho.fold[Ho.Longest, Str, I64](ws, 0))
+  rt_print("\n")
+  0

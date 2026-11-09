@@ -1,0 +1,508 @@
+// s2 content hashes (s1/hash.srs, vic-uw3 H1; vic 2026-11-06: Unison hashing, names are metadata, digest (a)). the hash
+// of a decl = the digest of its Ast: a local as its binding position (innermost first), a ref to another decl as that
+// decl's hash, a ref inside its own SCC as the member's position (members ordered by their first-pass hash).
+
+// ── digest (a): 4 lanes, each h = (h * p + x) % m, m a prime below 2^32, p < 2^30: every step stays below 2^63 ──
+enum Hs.Dg:
+  case Hs.Dg(a: I64, b: I64, c: I64, d: I64)
+
+def Hs.lane(h: I64, x: I64, p: I64, m: I64): I64 = if x >= 0 && x < 2147483648 then (h * p + x) % m else (h * p + ((x % m) + m) % m) % m
+
+def Hs.add {r: Region} (g: Hs.Dg, x: I64): Hs.Dg =
+  val Hs.Dg(a, b, c, d) = g
+  Hs.Dg(Hs.lane(a, x, 1000000007, 4294967291), Hs.lane(b, x, 998244353, 4294967279), Hs.lane(c, x, 754974721, 4294967231), Hs.lane(d, x, 167772161, 4294967197))
+
+// a string: its length, then its bytes, 3 per step (the length keeps it prefix-free)
+def Hs.str {r: Region} (g: Hs.Dg, s: Str): Hs.Dg = Hs.bytes(Hs.add(g, rt_str_len(s)), s, 0, rt_str_len(s))
+
+def Hs.bytes {r: Region} (g: Hs.Dg, s: Str, i: I64, n: I64): Hs.Dg =
+  if i + 2 < n then Hs.bytes(Hs.add(g, rt_str_at(s, i) + 256 * rt_str_at(s, i + 1) + 65536 * rt_str_at(s, i + 2)), s, i + 3, n)
+  else if i < n then Hs.bytes(Hs.add(g, rt_str_at(s, i)), s, i + 1, n)
+  else g
+
+def Hs.dg {r: Region} (g: Hs.Dg, h: Hs.Dg): Hs.Dg =
+  val Hs.Dg(a, b, c, d) = h
+  Hs.add(Hs.add(Hs.add(Hs.add(g, a), b), c), d)
+
+def Hs.less(x: Hs.Dg, y: Hs.Dg): Bool =
+  val Hs.Dg(a, b, c, d) = x
+  val Hs.Dg(a2, b2, c2, d2) = y
+  a < a2 || (a == a2 && (b < b2 || (b == b2 && (c < c2 || (c == c2 && d < d2)))))
+
+// ── the walk: pass 1 hashes a ref to an SCC member as one token, pass 2 as the member's position ──
+enum Hs.Pass:
+  case Hs.First
+  case Hs.Second
+
+enum Hs.Cx:
+  case Hs.Cx(hm: Coll.SMap[Hs.Dg], mem: Coll.List[Sym.Sym], pass: Hs.Pass)
+
+// a name: a local (its position, only where a local can stand), a member of this SCC, or a ref (a hash, else its text)
+enum Hs.Where:
+  case Hs.Local
+  case Hs.Global
+
+def Hs.name {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, x: Sym.Sym, w: Hs.Where): Hs.Dg =
+  val Hs.Cx(hm, mem, pass) = cx
+  val pos: Coll.Option[I64] = w match
+    case Hs.Local => Hs.index(env, x, 0)
+    case Hs.Global => Coll.None
+  pos match
+    case Coll.Some(i) => Hs.add(Hs.add(g, 3), i)
+    case Coll.None => Hs.index(mem, x, 0) match
+      case Coll.Some(i) => pass match
+        case Hs.First => Hs.add(g, 5)
+        case Hs.Second => Hs.add(Hs.add(g, 6), i)
+      case Coll.None => Coll.sLookup(hm, x) match
+        case Coll.Some(h) => Hs.dg(Hs.add(g, 4), h)
+        case Coll.None => Hs.str(Hs.add(g, 2), Sym.str(x))
+
+def Hs.index {r: Region} (xs: Coll.List[Sym.Sym], x: Sym.Sym, i: I64): Coll.Option[I64] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(y, rest) => if Sym.eq(x, y) then Coll.Some(i) else Hs.index(rest, x, i + 1)
+
+// a hash and the locals after it (binders pass their names on)
+enum Hs.W:
+  case Hs.W(g: Hs.Dg, env: Coll.List[Sym.Sym])
+
+def Hs.ty {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, t: Ast.Ty): Hs.Dg =
+  val Ast.Ty(_, n, args, _, vals) = t
+  Hs.exprs(cx, env, Hs.tys(cx, env, Hs.name(cx, env, Hs.add(Hs.add(g, 9), Coll.length(args)), n, Hs.Local), args), vals)
+
+def Hs.tys {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, ts: Coll.List[Ast.Ty]): Hs.Dg = ts match
+  case Coll.Nil => g
+  case Coll.Cons(t, rest) => Hs.tys(cx, env, Hs.ty(cx, env, g, t), rest)
+
+def Hs.binOp(op: Ast.BinOp): I64 = op match
+  case Ast.Add => 0
+  case Ast.Sub => 1
+  case Ast.Mul => 2
+  case Ast.Div => 3
+  case Ast.Mod => 4
+  case Ast.Lt => 5
+  case Ast.Le => 6
+  case Ast.Gt => 7
+  case Ast.Ge => 8
+  case Ast.Eq => 9
+  case Ast.Ne => 10
+  case Ast.And => 11
+  case Ast.Or => 12
+
+def Hs.expr {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, e: Ast.Expr): Hs.Dg = e match
+  case Ast.Int(_, v) => Hs.add(Hs.add(g, 32), v)
+  case Ast.Bool(_, v) => Hs.add(Hs.add(g, 33), if v then 1 else 0)
+  case Ast.Str(_, s) => Hs.str(Hs.add(g, 34), s)
+  case Ast.Unit(_) => Hs.add(g, 35)
+  case Ast.Name(_, x) => Hs.name(cx, env, Hs.add(g, 36), x, Hs.Local)
+  case Ast.Call(_, f, targs, chosen, xs) =>
+    val g1 = Hs.name(cx, env, Hs.add(Hs.add(Hs.add(g, 37), Coll.length(xs)), Coll.length(targs)), f, Hs.Global)
+    Hs.exprs(cx, env, Hs.names(cx, env, Hs.tys(cx, env, g1, targs), chosen), xs)
+  case Ast.Method(_, recv, op, xs) => Hs.exprs(cx, env, Hs.str(Hs.name(cx, env, Hs.add(Hs.add(g, 42), Coll.length(xs)), recv, Hs.Local), Sym.str(op)), xs)
+  case Ast.Bin(_, op, l, x) => Hs.expr(cx, env, Hs.expr(cx, env, Hs.add(Hs.add(g, 43), Hs.binOp(op)), l), x)
+  case Ast.Un(_, op, x) =>
+    val k = op match
+      case Ast.Neg => 0
+      case Ast.Not => 1
+    Hs.expr(cx, env, Hs.add(Hs.add(g, 44), k), x)
+  case Ast.If(_, c, t, x) => Hs.expr(cx, env, Hs.expr(cx, env, Hs.expr(cx, env, Hs.add(g, 45), c), t), x)
+  case Ast.Match(_, s, arms) => Hs.arms(cx, env, Hs.expr(cx, env, Hs.add(Hs.add(g, 46), Coll.length(arms)), s), arms)
+  case Ast.Block(_, ss, last) =>
+    val Hs.W(g1, env1) = Hs.stmts(cx, Hs.W(Hs.add(Hs.add(g, 50), Coll.length(ss)), env), ss)
+    Hs.expr(cx, env1, g1, last)
+  case Ast.While(_, c, b) => Hs.expr(cx, env, Hs.expr(cx, env, Hs.add(g, 51), c), b)
+  case Ast.Assign(_, x, v) => Hs.expr(cx, env, Hs.name(cx, env, Hs.add(g, 52), x, Hs.Local), v)
+  case Ast.Quant(_, q, x, t, b) =>
+    val k = q match
+      case Ast.Forall => 47
+      case Ast.Exists => 48
+    Hs.expr(cx, Coll.Cons(x, env), Hs.ty(cx, env, Hs.add(g, k), t), b)
+
+def Hs.exprs {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, xs: Coll.List[Ast.Expr]): Hs.Dg = xs match
+  case Coll.Nil => g
+  case Coll.Cons(x, rest) => Hs.exprs(cx, env, Hs.expr(cx, env, g, x), rest)
+
+def Hs.names {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, xs: Coll.List[Sym.Sym]): Hs.Dg = xs match
+  case Coll.Nil => g
+  case Coll.Cons(x, rest) => Hs.names(cx, env, Hs.name(cx, env, g, x, Hs.Local), rest)
+
+// an arm: its case (a ref), its binders bound in its body (each one, `_` too: positions stay fixed)
+def Hs.arms {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, as: Coll.List[Ast.Arm]): Hs.Dg = as match
+  case Coll.Nil => g
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, p, b) = a
+    val g2 = p match
+      case Ast.PAny => Hs.expr(cx, env, Hs.add(g, 49), b)
+      case Ast.PCase(c, binds) => Hs.expr(cx, Coll.revOnto(binds, env), Hs.add(Hs.name(cx, env, Hs.add(g, 49), c, Hs.Global), Coll.length(binds)), b)
+    Hs.arms(cx, env, g2, rest)
+
+def Hs.stmts {r: Region} (cx: Hs.Cx, w: Hs.W, ss: Coll.List[Ast.Stmt]): Hs.W = ss match
+  case Coll.Nil => w
+  case Coll.Cons(s, rest) =>
+    val Hs.W(g, env) = w
+    val w2 = s match
+      case Ast.Val(_, x, ann, e) => Hs.W(Hs.expr(cx, env, Hs.ann(cx, env, Hs.add(g, 53), ann), e), Coll.Cons(x, env))
+      case Ast.Var(_, x, ann, e) => Hs.W(Hs.expr(cx, env, Hs.ann(cx, env, Hs.add(g, 57), ann), e), Coll.Cons(x, env))
+      case Ast.Handle(_, x, h, xs) => Hs.W(Hs.exprs(cx, env, Hs.name(cx, env, Hs.add(g, 54), h, Hs.Global), xs), Coll.Cons(x, env))
+      case Ast.Do(e) => Hs.W(Hs.expr(cx, env, Hs.add(g, 55), e), env)
+      case Ast.Check(_, k, e) =>
+        val c = k match
+          case Ast.LInvariant => 0
+          case Ast.LDecreases => 1
+        Hs.W(Hs.expr(cx, env, Hs.add(Hs.add(g, 56), c), e), env)
+    Hs.stmts(cx, w2, rest)
+
+def Hs.ann {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, a: Coll.Option[Ast.Ty]): Hs.Dg = a match
+  case Coll.None => Hs.add(g, 0)
+  case Coll.Some(t) => Hs.ty(cx, env, Hs.add(g, 1), t)
+
+// binders in order: each type sees the ones before, then its name is the next position
+def Hs.binders {r: Region} (cx: Hs.Cx, w: Hs.W, bs: Coll.List[Ast.Binder]): Hs.W = bs match
+  case Coll.Nil => w
+  case Coll.Cons(b, rest) =>
+    val Hs.W(g, env) = w
+    val Ast.Binder(_, x, t) = b
+    Hs.binders(cx, Hs.W(Hs.ty(cx, env, Hs.add(g, 28), t), Coll.Cons(x, env)), rest)
+
+def Hs.groups {r: Region} (cx: Hs.Cx, w: Hs.W, gs: Coll.List[Ast.Group]): Hs.W = gs match
+  case Coll.Nil => w
+  case Coll.Cons(gr, rest) =>
+    val Hs.W(g, env) = w
+    val w2 = gr match
+      case Ast.Types(bs) => Hs.binders(cx, Hs.W(Hs.add(g, 26), env), bs)
+      case Ast.Evidence(bs) => Hs.binders(cx, Hs.W(Hs.add(g, 27), env), bs)
+      case Ast.Facts(as) => Hs.W(Hs.atoms(cx, env, Hs.add(g, 29), as), env)
+    Hs.groups(cx, w2, rest)
+
+def Hs.atoms {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, as: Coll.List[Ast.Atom]): Hs.Dg = as match
+  case Coll.Nil => g
+  case Coll.Cons(a, rest) =>
+    val Ast.Atom(_, rel, ts) = a
+    Hs.atoms(cx, env, Hs.terms(cx, env, Hs.str(Hs.add(g, Coll.length(ts)), Sym.str(rel)), ts), rest)
+
+def Hs.terms {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, ts: Coll.List[Ast.Term]): Hs.Dg = ts match
+  case Coll.Nil => g
+  case Coll.Cons(t, rest) =>
+    val g2 = t match
+      case Ast.TName(x) => Hs.name(cx, env, Hs.add(g, 30), x, Hs.Local)
+      case Ast.TNum(v) => Hs.add(Hs.add(g, 31), v)
+    Hs.terms(cx, env, g2, rest)
+
+def Hs.clauses {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, cs: Coll.List[Ast.Clause]): Hs.Dg = cs match
+  case Coll.Nil => g
+  case Coll.Cons(c, rest) =>
+    val g2 = c match
+      case Ast.CondC(_, k, e) =>
+        val kc = k match
+          case Ast.Requires => 0
+          case Ast.Ensures => 1
+          case Ast.Returns => 2
+          case Ast.Decreases => 3
+          case Ast.Invariant => 4
+        Hs.expr(cx, env, Hs.add(Hs.add(g, 58), kc), e)
+      case Ast.ProofUsing(_, xs) => Hs.names(cx, env, Hs.add(g, 59), xs)
+      case Ast.ProofInduction(_, x) => Hs.name(cx, env, Hs.add(g, 60), x, Hs.Local)
+      case Ast.ProofLean(_, s) => Hs.str(Hs.add(g, 61), s)
+    Hs.clauses(cx, env, g2, rest)
+
+// a def: its groups, params, result, exit facts, then its body and clauses (all see the params)
+def Hs.fn {r: Region} (cx: Hs.Cx, f: Ast.Fn): Hs.Dg =
+  val Ast.Fn(_, _, gs, ps, ret, exit, body) = f
+  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.Dg(1, 2, 3, 4), 12), Coll.Nil), gs)
+  val Hs.W(g2, env2) = Hs.binders(cx, Hs.W(Hs.add(g1, Coll.length(ps)), env1), ps)
+  val g3 = Hs.atoms(cx, env2, Hs.ty(cx, env2, g2, ret), exit)
+  body match
+    case Ast.Extern => Hs.add(g3, 70)
+    case Ast.Def(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 71), e), cs)
+    case Ast.Spec(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 72), e), cs)
+
+// an enum: its groups, then each case's fields (the field and case names are metadata: positions only)
+def Hs.enum_ {r: Region} (cx: Hs.Cx, e: Ast.Enum): Hs.Dg =
+  val Ast.Enum(_, _, gs, cases) = e
+  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.Dg(1, 2, 3, 4), 13), Coll.Nil), gs)
+  Hs.cases(cx, env1, Hs.add(g1, Coll.length(cases)), cases)
+
+def Hs.cases {r: Region} (cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, cs: Coll.List[Ast.Case]): Hs.Dg = cs match
+  case Coll.Nil => g
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, fs) = c
+    val Hs.W(g2, _) = Hs.binders(cx, Hs.W(Hs.add(Hs.add(g, 14), Coll.length(fs)), env), fs)
+    Hs.cases(cx, env, g2, rest)
+
+// ── the decls of one kind: what each refers to among them (a call names a fn, a type names an enum) ──
+enum Hs.D:
+  case Hs.DF(f: Ast.Fn)
+  case Hs.DE(e: Ast.Enum)
+
+def Hs.dName(d: Hs.D): Sym.Sym = d match
+  case Hs.DF(f) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    n
+  case Hs.DE(e) =>
+    val Ast.Enum(_, n, _, _) = e
+    n
+
+def Hs.hashD {r: Region} (cx: Hs.Cx, d: Hs.D): Hs.Dg = d match
+  case Hs.DF(f) => Hs.fn(cx, f)
+  case Hs.DE(e) => Hs.enum_(cx, e)
+
+// the names that d mentions (an over-approximation is fine: only the SCC split depends on it, and only names in ds count)
+def Hs.refs {r: Region} (d: Hs.D, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = d match
+  case Hs.DF(f) =>
+    val Ast.Fn(_, _, _, _, _, _, body) = f
+    body match
+      case Ast.Def(_, e) => Hs.eRefs(e, acc)
+      case Ast.Spec(_, e) => Hs.eRefs(e, acc)
+      case Ast.Extern => acc
+  case Hs.DE(e) =>
+    val Ast.Enum(_, _, _, cases) = e
+    Hs.caseRefs(cases, acc)
+
+def Hs.caseRefs {r: Region} (cs: Coll.List[Ast.Case], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = cs match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, fs) = c
+    Hs.caseRefs(rest, Hs.binderRefs(fs, acc))
+
+def Hs.binderRefs {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Hs.binderRefs(rest, Hs.tyRefs(t, acc))
+
+def Hs.tyRefs {r: Region} (t: Ast.Ty, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] =
+  val Ast.Ty(_, n, args, _, _) = t
+  Hs.tysRefs(args, Coll.Cons(n, acc))
+
+def Hs.tysRefs {r: Region} (ts: Coll.List[Ast.Ty], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ts match
+  case Coll.Nil => acc
+  case Coll.Cons(t, rest) => Hs.tysRefs(rest, Hs.tyRefs(t, acc))
+
+def Hs.eRefs {r: Region} (e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
+  case Ast.Name(_, x) => Coll.Cons(x, acc)
+  case Ast.Call(_, f, _, _, xs) => Hs.esRefs(xs, Coll.Cons(f, acc))
+  case Ast.Method(_, _, _, xs) => Hs.esRefs(xs, acc)
+  case Ast.Bin(_, _, l, x) => Hs.eRefs(x, Hs.eRefs(l, acc))
+  case Ast.Un(_, _, x) => Hs.eRefs(x, acc)
+  case Ast.If(_, c, t, x) => Hs.eRefs(x, Hs.eRefs(t, Hs.eRefs(c, acc)))
+  case Ast.Match(_, s, arms) => Hs.armRefs(arms, Hs.eRefs(s, acc))
+  case Ast.Block(_, ss, last) => Hs.eRefs(last, Hs.stmtRefs(ss, acc))
+  case Ast.While(_, c, b) => Hs.eRefs(b, Hs.eRefs(c, acc))
+  case Ast.Assign(_, _, x) => Hs.eRefs(x, acc)
+  case Ast.Quant(_, _, _, _, b) => Hs.eRefs(b, acc)
+  case _ => acc
+
+def Hs.esRefs {r: Region} (xs: Coll.List[Ast.Expr], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Hs.esRefs(rest, Hs.eRefs(x, acc))
+
+def Hs.armRefs {r: Region} (as: Coll.List[Ast.Arm], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, b) = a
+    Hs.armRefs(rest, Hs.eRefs(b, acc))
+
+def Hs.stmtRefs {r: Region} (ss: Coll.List[Ast.Stmt], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) =>
+    val acc2 = s match
+      case Ast.Val(_, _, _, e) => Hs.eRefs(e, acc)
+      case Ast.Var(_, _, _, e) => Hs.eRefs(e, acc)
+      case Ast.Handle(_, _, _, xs) => Hs.esRefs(xs, acc)
+      case Ast.Do(e) => Hs.eRefs(e, acc)
+      case Ast.Check(_, _, e) => Hs.eRefs(e, acc)
+    Hs.stmtRefs(rest, acc2)
+
+// ── Tarjan's SCCs over the decls of one kind, callees first ──
+enum Hs.T:
+  case Hs.T(next: I64, idx: Coll.SMap[I64], low: Coll.SMap[I64], stack: Coll.List[Sym.Sym], on: Coll.SMap[Bool], comps: Coll.List[Coll.List[Sym.Sym]])
+
+// the edges of each decl: only names of decls in the map count
+def Hs.edges {r: Region} (dm: Coll.SMap[Hs.D], x: Sym.Sym): Coll.List[Sym.Sym] = Coll.sLookup(dm, x) match
+  case Coll.None => Coll.Nil
+  case Coll.Some(d) => Hs.inMap(dm, Hs.refs(d, Coll.Nil), Coll.Nil)
+
+def Hs.inMap {r: Region} (dm: Coll.SMap[Hs.D], xs: Coll.List[Sym.Sym], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Coll.sLookup(dm, x) match
+    case Coll.Some(_) => Hs.inMap(dm, rest, Coll.Cons(x, acc))
+    case Coll.None => Hs.inMap(dm, rest, acc)
+
+def Hs.geti {r: Region} (m: Coll.SMap[I64], x: Sym.Sym): I64 = Coll.sLookup(m, x) match
+  case Coll.Some(i) => i
+  case Coll.None => 0 - 1
+
+def Hs.min(a: I64, b: I64): I64 = if a < b then a else b
+
+def Hs.visit {r: Region} (dm: Coll.SMap[Hs.D], v: Sym.Sym, t: Hs.T): Hs.T =
+  val Hs.T(n, idx, low, st, on, cs) = t
+  val t1 = Hs.T(n + 1, Coll.sInsert(idx, v, n), Coll.sInsert(low, v, n), Coll.Cons(v, st), Coll.sInsert(on, v, true), cs)
+  val t2 = Hs.succs(dm, v, Hs.edges(dm, v), t1)
+  val Hs.T(n2, idx2, low2, st2, on2, cs2) = t2
+  if Hs.geti(low2, v) == Hs.geti(idx2, v) then
+    val Hs.Pop(comp, rest, on3) = Hs.pop(v, st2, on2, Coll.Nil)
+    Hs.T(n2, idx2, low2, rest, on3, Coll.Cons(comp, cs2))
+  else t2
+
+def Hs.succs {r: Region} (dm: Coll.SMap[Hs.D], v: Sym.Sym, ws: Coll.List[Sym.Sym], t: Hs.T): Hs.T = ws match
+  case Coll.Nil => t
+  case Coll.Cons(w, rest) =>
+    val Hs.T(_, idx, _, _, on, _) = t
+    if Hs.geti(idx, w) < 0 then
+      val t2 = Hs.visit(dm, w, t)
+      val Hs.T(n2, idx2, low2, st2, on2, cs2) = t2
+      Hs.succs(dm, v, rest, Hs.T(n2, idx2, Coll.sInsert(low2, v, Hs.min(Hs.geti(low2, v), Hs.geti(low2, w))), st2, on2, cs2))
+    else if Hs.onStack(on, w) then
+      val Hs.T(n2, idx2, low2, st2, on2, cs2) = t
+      Hs.succs(dm, v, rest, Hs.T(n2, idx2, Coll.sInsert(low2, v, Hs.min(Hs.geti(low2, v), Hs.geti(idx2, w))), st2, on2, cs2))
+    else Hs.succs(dm, v, rest, t)
+
+enum Hs.Pop:
+  case Hs.Pop(comp: Coll.List[Sym.Sym], rest: Coll.List[Sym.Sym], on: Coll.SMap[Bool])
+
+// the stack down to v: one component (on-stack marks removed: set to false)
+def Hs.pop {r: Region} (v: Sym.Sym, st: Coll.List[Sym.Sym], on: Coll.SMap[Bool], acc: Coll.List[Sym.Sym]): Hs.Pop = st match
+  case Coll.Nil => Hs.Pop(acc, Coll.Nil, on)
+  case Coll.Cons(x, rest) =>
+    val on2 = Coll.sInsert(on, x, false)
+    if Sym.eq(x, v) then Hs.Pop(Coll.Cons(x, acc), rest, on2) else Hs.pop(v, rest, on2, Coll.Cons(x, acc))
+
+// the components, callees first (Tarjan emits each after the ones it reaches)
+def Hs.comps {r: Region} (dm: Coll.SMap[Hs.D], order: Coll.List[Sym.Sym], t: Hs.T): Coll.List[Coll.List[Sym.Sym]] = order match
+  case Coll.Nil =>
+    val Hs.T(_, _, _, _, _, cs) = t
+    Coll.rev(cs)
+  case Coll.Cons(x, rest) =>
+    val Hs.T(_, idx, _, _, _, _) = t
+    Hs.comps(dm, rest, if Hs.geti(idx, x) < 0 then Hs.visit(dm, x, t) else t)
+
+// ── one component: a decl alone hashes alone; a cycle hashes as one, each member = (component, position) ──
+def Hs.comp {r: Region} (dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], ms: Coll.List[Sym.Sym]): Coll.SMap[Hs.Dg] = ms match
+  case Coll.Nil => hm
+  case Coll.Cons(m, more) =>
+    val selfRef = Ty.memberSym(m, Hs.edges(dm, m))
+    if Coll.length(more) == 0 && !selfRef then Hs.put(dm, hm, m, Hs.hashOf(dm, Hs.Cx(hm, Coll.Nil, Hs.Second), m))
+    else
+      val order = Hs.sorted(dm, hm, ms, ms, Coll.Nil)
+      val whole = Hs.whole(dm, Hs.Cx(hm, order, Hs.Second), order, Hs.Dg(9, 9, 9, 9))
+      Hs.members(dm, hm, whole, order, 0)
+
+def Hs.hashOf {r: Region} (dm: Coll.SMap[Hs.D], cx: Hs.Cx, m: Sym.Sym): Hs.Dg = Coll.sLookup(dm, m) match
+  case Coll.Some(d) => Hs.hashD(cx, d)
+  case Coll.None => Hs.Dg(0, 0, 0, 0)
+
+// members by their first-pass hash (insertion sort: equal hashes keep component order)
+enum Hs.M:
+  case Hs.M(name: Sym.Sym, g: Hs.Dg)
+
+def Hs.sorted {r: Region} (dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], all: Coll.List[Sym.Sym], ms: Coll.List[Sym.Sym], acc: Coll.List[Hs.M]): Coll.List[Sym.Sym] = ms match
+  case Coll.Nil => Hs.mNames(acc, Coll.Nil)
+  case Coll.Cons(m, rest) => Hs.sorted(dm, hm, all, rest, Hs.ins(acc, Hs.M(m, Hs.hashOf(dm, Hs.Cx(hm, all, Hs.First), m))))
+
+def Hs.ins {r: Region} (xs: Coll.List[Hs.M], m: Hs.M): Coll.List[Hs.M] = xs match
+  case Coll.Nil => Coll.Cons(m, Coll.Nil)
+  case Coll.Cons(x, rest) =>
+    val Hs.M(_, g) = m
+    val Hs.M(_, h) = x
+    if Hs.less(g, h) then Coll.Cons(m, xs) else Coll.Cons(x, Hs.ins(rest, m))
+
+def Hs.mNames {r: Region} (xs: Coll.List[Hs.M], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(x, rest) =>
+    val Hs.M(n, _) = x
+    Hs.mNames(rest, Coll.Cons(n, acc))
+
+def Hs.whole {r: Region} (dm: Coll.SMap[Hs.D], cx: Hs.Cx, ms: Coll.List[Sym.Sym], g: Hs.Dg): Hs.Dg = ms match
+  case Coll.Nil => g
+  case Coll.Cons(m, rest) => Hs.whole(dm, cx, rest, Hs.dg(g, Hs.hashOf(dm, cx, m)))
+
+def Hs.members {r: Region} (dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], whole: Hs.Dg, ms: Coll.List[Sym.Sym], i: I64): Coll.SMap[Hs.Dg] = ms match
+  case Coll.Nil => hm
+  case Coll.Cons(m, rest) => Hs.members(dm, Hs.put(dm, hm, m, Hs.add(Hs.add(whole, 10), i)), whole, rest, i + 1)
+
+// an enum's cases are refs too: (enum hash, tag)
+def Hs.put {r: Region} (dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], m: Sym.Sym, g: Hs.Dg): Coll.SMap[Hs.Dg] =
+  val hm2 = Coll.sInsert(hm, m, g)
+  Coll.sLookup(dm, m) match
+    case Coll.Some(d) => d match
+      case Hs.DE(e) =>
+        val Ast.Enum(_, _, _, cases) = e
+        Hs.casesPut(hm2, g, cases, 0)
+      case Hs.DF(_) => hm2
+    case Coll.None => hm2
+
+def Hs.casesPut {r: Region} (hm: Coll.SMap[Hs.Dg], g: Hs.Dg, cs: Coll.List[Ast.Case], i: I64): Coll.SMap[Hs.Dg] = cs match
+  case Coll.Nil => hm
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, n, _) = c
+    Hs.casesPut(Coll.sInsert(hm, n, Hs.add(Hs.add(g, 8), i)), g, rest, i + 1)
+
+def Hs.compsPut {r: Region} (dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], cs: Coll.List[Coll.List[Sym.Sym]]): Coll.SMap[Hs.Dg] = cs match
+  case Coll.Nil => hm
+  case Coll.Cons(c, rest) => Hs.compsPut(dm, Hs.comp(dm, hm, c), rest)
+
+// ── every def (not extern) and enum: enums first, then fns; the hashes by name ──
+enum Hs.Split:
+  case Hs.Split(es: Coll.SMap[Hs.D], eo: Coll.List[Sym.Sym], fs: Coll.SMap[Hs.D], fo: Coll.List[Sym.Sym])
+
+def Hs.split {r: Region} (ds: Coll.List[Ast.Decl], sp: Hs.Split): Hs.Split = ds match
+  case Coll.Nil =>
+    val Hs.Split(es, eo, fs, fo) = sp
+    Hs.Split(es, Coll.rev(eo), fs, Coll.rev(fo))
+  case Coll.Cons(d, rest) =>
+    val Hs.Split(es, eo, fs, fo) = sp
+    d match
+      case Ast.DEnum(e) =>
+        val Ast.Enum(_, n, _, _) = e
+        Hs.split(rest, Hs.Split(Coll.sInsert(es, n, Hs.DE(e)), Coll.Cons(n, eo), fs, fo))
+      case Ast.DFn(f) =>
+        val Ast.Fn(_, n, _, _, _, _, body) = f
+        val isExt: Bool = body match
+          case Ast.Extern => true
+          case _ => false
+        if isExt then Hs.split(rest, sp) else Hs.split(rest, Hs.Split(es, eo, Coll.sInsert(fs, n, Hs.DF(f)), Coll.Cons(n, fo)))
+      case _ => Hs.split(rest, sp)
+
+def Hs.all {r: Region} (ds: Coll.List[Ast.Decl]): Coll.SMap[Hs.Dg] =
+  val Hs.Split(es, eo, fs, fo) = Hs.split(ds, Hs.Split(Coll.sEmpty(), Coll.Nil, Coll.sEmpty(), Coll.Nil))
+  val t0 = Hs.T(0, Coll.sEmpty(), Coll.sEmpty(), Coll.Nil, Coll.sEmpty(), Coll.Nil)
+  val hm1 = Hs.compsPut(es, Coll.sEmpty(), Hs.comps(es, eo, t0))
+  Hs.compsPut(fs, hm1, Hs.comps(fs, fo, t0))
+
+// `s2c --hash`: "name a.b.c.d" for every def (not extern) and enum, in program order
+def Hs.print {r: Region} (ds: Coll.List[Ast.Decl]): Unit = Hs.printFrom(Hs.all(ds), ds)
+
+def Hs.printFrom {r: Region} (hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.Decl]): Unit = ds match
+  case Coll.Nil => ()
+  case Coll.Cons(d, rest) =>
+    val n: Coll.Option[Sym.Sym] = d match
+      case Ast.DEnum(e) =>
+        val Ast.Enum(_, en, _, _) = e
+        Coll.Some(en)
+      case Ast.DFn(f) =>
+        val Ast.Fn(_, fn, _, _, _, _, _) = f
+        Coll.Some(fn)
+      case _ => Coll.None
+    n match
+      case Coll.Some(x) => Coll.sLookup(hm, x) match
+        case Coll.Some(g) => Hs.show(x, g)
+        case Coll.None => ()
+      case Coll.None => ()
+    Hs.printFrom(hm, rest)
+
+def Hs.show(n: Sym.Sym, g: Hs.Dg): Unit =
+  val Hs.Dg(a, b, c, d) = g
+  rt_print(Sym.str(n))
+  rt_print(" ")
+  rt_print_i64(a)
+  rt_print(".")
+  rt_print_i64(b)
+  rt_print(".")
+  rt_print_i64(c)
+  rt_print(".")
+  rt_print_i64(d)
+  rt_print("\n")
+
+// on the stack now (a popped node is kept as false)
+def Hs.onStack {r: Region} (on: Coll.SMap[Bool], w: Sym.Sym): Bool = Coll.sLookup(on, w) match
+  case Coll.Some(b) => b
+  case Coll.None => false

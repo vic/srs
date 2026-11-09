@@ -1,0 +1,57 @@
+// pass: self tail calls run in constant C stack (vic-m5r.10): 10M deep through each tail position: the body, an if
+// branch, a match arm, the last statement of a block, a generic instance. tests/run.sh also runs this one at -O0.
+enum Nat:
+  case Z
+  case S(n: I64)
+
+def down(n: I64, acc: I64): I64 = if n == 0 then acc else down(n - 1, acc + 1)
+
+def viaMatch(m: Nat, n: I64, acc: I64): I64 = m match
+  case Z => acc
+  case S(k) => if n == 0 then acc + k else viaMatch(m, n - 1, acc + 2)
+
+def viaBlock(n: I64, acc: I64): I64 =
+  val next = n - 1
+  if n == 0 then acc else viaBlock(next, acc + 3)
+
+def keep [A: Type] (x: A, n: I64): A = if n == 0 then x else keep(x, n - 1)
+
+// not a tail call: the multiply runs after the call returns
+def fact(n: I64): I64 = if n == 0 then 1 else n * fact(n - 1)
+
+protocol Bell:
+  state Up, Down
+  start Up
+  end Down
+  drop ring
+  op ring(): Unit : Up -> Down
+
+handler LoudBell for Bell:
+  def init(): Ptr = rt_arena_new()
+  def ring(self: Ptr): Unit =
+    rt_print("ring\n")
+    rt_arena_free(self)
+
+// not a jump: a handle block ends its scope (rings its bell) after the call
+def rings(n: I64): I64 =
+  handle b = LoudBell()
+  if n == 0 then 0 else rings(n - 1)
+
+// the args are read before any param changes: swap(b, a) swaps
+def swap(a: I64, b: I64, n: I64): I64 = if n == 0 then a * 10 + b else swap(b, a, n - 1)
+
+def main(): I64 =
+  handle r = Arena()
+  rt_print_i64(down(10000000, 0))
+  rt_print("\n")
+  rt_print_i64(viaMatch(S(1), 10000000, 0))
+  rt_print("\n")
+  rt_print_i64(viaBlock(10000000, 0))
+  rt_print("\n")
+  rt_print_i64(keep(7, 10000000))
+  rt_print("\n")
+  rt_print_i64(fact(10))
+  rt_print("\n")
+  rt_print_i64(rings(2) + swap(1, 2, 3))
+  rt_print("\n")
+  0
