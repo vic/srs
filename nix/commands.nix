@@ -16,9 +16,9 @@ in
   yen.aspects.srs-commands = {
     at = yen.kinds.repo;
     commands = [
-      (cmd "srs" "srs-build" "build the srs compiler from bootstrap/seed.c to $B/srs" ''
+      (cmd "srs" "srs-build" "build the srs compiler (s2c) from bootstrap/s2c-seed.c to $B/srs" ''
         ${build}
-        ${cc} ${ccs} -o "$B/srs" bootstrap/seed.c rt/srs_rt.c
+        ${cc} ${ccs} -o "$B/srs" bootstrap/s2c-seed.c rt/srs_rt.c
         echo "$B/srs"
       '')
       (cmd "srs" "srs-run"
@@ -45,6 +45,10 @@ in
       (cmd "srs" "seed-update"
         "after an S1 change: bootstrap/seed.c = the S1 self-compile of the last srs-test"
         ''${build}; cp "$B/s2.c" bootstrap/seed.c''
+      )
+      (cmd "srs" "s2c-seed-update"
+        "after an s2 change: bootstrap/s2c-seed.c = the s2c self-compile (s2c1.c) of the last srs-test"
+        ''${build}; cp "$B/s2c1.c" bootstrap/s2c-seed.c''
       )
       (cmd "test" "srs-test" "the gate, self-hosted: seed -> S1 -> fixpoint, pass and neg programs"
         "./tests/run.sh"
