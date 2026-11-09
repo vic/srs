@@ -123,11 +123,27 @@ srs_str rt_store_read(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
   return rt_read_file((srs_str){(const uint8_t*)name, (int64_t)strlen(name)});
 }
 
-int64_t rt_print(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stdout); return 0; }
+// where rt_print writes: stdout, or the capture buffer between rt_capture_begin and rt_capture_end (a printer's output
+// as one string; the bytes live until the program ends)
+static FILE* g_out;
+static char* g_cap;
+static size_t g_cap_n;
+static FILE* out(void) { return g_out ? g_out : stdout; }
+int64_t rt_capture_begin(void) {
+  g_out = open_memstream(&g_cap, &g_cap_n);
+  if (!g_out) { fputs("srs: cannot capture output\n", stderr); exit(70); }
+  return 0;
+}
+srs_str rt_capture_end(void) {
+  if (!g_out || fclose(g_out) != 0) { fputs("srs: capture not open\n", stderr); exit(70); }
+  g_out = 0;
+  return (srs_str){(const uint8_t*)g_cap, (int64_t)g_cap_n};
+}
+int64_t rt_print(srs_str s) { fwrite(s.p, 1, (size_t)s.n, out()); return 0; }
 int64_t rt_eprint(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stderr); return 0; }
-int64_t rt_print_i64(int64_t v) { printf("%lld", (long long)v); return 0; }
+int64_t rt_print_i64(int64_t v) { fprintf(out(), "%lld", (long long)v); return 0; }
 int64_t rt_eprint_i64(int64_t v) { fprintf(stderr, "%lld", (long long)v); return 0; }
-int64_t rt_print_char(int64_t c) { putchar((int)c); return 0; }
+int64_t rt_print_char(int64_t c) { fputc((int)c, out()); return 0; }
 int64_t rt_str_len(srs_str s) { return s.n; }
 int64_t rt_str_at(srs_str s, int64_t i) { return (i >= 0 && i < s.n) ? s.p[i] : -1; }
 srs_str rt_str_slice(srs_str s, int64_t b, int64_t e) {

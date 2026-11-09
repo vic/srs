@@ -98,6 +98,20 @@ for t in tests/s2/hash/*.srs; do
   done <<< "$rels"
   verdict "hash/$n" $pass
 done
+# s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
+# a trailing byte each read as bad (a miss)
+S2STORE="$B/store-s2"; rm -rf "$S2STORE"
+sst() { SRS_STORE="$S2STORE" timeout 2 "$B/s2c1" --store-check lib/prelude.srs tests/s2/hash/basic.srs 2>&1; }
+cold=$(sst); warm=$(sst)
+e=$(grep -rl I64 "$S2STORE" | head -1); cp "$e" "$B/store-s2.keep"
+head -c -2 "$B/store-s2.keep" > "$e"; cut=$(sst)
+sed '0,/I64/s//I65/' "$B/store-s2.keep" > "$e"; flip=$(sst)
+{ cat "$B/store-s2.keep"; printf 'x'; } > "$e"; trail=$(sst)
+case "$cold" in "store: wrote "[1-9]*", read equal "[1-9]*", bad 0") ok1=1;; *) ok1=0;; esac
+case "$warm" in "store: wrote 0, read equal "[1-9]*", bad 0") ok2=1;; *) ok2=0;; esac
+case "$cut$flip$trail" in *", bad 1"*", bad 1"*", bad 1") ok3=1;; *) ok3=0;; esac
+if [ $ok1 = 1 ] && [ $ok2 = 1 ] && [ $ok3 = 1 ] && ! cmp -s "$e" "$B/store-s2.keep"; then echo "ok s2c store cold/warm/cut/flip/trail"
+else echo "FAIL s2c store cold=[$cold] warm=[$warm] cut=[$cut] flip=[$flip] trail=[$trail]"; fail=1; fi
 # s2c errors are data: a clash is printed on stderr, no C, exit 1
 printf 'def main(): I64 = true\n' > "$B/s2c_bad.srs"
 msg=$(timeout 2 "$B/s2c1" lib/prelude.srs "$B/s2c_bad.srs" 2>&1 >"$B/s2c_bad.c"); code=$?

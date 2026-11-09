@@ -150,7 +150,7 @@ def S2c.typed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl]): I64 =
         case Coll.Nil => S2c.flowed(m, xds, res)
 
 def S2c.flowed {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 =
-  S2c.flowAll(S2c.flowCx(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
+  S2c.flowAll(S2c.flowCx(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
@@ -162,14 +162,15 @@ enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])
   case S2c.FlowBad(rel: Sym.Sym)
 
-def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum]): Flow.Cx = ds match
-  case Coll.Nil => Flow.Cx(ps, hs, fs, es)
+def S2c.flowCx {r: Region} (ds: Coll.List[Ast.Decl], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
+  case Coll.Nil => Flow.Cx(ps, hs, fs, es, ts)
   case Coll.Cons(d, rest) => d match
-    case Ast.DProto(p) => S2c.flowCx(rest, Coll.Cons(p, ps), hs, fs, es)
-    case Ast.DHandler(h) => S2c.flowCx(rest, ps, Coll.Cons(h, hs), fs, es)
-    case Ast.DFn(f) => S2c.flowCx(rest, ps, hs, Coll.Cons(f, fs), es)
-    case Ast.DEnum(e) => S2c.flowCx(rest, ps, hs, fs, Coll.Cons(e, es))
-    case _ => S2c.flowCx(rest, ps, hs, fs, es)
+    case Ast.DProto(p) => S2c.flowCx(rest, Coll.Cons(p, ps), hs, fs, es, ts)
+    case Ast.DHandler(h) => S2c.flowCx(rest, ps, Coll.Cons(h, hs), fs, es, ts)
+    case Ast.DFn(f) => S2c.flowCx(rest, ps, hs, Coll.Cons(f, fs), es, ts)
+    case Ast.DEnum(e) => S2c.flowCx(rest, ps, hs, fs, Coll.Cons(e, es), ts)
+    case Ast.DType(td) => S2c.flowCx(rest, ps, hs, fs, es, Coll.Cons(td, ts))
+    case _ => S2c.flowCx(rest, ps, hs, fs, es, ts)
 
 // every def with a body: its flow clashes (all of them, in order)
 def S2c.flowAll {r: Region} (cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
@@ -214,6 +215,7 @@ def S2c.showFlow(cs: Coll.List[Flow.Clash]): Unit = cs match
       case Flow.NoSol(l, n) => S2c.clashN(l, "entry facts with no solution in ", n)
       case Flow.Dead(l, n) => S2c.clashN(l, "use of value after its region ended: ", n)
       case Flow.Escape(l, n) => S2c.clashN(l, "value escapes the scope of its region ", n)
+      case Flow.Stale(l, x) => S2c.clashN(l, "the value needs its capability in the state its type names; it is in another state: ", x)
     S2c.showFlow(rest)
 
 // a rule library that is not a Datalog program, or a clash of another shape: a bug in s2, reported as one
@@ -232,8 +234,13 @@ enum S2c.Mode:
   case S2c.EvalAll
   // --hash: "name a.b.c.d", the content hash of every def and enum
   case S2c.HashAll
+  // --store-check: write every hashed decl to the store, read it back, compare
+  case S2c.StoreCheck
 
 def S2c.finish {r: Region} (m: S2c.Mode, ds: Coll.List[Ast.Decl], res: Ty.Result): I64 = m match
+  case S2c.StoreCheck =>
+    Store.check(ds)
+    0
   case S2c.HashAll =>
     Hs.print(ds)
     0
@@ -270,6 +277,7 @@ enum S2c.Args:
 def S2c.args {r: Region} (): S2c.Args =
   if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
   else if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--hash") then S2c.Args(S2c.HashAll, 2)
+  else if rt_argc() > 1 && rt_str_eq(rt_arg(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =

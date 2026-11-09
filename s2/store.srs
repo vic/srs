@@ -1,0 +1,103 @@
+// s2 store (s1/store.srs, vic-uw3 H2; vic 2026-11-06: Nix-like, content addressed): an entry = one decl as the printer
+// writes it (Ast.decl; parse(print(d)) prints as d, the printer fixpoint), keyed by its content hash (s2/hash.srs).
+// IO driver: an entry is written only through protocol StoreOut, so a write that does not commit does not compile.
+extern def rt_store_dir(): Str
+extern def rt_out_new(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr
+extern def rt_out_str(self: Ptr, s: Str): Unit
+extern def rt_out_i64(self: Ptr, n: I64): Unit
+extern def rt_out_commit(self: Ptr): Unit
+extern def rt_store_read(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
+// what rt_print and rt_print_i64 write between begin and end, as one string
+extern def rt_capture_begin(): Unit
+extern def rt_capture_end(): Str
+
+// an entry is open until commit renames it into place
+protocol StoreOut:
+  state Writing, Done
+  start Writing
+  end Done
+  op put(s: Str): Unit : Writing -> Writing
+  op commit(): Unit : Writing -> Done
+
+handler StoreFile for StoreOut:
+  def init(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr = rt_out_new(dir, a, b, c, d)
+  def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
+  def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// a decl as the printer writes it
+def Store.text {r: Region} (d: Ast.Decl): Str =
+  rt_capture_begin()
+  Ast.decl(d)
+  rt_capture_end()
+
+def Store.write {r: Region} (dir: Str, g: Hs.Dg, s: Str): Unit =
+  val Hs.Dg(a, b, c, d) = g
+  handle o = StoreFile(dir, a, b, c, d)
+  o.put(s)
+  o.commit()
+
+def Store.read {r: Region} (dir: Str, g: Hs.Dg): Str =
+  val Hs.Dg(a, b, c, d) = g
+  rt_store_read(dir, a, b, c, d)
+
+// an entry reads back as the decl when it parses to exactly one decl that prints as the original
+def Store.same {r: Region} (entry: Str, want: Str): Bool =
+  if rt_str_len(entry) < 0 then false
+  else Parse.source(entry) match
+    case Parse.Ok(ds, _) => ds match
+      case Coll.Cons(x, rest) => rest match
+        case Coll.Nil => rt_str_eq(Store.text(x), want)
+        case Coll.Cons(_, _) => false
+      case Coll.Nil => false
+    case Parse.Err(_, _) => false
+
+enum Store.Tally:
+  case Store.Tally(wrote: I64, same: I64, shared: I64, bad: I64, seen: Coll.List[Hs.Dg])
+
+def Store.seen(gs: Coll.List[Hs.Dg], g: Hs.Dg): Bool = gs match
+  case Coll.Nil => false
+  case Coll.Cons(h, rest) => if !Hs.less(g, h) && !Hs.less(h, g) then true else Store.seen(rest, g)
+
+// `s2c --store-check`: write every hashed decl, read each back, compare (vic-uw3 H2 oracle); a later decl with a hash
+// met before shares the entry (names are metadata)
+def Store.check {r: Region} (ds: Coll.List[Ast.Decl]): Unit =
+  val Store.Tally(w, s, sh, b, _) = Store.decls(rt_store_dir(), Hs.all(ds), ds, Store.Tally(0, 0, 0, 0, Coll.Nil))
+  rt_print("store: wrote ")
+  rt_print_i64(w)
+  rt_print(", read equal ")
+  rt_print_i64(s)
+  rt_print(", shared ")
+  rt_print_i64(sh)
+  rt_print(", bad ")
+  rt_print_i64(b)
+  rt_print("\n")
+
+def Store.decls {r: Region} (dir: Str, hm: Coll.SMap[Hs.Dg], ds: Coll.List[Ast.Decl], t: Store.Tally): Store.Tally = ds match
+  case Coll.Nil => t
+  case Coll.Cons(d, rest) =>
+    val n: Coll.Option[Sym.Sym] = d match
+      case Ast.DEnum(e) =>
+        val Ast.Enum(_, en, _, _) = e
+        Coll.Some(en)
+      case Ast.DFn(f) =>
+        val Ast.Fn(_, fname, _, _, _, _, _) = f
+        Coll.Some(fname)
+      case _ => Coll.None
+    val g: Coll.Option[Hs.Dg] = n match
+      case Coll.Some(x) => Coll.sLookup(hm, x)
+      case Coll.None => Coll.None
+    g match
+      case Coll.None => Store.decls(dir, hm, rest, t)
+      case Coll.Some(h) => Store.decls(dir, hm, rest, Store.one(dir, h, Store.text(d), t))
+
+def Store.one {r: Region} (dir: Str, g: Hs.Dg, want: Str, t: Store.Tally): Store.Tally =
+  val Store.Tally(w, s, sh, b, seen) = t
+  val w2 = if rt_str_len(Store.read(dir, g)) < 0 then Store.wrote(dir, g, want, w) else w
+  val seen2 = Coll.Cons(g, seen)
+  if Store.seen(seen, g) then Store.Tally(w2, s, sh + 1, b, seen2)
+  else if Store.same(Store.read(dir, g), want) then Store.Tally(w2, s + 1, sh, b, seen2)
+  else Store.Tally(w2, s, sh, b + 1, seen2)
+
+def Store.wrote {r: Region} (dir: Str, g: Hs.Dg, s: Str, w: I64): I64 =
+  Store.write(dir, g, s)
+  w + 1

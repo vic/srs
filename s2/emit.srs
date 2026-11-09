@@ -12,7 +12,7 @@ enum Emit.Alloc:
 
 // the declarations emit reads, by name
 enum Emit.Cx:
-  case Emit.Cx(s: Coll.IMap[K.Term], fns: Coll.SMap[El.Fn], cases: Coll.SMap[Emit.CaseAt], enums: Coll.SMap[Ast.Enum], protos: Coll.SMap[Ast.Proto], hprotos: Coll.SMap[Sym.Sym], alloc: Emit.Alloc)
+  case Emit.Cx(s: Coll.IMap[K.Term], fns: Coll.SMap[El.Fn], cases: Coll.SMap[Emit.CaseAt], enums: Coll.SMap[Ast.Enum], protos: Coll.SMap[Ast.Proto], hprotos: Coll.SMap[Sym.Sym], alloc: Emit.Alloc, nominal: Coll.SMap[K.Term])
 
 // a C local: a param p_x, or a binding v_x_n (n = the number of locals bound before it)
 enum Emit.Name:
@@ -65,7 +65,7 @@ enum Emit.Part:
 
 // ── the declarations by name ──
 def Emit.cxOf {r: Region} (ds: Coll.List[Ast.Decl], s: Coll.IMap[K.Term], fs: Coll.List[El.Fn]): Emit.Cx =
-  Emit.cxDecls(ds, Emit.Cx(s, Emit.fnMap(fs, Coll.sEmpty()), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Emit.VTable))
+  Emit.cxDecls(ds, Emit.Cx(s, Emit.fnMap(fs, Coll.sEmpty()), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Emit.VTable, Coll.sEmpty()))
 
 def Emit.fnMap {r: Region} (fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
   case Coll.Nil => m
@@ -76,17 +76,23 @@ def Emit.fnMap {r: Region} (fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMa
 def Emit.cxDecls {r: Region} (ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = ds match
   case Coll.Nil => cx
   case Coll.Cons(d, rest) =>
-    val Emit.Cx(s, fns, cs, es, ps, hp, al) = cx
+    val Emit.Cx(s, fns, cs, es, ps, hp, al, nm) = cx
     d match
       case Ast.DEnum(e) =>
         val Ast.Enum(_, n, _, cases) = e
-        Emit.cxDecls(rest, Emit.Cx(s, fns, Emit.caseMap(cases, e, 0, cs), Coll.sInsert(es, n, e), ps, hp, al))
+        Emit.cxDecls(rest, Emit.Cx(s, fns, Emit.caseMap(cases, e, 0, cs), Coll.sInsert(es, n, e), ps, hp, al, nm))
       case Ast.DProto(p) =>
         val Ast.Proto(_, n, _, _, _, _, _, _) = p
-        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, Coll.sInsert(ps, n, p), hp, al))
+        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, Coll.sInsert(ps, n, p), hp, al, nm))
       case Ast.DHandler(h) =>
         val Ast.Handler(_, n, p, _) = h
-        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, Coll.sInsert(hp, n, p), if rt_str_eq(Sym.str(n), "Arena") then Emit.Inline else al))
+        Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, Coll.sInsert(hp, n, p), if rt_str_eq(Sym.str(n), "Arena") then Emit.Inline else al, nm))
+      // a type with <> facts stays nominal through typing (s2/tlevel.srs Tl.nominal): in C it is its body's type
+      case Ast.DType(td) =>
+        val Ast.TypeDecl(_, n, _, _, body) = td
+        body match
+          case Ast.Alias(t) => Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, hp, al, Coll.sInsert(nm, n, Ty.term(t, Coll.Nil))))
+          case _ => Emit.cxDecls(rest, cx)
       case _ => Emit.cxDecls(rest, cx)
 
 def Emit.caseMap {r: Region} (cs: Coll.List[Ast.Case], e: Ast.Enum, i: I64, m: Coll.SMap[Emit.CaseAt]): Coll.SMap[Emit.CaseAt] = cs match
@@ -96,17 +102,17 @@ def Emit.caseMap {r: Region} (cs: Coll.List[Ast.Case], e: Ast.Enum, i: I64, m: C
     Emit.caseMap(rest, e, i + 1, Coll.sInsert(m, n, Emit.CaseAt(i, e, c)))
 
 def Emit.isProto {r: Region} (cx: Emit.Cx, n: Sym.Sym): Bool =
-  val Emit.Cx(_, _, _, _, ps, _, _) = cx
+  val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
   Coll.sLookup(ps, n) match
     case Coll.Some(_) => true
     case Coll.None => false
 
 def Emit.caseAt {r: Region} (cx: Emit.Cx, c: Sym.Sym): Coll.Option[Emit.CaseAt] =
-  val Emit.Cx(_, _, cs, _, _, _, _) = cx
+  val Emit.Cx(_, _, cs, _, _, _, _, _) = cx
   Coll.sLookup(cs, c)
 
 def Emit.subst(cx: Emit.Cx): Coll.IMap[K.Term] =
-  val Emit.Cx(s, _, _, _, _, _, _) = cx
+  val Emit.Cx(s, _, _, _, _, _, _, _) = cx
   s
 
 def Emit.grAll {r: Region} (cx: Emit.Cx, fi: Emit.Fi, ts: Coll.List[K.Term]): Coll.List[K.Term] =
@@ -201,11 +207,17 @@ def Emit.ctype {r: Region} (cx: Emit.Cx, t: K.Term): Unit = t match
     else if rt_str_eq(x, "Str") then rt_print("srs_str")
     else if rt_str_eq(x, "Ptr") then rt_print("void*")
     else if Emit.isProto(cx, n) then rt_print("srs_cap*")
-    else
-      rt_print("struct E_")
-      Emit.enumName(n, args)
-      rt_print("*")
+    else Emit.nominalOf(cx, n) match
+      case Coll.Some(b) => Emit.ctype(cx, b)
+      case Coll.None =>
+        rt_print("struct E_")
+        Emit.enumName(n, args)
+        rt_print("*")
   case _ => rt_print("int64_t")
+
+def Emit.nominalOf {r: Region} (cx: Emit.Cx, n: Sym.Sym): Coll.Option[K.Term] =
+  val Emit.Cx(_, _, _, _, _, _, _, nm) = cx
+  Coll.sLookup(nm, n)
 
 // ── expressions (spec sec 4) ──
 def Emit.ex {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr): Unit = e match
@@ -327,7 +339,7 @@ def Emit.isSelf(fi: Emit.Fi, f: Sym.Sym, ts: Coll.List[K.Term]): Bool =
   Sym.eq(f, self) && Mono.termsEq(ts, sts)
 
 def Emit.fnName {r: Region} (cx: Emit.Cx, f: Sym.Sym, ts: Coll.List[K.Term]): Unit =
-  val Emit.Cx(_, fns, _, _, _, _, _) = cx
+  val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, f) match
     case Coll.Some(g) =>
       val El.Fn(_, _, _, _, _, _, body) = g
@@ -412,7 +424,7 @@ def Emit.ctor {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym,
   case Coll.Some(ca) =>
     val Emit.CaseAt(tag, _, cs) = ca
     val Ast.Case(_, _, fields) = cs
-    val Emit.Cx(_, _, _, _, _, _, al) = cx
+    val Emit.Cx(_, _, _, _, _, _, al, _) = cx
     val n = Emit.envN(env)
     rt_print("({ struct E_")
     Emit.enumName(en, ts)
@@ -469,7 +481,7 @@ def Emit.fieldSets {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, n: I64,
 
 // the index of op in protocol p's op list
 def Emit.opIndex {r: Region} (cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): I64 =
-  val Emit.Cx(_, _, _, _, ps, _, _) = cx
+  val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
   Coll.sLookup(ps, p) match
     case Coll.None => 0
     case Coll.Some(pr) =>
@@ -486,7 +498,7 @@ def Emit.opIn(os: Coll.List[Ast.Op], op: Sym.Sym, i: I64): I64 = os match
 // trait method of {} evidence: the given's static fn (rung T2)
 def Emit.op {r: Region} (cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr]): Unit = ty match
   case K.Con(pn, targs) =>
-    val Emit.Cx(_, _, _, _, ps, _, _) = cx
+    val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
     Coll.sLookup(ps, pn) match
       case Coll.Some(p) =>
         val Ast.Proto(_, _, _, _, ends, _, ops, _) = p
@@ -650,7 +662,7 @@ def Emit.drops {r: Region} (cx: Emit.Cx, ds: Coll.List[Emit.Drop]): Unit = ds ma
   case Coll.Nil => ()
   case Coll.Cons(d, rest) =>
     val Emit.Drop(v, p) = d
-    val Emit.Cx(_, _, _, _, ps, _, _) = cx
+    val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
     Coll.sLookup(ps, p) match
       case Coll.None => ()
       case Coll.Some(pr) =>
@@ -671,7 +683,7 @@ def Emit.drops {r: Region} (cx: Emit.Cx, ds: Coll.List[Emit.Drop]): Unit = ds ma
 
 // the protocol of handler h
 def Emit.protoOfH {r: Region} (cx: Emit.Cx, h: Sym.Sym): Sym.Sym =
-  val Emit.Cx(_, _, _, _, _, hp, _) = cx
+  val Emit.Cx(_, _, _, _, _, hp, _, _) = cx
   Coll.sLookup(hp, h) match
     case Coll.Some(p) => p
     case Coll.None => h
@@ -836,7 +848,7 @@ def Emit.closeEnums {r: Region} (cx: Emit.Cx, todo: Coll.List[K.Term], seen: Col
   case Coll.Nil => Coll.rev(out)
   case Coll.Cons(t, rest) => t match
     case K.Con(n, args) =>
-      val Emit.Cx(_, _, _, es, _, _, _) = cx
+      val Emit.Cx(_, _, _, es, _, _, _, _) = cx
       val h = Mono.thash(t, 0)
       Coll.sLookup(es, n) match
         case Coll.None => Emit.closeEnums(cx, rest, seen, out)
@@ -894,7 +906,7 @@ def Emit.statics {r: Region} (cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts mat
 // the struct (Layout) or the nullary statics (Code) of enum term t
 def Emit.withEnum {r: Region} (cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
   case K.Con(n, args) =>
-    val Emit.Cx(_, _, _, es, _, _, _) = cx
+    val Emit.Cx(_, _, _, es, _, _, _, _) = cx
     Coll.sLookup(es, n) match
       case Coll.None => ()
       case Coll.Some(e) =>
@@ -971,7 +983,7 @@ def Emit.ptrs {r: Region} (tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Co
 
 // a generic extern whose result is a [] binder returns void*: the call casts it to the instance's type (spec sec 4 XInst)
 def Emit.externCast {r: Region} (cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]): Coll.Option[K.Term] =
-  val Emit.Cx(_, fns, _, _, _, _, _) = cx
+  val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, f) match
     case Coll.Some(g) =>
       val El.Fn(_, _, tps, _, _, ret, body) = g
@@ -1028,7 +1040,7 @@ def Emit.vtables {r: Region} (cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs
   case Coll.Nil => ()
   case Coll.Cons(h, rest) =>
     val El.Handler(hn, p, _) = h
-    val Emit.Cx(_, _, _, _, ps, _, _) = cx
+    val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
     rt_print("static void* const vt_")
     Emit.id(hn)
     rt_print("[] = {")
@@ -1067,7 +1079,7 @@ def Emit.allocFast {r: Region} (cx: Emit.Cx): Unit =
   rt_print("}\n")
 
 def Emit.hasMain {r: Region} (cx: Emit.Cx): Bool =
-  val Emit.Cx(_, fns, _, _, _, _, _) = cx
+  val Emit.Cx(_, fns, _, _, _, _, _, _) = cx
   Coll.sLookup(fns, Sym.of("main")) match
     case Coll.Some(_) => true
     case Coll.None => false
@@ -1090,7 +1102,7 @@ def Emit.program {r: Region} (ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   Emit.protos(cx, is)
   Emit.handlers(cx, hs, Emit.Layout)
   Emit.vtables(cx, hs)
-  val Emit.Cx(_, _, _, _, _, _, al) = cx
+  val Emit.Cx(_, _, _, _, _, _, al, _) = cx
   al match
     case Emit.Inline => Emit.allocFast(cx)
     case Emit.VTable => ()

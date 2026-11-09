@@ -67,7 +67,7 @@ enum Ty.Mode:
 
 // the substitution, the next fresh var, the clashes, the instances
 enum Ty.St:
-  case Ty.St(s: Coll.IMap[K.Term], next: I64, cs: Coll.List[Ty.Clash], is: Coll.List[Ty.Inst], gs: Coll.List[Ty.Goal])
+  case Ty.St(s: Coll.IMap[K.Term], next: I64, cs: Coll.List[Ty.Clash], is: Coll.List[Ty.Inst], gs: Coll.List[Ty.Goal], nom: Coll.SMap[K.Term])
 
 enum Ty.At:
   case Ty.At(st: Ty.St, t: K.Term)
@@ -75,19 +75,40 @@ enum Ty.At:
 def Ty.con {r: Region} (n: Str): K.Term = K.Con(Sym.of(n), Coll.Nil)
 
 def Ty.fresh {r: Region} (st: Ty.St): Ty.At =
-  val Ty.St(s, n, cs, is, gs) = st
-  Ty.At(Ty.St(s, n + 1, cs, is, gs), K.Var(n))
+  val Ty.St(s, n, cs, is, gs, nm) = st
+  Ty.At(Ty.St(s, n + 1, cs, is, gs, nm), K.Var(n))
 
 def Ty.clash {r: Region} (st: Ty.St, c: Ty.Clash): Ty.St =
-  val Ty.St(s, n, cs, is, gs) = st
-  Ty.St(s, n, Coll.Cons(c, cs), is, gs)
+  val Ty.St(s, n, cs, is, gs, nm) = st
+  Ty.St(s, n, Coll.Cons(c, cs), is, gs, nm)
 
-// got must equal want: unify, or a Mismatch (the state keeps its substitution)
+// got must equal want: unify, or a Mismatch (the state keeps its substitution). a value of a type with <> facts is
+// a value of its body (it only refines it, vic-jxk): got widens to the body when it does not unify as it is
 def Ty.expect {r: Region} (st: Ty.St, line: I64, got: K.Term, want: K.Term): Ty.St =
-  val Ty.St(s, n, cs, is, gs) = st
+  val Ty.St(s, n, cs, is, gs, nm) = st
   K.unify(s, got, want) match
-    case Coll.Some(s2) => Ty.St(s2, n, cs, is, gs)
-    case Coll.None => Ty.St(s, n, Coll.Cons(Ty.Mismatch(line, got, want), cs), is, gs)
+    case Coll.Some(s2) => Ty.St(s2, n, cs, is, gs, nm)
+    case Coll.None => Ty.widen(nm, K.walk(s, got)) match
+      case Coll.Some(body) => K.unify(s, body, want) match
+        case Coll.Some(s3) => Ty.St(s3, n, cs, is, gs, nm)
+        case Coll.None => Ty.St(s, n, Coll.Cons(Ty.Mismatch(line, got, want), cs), is, gs, nm)
+      case Coll.None => Ty.St(s, n, Coll.Cons(Ty.Mismatch(line, got, want), cs), is, gs, nm)
+
+def Ty.widen {r: Region} (nm: Coll.SMap[K.Term], t: K.Term): Coll.Option[K.Term] = t match
+  case K.Con(n, _) => Coll.sLookup(nm, n)
+  case _ => Coll.None
+
+// the types with <> facts (kept nominal by Tl) and their bodies
+def Ty.nominals {r: Region} (ds: Coll.List[Ast.Decl], m: Coll.SMap[K.Term]): Coll.SMap[K.Term] = ds match
+  case Coll.Nil => m
+  case Coll.Cons(d, rest) => d match
+    case Ast.DType(td) =>
+      val Ast.TypeDecl(_, n, gs, _, body) = td
+      val m2 = body match
+        case Ast.Alias(t) => if Tl.hasFacts(gs) then Coll.sInsert(m, n, Ty.term(t, Coll.Nil)) else m
+        case _ => m
+      Ty.nominals(rest, m2)
+    case _ => Ty.nominals(rest, m)
 
 // unify when want is known (check mode), else nothing
 def Ty.expectOpt {r: Region} (st: Ty.St, line: I64, got: K.Term, want: Coll.Option[K.Term]): Ty.St = want match
@@ -266,8 +287,8 @@ def Ty.callFn {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I
 def Ty.inst {r: Region} (st: Ty.St, line: I64, name: Sym.Sym, vars: Coll.List[K.Term]): Ty.St = vars match
   case Coll.Nil => st
   case Coll.Cons(_, _) =>
-    val Ty.St(s, n, cs, is, gs) = st
-    Ty.St(s, n, cs, Coll.Cons(Ty.Inst(line, name, vars), is), gs)
+    val Ty.St(s, n, cs, is, gs, nm) = st
+    Ty.St(s, n, cs, Coll.Cons(Ty.Inst(line, name, vars), is), gs, nm)
 
 // f[T1, ...]: each written type arg binds its binder (too many: Arity)
 def Ty.explicit {r: Region} (st: Ty.St, line: I64, vars: Coll.List[K.Term], ts: Coll.List[K.Term]): Ty.St = ts match
@@ -381,7 +402,7 @@ def Ty.method {r: Region} (cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I
       case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
 
 def Ty.subst(st: Ty.St): Coll.IMap[K.Term] =
-  val Ty.St(s, _, _, _, _) = st
+  val Ty.St(s, _, _, _, _, _) = st
   s
 
 // a signature with its binders bound to tv: arity, args, result
@@ -610,16 +631,17 @@ def Ty.check {r: Region} (ds: Coll.List[Ast.Decl]): Ty.Result = Ty.checkWith(ds,
 // tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls
 def Ty.checkWith {r: Region} (ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal]): Ty.Result =
   val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil)
+  val nom = Ty.nominals(ds, Coll.sEmpty())
   val pr = if Ty.hasSpec(ds) then Pure.impure(ds) else Pure.Got(Coll.sEmpty())
   val imp: Coll.SMap[Bool] = pr match
     case Pure.Got(m) => m
     case Pure.RulesBad(_) => Coll.sEmpty()
   val st0 = pr match
-    case Pure.Got(_) => Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil, Coll.Nil)
-    case Pure.RulesBad(rel) => Ty.St(Coll.Tip, 0, Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Nil)
+    case Pure.Got(_) => Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil, Coll.Nil, nom)
+    case Pure.RulesBad(rel) => Ty.St(Coll.Tip, 0, Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Nil, nom)
   val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp)
   val Ty.Fns(st1, fs, hs, gvs) = Ty.decls(cx, st0, ds, Coll.Nil, Coll.Nil, Coll.Nil)
-  val Ty.St(s, _, cs, is, gs) = st1
+  val Ty.St(s, _, cs, is, gs, _) = st1
   val allGoals = Ty.typeGoals(fns0, tgs, Coll.rev(gs))
   val cs2 = Ty.externSlots(es0, Ty.externs(fns0, Coll.sEmpty()), s, is, Ty.goals(ps0, Ty.cands(ps0, ds, Coll.Nil), s, allGoals, cs))
   Ty.Result(Ty.unsolved(s, is, cs2), is, s, fs, hs, gvs)
@@ -765,8 +787,8 @@ def Ty.armNames(n: Sym.Sym, as: Coll.List[Ast.Arm]): Bool = as match
       case Ast.PAny => Ty.armNames(n, rest)
 
 def Ty.addGoal {r: Region} (st: Ty.St, g: Ty.Goal): Ty.St =
-  val Ty.St(s, n, cs, is, gs) = st
-  Ty.St(s, n, cs, is, Coll.Cons(g, gs))
+  val Ty.St(s, n, cs, is, gs, nm) = st
+  Ty.St(s, n, cs, is, Coll.Cons(g, gs), nm)
 
 // ── trait goals (s1/given.srs): local evidence first, else the givens whose head matches, each with its own {} goals
 // proved (fuel per step); the most specific head wins, on a draw the one with fewer {} binders (Scala3) ──
