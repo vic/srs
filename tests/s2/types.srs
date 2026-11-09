@@ -14,7 +14,7 @@ def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll
 
 // the prelude and every s2 source (a new s2 file goes here too)
 def TT.sources {r: Region} (): Coll.List[Str] =
-  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/elab.srs", Coll.Nil))))))
+  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/mono.srs", Coll.Nil)))))))
   val b = Coll.Cons("s2/flow.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Nil)))))
   val c = Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/types.srs", Coll.Nil)))))
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
@@ -63,6 +63,12 @@ def main(): I64 =
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
   TT.run("self", lib)
   val Ty.Result(_, is, _, sfs) = Ty.check(lib)
+  val mi = Mono.run(Ty.check(lib))
+  rt_print("mono self: generic instances over 100: ")
+  rt_print_i64(if TT.genericCount(mi, 0) > 100 then 1 else 0)
+  rt_print(", open: ")
+  rt_print_i64(TT.openCount(mi, 0))
+  rt_print("\n")
   rt_print("bad nodes in self: ")
   rt_print_i64(TT.badsFns(sfs, 0))
   rt_print("\n")
@@ -76,6 +82,8 @@ def main(): I64 =
   TT.run("cannotinfer", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = Coll.length(Coll.Nil)\n")), lib))
   rt_print("elab usem:\n")
   TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef usem(): I64 =\n  handle a = Arena()\n  handle b = Heap()\n  val xs = mk{b}(3)\n  Coll.length(Coll.rev{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", lib, "usem")
+  rt_print("mono usem:\n")
+  TT.insts(Mono.run(Ty.check(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)))))
   0
 
 // ── T3: the elaborated calls of one def: instance, type args (reified), caps; constructors with their region ──
@@ -229,3 +237,44 @@ def TT.badsStmts(xs: Coll.List[El.Stmt]): I64 = xs match
       case El.Do(e) => TT.bads(e)
       case El.Handle(_, _, _, args) => TT.badsAll(args)
     k + TT.badsStmts(rest)
+
+// ── B1 mono: the instances (callee [args]) in worklist order; ground = no var in any instance's args ──
+def TT.insts {r: Region} (is: Coll.List[Mono.Inst]): Unit = is match
+  case Coll.Nil => ()
+  case Coll.Cons(i, rest) =>
+    val Mono.Inst(f, sub) = i
+    val El.Fn(_, n, tps, _, _, _, _) = f
+    tps match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(Sym.str(n))
+        rt_print("[")
+        TT.terms(TT.subArgs(tps, sub, Coll.Nil))
+        rt_print("]\n")
+    TT.insts(rest)
+
+def TT.subArgs {r: Region} (tps: Coll.List[Sym.Sym], sub: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = tps match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(x, rest) => Ty.lookup(sub, x) match
+    case Coll.Some(t) => TT.subArgs(rest, sub, Coll.Cons(t, acc))
+    case Coll.None => TT.subArgs(rest, sub, acc)
+
+// generic instances, and how many have a var left in their args
+def TT.genericCount(is: Coll.List[Mono.Inst], n: I64): I64 = is match
+  case Coll.Nil => n
+  case Coll.Cons(i, rest) =>
+    val Mono.Inst(f, _) = i
+    val El.Fn(_, _, tps, _, _, _, _) = f
+    TT.genericCount(rest, n + (if Coll.length(tps) > 0 then 1 else 0))
+
+def TT.openCount(is: Coll.List[Mono.Inst], n: I64): I64 = is match
+  case Coll.Nil => n
+  case Coll.Cons(i, rest) =>
+    val Mono.Inst(_, sub) = i
+    TT.openCount(rest, n + TT.openSub(sub))
+
+def TT.openSub(sub: Coll.List[Ty.Bind]): I64 = sub match
+  case Coll.Nil => 0
+  case Coll.Cons(b, rest) =>
+    val Ty.Bind(_, t) = b
+    (if Ty.groundT(t) then 0 else 1) + TT.openSub(rest)
