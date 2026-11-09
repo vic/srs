@@ -44,6 +44,8 @@ enum Flow.Clash:
   case Flow.Escape(line: I64, cap: Sym.Sym)
   // a value of a type with <at(c, S)> read where its capability is not in S (s1 "value needs c in state S"); name = the value
   case Flow.Stale(line: I64, x: Sym.Sym)
+  // an outer capability not in the same state at a multi-shot resume point and at the end of the rest (vic Q-M4)
+  case Flow.MsState(line: I64, cap: Sym.Sym)
 
 // every relation of Flow.rules and Flow.facts; Flow.relSym is the only place a relation name is a string
 enum Flow.Rel:
@@ -102,6 +104,11 @@ enum Flow.Rel:
   case Flow.RNeed
   case Flow.RSameS
   case Flow.RStale
+  // multi-shot (vic Q-M4): a resume point p of an outer capability c at line; the end point of the rest; the clash
+  case Flow.RMsRes
+  case Flow.RMsEnd
+  case Flow.RMsBad
+  case Flow.RMsBadAt
 
 def Flow.relSym(x: Flow.Rel): Sym.Sym = x match
   case Flow.RFlow => Sym.of("flow")
@@ -159,6 +166,10 @@ def Flow.relSym(x: Flow.Rel): Sym.Sym = x match
   case Flow.RNeed => Sym.of("need")
   case Flow.RSameS => Sym.of("sameS")
   case Flow.RStale => Sym.of("stale")
+  case Flow.RMsRes => Sym.of("msRes")
+  case Flow.RMsEnd => Sym.of("msEnd")
+  case Flow.RMsBad => Sym.of("msBad")
+  case Flow.RMsBadAt => Sym.of("msBadAt")
 
 // the clash relations of Flow.rules
 enum Flow.Kind:
@@ -171,6 +182,7 @@ enum Flow.Kind:
   case Flow.KDead
   case Flow.KEscape
   case Flow.KStale
+  case Flow.KMsState
 
 def Flow.relOf(k: Flow.Kind): Flow.Rel = k match
   case Flow.KStuck => Flow.RStuck
@@ -182,6 +194,7 @@ def Flow.relOf(k: Flow.Kind): Flow.Rel = k match
   case Flow.KDead => Flow.RDead
   case Flow.KEscape => Flow.REscape
   case Flow.KStale => Flow.RStale
+  case Flow.KMsState => Flow.RMsBadAt
 
 enum Flow.Verdict:
   case Flow.Ok
@@ -848,8 +861,12 @@ def Flow.startOf(ps: Coll.List[Ast.Proto], proto: Sym.Sym): Coll.Option[Sym.Sym]
 // a block: its statements, its value, then a block end point where its own capabilities end their scope
 def Flow.block(cx: Flow.Cx, st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, line: I64): Flow.At =
   val Flow.St(_, _, outer) = st
-  val Flow.At(st1, p1) = Flow.stmts(cx, st, p, ss)
-  val Flow.At(st2, p2) = Flow.expr(cx, st1, p1, last)
+  val Flow.MsAt(at1, ms) = Flow.stmtsMs(cx, st, p, ss, Coll.None)
+  val Flow.At(st1, p1) = at1
+  val Flow.At(st2a, p2) = Flow.expr(cx, st1, p1, last)
+  val st2: Flow.St = ms match
+    case Coll.None => st2a
+    case Coll.Some(mi) => Flow.msFacts(st2a, mi, p2)
   val Flow.At(st3, e) = Flow.next(st2, p2)
   val Flow.St(n, fs, inner) = st3
   // a block that closes capabilities: its value must not live in one of them (escape)
@@ -870,6 +887,75 @@ def Flow.closes(inner: Coll.List[Flow.Cap], outer: Coll.List[Flow.Cap], e: I64, 
     case Coll.Cons(c, rest) =>
       val Flow.Cap(_, id, _, _) = c
       Flow.closes(rest, outer, e, Coll.Cons(Flow.fClose(e, id), fs))
+
+// ── multi-shot (vic Q-M4): after a multi-shot handle x of capability p, the outer capabilities (those in scope at the
+// handle) and the resume points (after each top-level op of p) with their lines ──
+enum Flow.MsInfo:
+  case Flow.MsInfo(x: Sym.Sym, p: Sym.Sym, outer: Coll.List[Flow.Cap], res: Coll.List[Flow.MsRes])
+
+enum Flow.MsRes:
+  case Flow.MsRes(p: I64, line: I64)
+
+enum Flow.MsAt:
+  case Flow.MsAt(at: Flow.At, ms: Coll.Option[Flow.MsInfo])
+
+def Flow.stmtsMs(cx: Flow.Cx, st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt], ms: Coll.Option[Flow.MsInfo]): Flow.MsAt = ss match
+  case Coll.Nil => Flow.MsAt(Flow.At(st, p), ms)
+  case Coll.Cons(s, rest) =>
+    val Flow.St(_, _, capsBefore) = st
+    val Flow.At(st2, p2) = Flow.stmt(cx, st, p, s)
+    val ms2: Coll.Option[Flow.MsInfo] = ms match
+      case Coll.Some(mi) =>
+        val Flow.MsInfo(x, mp, outer, res) = mi
+        Flow.msOpLine(cx, x, mp, s) match
+          case Coll.Some(l) => Coll.Some(Flow.MsInfo(x, mp, outer, Coll.Cons(Flow.MsRes(p2, l), res)))
+          case Coll.None => ms
+      case Coll.None => s match
+        case Ast.Handle(_, x, h, _) => Flow.msStart(cx, x, h, capsBefore)
+        case _ => Coll.None
+    Flow.stmtsMs(cx, st2, p2, rest, ms2)
+
+def Flow.msStart(cx: Flow.Cx, x: Sym.Sym, h: Sym.Sym, outer: Coll.List[Flow.Cap]): Coll.Option[Flow.MsInfo] =
+  if Ty.isMultiShot(Flow.cxHs(cx), h) then
+    Flow.protoOf(Flow.cxHs(cx), h) match
+      case Coll.Some(mp) => Coll.Some(Flow.MsInfo(x, mp, outer, Coll.Nil))
+      case Coll.None => Coll.None
+  else Coll.None
+
+// the line of a top-level op of capability x (protocol mp) a statement is (Ty.shape keeps every op there)
+def Flow.msOpLine(cx: Flow.Cx, x: Sym.Sym, mp: Sym.Sym, s: Ast.Stmt): Coll.Option[I64] = s match
+  case Ast.Val(_, _, _, e) => Flow.msOpE(cx, x, mp, e)
+  case Ast.Do(e) => Flow.msOpE(cx, x, mp, e)
+  case _ => Coll.None
+
+def Flow.msOpE(cx: Flow.Cx, x: Sym.Sym, mp: Sym.Sym, e: Ast.Expr): Coll.Option[I64] = e match
+  case Ast.Method(l, recv, _, _) => if Sym.eq(recv, x) then Coll.Some(l) else Coll.None
+  case Ast.Call(l, f, _, _, _) =>
+    val Flow.Cx(ps, _, _, _, _, _) = cx
+    val mine: Bool = Eff.reqOf(ps, f) match
+      case Coll.Some(q) =>
+        val Eff.Req(qp, _) = q
+        Sym.eq(qp, mp)
+      case Coll.None => false
+    if mine then Coll.Some(l) else Coll.None
+  case _ => Coll.None
+
+// msRes(pr, c, line) for each outer capability c at each resume point, msEnd(pe, c) at the end of the rest
+def Flow.msFacts(st: Flow.St, mi: Flow.MsInfo, pe: I64): Flow.St =
+  val Flow.MsInfo(_, _, outer, res) = mi
+  Flow.msCaps(st, outer, res, pe)
+
+def Flow.msCaps(st: Flow.St, cs: Coll.List[Flow.Cap], res: Coll.List[Flow.MsRes], pe: I64): Flow.St = cs match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) =>
+    val Flow.Cap(_, id, _, _) = c
+    Flow.msCaps(Flow.msRess(Flow.add(st, Flow.fact2(Flow.RMsEnd, Flow.i(pe), Flow.i(id))), id, res), rest, res, pe)
+
+def Flow.msRess(st: Flow.St, id: I64, res: Coll.List[Flow.MsRes]): Flow.St = res match
+  case Coll.Nil => st
+  case Coll.Cons(r, rest) =>
+    val Flow.MsRes(pr, l) = r
+    Flow.msRess(Flow.add(st, Flow.fact3(Flow.RMsRes, Flow.i(pr), Flow.i(id), Flow.i(l))), id, rest)
 
 def Flow.stmts(cx: Flow.Cx, st: Flow.St, p: I64, ss: Coll.List[Ast.Stmt]): Flow.At = ss match
   case Coll.Nil => Flow.At(st, p)
@@ -979,7 +1065,10 @@ def Flow.rules(): Coll.List[D.Rule] =
   val unended = Flow.rule(Flow.RUnended, Flow.l2(8, 3), Flow.l5(Flow.pos(Flow.RClose, Flow.l2(0, 3)), Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4)), Flow.pos(Flow.RCapOf, Flow.l2(3, 7)), Flow.neg(Flow.REndOk, Flow.l2(7, 4)), Flow.pos(Flow.RCapLine, Flow.l2(3, 8))))
   val unendedN = Flow.rule(Flow.RUnendedAt, Flow.l2(8, 9), Flow.l2(Flow.pos(Flow.RUnended, Flow.l2(8, 3)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
   val f1 = Coll.Cons(enter, Coll.Cons(frame, Coll.Cons(touch, Coll.Cons(keep, Coll.Cons(move, Coll.Cons(moved, Coll.Cons(seen, Coll.Cons(stuck, Coll.Cons(split, Coll.Cons(splitN, Coll.Cons(unended, Coll.Cons(unendedN, Coll.Nil))))))))))))
-  Coll.revOnto(Coll.rev(f1), Coll.revOnto(Coll.rev(Flow.callRules()), Flow.capsRules()))
+  // multi-shot (vic Q-M4): an outer capability must be in the same state at each resume point and at the end of the rest
+  val msBad = Flow.rule(Flow.RMsBad, Flow.l2(2, 1), Flow.l5(Flow.pos(Flow.RMsRes, Flow.l3(0, 1, 2)), Flow.pos(Flow.RMsEnd, Flow.l2(3, 1)), Flow.pos(Flow.RAt, Flow.l4(0, 4, 1, 5)), Flow.pos(Flow.RAt, Flow.l4(3, 4, 1, 6)), Flow.neg(Flow.RSame, Flow.l2(5, 6))))
+  val msBadN = Flow.rule(Flow.RMsBadAt, Flow.l2(2, 7), Flow.l2(Flow.pos(Flow.RMsBad, Flow.l2(2, 1)), Flow.pos(Flow.RCapName, Flow.l2(1, 7))))
+  Coll.Cons(msBad, Coll.Cons(msBadN, Coll.revOnto(Coll.rev(f1), Coll.revOnto(Coll.rev(Flow.callRules()), Flow.capsRules()))))
 
 // R2 for calls (flow-design.md): the call point p is its own kind; j 10, m 11, n 12, i 13
 def Flow.callRules(): Coll.List[D.Rule] =
@@ -1104,7 +1193,7 @@ def Flow.clashLN(k: Flow.Kind, a: D.Val, b: D.Val): Coll.Option[Flow.Clash] = a 
 
 // every clash relation of a solved model, read
 def Flow.readAll(m: D.Model): Flow.Read =
-  Flow.clashes(m, Flow.KStale, Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Flow.clashes(m, Flow.KDead, Flow.clashes(m, Flow.KEscape, Flow.Got(Coll.Nil))))))))))
+  Flow.clashes(m, Flow.KMsState, Flow.clashes(m, Flow.KStale, Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Flow.clashes(m, Flow.KDead, Flow.clashes(m, Flow.KEscape, Flow.Got(Coll.Nil)))))))))))
 
 def Flow.make(k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash = k match
   case Flow.KStuck => Flow.Stuck(line, name)
@@ -1116,6 +1205,7 @@ def Flow.make(k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash = k match
   case Flow.KDead => Flow.Dead(line, name)
   case Flow.KEscape => Flow.Escape(line, name)
   case Flow.KStale => Flow.Stale(line, name)
+  case Flow.KMsState => Flow.MsState(line, name)
 
 def Flow.verdictOf(rd: Flow.Read): Flow.Verdict = rd match
   case Flow.IllTyped(rel) => Flow.RulesIllTyped(rel)

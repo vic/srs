@@ -1,0 +1,26 @@
+// expect: error[multishot-state]
+// two resume points with the lamp in two states: the end cannot equal both (vic Q-M4)
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+capability Lamp:
+  state Off, On
+  start Off
+  stop Off
+  def on <Off> (): Unit <On>
+  def off <On> (): Unit <Off>
+handler HLamp for Lamp:
+  def on(): Unit = ()
+  def off(): Unit = ()
+def run(): I64 =
+  handle l = HLamp()
+  handle nd = Count()
+  val a = nd.choose()
+  l.on()
+  val b = nd.choose()
+  l.off()
+  0
+def main(): I64 = run()
+// expect: --> tests/s2/neg/ms_state_two.srs:22
