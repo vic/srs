@@ -108,11 +108,21 @@ enum Ast.Case:
 enum Ast.Enum:
   case Ast.Enum(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], cases: Coll.List[Ast.Case])
 
+// trait Name groups: its method signatures (no body)
+enum Ast.Trait:
+  case Ast.Trait(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], sigs: Coll.List[Ast.Fn])
+
+// given groups Head[args]: the methods of the trait Head for those args
+enum Ast.Given:
+  case Ast.Given(line: I64, groups: Coll.List[Ast.Group], head: Ast.Ty, fns: Coll.List[Ast.Fn])
+
 enum Ast.Decl:
   case Ast.DFn(f: Ast.Fn)
   case Ast.DEnum(e: Ast.Enum)
   case Ast.DProto(p: Ast.Proto)
   case Ast.DHandler(h: Ast.Handler)
+  case Ast.DTrait(t: Ast.Trait)
+  case Ast.DGiven(g: Ast.Given)
 
 // ── printer: srs source, Ast.step() spaces per level ──
 def Ast.step(): I64 = 2
@@ -456,10 +466,23 @@ def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
     Ast.groups(t)
 
 def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
-  val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
+  val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
     case Ast.Extern => rt_print("extern ")
     case Ast.Def(_) => ()
+  Ast.fnSig(f, ind)
+
+// a trait method signature: a def without body and without extern
+def Ast.sigs {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, t) =>
+    Ast.line(ind)
+    Ast.fnSig(f, ind)
+    Ast.sigs(t, ind)
+
+// def name groups (params): ty <exit> [= body]
+def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
+  val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
   rt_print("def ")
   Ast.sym(name)
   Ast.groups(gs)
@@ -582,6 +605,21 @@ def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
     Ast.sym(name)
     rt_print(" for ")
     Ast.sym(proto)
+    rt_print(":")
+    Ast.fns(fs, Ast.step())
+  case Ast.DTrait(tr) =>
+    val Ast.Trait(_, name, gs, sigs) = tr
+    rt_print("trait ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    rt_print(":")
+    Ast.sigs(sigs, Ast.step())
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, gs, head, fs) = g
+    rt_print("given")
+    Ast.groups(gs)
+    rt_print(" ")
+    Ast.ty(head)
     rt_print(":")
     Ast.fns(fs, Ast.step())
 

@@ -150,6 +150,19 @@ def Names.decl {r: Region} (d: Ast.Decl, st: Names.St): Names.St = d match
     Names.cases(cases, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))
   case Ast.DProto(p) => Names.proto(p, st)
   case Ast.DHandler(h) => Names.handler(h, st)
+  // a trait is a type name; its method signatures name types in its [] binders
+  case Ast.DTrait(tr) =>
+    val Ast.Trait(line, name, gs, sigs) = tr
+    Names.fnsIn(sigs, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))
+  // a given names its trait head (in its [] binders); its methods are checked in them
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, gs, head, fs) = g
+    val tps = Names.tparams(gs, Coll.Nil)
+    Names.fnsIn(fs, tps, Names.ty(head, tps, st))
+
+def Names.fnsIn {r: Region} (fs: Coll.List[Ast.Fn], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) => Names.fnsIn(rest, tps, Names.fn(f, tps, st))
 
 // the [] binder names of groups gs (types in scope)
 def Names.tparams {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
