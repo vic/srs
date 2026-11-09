@@ -1,0 +1,470 @@
+// s2 P4 NAMES + DECL (vic-m5r.25, vic/c/s2-port-plan.md S-NAMES, S-DECL; parity D1-D3, D7, D8): the declarations of
+// the whole program as facts, one D.solve, every clash a derived fact read back as data. Names.facts walks the decls
+// once: what each declares (by namespace), what each body uses, every type it names, every protocol state and
+// transition, every handler fn and its arity. Names.rules derives the clashes.
+
+// a clash: the line it is at and the name it is about
+enum Names.Clash:
+  // two declarations of one name in one namespace (calls: defs and enum cases; types: enums, protocols, handlers)
+  case Names.Dup(line: I64, name: Sym.Sym)
+  // a call or a name that no declaration and no local binds
+  case Names.Unknown(line: I64, name: Sym.Sym)
+  // a type that is not a builtin, an enum, a protocol or a [] binder in scope
+  case Names.NoType(line: I64, name: Sym.Sym)
+  // a protocol start or transition state that the protocol does not declare
+  case Names.BadState(line: I64, name: Sym.Sym)
+  // a drop op that the protocol does not declare
+  case Names.NoDrop(line: I64, name: Sym.Sym)
+  // a handler for a name that is not a protocol
+  case Names.NoProto(line: I64, name: Sym.Sym)
+  // a handler without init
+  case Names.NoInit(line: I64, name: Sym.Sym)
+  // a protocol op that the handler does not implement (name = the op)
+  case Names.NoOp(line: I64, name: Sym.Sym)
+  // a handler fn whose arity is not the op's arity + 1 (self)
+  case Names.BadArity(line: I64, name: Sym.Sym)
+
+enum Names.Verdict:
+  case Names.Ok
+  case Names.Bad(clashes: Coll.List[Names.Clash])
+  // the rule library is not a Datalog program, or a clash relation holds another shape (a bug in Names.rules)
+  case Names.RulesBad(rel: Sym.Sym)
+
+// every relation; Names.relSym is the only place a relation name is a string
+enum Names.Rel:
+  case Names.RDecl
+  case Names.RDeclLine
+  case Names.RDeclared
+  case Names.RUseCall
+  case Names.RTyRef
+  case Names.RState
+  case Names.RStart
+  case Names.RTrans
+  case Names.RDropOp
+  case Names.ROpOf
+  case Names.RIsProto
+  case Names.RHandlerFor
+  case Names.RImpl
+  case Names.RImplArity
+  case Names.RWantArity
+  case Names.RSame
+  case Names.RDupAt
+  case Names.RUnknownAt
+  case Names.RNoTypeAt
+  case Names.RBadStateAt
+  case Names.RNoDropAt
+  case Names.RNoProtoAt
+  case Names.RNoInitAt
+  case Names.RNoOpAt
+  case Names.RBadArityAt
+
+def Names.relSym {r: Region} (x: Names.Rel): Sym.Sym = x match
+  case Names.RDecl => Sym.of("decl")
+  case Names.RDeclLine => Sym.of("declLine")
+  case Names.RDeclared => Sym.of("declared")
+  case Names.RUseCall => Sym.of("useCall")
+  case Names.RTyRef => Sym.of("tyRef")
+  case Names.RState => Sym.of("state")
+  case Names.RStart => Sym.of("start")
+  case Names.RTrans => Sym.of("trans")
+  case Names.RDropOp => Sym.of("dropOp")
+  case Names.ROpOf => Sym.of("opOf")
+  case Names.RIsProto => Sym.of("isProto")
+  case Names.RHandlerFor => Sym.of("handlerFor")
+  case Names.RImpl => Sym.of("impl")
+  case Names.RImplArity => Sym.of("implArity")
+  case Names.RWantArity => Sym.of("wantArity")
+  case Names.RSame => Sym.of("same")
+  case Names.RDupAt => Sym.of("dupAt")
+  case Names.RUnknownAt => Sym.of("unknownAt")
+  case Names.RNoTypeAt => Sym.of("noTypeAt")
+  case Names.RBadStateAt => Sym.of("badStateAt")
+  case Names.RNoDropAt => Sym.of("noDropAt")
+  case Names.RNoProtoAt => Sym.of("noProtoAt")
+  case Names.RNoInitAt => Sym.of("noInitAt")
+  case Names.RNoOpAt => Sym.of("noOpAt")
+  case Names.RBadArityAt => Sym.of("badArityAt")
+
+// a namespace: calls (defs, enum cases) or types (enums, protocols, handlers, builtins)
+enum Names.Ns:
+  case Names.NCall
+  case Names.NType
+
+def Names.nsVal {r: Region} (n: Names.Ns): D.Val = n match
+  case Names.NCall => D.VInt(0)
+  case Names.NType => D.VInt(1)
+
+// ── facts: one constructor per relation ──
+def Names.i {r: Region} (n: I64): D.Val = D.VInt(n)
+def Names.s {r: Region} (x: Sym.Sym): D.Val = D.VSym(x)
+def Names.f2 {r: Region} (rel: Names.Rel, a: D.Val, b: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
+def Names.f3 {r: Region} (rel: Names.Rel, a: D.Val, b: D.Val, c: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil))))
+def Names.f5 {r: Region} (rel: Names.Rel, a: D.Val, b: D.Val, c: D.Val, d: D.Val, e: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Cons(d, Coll.Cons(e, Coll.Nil))))))
+def Names.fDecl {r: Region} (ns: Names.Ns, n: Sym.Sym, id: I64): D.Fact = Names.f3(Names.RDecl, Names.nsVal(ns), Names.s(n), Names.i(id))
+def Names.fDeclLine {r: Region} (id: I64, line: I64): D.Fact = Names.f2(Names.RDeclLine, Names.i(id), Names.i(line))
+def Names.fUseCall {r: Region} (n: Sym.Sym, line: I64): D.Fact = Names.f2(Names.RUseCall, Names.s(n), Names.i(line))
+def Names.fTyRef {r: Region} (n: Sym.Sym, line: I64): D.Fact = Names.f2(Names.RTyRef, Names.s(n), Names.i(line))
+def Names.fState {r: Region} (p: Sym.Sym, s: Sym.Sym): D.Fact = Names.f2(Names.RState, Names.s(p), Names.s(s))
+def Names.fStart {r: Region} (p: Sym.Sym, s: Sym.Sym, line: I64): D.Fact = Names.f3(Names.RStart, Names.s(p), Names.s(s), Names.i(line))
+def Names.fTrans {r: Region} (p: Sym.Sym, op: Sym.Sym, a: Sym.Sym, b: Sym.Sym, line: I64): D.Fact = Names.f5(Names.RTrans, Names.s(p), Names.s(op), Names.s(a), Names.s(b), Names.i(line))
+def Names.fDropOp {r: Region} (p: Sym.Sym, op: Sym.Sym, line: I64): D.Fact = Names.f3(Names.RDropOp, Names.s(p), Names.s(op), Names.i(line))
+def Names.fOpOf {r: Region} (p: Sym.Sym, op: Sym.Sym): D.Fact = Names.f2(Names.ROpOf, Names.s(p), Names.s(op))
+def Names.fIsProto {r: Region} (p: Sym.Sym): D.Fact = D.Fact(Names.relSym(Names.RIsProto), Coll.Cons(Names.s(p), Coll.Nil))
+def Names.fHandlerFor {r: Region} (h: Sym.Sym, p: Sym.Sym, line: I64): D.Fact = Names.f3(Names.RHandlerFor, Names.s(h), Names.s(p), Names.i(line))
+def Names.fImpl {r: Region} (h: Sym.Sym, f: Sym.Sym): D.Fact = Names.f2(Names.RImpl, Names.s(h), Names.s(f))
+def Names.fImplArity {r: Region} (h: Sym.Sym, f: Sym.Sym, n: I64, line: I64): D.Fact = D.Fact(Names.relSym(Names.RImplArity), Coll.Cons(Names.s(h), Coll.Cons(Names.s(f), Coll.Cons(Names.i(n), Coll.Cons(Names.i(line), Coll.Nil)))))
+def Names.fWantArity {r: Region} (p: Sym.Sym, op: Sym.Sym, n: I64): D.Fact = Names.f3(Names.RWantArity, Names.s(p), Names.s(op), Names.i(n))
+def Names.fSameI {r: Region} (n: I64): D.Fact = Names.f2(Names.RSame, Names.i(n), Names.i(n))
+
+// the walk: the next declaration id and the facts
+enum Names.St:
+  case Names.St(next: I64, facts: Coll.List[D.Fact])
+
+def Names.add {r: Region} (st: Names.St, f: D.Fact): Names.St =
+  val Names.St(n, fs) = st
+  Names.St(n, Coll.Cons(f, fs))
+
+// a declaration of n in ns at line: a fresh id, so two declarations of one name are two rows
+def Names.declare {r: Region} (st: Names.St, ns: Names.Ns, n: Sym.Sym, line: I64): Names.St =
+  val Names.St(id, fs) = st
+  Names.St(id + 1, Coll.Cons(Names.fSameI(id), Coll.Cons(Names.fDeclLine(id, line), Coll.Cons(Names.fDecl(ns, n, id), fs))))
+
+// the builtin types (parity D14): one declaration each, at line 0
+def Names.builtins {r: Region} (st: Names.St): Names.St =
+  Names.declare(Names.declare(Names.declare(Names.declare(Names.declare(st, Names.NType, Sym.of("I64"), 0), Names.NType, Sym.of("Bool"), 0), Names.NType, Sym.of("Unit"), 0), Names.NType, Sym.of("Str"), 0), Names.NType, Sym.of("Ptr"), 0)
+
+def Names.facts {r: Region} (ds: Coll.List[Ast.Decl]): Coll.List[D.Fact] =
+  val Names.St(_, fs) = Names.decls(ds, Names.builtins(Names.St(0, Coll.Nil)))
+  fs
+
+def Names.decls {r: Region} (ds: Coll.List[Ast.Decl], st: Names.St): Names.St = ds match
+  case Coll.Nil => st
+  case Coll.Cons(d, rest) => Names.decls(rest, Names.decl(d, st))
+
+def Names.decl {r: Region} (d: Ast.Decl, st: Names.St): Names.St = d match
+  case Ast.DFn(f) =>
+    val Ast.Fn(line, name, _, _, _, _, _) = f
+    Names.fn(f, Coll.Nil, Names.declare(st, Names.NCall, name, line))
+  case Ast.DEnum(e) =>
+    val Ast.Enum(line, name, gs, cases) = e
+    Names.cases(cases, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))
+  case Ast.DProto(p) => Names.proto(p, st)
+  case Ast.DHandler(h) => Names.handler(h, st)
+  // a trait is a type name; its method signatures name types in its [] binders
+  case Ast.DTrait(tr) =>
+    val Ast.Trait(line, name, gs, sigs) = tr
+    Names.fnsIn(sigs, Names.tparams(gs, Coll.Nil), Names.declare(st, Names.NType, name, line))
+  // a type decl is a type name; its body names types in its [] binders, its value args see its value binders
+  case Ast.DType(td) =>
+    val Ast.TypeDecl(line, name, gs, vals, body) = td
+    val tps = Names.tparams(gs, Coll.Nil)
+    val ls = Names.binderNames(vals, Coll.Nil)
+    val st1 = Names.binderTys(vals, tps, Names.groupTys(gs, tps, Names.declare(st, Names.NType, name, line)))
+    body match
+      case Ast.Alias(t) => Names.tyIn(t, tps, ls, st1)
+      case Ast.TyMatch(s, arms) => Names.tyArms(arms, tps, ls, Names.tyIn(s, tps, ls, st1))
+      case Ast.ValMatch(_, arms) => Names.valArms(arms, tps, ls, st1)
+  // a given names its trait head (in its [] binders); its methods are checked in them
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, gs, head, fs) = g
+    val tps = Names.tparams(gs, Coll.Nil)
+    Names.fnsIn(fs, tps, Names.ty(head, tps, st))
+
+def Names.tyArms {r: Region} (as: Coll.List[Ast.TyArm], tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.TyArm(_, p, res) = a
+    Names.tyArms(rest, tps, ls, Names.tyIn(res, tps, ls, Names.tyIn(p, tps, ls, st)))
+
+def Names.valArms {r: Region} (as: Coll.List[Ast.ValArm], tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.ValArm(_, _, res) = a
+    Names.valArms(rest, tps, ls, Names.tyIn(res, tps, ls, st))
+
+def Names.fnsIn {r: Region} (fs: Coll.List[Ast.Fn], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) => Names.fnsIn(rest, tps, Names.fn(f, tps, st))
+
+// the [] binder names of groups gs (types in scope)
+def Names.tparams {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) => g match
+    case Ast.Types(bs) => Names.tparams(rest, Names.binderNames(bs, acc))
+    case Ast.Evidence(_) => Names.tparams(rest, acc)
+    case Ast.Facts(_) => Names.tparams(rest, acc)
+
+def Names.binderNames {r: Region} (bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, x, _) = b
+    Names.binderNames(rest, Coll.Cons(x, acc))
+
+def Names.member(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(h, t) => if Sym.eq(h, x) then true else Names.member(x, t)
+
+// every type a type names: its name (unless a [] binder in scope tps) and its args
+def Names.ty {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], st: Names.St): Names.St = Names.tyIn(t, tps, Coll.Nil, st)
+
+// a type with the locals ls in scope of its value args (the value binders of a type decl)
+def Names.tyIn {r: Region} (t: Ast.Ty, tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: Names.St): Names.St =
+  val Ast.Ty(line, n, args, _, vs) = t
+  Names.exprs(vs, ls, tps, Names.tys(args, tps, if Names.member(n, tps) then st else Names.add(st, Names.fTyRef(n, line))))
+
+def Names.tys {r: Region} (ts: Coll.List[Ast.Ty], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ts match
+  case Coll.Nil => st
+  case Coll.Cons(t, rest) => Names.tys(rest, tps, Names.ty(t, tps, st))
+
+def Names.binderTys {r: Region} (bs: Coll.List[Ast.Binder], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = bs match
+  case Coll.Nil => st
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Names.binderTys(rest, tps, Names.ty(t, tps, st))
+
+// every case is a call name; its field types are named in the enum's [] binders
+def Names.cases {r: Region} (cs: Coll.List[Ast.Case], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = cs match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(line, name, fields) = c
+    Names.cases(rest, tps, Names.binderTys(fields, tps, Names.declare(st, Names.NCall, name, line)))
+
+// a def: its signature's types, then its body with its params and binders as locals (outer = types in scope from an
+// enclosing decl)
+def Names.fn {r: Region} (f: Ast.Fn, outer: Coll.List[Sym.Sym], st: Names.St): Names.St =
+  val Ast.Fn(_, _, gs, params, ret, _, body) = f
+  val tps = Names.tparams(gs, outer)
+  val st1 = Names.ty(ret, tps, Names.binderTys(params, tps, Names.groupTys(gs, tps, st)))
+  val locals = Names.binderNames(params, Names.evidenceNames(gs, Coll.Nil))
+  body match
+    case Ast.Extern => st1
+    case Ast.Def(cs, e) => Names.expr(e, locals, tps, Names.clauses(cs, locals, tps, st1))
+    case Ast.Spec(cs, e) => Names.expr(e, locals, tps, Names.clauses(cs, locals, tps, st1))
+
+// the types of the {} binders (a {} binder names a trait or a protocol)
+def Names.groupTys {r: Region} (gs: Coll.List[Ast.Group], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = gs match
+  case Coll.Nil => st
+  case Coll.Cons(g, rest) => g match
+    case Ast.Evidence(bs) => Names.groupTys(rest, tps, Names.binderTys(bs, tps, st))
+    case Ast.Types(_) => Names.groupTys(rest, tps, st)
+    case Ast.Facts(_) => Names.groupTys(rest, tps, st)
+
+def Names.evidenceNames {r: Region} (gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) => g match
+    case Ast.Evidence(bs) => Names.evidenceNames(rest, Names.binderNames(bs, acc))
+    case Ast.Types(_) => Names.evidenceNames(rest, acc)
+    case Ast.Facts(_) => Names.evidenceNames(rest, acc)
+
+// contract clauses: their expressions see the params and result (s1 binds result in an ensures)
+def Names.clauses {r: Region} (cs: Coll.List[Ast.Clause], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = cs match
+  case Coll.Nil => st
+  case Coll.Cons(c, rest) => c match
+    case Ast.CondC(_, _, e) => Names.clauses(rest, ls, tps, Names.expr(e, Coll.Cons(Sym.of("result"), ls), tps, st))
+    case Ast.ProofUsing(line, xs) => Names.clauses(rest, ls, tps, Names.useAll(xs, line, st))
+    case Ast.ProofInduction(_, _) => Names.clauses(rest, ls, tps, st)
+    case Ast.ProofLean(_, _) => Names.clauses(rest, ls, tps, st)
+
+// proof using f, g: each is a use of a def
+def Names.useAll {r: Region} (xs: Coll.List[Sym.Sym], line: I64, st: Names.St): Names.St = xs match
+  case Coll.Nil => st
+  case Coll.Cons(x, rest) => Names.useAll(rest, line, Names.add(st, Names.fUseCall(x, line)))
+
+// a body: a call or a name that is not local is a use of the call namespace (a def, a case, a nullary case)
+def Names.expr {r: Region} (e: Ast.Expr, ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = e match
+  case Ast.Name(line, x) => if Names.member(x, ls) then st else Names.add(st, Names.fUseCall(x, line))
+  case Ast.Call(line, f, targs, _, xs) => Names.exprs(xs, ls, tps, Names.tys(targs, tps, Names.add(st, Names.fUseCall(f, line))))
+  case Ast.Method(_, _, _, xs) => Names.exprs(xs, ls, tps, st)
+  case Ast.Bin(_, _, l, rhs) => Names.expr(rhs, ls, tps, Names.expr(l, ls, tps, st))
+  case Ast.Un(_, _, x) => Names.expr(x, ls, tps, st)
+  case Ast.If(_, c, t, x) => Names.expr(x, ls, tps, Names.expr(t, ls, tps, Names.expr(c, ls, tps, st)))
+  case Ast.While(_, c, b) => Names.expr(b, ls, tps, Names.expr(c, ls, tps, st))
+  case Ast.Assign(_, _, x) => Names.expr(x, ls, tps, st)
+  case Ast.Quant(_, _, x, t, b) => Names.expr(b, Coll.Cons(x, ls), tps, Names.ty(t, tps, st))
+  case Ast.Match(_, s, arms) => Names.arms(arms, ls, tps, Names.expr(s, ls, tps, st))
+  case Ast.Block(_, ss, last) => Names.block(ss, last, ls, tps, st)
+  case _ => st
+
+def Names.exprs {r: Region} (xs: Coll.List[Ast.Expr], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = xs match
+  case Coll.Nil => st
+  case Coll.Cons(x, rest) => Names.exprs(rest, ls, tps, Names.expr(x, ls, tps, st))
+
+// an arm: its case is a use; its binders are locals of its body
+def Names.arms {r: Region} (as: Coll.List[Ast.Arm], ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(line, p, b) = a
+    val st1: Names.St = p match
+      case Ast.PCase(c, binds) => Names.expr(b, Names.binderSyms(binds, ls), tps, Names.add(st, Names.fUseCall(c, line)))
+      case Ast.PAny => Names.expr(b, ls, tps, st)
+    Names.arms(rest, ls, tps, st1)
+
+def Names.binderSyms {r: Region} (xs: Coll.List[Sym.Sym], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Names.binderSyms(rest, Coll.Cons(x, acc))
+
+// a block: each statement in turn; a val, var or handle binds its name for the statements after it and the value
+def Names.block {r: Region} (ss: Coll.List[Ast.Stmt], last: Ast.Expr, ls: Coll.List[Sym.Sym], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ss match
+  case Coll.Nil => Names.expr(last, ls, tps, st)
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.annTy(ann, tps, Names.expr(e, ls, tps, st)))
+    case Ast.Var(_, x, ann, e) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.annTy(ann, tps, Names.expr(e, ls, tps, st)))
+    case Ast.Handle(line, x, h, xs) => Names.block(rest, last, Coll.Cons(x, ls), tps, Names.exprs(xs, ls, tps, Names.add(st, Names.fTyRef(h, line))))
+    case Ast.Do(e) => Names.block(rest, last, ls, tps, Names.expr(e, ls, tps, st))
+    case Ast.Check(_, _, e) => Names.block(rest, last, ls, tps, Names.expr(e, ls, tps, st))
+
+def Names.annTy {r: Region} (ann: Coll.Option[Ast.Ty], tps: Coll.List[Sym.Sym], st: Names.St): Names.St = ann match
+  case Coll.None => st
+  case Coll.Some(t) => Names.ty(t, tps, st)
+
+// a protocol: a type name; its states, start, transitions, ops and drop op as facts; its op signatures' types
+def Names.proto {r: Region} (p: Ast.Proto, st: Names.St): Names.St =
+  val Ast.Proto(line, name, states, start, _, dropOp, ops, _) = p
+  val st1 = Names.add(Names.add(Names.declare(st, Names.NType, name, line), Names.fIsProto(name)), Names.fStart(name, start, line))
+  val st2 = Names.statesF(name, states, st1)
+  val st3: Names.St = dropOp match
+    case Coll.None => st2
+    case Coll.Some(d) => Names.add(st2, Names.fDropOp(name, d, line))
+  Names.ops(name, ops, st3)
+
+def Names.statesF {r: Region} (p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Names.St): Names.St = ss match
+  case Coll.Nil => st
+  case Coll.Cons(s, rest) => Names.statesF(p, rest, Names.add(st, Names.fState(p, s)))
+
+// each op: declared in its protocol, wanted with arity params + 1 (self) in a handler, its transitions, its types
+def Names.ops {r: Region} (p: Sym.Sym, os: Coll.List[Ast.Op], st: Names.St): Names.St = os match
+  case Coll.Nil => st
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(line, name, params, ret, trs) = o
+    val n = Coll.length(params) + 1
+    val st1 = Names.add(Names.add(Names.add(st, Names.fOpOf(p, name)), Names.fWantArity(p, name, n)), Names.fSameI(n))
+    Names.ops(p, rest, Names.transF(p, name, trs, line, Names.ty(ret, Coll.Nil, Names.binderTys(params, Coll.Nil, st1))))
+
+def Names.transF {r: Region} (p: Sym.Sym, op: Sym.Sym, trs: Coll.List[Ast.Trans], line: I64, st: Names.St): Names.St = trs match
+  case Coll.Nil => st
+  case Coll.Cons(t, rest) =>
+    val Ast.Trans(a, b) = t
+    Names.transF(p, op, rest, line, Names.add(st, Names.fTrans(p, op, a, b, line)))
+
+// a handler: a type name for a protocol; each fn implements an op (or init) with its arity
+def Names.handler {r: Region} (h: Ast.Handler, st: Names.St): Names.St =
+  val Ast.Handler(line, name, p, fns) = h
+  Names.hfns(name, fns, Names.add(Names.declare(st, Names.NType, name, line), Names.fHandlerFor(name, p, line)))
+
+def Names.hfns {r: Region} (h: Sym.Sym, fs: Coll.List[Ast.Fn], st: Names.St): Names.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, name, _, params, _, _, _) = f
+    val n = Coll.length(params)
+    Names.hfns(h, rest, Names.fn(f, Coll.Nil, Names.add(Names.add(Names.add(st, Names.fImpl(h, name)), Names.fImplArity(h, name, n, line)), Names.fSameI(n))))
+
+// ── rules (variables: ns 0, n 1, i 2, j 3, line 4, p 5, s 6, op 7, a 8, b 9, h 10, k 11, m 12) ──
+def Names.v {r: Region} (n: I64): D.Arg = D.AVar(n)
+def Names.atom {r: Region} (rel: Names.Rel, xs: Coll.List[I64]): D.Atom = D.Atom(Names.relSym(rel), Names.vars(xs))
+def Names.vars {r: Region} (xs: Coll.List[I64]): Coll.List[D.Arg] = xs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(x, rest) => Coll.Cons(Names.v(x), Names.vars(rest))
+def Names.pos {r: Region} (rel: Names.Rel, xs: Coll.List[I64]): D.Lit = D.Pos(Names.atom(rel, xs))
+def Names.neg {r: Region} (rel: Names.Rel, xs: Coll.List[I64]): D.Lit = D.Neg(Names.atom(rel, xs))
+def Names.rule {r: Region} (rel: Names.Rel, xs: Coll.List[I64], body: Coll.List[D.Lit]): D.Rule = D.Rule(Names.atom(rel, xs), body)
+def Names.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
+def Names.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, Names.l1(b))
+def Names.l3 [A: Type] {r: Region} (a: A, b: A, c: A): Coll.List[A] = Coll.Cons(a, Names.l2(b, c))
+def Names.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Cons(a, Names.l3(b, c, d))
+def Names.l5 [A: Type] {r: Region} (a: A, b: A, c: A, d: A, e: A): Coll.List[A] = Coll.Cons(a, Names.l4(b, c, d, e))
+
+// a call-namespace value: the ns column as a constant
+def Names.callNs {r: Region} (): D.Arg = D.AVal(D.VInt(0))
+def Names.typeNs {r: Region} (): D.Arg = D.AVal(D.VInt(1))
+
+def Names.rules {r: Region} (): Coll.List[D.Rule] =
+  val declared = Names.rule(Names.RDeclared, Names.l2(0, 1), Names.l1(Names.pos(Names.RDecl, Names.l3(0, 1, 2))))
+  // every declaration of a name declared twice in one namespace (declaration ids differ)
+  val dup = Names.rule(Names.RDupAt, Names.l2(4, 1), Names.l4(Names.pos(Names.RDecl, Names.l3(0, 1, 2)), Names.pos(Names.RDecl, Names.l3(0, 1, 3)), Names.neg(Names.RSame, Names.l2(2, 3)), Names.pos(Names.RDeclLine, Names.l2(2, 4))))
+  val unknown = D.Rule(Names.atom(Names.RUnknownAt, Names.l2(4, 1)), Names.l2(Names.pos(Names.RUseCall, Names.l2(1, 4)), D.Neg(D.Atom(Names.relSym(Names.RDeclared), Coll.Cons(Names.callNs(), Names.l1(Names.v(1)))))))
+  val noType = D.Rule(Names.atom(Names.RNoTypeAt, Names.l2(4, 1)), Names.l2(Names.pos(Names.RTyRef, Names.l2(1, 4)), D.Neg(D.Atom(Names.relSym(Names.RDeclared), Coll.Cons(Names.typeNs(), Names.l1(Names.v(1)))))))
+  // protocol well-formed: start and transition states are its states; its drop op is its op
+  val badStart = Names.rule(Names.RBadStateAt, Names.l2(4, 6), Names.l2(Names.pos(Names.RStart, Names.l3(5, 6, 4)), Names.neg(Names.RState, Names.l2(5, 6))))
+  val badFrom = Names.rule(Names.RBadStateAt, Names.l2(4, 8), Names.l2(Names.pos(Names.RTrans, Names.l5(5, 7, 8, 9, 4)), Names.neg(Names.RState, Names.l2(5, 8))))
+  val badTo = Names.rule(Names.RBadStateAt, Names.l2(4, 9), Names.l2(Names.pos(Names.RTrans, Names.l5(5, 7, 8, 9, 4)), Names.neg(Names.RState, Names.l2(5, 9))))
+  val noDrop = Names.rule(Names.RNoDropAt, Names.l2(4, 7), Names.l2(Names.pos(Names.RDropOp, Names.l3(5, 7, 4)), Names.neg(Names.ROpOf, Names.l2(5, 7))))
+  // handler: for a protocol, with init, every op implemented with arity + 1
+  val noProto = Names.rule(Names.RNoProtoAt, Names.l2(4, 5), Names.l2(Names.pos(Names.RHandlerFor, Names.l3(10, 5, 4)), Names.neg(Names.RIsProto, Names.l1(5))))
+  val noInit = D.Rule(Names.atom(Names.RNoInitAt, Names.l2(4, 10)), Names.l2(Names.pos(Names.RHandlerFor, Names.l3(10, 5, 4)), D.Neg(D.Atom(Names.relSym(Names.RImpl), Names.l2(Names.v(10), D.AVal(D.VSym(Sym.of("init"))))))))
+  val noOp = Names.rule(Names.RNoOpAt, Names.l2(4, 7), Names.l3(Names.pos(Names.RHandlerFor, Names.l3(10, 5, 4)), Names.pos(Names.ROpOf, Names.l2(5, 7)), Names.neg(Names.RImpl, Names.l2(10, 7))))
+  val badArity = Names.rule(Names.RBadArityAt, Names.l2(4, 7), Names.l4(Names.pos(Names.RHandlerFor, Names.l3(10, 5, 11)), Names.pos(Names.RWantArity, Names.l3(5, 7, 12)), Names.pos(Names.RImplArity, Names.l4(10, 7, 2, 4)), Names.neg(Names.RSame, Names.l2(2, 12))))
+  Coll.Cons(declared, Coll.Cons(dup, Coll.Cons(unknown, Coll.Cons(noType, Coll.Cons(badStart, Coll.Cons(badFrom, Coll.Cons(badTo, Coll.Cons(noDrop, Coll.Cons(noProto, Coll.Cons(noInit, Coll.Cons(noOp, Names.l1(badArity))))))))))))
+
+// ── the verdict: each clash relation read as (line, name); another shape is a bug in Names.rules (RulesBad) ──
+enum Names.Kind:
+  case Names.KDup
+  case Names.KUnknown
+  case Names.KNoType
+  case Names.KBadState
+  case Names.KNoDrop
+  case Names.KNoProto
+  case Names.KNoInit
+  case Names.KNoOp
+  case Names.KBadArity
+
+def Names.relOf(k: Names.Kind): Names.Rel = k match
+  case Names.KDup => Names.RDupAt
+  case Names.KUnknown => Names.RUnknownAt
+  case Names.KNoType => Names.RNoTypeAt
+  case Names.KBadState => Names.RBadStateAt
+  case Names.KNoDrop => Names.RNoDropAt
+  case Names.KNoProto => Names.RNoProtoAt
+  case Names.KNoInit => Names.RNoInitAt
+  case Names.KNoOp => Names.RNoOpAt
+  case Names.KBadArity => Names.RBadArityAt
+
+def Names.make {r: Region} (k: Names.Kind, line: I64, n: Sym.Sym): Names.Clash = k match
+  case Names.KDup => Names.Dup(line, n)
+  case Names.KUnknown => Names.Unknown(line, n)
+  case Names.KNoType => Names.NoType(line, n)
+  case Names.KBadState => Names.BadState(line, n)
+  case Names.KNoDrop => Names.NoDrop(line, n)
+  case Names.KNoProto => Names.NoProto(line, n)
+  case Names.KNoInit => Names.NoInit(line, n)
+  case Names.KNoOp => Names.NoOp(line, n)
+  case Names.KBadArity => Names.BadArity(line, n)
+
+enum Names.Read:
+  case Names.Got(cs: Coll.List[Names.Clash])
+  case Names.IllTyped(rel: Sym.Sym)
+
+def Names.read {r: Region} (m: D.Model, k: Names.Kind, prev: Names.Read): Names.Read = prev match
+  case Names.IllTyped(_) => prev
+  case Names.Got(acc) => Names.readList(k, D.tuples(m, Names.relSym(Names.relOf(k))), acc)
+
+def Names.readList {r: Region} (k: Names.Kind, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Names.Clash]): Names.Read = ts match
+  case Coll.Nil => Names.Got(acc)
+  case Coll.Cons(t, rest) => Names.clashOf(k, t) match
+    case Coll.None => Names.IllTyped(Names.relSym(Names.relOf(k)))
+    case Coll.Some(c) => Names.readList(k, rest, Coll.Cons(c, acc))
+
+def Names.clashOf {r: Region} (k: Names.Kind, t: Coll.List[D.Val]): Coll.Option[Names.Clash] = t match
+  case Coll.Cons(a, rest) => rest match
+    case Coll.Cons(b, more) => more match
+      case Coll.Nil => a match
+        case D.VInt(line) => b match
+          case D.VSym(n) => Coll.Some(Names.make(k, line, n))
+          case D.VInt(_) => Coll.None
+        case D.VSym(_) => Coll.None
+      case Coll.Cons(_, _) => Coll.None
+    case Coll.Nil => Coll.None
+  case Coll.Nil => Coll.None
+
+def Names.readAll {r: Region} (m: D.Model): Names.Read =
+  val r1 = Names.read(m, Names.KDup, Names.read(m, Names.KUnknown, Names.read(m, Names.KNoType, Names.Got(Coll.Nil))))
+  val r2 = Names.read(m, Names.KBadState, Names.read(m, Names.KNoDrop, Names.read(m, Names.KNoProto, r1)))
+  Names.read(m, Names.KNoInit, Names.read(m, Names.KNoOp, Names.read(m, Names.KBadArity, r2)))
+
+def Names.check {r: Region} (ds: Coll.List[Ast.Decl]): Names.Verdict = D.solve(Names.rules(), Names.facts(ds)) match
+  case D.Solved(m) => Names.readAll(m) match
+    case Names.IllTyped(rel) => Names.RulesBad(rel)
+    case Names.Got(cs) => cs match
+      case Coll.Nil => Names.Ok
+      case Coll.Cons(_, _) => Names.Bad(cs)
+  case D.Unsafe(rel) => Names.RulesBad(rel)
+  case D.NegCycle(rel) => Names.RulesBad(rel)

@@ -5,28 +5,24 @@
 # info-* cases time the current source: they are reported, never a gate.
 # slower = mean above the baseline mean by more than 2 combined standard deviations (noise of both runs).
 # usage: tests/bench.sh [update]   (update: save this run as the new baseline, after a faster delivery or a refreeze)
-# needs $B/s2 (tests/run.sh builds it).
+# needs $B/s2c1 (tests/run.sh builds it from the s2c seed).
 set -u
 B=${B:-${XDG_RUNTIME_DIR:-/tmp}/srs-build}
 C=bench/corpus
 # benchmarks never touch the user store (vic 2026-11-06)
 export SRS_STORE="$B/store-bench"
-S1SRC=$(sed -n 's/^S1SRC="\(.*\)"$/\1/p' tests/run.sh)
-LIBS=$(sed -n 's/^LIBS="\(.*\)"$/\1/p' tests/run.sh)
-# the corpus has the S1 file list of its own time: every lib/ and s1/ file it holds, in the order of S1SRC
-CS1=""; for f in $S1SRC; do [ -f "$C/$f" ] && CS1="$CS1 $C/$f"; done
-CLEAN=${CS1% "$C"/s1/main.srs}
-# the corpus keeps the test libs at their old path tests/
-CLIBS=""; for f in $LIBS; do CLIBS="$CLIBS $C/${f/tests\/s1\//tests/}"; done
-test -x "$B/s2" || { echo "no $B/s2: run tests/run.sh first" >&2; exit 1; }
-# every pass test of the corpus checked and emitted in one command
-printf '%s\n' "for t in $C/tests/*.srs; do \"$B/s2\" $CLIBS \"\$t\" > /dev/null; done" > "$B/bench-tests.sh"
-timeout 300 hyperfine -N -w 3 -m 10 --export-json "$B/bench.json" \
-  -n corpus-self "$B/s2 $CS1" \
-  -n corpus-lean "$B/s2 --lean Impl $CLEAN" \
+# the compiler is s2c (tests/run.sh builds $B/s2c1 from bootstrap/s2c-seed.c); the corpus is s2 at its freeze
+SC="$B/s2c1"
+CSRC="$C/lib/prelude.srs $(ls $C/s2/*.srs | tr '\n' ' ') $C/s2c/main.srs"
+CLIBS="$C/lib/prelude.srs $C/lib/kanren.srs $C/lib/datalog.srs $C/tests/s2/prog/list.lib $C/tests/s2/prog/file.lib"
+NOW="lib/prelude.srs $(ls s2/*.srs | tr '\n' ' ') s2c/main.srs"
+test -x "$SC" || { echo "no $SC: run tests/run.sh first" >&2; exit 1; }
+# every program test of the corpus checked and emitted in one command
+printf '%s\n' "for t in $C/tests/s2/prog/*.srs; do \"$SC\" $CLIBS \"\$t\" > /dev/null; done" > "$B/bench-tests.sh"
+timeout 300 hyperfine -N -w 2 -m 5 --export-json "$B/bench.json" \
+  -n corpus-self "$SC $CSRC" \
   -n corpus-tests "bash $B/bench-tests.sh" \
-  -n info-s1-self "$B/s2 $S1SRC" \
-  -n info-s1-lean "$B/s2 --lean Impl ${S1SRC% s1/main.srs}" > "$B/bench.log" 2>&1 || { cat "$B/bench.log"; exit 1; }
+  -n info-s2c-self "$SC $NOW" > "$B/bench.log" 2>&1 || { cat "$B/bench.log"; exit 1; }
 # per case: name, wall mean + sd (s), instructions mean + sd, peak memory (bytes); hyperfine 2 json
 jq -r '.results[] | .summary as $s | "\(.name) wall \($s.time_wall_clock.mean) \($s.time_wall_clock.stddev)\n\(.name) instr \($s.instructions.mean) \($s.instructions.stddev)\n\(.name) mem \($s.memory_peak_resident.mean) \($s.memory_peak_resident.stddev)"' \
   "$B/bench.json" > "$B/bench.now"

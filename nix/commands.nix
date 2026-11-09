@@ -36,7 +36,7 @@ in
         ''
       )
       (cmd "test" "srs-bench"
-        "the speed oracle: hyperfine S1 self-compile, S1 Lean gen, all pass tests; fails when slower than bench/baseline.txt (srs-test first)"
+        "the speed oracle: hyperfine s2c self-compile and all program tests on the frozen corpus; fails when slower than bench/baseline.txt (srs-test first)"
         "${build}; bash tests/bench.sh"
       )
       (cmd "test" "bench-update" "after a faster delivery: save this run as bench/baseline.txt"
@@ -50,7 +50,7 @@ in
         "after an s2 change: bootstrap/s2c-seed.c = the s2c self-compile (s2c1.c) of the last srs-test"
         ''${build}; cp "$B/s2c1.c" bootstrap/s2c-seed.c''
       )
-      (cmd "test" "srs-test" "the gate, self-hosted: seed -> S1 -> fixpoint, pass and neg programs"
+      (cmd "test" "srs-test" "the gate (s2 only): s2c seed -> s2c -> fixpoint, then tests/s2 (components, prog, neg, eval, hash, store)"
         "./tests/run.sh"
       )
       (cmd "test" "lean-check"

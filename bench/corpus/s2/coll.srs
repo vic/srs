@@ -1,0 +1,196 @@
+// s2 collections (vic-m5r.13 C1): persistent and functional (val only); every loop is a self tail call, so it runs in
+// constant C stack (vic-m5r.10). a function is a given of a trait, named by a marker type F (no closures).
+
+enum Coll.List [A: Type]:
+  case Coll.Nil
+  case Coll.Cons(h: A, t: Coll.List[A])
+
+enum Coll.Option [A: Type]:
+  case Coll.None
+  case Coll.Some(v: A)
+
+// xs reversed onto acc
+def Coll.revOnto [A: Type] {r: Region} (xs: Coll.List[A], acc: Coll.List[A]): Coll.List[A] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => Coll.revOnto(t, Coll.Cons(h, acc))
+
+def Coll.rev [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.revOnto(xs, Coll.Nil)
+
+def Coll.lengthFrom [A: Type] (xs: Coll.List[A], n: I64): I64 = xs match
+  case Coll.Nil => n
+  case Coll.Cons(_, t) => Coll.lengthFrom(t, n + 1)
+
+def Coll.length [A: Type] (xs: Coll.List[A]): I64 = Coll.lengthFrom(xs, 0)
+
+def Coll.headOpt [A: Type] {r: Region} (xs: Coll.List[A]): Coll.Option[A] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(h, _) => Coll.Some(h)
+
+// one step of a left fold: the given for marker F
+trait Coll.Fold [F: Type] [A: Type] [B: Type]:
+  def step(acc: B, x: A): B
+
+def Coll.foldl [F: Type] [A: Type] [B: Type] {f: Coll.Fold[F, A, B]} (xs: Coll.List[A], acc: B): B = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) => Coll.foldl[F, A, B](t, f.step(acc, h))
+
+// a persistent map keyed by I64 (vic-m5r.13 C2): a weight-balanced tree, Adams' balance with delta 3, ratio 2 (the
+// pair Haskell Data.Map uses; Hirai and Yamamoto 2011 prove it the only integer pair that keeps the balance). a key
+// is an I64 (a name's strHash): one integer compare per level. an insert copies one path (O(log n) nodes).
+enum Coll.IMap [V: Type]:
+  case Coll.Tip
+  case Coll.Bin(size: I64, k: I64, v: V, l: Coll.IMap[V], r: Coll.IMap[V])
+
+// the two balance factors (Adams; delta 3, ratio 2, above): one side may hold at most delta times the other, and a
+// rotation is single when the inner grandchild holds less than ratio times the outer one, else double
+def Coll.delta(): I64 = 3
+def Coll.ratio(): I64 = 2
+
+def Coll.size [V: Type] (m: Coll.IMap[V]): I64 = m match
+  case Coll.Tip => 0
+  case Coll.Bin(s, _, _, _, _) => s
+
+def Coll.lookup [V: Type] {r: Region} (m: Coll.IMap[V], k: I64): Coll.Option[V] = m match
+  case Coll.Tip => Coll.None
+  case Coll.Bin(_, k2, v, l, r2) => if k < k2 then Coll.lookup(l, k) else if k > k2 then Coll.lookup(r2, k) else Coll.Some(v)
+
+// a node over l and r (their sizes known)
+def Coll.bin [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+  Coll.Bin(Coll.size(l) + Coll.size(r2) + 1, k, v, l, r2)
+
+// k, v over l and r where one side grew or shrank by at most one element: rotate back into balance
+def Coll.balance [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+  val sl = Coll.size(l)
+  val sr = Coll.size(r2)
+  if sl + sr <= 1 then Coll.bin(k, v, l, r2)
+  else if sr > Coll.delta() * sl then Coll.rotateL(k, v, l, r2)
+  else if sl > Coll.delta() * sr then Coll.rotateR(k, v, l, r2)
+  else Coll.bin(k, v, l, r2)
+
+def Coll.rotateL [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = r2 match
+  case Coll.Tip => Coll.bin(k, v, l, r2)
+  case Coll.Bin(_, k2, v2, rl, rr) =>
+    if Coll.size(rl) < Coll.ratio() * Coll.size(rr) then Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
+    else rl match
+      case Coll.Tip => Coll.bin(k2, v2, Coll.bin(k, v, l, rl), rr)
+      case Coll.Bin(_, k3, v3, rll, rlr) => Coll.bin(k3, v3, Coll.bin(k, v, l, rll), Coll.bin(k2, v2, rlr, rr))
+
+def Coll.rotateR [V: Type] {r: Region} (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
+  case Coll.Tip => Coll.bin(k, v, l, r2)
+  case Coll.Bin(_, k2, v2, ll, lr) =>
+    if Coll.size(lr) < Coll.ratio() * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+    else lr match
+      case Coll.Tip => Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+      case Coll.Bin(_, k3, v3, lrl, lrr) => Coll.bin(k3, v3, Coll.bin(k2, v2, ll, lrl), Coll.bin(k, v, lrr, r2))
+
+// m with k bound to v (a binding of k is replaced)
+def Coll.insert [V: Type] {r: Region} (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m match
+  case Coll.Tip => Coll.Bin(1, k, v, Coll.Tip, Coll.Tip)
+  case Coll.Bin(s, k2, v2, l, r2) =>
+    if k < k2 then Coll.balance(k2, v2, Coll.insert(l, k, v), r2)
+    else if k > k2 then Coll.balance(k2, v2, l, Coll.insert(r2, k, v))
+    else Coll.Bin(s, k, v, l, r2)
+
+// the node of k, Coll.Tip when absent: a lookup that allocates nothing (Coll.lookup allocates its Some)
+def Coll.node [V: Type] (m: Coll.IMap[V], k: I64): Coll.IMap[V] = m match
+  case Coll.Tip => m
+  case Coll.Bin(_, k2, _, l, r2) => if k < k2 then Coll.node(l, k) else if k > k2 then Coll.node(r2, k) else m
+
+// b4 batch input: key/value pairs, strictly ascending by key. Only Coll.sortDedup builds a Sorted (no sealing in s1 yet:
+// the order is a producer invariant, not a type one)
+enum Coll.KV [V: Type]:
+  case Coll.KV(k: I64, v: V)
+
+enum Coll.Sorted [V: Type]:
+  case Coll.Sorted(xs: Coll.List[Coll.KV[V]])
+
+def Coll.kvKey [V: Type] (e: Coll.KV[V]): I64 = e match
+  case Coll.KV(k, _) => k
+
+// the input order of a natural run: Up = non-decreasing (consed, the run is strictly descending), Down = strictly
+// decreasing (consed, the run is ascending until it is closed)
+enum Coll.Dir:
+  case Coll.Up
+  case Coll.Down
+
+// the run Cons(h, rt) as a strictly descending run
+def Coll.closeRun [V: Type] {r: Region} (d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = d match
+  case Coll.Up => Coll.Cons(h, rt)
+  case Coll.Down => Coll.revOnto(rt, Coll.Cons(h, Coll.Nil))
+
+// the natural runs of xs, each strictly descending, the latest run first. In an Up run an equal key replaces the run
+// head (the later binding wins); a one-element Up run turns Down when the next key is smaller.
+def Coll.runs [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(x, t) => Coll.runStep(t, Coll.Up, x, Coll.Nil, Coll.Nil)
+
+// h is the last element taken into the current run Cons(h, rt)
+def Coll.runStep [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]], d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+  case Coll.Nil => Coll.Cons(Coll.closeRun(d, h, rt), acc)
+  case Coll.Cons(y, t) =>
+    val ky = Coll.kvKey(y)
+    val kh = Coll.kvKey(h)
+    d match
+      case Coll.Up =>
+        if ky > kh then Coll.runStep(t, d, y, Coll.Cons(h, rt), acc)
+        else if ky == kh then Coll.runStep(t, d, y, rt, acc)
+        else rt match
+          case Coll.Nil => Coll.runStep(t, Coll.Down, y, Coll.Cons(h, rt), acc)
+          case Coll.Cons(_, _) => Coll.runStep(t, Coll.Up, y, Coll.Nil, Coll.Cons(Coll.Cons(h, rt), acc))
+      case Coll.Down =>
+        if ky < kh then Coll.runStep(t, d, y, Coll.Cons(h, rt), acc)
+        else Coll.runStep(t, Coll.Up, y, Coll.Nil, Coll.Cons(Coll.closeRun(d, h, rt), acc))
+
+// merge of two ascending runs onto acc, giving a descending run; equal keys: the element of b (the later run) wins
+def Coll.mergeRev [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
+  case Coll.Nil => Coll.revOnto(b, acc)
+  case Coll.Cons(x, ta) => b match
+    case Coll.Nil => Coll.revOnto(a, acc)
+    case Coll.Cons(y, tb) =>
+      val kx = Coll.kvKey(x)
+      val ky = Coll.kvKey(y)
+      if kx < ky then Coll.mergeRev(ta, b, Coll.Cons(x, acc))
+      else if kx == ky then Coll.mergeRev(ta, tb, Coll.Cons(y, acc))
+      else Coll.mergeRev(a, tb, Coll.Cons(y, acc))
+
+// merge of two descending runs onto acc, giving an ascending run; equal keys: the element of a (the later run) wins
+def Coll.mergeRevD [V: Type] {r: Region} (a: Coll.List[Coll.KV[V]], b: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.KV[V]]): Coll.List[Coll.KV[V]] = a match
+  case Coll.Nil => Coll.revOnto(b, acc)
+  case Coll.Cons(x, ta) => b match
+    case Coll.Nil => Coll.revOnto(a, acc)
+    case Coll.Cons(y, tb) =>
+      val kx = Coll.kvKey(x)
+      val ky = Coll.kvKey(y)
+      if kx > ky then Coll.mergeRevD(ta, b, Coll.Cons(x, acc))
+      else if kx == ky then Coll.mergeRevD(ta, tb, Coll.Cons(x, acc))
+      else Coll.mergeRevD(a, tb, Coll.Cons(y, acc))
+
+// one pass over ascending runs, earliest first: descending runs, latest first (a last odd run is reversed)
+def Coll.passA [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => Coll.Cons(Coll.rev(a), acc)
+    case Coll.Cons(b, t2) => Coll.passA(t2, Coll.Cons(Coll.mergeRev(a, b, Coll.Nil), acc))
+
+// one pass over descending runs, latest first: ascending runs, earliest first (a last odd run is reversed)
+def Coll.passD [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => Coll.Cons(Coll.rev(a), acc)
+    case Coll.Cons(b, t2) => Coll.passD(t2, Coll.Cons(Coll.mergeRevD(a, b, Coll.Nil), acc))
+
+// the run order is in the function: mergeAllA gets ascending runs earliest first, mergeAllD descending runs latest first
+def Coll.mergeAllA [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => a
+    case Coll.Cons(_, _) => Coll.mergeAllD(Coll.passA(runs, Coll.Nil))
+
+def Coll.mergeAllD [V: Type] {r: Region} (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => Coll.rev(a)
+    case Coll.Cons(_, _) => Coll.mergeAllA(Coll.passD(runs, Coll.Nil))
+
+// natural bottom-up merge sort, O(n log r) for r runs; a duplicate key keeps the last binding of the input
+def Coll.sortDedup [V: Type] {r: Region} (xs: Coll.List[Coll.KV[V]]): Coll.Sorted[V] = Coll.Sorted(Coll.mergeAllD(Coll.runs(xs)))

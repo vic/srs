@@ -1,0 +1,819 @@
+// s2 P1 (vic-m5r.23, vic/c/ast-design.md): the typed AST. one case per shape, named fields, so a wrong shape does not
+// compile; an AST may still hold an invalid program (unknown name, bad state): the checker finds those as data.
+// every node keeps its source line. Ast.print writes it back as srs source (the oracle of P1, and of the parser later).
+
+enum Ast.BinOp:
+  case Ast.Add
+  case Ast.Sub
+  case Ast.Mul
+  case Ast.Div
+  case Ast.Mod
+  case Ast.Lt
+  case Ast.Le
+  case Ast.Gt
+  case Ast.Ge
+  case Ast.Eq
+  case Ast.Ne
+  case Ast.And
+  case Ast.Or
+
+enum Ast.UnOp:
+  case Ast.Neg
+  case Ast.Not
+
+// T[args]^<caps>: no caps written = inferred; written = a bound
+enum Ast.Caps:
+  case Ast.Inferred
+  case Ast.Stated(cs: Coll.List[Sym.Sym])
+
+enum Ast.Ty:
+  case Ast.Ty(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr])
+
+enum Ast.Q:
+  case Ast.Forall
+  case Ast.Exists
+
+enum Ast.LoopCond:
+  case Ast.LInvariant
+  case Ast.LDecreases
+
+enum Ast.Expr:
+  case Ast.Int(line: I64, v: I64)
+  case Ast.Bool(line: I64, v: Bool)
+  // s = the text between the quotes, escapes as written
+  case Ast.Str(line: I64, s: Str)
+  case Ast.Unit(line: I64)
+  case Ast.Name(line: I64, n: Sym.Sym)
+  // f[T]{a}(x): types and chosen evidence are empty lists when not written
+  case Ast.Call(line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], args: Coll.List[Ast.Expr])
+  // d.knock(): an op on a capability, or a method on {} evidence (the checker tells which)
+  case Ast.Method(line: I64, recv: Sym.Sym, op: Sym.Sym, args: Coll.List[Ast.Expr])
+  case Ast.Bin(line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr)
+  case Ast.Un(line: I64, op: Ast.UnOp, e: Ast.Expr)
+  case Ast.If(line: I64, c: Ast.Expr, t: Ast.Expr, e: Ast.Expr)
+  case Ast.Match(line: I64, s: Ast.Expr, arms: Coll.List[Ast.Arm])
+  // a block always has a value: after a last val or handle it is Ast.Unit
+  case Ast.Block(line: I64, stmts: Coll.List[Ast.Stmt], last: Ast.Expr)
+  case Ast.While(line: I64, c: Ast.Expr, body: Ast.Expr)
+  case Ast.Assign(line: I64, x: Sym.Sym, e: Ast.Expr)
+  // forall x: T => e, exists x: T => e (contracts only)
+  case Ast.Quant(line: I64, q: Ast.Q, x: Sym.Sym, t: Ast.Ty, e: Ast.Expr)
+
+enum Ast.Pat:
+  case Ast.PCase(c: Sym.Sym, binds: Coll.List[Sym.Sym])
+  case Ast.PAny
+
+enum Ast.Arm:
+  case Ast.Arm(line: I64, p: Ast.Pat, body: Ast.Expr)
+
+enum Ast.Stmt:
+  case Ast.Val(line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
+  case Ast.Var(line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
+  case Ast.Handle(line: I64, x: Sym.Sym, h: Sym.Sym, args: Coll.List[Ast.Expr])
+  case Ast.Do(e: Ast.Expr)
+  // a loop invariant or measure in a block (s1/parse.srs:494)
+  case Ast.Check(line: I64, k: Ast.LoopCond, e: Ast.Expr)
+
+// <> atoms. a name is a variable or a constant by its position (s1/facts.srs:1-3: lowercase in a state position is a
+// variable, but `knock` in next(s, knock, s2) is an op): the checker decides, not the parser
+enum Ast.Term:
+  case Ast.TName(n: Sym.Sym)
+  case Ast.TNum(v: I64)
+
+enum Ast.Atom:
+  case Ast.Atom(line: I64, rel: Sym.Sym, args: Coll.List[Ast.Term])
+
+enum Ast.Binder:
+  case Ast.Binder(line: I64, x: Sym.Sym, ty: Ast.Ty)
+
+// binder groups in written order (vic/c/binders-design.md); the exit facts are a field of the fn
+enum Ast.Group:
+  case Ast.Types(bs: Coll.List[Ast.Binder])
+  case Ast.Evidence(bs: Coll.List[Ast.Binder])
+  case Ast.Facts(atoms: Coll.List[Ast.Atom])
+
+// a contract clause between a signature and its body (C13, s1/parse.srs:147-184), erased in C
+enum Ast.Cond:
+  case Ast.Requires
+  case Ast.Ensures
+  case Ast.Returns
+  case Ast.Decreases
+  case Ast.Invariant
+
+enum Ast.Clause:
+  case Ast.CondC(line: I64, k: Ast.Cond, e: Ast.Expr)
+  case Ast.ProofUsing(line: I64, xs: Coll.List[Sym.Sym])
+  case Ast.ProofInduction(line: I64, x: Sym.Sym)
+  case Ast.ProofLean(line: I64, s: Str)
+
+enum Ast.Body:
+  case Ast.Def(cs: Coll.List[Ast.Clause], e: Ast.Expr)
+  case Ast.Extern
+  // a spec def: a compile-time body, no binder groups (vic 2026-11-05), no Region
+  case Ast.Spec(cs: Coll.List[Ast.Clause], e: Ast.Expr)
+
+enum Ast.Fn:
+  case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
+
+enum Ast.Trans:
+  case Ast.Trans(from: Sym.Sym, to: Sym.Sym)
+
+enum Ast.Op:
+  case Ast.Op(line: I64, name: Sym.Sym, params: Coll.List[Ast.Binder], ret: Ast.Ty, trans: Coll.List[Ast.Trans])
+
+enum Ast.RuleDef:
+  case Ast.RuleDef(line: I64, name: Sym.Sym, params: Coll.List[Sym.Sym], body: Coll.List[Ast.Atom])
+
+enum Ast.Proto:
+  case Ast.Proto(line: I64, name: Sym.Sym, states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], dropOp: Coll.Option[Sym.Sym], ops: Coll.List[Ast.Op], rules: Coll.List[Ast.RuleDef])
+
+enum Ast.Handler:
+  case Ast.Handler(line: I64, name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[Ast.Fn])
+
+enum Ast.Case:
+  case Ast.Case(line: I64, name: Sym.Sym, fields: Coll.List[Ast.Binder])
+
+enum Ast.Enum:
+  case Ast.Enum(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], cases: Coll.List[Ast.Case])
+
+// trait Name groups: its method signatures (no body)
+enum Ast.Trait:
+  case Ast.Trait(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], sigs: Coll.List[Ast.Fn])
+
+// given groups Head[args]: the methods of the trait Head for those args
+enum Ast.Given:
+  case Ast.Given(line: I64, groups: Coll.List[Ast.Group], head: Ast.Ty, fns: Coll.List[Ast.Fn])
+
+// a value pattern of a type value match: an int, a string, true or false, or _
+enum Ast.VPat:
+  case Ast.VInt(v: I64)
+  case Ast.VStr(s: Str)
+  case Ast.VBool(v: Bool)
+  case Ast.VAny
+
+enum Ast.TyArm:
+  case Ast.TyArm(line: I64, pat: Ast.Ty, res: Ast.Ty)
+
+enum Ast.ValArm:
+  case Ast.ValArm(line: I64, pat: Ast.VPat, res: Ast.Ty)
+
+// the body of a type decl: a type, a match on a type, a match on a value binder
+enum Ast.TBody:
+  case Ast.Alias(t: Ast.Ty)
+  case Ast.TyMatch(scrut: Ast.Ty, arms: Coll.List[Ast.TyArm])
+  case Ast.ValMatch(x: Sym.Sym, arms: Coll.List[Ast.ValArm])
+
+// type Name groups (value binders) = body
+enum Ast.TypeDecl:
+  case Ast.TypeDecl(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody)
+
+enum Ast.Decl:
+  case Ast.DFn(f: Ast.Fn)
+  case Ast.DEnum(e: Ast.Enum)
+  case Ast.DProto(p: Ast.Proto)
+  case Ast.DHandler(h: Ast.Handler)
+  case Ast.DTrait(t: Ast.Trait)
+  case Ast.DGiven(g: Ast.Given)
+  case Ast.DType(t: Ast.TypeDecl)
+
+// ── printer: srs source, Ast.step() spaces per level ──
+def Ast.step(): I64 = 2
+
+def Ast.sym(s: Sym.Sym): Unit = rt_print(Sym.str(s))
+
+def Ast.indent(n: I64): Unit =
+  if n > 0 then
+    rt_print(" ")
+    Ast.indent(n - 1)
+  else ()
+
+def Ast.line(ind: I64): Unit =
+  rt_print("\n")
+  Ast.indent(ind)
+
+// names separated by sep
+def Ast.syms(xs: Coll.List[Sym.Sym], sep: Str): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    Ast.sym(h)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(sep)
+        Ast.syms(t, sep)
+
+def Ast.tys {r: Region} (xs: Coll.List[Ast.Ty]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    Ast.ty(h)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.tys(t)
+
+def Ast.ty {r: Region} (t: Ast.Ty): Unit =
+  val Ast.Ty(_, n, args, caps, vals) = t
+  Ast.sym(n)
+  args match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) =>
+      rt_print("[")
+      Ast.tys(args)
+      rt_print("]")
+  vals match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) =>
+      rt_print("(")
+      Ast.args(vals, 0)
+      rt_print(")")
+  caps match
+    case Ast.Inferred => ()
+    case Ast.Stated(cs) =>
+      rt_print("^<")
+      Ast.syms(cs, ", ")
+      rt_print(">")
+
+def Ast.opText(op: Ast.BinOp): Str = op match
+  case Ast.Add => "+"
+  case Ast.Sub => "-"
+  case Ast.Mul => "*"
+  case Ast.Div => "/"
+  case Ast.Mod => "%"
+  case Ast.Lt => "<"
+  case Ast.Le => "<="
+  case Ast.Gt => ">"
+  case Ast.Ge => ">="
+  case Ast.Eq => "=="
+  case Ast.Ne => "!="
+  case Ast.And => "&&"
+  case Ast.Or => "||"
+
+// how tightly an expression binds as an operand, loosest first: if, match, block, while and assign only in ( ); a
+// binary operator by its level; a unary operator; an atom (literal, name, call, method)
+enum Ast.Bind:
+  case Ast.Loose
+  case Ast.Infix(op: Ast.BinOp)
+  case Ast.Prefix
+  case Ast.Atomic
+
+// an operand position: it takes an expression that binds at least as tightly as b, or strictly more tightly
+// (the right operand of a left associative operator)
+enum Ast.Need:
+  case Ast.AtLeast(b: Ast.Bind)
+  case Ast.Above(b: Ast.Bind)
+
+// the order of Bind, loosest first; binary levels as the s1 parser (s1/parse.srs:593 opLevel). only compared
+def Ast.rank(b: Ast.Bind): I64 = b match
+  case Ast.Loose => 0
+  case Ast.Infix(op) => op match
+    case Ast.Or => 1
+    case Ast.And => 2
+    case Ast.Eq => 3
+    case Ast.Ne => 3
+    case Ast.Lt => 4
+    case Ast.Le => 4
+    case Ast.Gt => 4
+    case Ast.Ge => 4
+    case Ast.Add => 5
+    case Ast.Sub => 5
+    case Ast.Mul => 6
+    case Ast.Div => 6
+    case Ast.Mod => 6
+  case Ast.Prefix => 7
+  case Ast.Atomic => 8
+
+def Ast.bindOf {r: Region} (e: Ast.Expr): Ast.Bind = e match
+  case Ast.Bin(_, op, _, _) => Ast.Infix(op)
+  case Ast.Un(_, _, _) => Ast.Prefix
+  case Ast.If(_, _, _, _) => Ast.Loose
+  case Ast.Match(_, _, _) => Ast.Loose
+  case Ast.Block(_, _, _) => Ast.Loose
+  case Ast.While(_, _, _) => Ast.Loose
+  case Ast.Assign(_, _, _) => Ast.Loose
+  case Ast.Quant(_, _, _, _, _) => Ast.Loose
+  case _ => Ast.Atomic
+
+def Ast.fits {r: Region} (e: Ast.Expr, n: Ast.Need): Bool = n match
+  case Ast.AtLeast(b) => Ast.rank(Ast.bindOf(e)) >= Ast.rank(b)
+  case Ast.Above(b) => Ast.rank(Ast.bindOf(e)) > Ast.rank(b)
+
+// e in an operand position: in ( ) when it does not fit
+def Ast.operand {r: Region} (e: Ast.Expr, n: Ast.Need, ind: I64): Unit =
+  if Ast.fits(e, n) then Ast.expr(e, ind)
+  else
+    rt_print("(")
+    Ast.expr(e, ind)
+    rt_print(")")
+
+def Ast.args {r: Region} (xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    Ast.expr(h, ind)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.args(t, ind)
+
+// e after `=`, `then`, `else`, `do` or `=>`: a block on its own lines one level in, anything else on this line
+def Ast.body {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
+  case Ast.Block(_, ss, last) =>
+    Ast.stmts(ss, ind + Ast.step())
+    Ast.line(ind + Ast.step())
+    Ast.expr(last, ind + Ast.step())
+  case _ =>
+    rt_print(" ")
+    Ast.expr(e, ind)
+
+def Ast.expr {r: Region} (e: Ast.Expr, ind: I64): Unit = e match
+  case Ast.Int(_, v) => rt_print_i64(v)
+  case Ast.Bool(_, v) => rt_print(if v then "true" else "false")
+  case Ast.Str(_, s) =>
+    rt_print("\"")
+    rt_print(s)
+    rt_print("\"")
+  case Ast.Unit(_) => rt_print("()")
+  case Ast.Name(_, n) => Ast.sym(n)
+  case Ast.Call(_, f, targs, chosen, xs) =>
+    Ast.sym(f)
+    targs match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print("[")
+        Ast.tys(targs)
+        rt_print("]")
+    chosen match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print("{")
+        Ast.syms(chosen, ", ")
+        rt_print("}")
+    rt_print("(")
+    Ast.args(xs, ind)
+    rt_print(")")
+  case Ast.Method(_, recv, op, xs) =>
+    Ast.sym(recv)
+    rt_print(".")
+    Ast.sym(op)
+    rt_print("(")
+    Ast.args(xs, ind)
+    rt_print(")")
+  case Ast.Bin(_, op, l, rhs) =>
+    Ast.operand(l, Ast.AtLeast(Ast.Infix(op)), ind)
+    rt_print(" ")
+    rt_print(Ast.opText(op))
+    rt_print(" ")
+    Ast.operand(rhs, Ast.Above(Ast.Infix(op)), ind)
+  case Ast.Un(_, op, x) =>
+    rt_print(Ast.unText(op))
+    Ast.operand(x, Ast.AtLeast(Ast.Prefix), ind)
+  case Ast.If(_, c, t, x) =>
+    rt_print("if ")
+    Ast.expr(c, ind)
+    rt_print(" then")
+    Ast.body(t, ind)
+    Ast.elseBody(t, x, ind)
+  case Ast.Match(_, s, arms) =>
+    Ast.operand(s, Ast.AtLeast(Ast.Atomic), ind)
+    rt_print(" match")
+    Ast.arms(arms, ind + Ast.step())
+  case Ast.Block(_, ss, last) =>
+    Ast.stmts(ss, ind)
+    Ast.line(ind)
+    Ast.expr(last, ind)
+  case Ast.While(_, c, b) =>
+    rt_print("while ")
+    Ast.expr(c, ind)
+    // a match condition ends with its arms: do starts the next line (as tests/s2/prog/contracts.srs)
+    c match
+      case Ast.Match(_, _, _) =>
+        Ast.line(ind)
+        rt_print("do")
+      case _ => rt_print(" do")
+    Ast.body(b, ind)
+  case Ast.Quant(_, q, x, t, b) =>
+    rt_print(Ast.qText(q))
+    rt_print(" ")
+    Ast.sym(x)
+    rt_print(": ")
+    Ast.ty(t)
+    rt_print(" => ")
+    Ast.expr(b, ind)
+  case Ast.Assign(_, x, v) =>
+    Ast.sym(x)
+    rt_print(" = ")
+    Ast.expr(v, ind)
+
+def Ast.unText(op: Ast.UnOp): Str = op match
+  case Ast.Neg => "-"
+  case Ast.Not => "!"
+
+// `else` on the line of a one-line then, on its own line after a block then
+// else starts a new line when either branch takes more than one line (a block, a match, a multi-line if or while):
+// after one, a same-line else would read as part of its last line
+def Ast.elseBody {r: Region} (t: Ast.Expr, x: Ast.Expr, ind: I64): Unit =
+  if Ast.multiLine(t) || Ast.multiLine(x) then
+    Ast.line(ind)
+    rt_print("else")
+    Ast.body(x, ind)
+  else
+    rt_print(" else")
+    Ast.body(x, ind)
+
+def Ast.multiLine(e: Ast.Expr): Bool = e match
+  case Ast.Block(_, _, _) => true
+  case Ast.Match(_, _, _) => true
+  case Ast.While(_, _, _) => true
+  case Ast.If(_, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x)
+  case _ => false
+
+def Ast.arms {r: Region} (xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.Arm(_, p, b) = a
+    Ast.line(ind)
+    rt_print("case ")
+    Ast.pat(p)
+    rt_print(" =>")
+    Ast.body(b, ind)
+    Ast.arms(t, ind)
+
+def Ast.pat(p: Ast.Pat): Unit = p match
+  case Ast.PAny => rt_print("_")
+  case Ast.PCase(c, bs) =>
+    Ast.sym(c)
+    bs match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print("(")
+        Ast.syms(bs, ", ")
+        rt_print(")")
+
+// each statement on its own line at ind
+def Ast.stmts {r: Region} (xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(s, t) =>
+    Ast.line(ind)
+    Ast.stmt(s, ind)
+    Ast.stmts(t, ind)
+
+def Ast.stmt {r: Region} (s: Ast.Stmt, ind: I64): Unit = s match
+  case Ast.Val(_, x, ann, e) =>
+    rt_print("val ")
+    Ast.binding(x, ann, e, ind)
+  case Ast.Var(_, x, ann, e) =>
+    rt_print("var ")
+    Ast.binding(x, ann, e, ind)
+  case Ast.Handle(_, x, h, xs) =>
+    rt_print("handle ")
+    Ast.sym(x)
+    rt_print(" = ")
+    Ast.sym(h)
+    rt_print("(")
+    Ast.args(xs, ind)
+    rt_print(")")
+  case Ast.Do(e) => Ast.expr(e, ind)
+  case Ast.Check(_, k, e) =>
+    rt_print(Ast.loopText(k))
+    rt_print(" ")
+    Ast.expr(e, ind)
+
+def Ast.qText(q: Ast.Q): Str = q match
+  case Ast.Forall => "forall"
+  case Ast.Exists => "exists"
+
+def Ast.loopText(k: Ast.LoopCond): Str = k match
+  case Ast.LInvariant => "invariant"
+  case Ast.LDecreases => "decreases"
+
+def Ast.binding {r: Region} (x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, ind: I64): Unit =
+  Ast.sym(x)
+  ann match
+    case Coll.None => ()
+    case Coll.Some(t) =>
+      rt_print(": ")
+      Ast.ty(t)
+  rt_print(" =")
+  Ast.body(e, ind)
+
+def Ast.term(t: Ast.Term): Unit = t match
+  case Ast.TName(n) => Ast.sym(n)
+  case Ast.TNum(v) => rt_print_i64(v)
+
+def Ast.terms(xs: Coll.List[Ast.Term]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(h, t) =>
+    Ast.term(h)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.terms(t)
+
+def Ast.atoms(xs: Coll.List[Ast.Atom]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.Atom(_, rel, ts) = a
+    Ast.sym(rel)
+    rt_print("(")
+    Ast.terms(ts)
+    rt_print(")")
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.atoms(t)
+
+def Ast.binders {r: Region} (xs: Coll.List[Ast.Binder]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(b, t) =>
+    val Ast.Binder(_, x, ty) = b
+    Ast.sym(x)
+    rt_print(": ")
+    Ast.ty(ty)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.binders(t)
+
+// each group followed by a space: ` [A: Type] {s: Show[A]} <at(t, S)> `
+def Ast.groups {r: Region} (xs: Coll.List[Ast.Group]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(g, t) =>
+    rt_print(" ")
+    g match
+      case Ast.Types(bs) =>
+        rt_print("[")
+        Ast.binders(bs)
+        rt_print("]")
+      case Ast.Evidence(bs) =>
+        rt_print("{")
+        Ast.binders(bs)
+        rt_print("}")
+      case Ast.Facts(ats) =>
+        rt_print("<")
+        Ast.atoms(ats)
+        rt_print(">")
+    Ast.groups(t)
+
+def Ast.fn {r: Region} (f: Ast.Fn, ind: I64): Unit =
+  val Ast.Fn(_, _, _, _, _, _, body) = f
+  body match
+    case Ast.Extern => rt_print("extern ")
+    case Ast.Spec(_, _) => rt_print("spec ")
+    case Ast.Def(_, _) => ()
+  Ast.fnSig(f, ind)
+
+// a trait method signature: a def without body and without extern
+def Ast.sigs {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, t) =>
+    Ast.line(ind)
+    Ast.fnSig(f, ind)
+    Ast.sigs(t, ind)
+
+// def name groups (params): ty <exit> [= body]
+def Ast.fnSig {r: Region} (f: Ast.Fn, ind: I64): Unit =
+  val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
+  rt_print("def ")
+  Ast.sym(name)
+  Ast.groups(gs)
+  gs match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) => rt_print(" ")
+  rt_print("(")
+  Ast.binders(ps)
+  rt_print("): ")
+  Ast.ty(ret)
+  exit match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) =>
+      rt_print(" <")
+      Ast.atoms(exit)
+      rt_print(">")
+  body match
+    case Ast.Extern => ()
+    case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
+    case Ast.Spec(cs, e) => Ast.withClauses(cs, e, ind)
+
+// = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)
+def Ast.withClauses {r: Region} (cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
+  case Coll.Nil =>
+    rt_print(" =")
+    Ast.body(e, ind)
+  case Coll.Cons(_, _) =>
+    Ast.clauses(cs, ind + Ast.step())
+    Ast.line(ind)
+    rt_print("=")
+    Ast.body(e, ind)
+
+def Ast.condText(k: Ast.Cond): Str = k match
+  case Ast.Requires => "requires"
+  case Ast.Ensures => "ensures"
+  case Ast.Returns => "returns"
+  case Ast.Decreases => "decreases"
+  case Ast.Invariant => "invariant"
+
+def Ast.clauses {r: Region} (cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    Ast.line(ind)
+    c match
+      case Ast.CondC(_, k, x) =>
+        rt_print(Ast.condText(k))
+        rt_print(" ")
+        Ast.expr(x, ind)
+      case Ast.ProofUsing(_, xs) =>
+        rt_print("proof using ")
+        Ast.syms(xs, ", ")
+      case Ast.ProofInduction(_, x) =>
+        rt_print("proof by induction ")
+        Ast.sym(x)
+      case Ast.ProofLean(_, s) =>
+        rt_print("proof lean \"")
+        rt_print(s)
+        rt_print("\"")
+    Ast.clauses(rest, ind)
+
+def Ast.fns {r: Region} (xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, t) =>
+    Ast.line(ind)
+    Ast.fn(f, ind)
+    Ast.fns(t, ind)
+
+def Ast.trans(xs: Coll.List[Ast.Trans]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(tr, t) =>
+    val Ast.Trans(a, b) = tr
+    Ast.sym(a)
+    rt_print(" -> ")
+    Ast.sym(b)
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(", ")
+        Ast.trans(t)
+
+def Ast.ops {r: Region} (xs: Coll.List[Ast.Op]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(o, t) =>
+    val Ast.Op(_, name, ps, ret, trs) = o
+    Ast.line(Ast.step())
+    rt_print("op ")
+    Ast.sym(name)
+    rt_print("(")
+    Ast.binders(ps)
+    rt_print("): ")
+    Ast.ty(ret)
+    rt_print(" : ")
+    Ast.trans(trs)
+    Ast.ops(t)
+
+def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(rl, t) =>
+    val Ast.RuleDef(_, name, ps, body) = rl
+    Ast.line(Ast.step())
+    rt_print("rule def ")
+    Ast.sym(name)
+    rt_print("(")
+    Ast.syms(ps, ", ")
+    rt_print(") = ")
+    Ast.atoms(body)
+    Ast.rules(t)
+
+def Ast.cases {r: Region} (xs: Coll.List[Ast.Case]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, t) =>
+    val Ast.Case(_, name, fs) = c
+    Ast.line(Ast.step())
+    rt_print("case ")
+    Ast.sym(name)
+    fs match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print("(")
+        Ast.binders(fs)
+        rt_print(")")
+    Ast.cases(t)
+
+def Ast.decl {r: Region} (d: Ast.Decl): Unit = d match
+  case Ast.DFn(f) => Ast.fn(f, 0)
+  case Ast.DEnum(en) =>
+    val Ast.Enum(_, name, gs, cs) = en
+    rt_print("enum ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    rt_print(":")
+    Ast.cases(cs)
+  case Ast.DProto(p) =>
+    val Ast.Proto(_, name, sts, start, ends, dropOp, ops, rules) = p
+    rt_print("protocol ")
+    Ast.sym(name)
+    rt_print(":")
+    Ast.line(Ast.step())
+    rt_print("state ")
+    Ast.syms(sts, ", ")
+    Ast.line(Ast.step())
+    rt_print("start ")
+    Ast.sym(start)
+    Ast.line(Ast.step())
+    rt_print("end ")
+    Ast.syms(ends, ", ")
+    Ast.ops(ops)
+    dropOp match
+      case Coll.None => ()
+      case Coll.Some(o) =>
+        Ast.line(Ast.step())
+        rt_print("drop ")
+        Ast.sym(o)
+    Ast.rules(rules)
+  case Ast.DHandler(h) =>
+    val Ast.Handler(_, name, proto, fs) = h
+    rt_print("handler ")
+    Ast.sym(name)
+    rt_print(" for ")
+    Ast.sym(proto)
+    rt_print(":")
+    Ast.fns(fs, Ast.step())
+  case Ast.DTrait(tr) =>
+    val Ast.Trait(_, name, gs, sigs) = tr
+    rt_print("trait ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    rt_print(":")
+    Ast.sigs(sigs, Ast.step())
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, gs, head, fs) = g
+    rt_print("given")
+    Ast.groups(gs)
+    rt_print(" ")
+    Ast.ty(head)
+    rt_print(":")
+    Ast.fns(fs, Ast.step())
+  case Ast.DType(td) =>
+    val Ast.TypeDecl(_, name, gs, vals, body) = td
+    rt_print("type ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    vals match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print(" (")
+        Ast.binders(vals)
+        rt_print(")")
+    rt_print(" = ")
+    body match
+      case Ast.Alias(t) => Ast.ty(t)
+      case Ast.TyMatch(s, arms) =>
+        Ast.ty(s)
+        rt_print(" match")
+        Ast.tyArms(arms)
+      case Ast.ValMatch(x, arms) =>
+        Ast.sym(x)
+        rt_print(" match")
+        Ast.valArms(arms)
+
+def Ast.tyArms {r: Region} (xs: Coll.List[Ast.TyArm]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.TyArm(_, p, res) = a
+    Ast.line(Ast.step())
+    rt_print("case ")
+    Ast.ty(p)
+    rt_print(" => ")
+    Ast.ty(res)
+    Ast.tyArms(t)
+
+def Ast.valArms {r: Region} (xs: Coll.List[Ast.ValArm]): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(a, t) =>
+    val Ast.ValArm(_, p, res) = a
+    Ast.line(Ast.step())
+    rt_print("case ")
+    p match
+      case Ast.VInt(v) => rt_print_i64(v)
+      case Ast.VStr(s) =>
+        rt_print("\"")
+        rt_print(s)
+        rt_print("\"")
+      case Ast.VBool(b) => rt_print(if b then "true" else "false")
+      case Ast.VAny => rt_print("_")
+    rt_print(" => ")
+    Ast.ty(res)
+    Ast.valArms(t)
+
+// a program: its decls, one blank line between two, a newline after the last
+def Ast.print {r: Region} (ds: Coll.List[Ast.Decl]): Unit = ds match
+  case Coll.Nil => ()
+  case Coll.Cons(d, t) =>
+    Ast.decl(d)
+    rt_print("\n")
+    t match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        rt_print("\n")
+        Ast.print(t)

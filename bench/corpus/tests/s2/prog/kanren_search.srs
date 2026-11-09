@@ -1,0 +1,70 @@
+// pass: Kanren K2 search (lib/kanren.srs): appendo both ways, answer limit, fuel out, 1-clause loop stops (vic B1), disj order
+def c0 {r: Region} (f: Str): Term = TCon(f, TNil)
+def c1 {r: Region} (f: Str, a: Term): Term = TCon(f, TCons(a, TNil))
+def c2 {r: Region} (f: Str, a: Term, b: Term): Term = TCon(f, TCons(a, TCons(b, TNil)))
+def c3 {r: Region} (f: Str, a: Term, b: Term, c: Term): Term = TCon(f, TCons(a, TCons(b, TCons(c, TNil))))
+def args(t: Term): Terms = t match
+  case TVar(_) => TNil
+  case TCon(_, xs) => xs
+  case KInt(_) => TNil
+
+// append(nil, L, L).  append(cons(H, T), L, cons(H, R)) :- append(T, L, R).
+def appendo {r: Region} (): Rules =
+  val nil = c0("nil")
+  val l = TVar(0)
+  val h = TVar(0)
+  val t = TVar(1)
+  val l2 = TVar(2)
+  val res = TVar(3)
+  val r1 = Rule("append", args(c3("a", nil, l, l)), GTrue, 1)
+  val r2 = Rule("append", args(c3("a", c2("cons", h, t), l2, c2("cons", h, res))), GCall("append", args(c3("a", t, l2, res))), 4)
+  RCons(r1, RCons(r2, RNil))
+
+def showStatus(st: Status): Unit = st match
+  case Ended => rt_print("ended")
+  case Limit => rt_print("limit")
+  case NoFuel => rt_print("nofuel")
+
+// each answer: the walked query variables 0..nv-1, then the status
+def show {r: Region} (run: Run, nv: I64): Unit = run match
+  case Run(ans, st) =>
+    showAnswers(ans, nv)
+    showStatus(st)
+    rt_print("\n")
+
+def showAnswers {r: Region} (ans: Answers, nv: I64): Unit = ans match
+  case ANil => ()
+  case ACons(st, t) =>
+    var i = 0
+    while i < nv do
+      if i > 0 then rt_print(" ; ") else ()
+      showTerm(walkAll(substOf(st), TVar(i)))
+      i = i + 1
+    rt_print("\n")
+    showAnswers(t, nv)
+
+def main(): I64 =
+  handle r = Arena()
+  val rules = appendo()
+  val nil = c0("nil")
+  val ab = c2("cons", c0("a"), c2("cons", c0("b"), nil))
+  val x = TVar(0)
+  val y = TVar(1)
+  // forward: append([a], [b], Z)
+  show(solve(rules, GCall("append", args(c3("q", c2("cons", c0("a"), nil), c2("cons", c0("b"), nil), x))), 1, 100, 10), 1)
+  // backward: append(X, Y, [a, b]) = 3 answers
+  val back = GCall("append", args(c3("q", x, y, ab)))
+  show(solve(rules, back, 2, 100, 10), 2)
+  // same, stop at 2 answers
+  show(solve(rules, back, 2, 100, 2), 2)
+  // same, fuel 4: 2 picks per call
+  show(solve(rules, back, 2, 4, 10), 2)
+  // loop(X) :- loop(X). one clause, no disj: still stops (B1)
+  val loop = RCons(Rule("loop", args(c1("a", TVar(0))), GCall("loop", args(c1("a", TVar(0)))), 1), RNil)
+  show(solve(loop, GCall("loop", args(c1("q", c0("a")))), 0, 10, 10), 0)
+  // X == a ; X == b, in that order
+  show(solve(RNil, GDisj(GEq(x, c0("a")), GEq(x, c0("b"))), 1, 100, 10), 1)
+  // loop ; X == a: fair queue still finds a before fuel runs out
+  show(solve(loop, GDisj(GCall("loop", args(c1("q", c0("a")))), GEq(x, c0("a"))), 1, 10, 10), 1)
+  r.free()
+  0
