@@ -46,6 +46,7 @@ enum Ty.Clash:
   case Ty.ResumeNotK(line: I64, k: Sym.Sym)
   case Ty.AnswerType(line: I64, op: Sym.Sym)
   case Ty.MultishotNotEmitted(line: I64, h: Sym.Sym)
+  case Ty.MultishotShape(line: I64, p: Sym.Sym)
   case Ty.TraitArity(line: I64, t: Sym.Sym)
   case Ty.NotMethod(line: I64, m: Sym.Sym)
   case Ty.MissingMethod(line: I64, m: Sym.Sym)
@@ -607,7 +608,8 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
     // the handler's row takes the innermost capabilities outside this handle (E1b)
     case Ast.Handle(sl, x, h, xs) =>
       val Ty.Cx(_, _, _, hs, _, mode, _, rows, _) = cx
-      val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st, sl, h), bs, xs, Coll.Nil)
+      val st0 = if Ty.isMultiShot(hs, h) then Ty.shape(cx, st, x, Ty.protoOf(hs, h), rest, last) else st
+      val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
       val Ty.Caps(st2, caps) = Ty.rowCaps(cx, st1, bs, sl, Eff.row(rows, h), Coll.Nil)
       Ty.block(cx, st2, Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs), line, rest, last, want, Coll.Cons(El.Handle(sl, x, h, caps, eargs), acc))
     case Ast.Do(e) =>
@@ -855,6 +857,82 @@ def Ty.byHandler(cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
   val s = Sym.str(h)
   val by: Ty.By = if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Ty.Srs else Ty.User
   Ty.Cx(fns, es, ps, hs, trs, Ty.Run(by), imp, rows, vals)
+
+// ── the shape a multi-shot handle compiles today (vic-hm63 C3, interim error[multishot-shape]): in the rest of its
+// block, an op of its capability p only as the whole value of a val or a statement; no call of a fn whose row holds p ──
+def Ty.isMultiShot(hs: Coll.List[Ast.Handler], h: Sym.Sym): Bool = hs match
+  case Coll.Nil => false
+  case Coll.Cons(x, rest) =>
+    val Ast.Handler(_, n, _, _, shots) = x
+    val multi: Bool = shots match
+      case Ast.OneShot => false
+      case Ast.MultiShot(_, _) => true
+    if Sym.eq(n, h) then multi else Ty.isMultiShot(rest, h)
+
+def Ty.shape(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Ty.St = ss match
+  case Coll.Nil => Ty.shapeTop(cx, st, x, p, last)
+  case Coll.Cons(s, rest) =>
+    val st1 = s match
+      case Ast.Val(_, _, _, e) => Ty.shapeTop(cx, st, x, p, e)
+      case Ast.Do(e) => Ty.shapeTop(cx, st, x, p, e)
+      case Ast.Var(_, _, _, e) => Ty.shapeIn(cx, st, x, p, e)
+      case Ast.Handle(_, _, _, xs) => Ty.shapeAll(cx, st, x, p, xs)
+      case Ast.Check(_, _, e) => Ty.shapeIn(cx, st, x, p, e)
+    Ty.shape(cx, st1, x, p, rest, last)
+
+// a whole op of p is allowed (its args are not); anything else must not use p
+def Ty.shapeTop(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
+  case Ast.Method(_, recv, _, xs) => if Sym.eq(recv, x) then Ty.shapeAll(cx, st, x, p, xs) else Ty.shapeIn(cx, st, x, p, e)
+  case Ast.Call(_, f, _, _, xs) => if Ty.isReqOf(cx, f, p) then Ty.shapeAll(cx, st, x, p, xs) else Ty.shapeIn(cx, st, x, p, e)
+  case _ => Ty.shapeIn(cx, st, x, p, e)
+
+def Ty.isReqOf(cx: Ty.Cx, f: Sym.Sym, p: Sym.Sym): Bool =
+  val Ty.Cx(_, _, ps, _, _, _, _, _, _) = cx
+  Eff.reqOf(ps, f) match
+    case Coll.Some(q) =>
+      val Eff.Req(qp, _) = q
+      Sym.eq(qp, p)
+    case Coll.None => false
+
+def Ty.shapeAll(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, es: Coll.List[Ast.Expr]): Ty.St = es match
+  case Coll.Nil => st
+  case Coll.Cons(e, rest) => Ty.shapeAll(cx, Ty.shapeIn(cx, st, x, p, e), x, p, rest)
+
+// e nested in an expression: an op of p, or a call whose row holds p, is a clash at its line
+def Ty.shapeIn(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
+  case Ast.Method(line, recv, _, xs) => Ty.shapeAll(cx, if Sym.eq(recv, x) then Ty.clash(st, Ty.MultishotShape(line, p)) else st, x, p, xs)
+  case Ast.Call(line, f, _, _, xs) =>
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _) = cx
+    val bad = Ty.isReqOf(cx, f, p) || Eff.has(rows, f, p)
+    Ty.shapeAll(cx, if bad then Ty.clash(st, Ty.MultishotShape(line, p)) else st, x, p, xs)
+  case Ast.Resume(_, _, a) => Ty.shapeIn(cx, st, x, p, a)
+  case Ast.Bin(_, _, l, r) => Ty.shapeIn(cx, Ty.shapeIn(cx, st, x, p, l), x, p, r)
+  case Ast.Un(_, _, a) => Ty.shapeIn(cx, st, x, p, a)
+  case Ast.If(_, c, t, f) => Ty.shapeAll(cx, st, x, p, Coll.Cons(c, Coll.Cons(t, Coll.Cons(f, Coll.Nil))))
+  case Ast.Match(_, s, arms) => Ty.shapeArms(cx, Ty.shapeIn(cx, st, x, p, s), x, p, arms)
+  case Ast.Block(_, ss, l) => Ty.shapeBlock(cx, st, x, p, ss, l)
+  case Ast.While(_, c, b) => Ty.shapeIn(cx, Ty.shapeIn(cx, st, x, p, c), x, p, b)
+  case Ast.Assign(_, _, a) => Ty.shapeIn(cx, st, x, p, a)
+  case Ast.Quant(_, _, _, _, a) => Ty.shapeIn(cx, st, x, p, a)
+  case _ => st
+
+def Ty.shapeArms(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, as: Coll.List[Ast.Arm]): Ty.St = as match
+  case Coll.Nil => st
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, b) = a
+    Ty.shapeArms(cx, Ty.shapeIn(cx, st, x, p, b), x, p, rest)
+
+// a nested block: every statement nested (no top level there)
+def Ty.shapeBlock(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Ty.St = ss match
+  case Coll.Nil => Ty.shapeIn(cx, st, x, p, last)
+  case Coll.Cons(s, rest) =>
+    val st1 = s match
+      case Ast.Val(_, _, _, e) => Ty.shapeIn(cx, st, x, p, e)
+      case Ast.Var(_, _, _, e) => Ty.shapeIn(cx, st, x, p, e)
+      case Ast.Do(e) => Ty.shapeIn(cx, st, x, p, e)
+      case Ast.Handle(_, _, _, xs) => Ty.shapeAll(cx, st, x, p, xs)
+      case Ast.Check(_, _, e) => Ty.shapeIn(cx, st, x, p, e)
+    Ty.shapeBlock(cx, st1, x, p, rest, last)
 
 // the answer type R of a multi-shot handler: the result of its done fn, else its block type A (vic-hm63 Q-M3)
 def Ty.answerOf(fs: Coll.List[Ast.Fn], a: Sym.Sym): Ast.Ty = Ty.fnNamed(fs, Sym.of("done")) match

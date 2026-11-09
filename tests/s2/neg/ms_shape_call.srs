@@ -1,0 +1,13 @@
+// expect: error[multishot-shape]
+// a call of a fn whose row holds the multi-shot capability is not compiled yet (C3.4)
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+def pick(): I64 = if NonDet.choose() then 1 else 2
+def main(): I64 =
+  handle nd = Count()
+  val x = pick()
+  x
+// expect: --> tests/s2/neg/ms_shape_call.srs:11
