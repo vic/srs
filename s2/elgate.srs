@@ -1,0 +1,251 @@
+// the C fragment gate (S-K1, bead vic-de9x.1 X1): a pass over El that only reads it. emit prints C from El, so each El
+// constructor fixes which forbidden C forms it produces; this pass finds those constructors in every mono instance and
+// every handler fn, the exact set Emit.program prints, and counts them by (kind, constructor). it never prints C.
+// kinds: StmtExpr = a GNU statement expression, AutoType = __auto_type, GotoOut = a goto out of a block expression,
+// FnPtrCall = a function-pointer call that is not a handler vtable call, Exit = a call that ends the process, AddrOf =
+// an address of a local, VtableCall = a call through a handler vtable (allowed: reported only).
+enum Elgate.Kind:
+  case Elgate.StmtExpr
+  case Elgate.AutoType
+  case Elgate.GotoOut
+  case Elgate.FnPtrCall
+  case Elgate.Exit
+  case Elgate.AddrOf
+  case Elgate.VtableCall
+
+// the El constructor that produces the form
+enum Elgate.Con:
+  case Elgate.CMatch
+  case Elgate.CArm
+  case Elgate.CPatBind
+  case Elgate.CBlock
+  case Elgate.CWhile
+  case Elgate.CNew
+  case Elgate.COp
+  case Elgate.CMHandled
+  case Elgate.CTail
+  case Elgate.CResume
+  case Elgate.CHandle
+  case Elgate.CCall
+
+enum Elgate.V:
+  case Elgate.V(k: Elgate.Kind, c: Elgate.Con, line: I64, fn: Sym.Sym)
+
+def Elgate.kinds(): Coll.List[Elgate.Kind] =
+  Coll.Cons(Elgate.StmtExpr, Coll.Cons(Elgate.AutoType, Coll.Cons(Elgate.GotoOut, Coll.Cons(Elgate.FnPtrCall, Coll.Cons(Elgate.Exit, Coll.Cons(Elgate.AddrOf, Coll.Cons(Elgate.VtableCall, Coll.Nil)))))))
+
+def Elgate.cons(): Coll.List[Elgate.Con] =
+  Coll.Cons(Elgate.CMatch, Coll.Cons(Elgate.CArm, Coll.Cons(Elgate.CPatBind, Coll.Cons(Elgate.CBlock, Coll.Cons(Elgate.CWhile, Coll.Cons(Elgate.CNew, Coll.Cons(Elgate.COp, Coll.Cons(Elgate.CMHandled, Coll.Cons(Elgate.CTail, Coll.Cons(Elgate.CResume, Coll.Cons(Elgate.CHandle, Coll.Cons(Elgate.CCall, Coll.Nil))))))))))))
+
+def Elgate.kindN(k: Elgate.Kind): I64 = k match
+  case Elgate.StmtExpr => 0
+  case Elgate.AutoType => 1
+  case Elgate.GotoOut => 2
+  case Elgate.FnPtrCall => 3
+  case Elgate.Exit => 4
+  case Elgate.AddrOf => 5
+  case Elgate.VtableCall => 6
+
+def Elgate.kindS(k: Elgate.Kind): Str = k match
+  case Elgate.StmtExpr => "stmt-expr"
+  case Elgate.AutoType => "auto-type"
+  case Elgate.GotoOut => "goto-out"
+  case Elgate.FnPtrCall => "fn-ptr-call"
+  case Elgate.Exit => "exit"
+  case Elgate.AddrOf => "address-of"
+  case Elgate.VtableCall => "vtable-call (allowed)"
+
+def Elgate.conN(c: Elgate.Con): I64 = c match
+  case Elgate.CMatch => 0
+  case Elgate.CArm => 1
+  case Elgate.CPatBind => 2
+  case Elgate.CBlock => 3
+  case Elgate.CWhile => 4
+  case Elgate.CNew => 5
+  case Elgate.COp => 6
+  case Elgate.CMHandled => 7
+  case Elgate.CTail => 8
+  case Elgate.CResume => 9
+  case Elgate.CHandle => 10
+  case Elgate.CCall => 11
+
+def Elgate.conS(c: Elgate.Con): Str = c match
+  case Elgate.CMatch => "El.Match"
+  case Elgate.CArm => "El.Arm"
+  case Elgate.CPatBind => "El.Arm binder"
+  case Elgate.CBlock => "El.Block"
+  case Elgate.CWhile => "El.While"
+  case Elgate.CNew => "El.New"
+  case Elgate.COp => "El.Op"
+  case Elgate.CMHandled => "El.MHandled"
+  case Elgate.CTail => "El.CallFn (self tail call)"
+  case Elgate.CResume => "El.Resume"
+  case Elgate.CHandle => "El.Handle"
+  case Elgate.CCall => "El.CallFn"
+
+def Elgate.add(acc: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, l: I64, fn: Sym.Sym): Coll.List[Elgate.V] = Coll.Cons(Elgate.V(k, c, l, fn), acc)
+
+// the permanent kinds: the gate fails on them (today's emit has none); the others are reported only, until emit stops
+// producing them
+def Elgate.permanent(k: Elgate.Kind): Bool = k match
+  case Elgate.FnPtrCall => true
+  case Elgate.Exit => true
+  case _ => false
+
+// the walk: fn = the instance's name, tail = e is in tail position of a def instance (Emit.body, Emit.block, Emit.arms)
+def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = e match
+  case El.CallFn(l, f, _, _, args) =>
+    val a1 = Elgate.exs(cx, fn, args, acc)
+    val a2 = if tail && Sym.eq(f, fn) then Elgate.add(Elgate.add(a1, Elgate.StmtExpr, Elgate.CTail, l, fn), Elgate.GotoOut, Elgate.CTail, l, fn) else a1
+    if Sym.eq(f, Sym.of("rt_exit")) then Elgate.add(a2, Elgate.Exit, Elgate.CCall, l, fn) else a2
+  case El.New(l, _, _, _, at, args) =>
+    val a1 = Elgate.exs(cx, fn, args, acc)
+    val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
+    at match
+      case El.In(_) =>
+        val a2 = Elgate.add(a1, Elgate.StmtExpr, Elgate.CNew, l, fn)
+        if Emit.isInline(al) then a2 else Elgate.add(a2, Elgate.VtableCall, Elgate.CNew, l, fn)
+      case El.Comptime => a1
+  case El.Op(l, _, ty, op, args) =>
+    val a1 = Elgate.exs(cx, fn, args, acc)
+    val a2 = if Sym.eq(op, Sym.of("exit")) then Elgate.add(a1, Elgate.Exit, Elgate.COp, l, fn) else a1
+    val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
+    ty match
+      case K.Con(pn, _) =>
+        if Sym.eq(pn, Sym.of("Region")) && Sym.eq(op, Sym.of("alloc")) && Emit.isInline(al) then a2
+        else Elgate.add(Elgate.add(Elgate.add(a2, Elgate.StmtExpr, Elgate.COp, l, fn), Elgate.AutoType, Elgate.COp, l, fn), Elgate.VtableCall, Elgate.COp, l, fn)
+      case _ => a2
+  case El.MHandled(l, _, _, _, args, rest, _, _) =>
+    val a1 = Elgate.ex(cx, fn, false, rest, Elgate.exs(cx, fn, args, acc))
+    Elgate.add(Elgate.add(a1, Elgate.StmtExpr, Elgate.CMHandled, l, fn), Elgate.AddrOf, Elgate.CMHandled, l, fn)
+  case El.Resume(l, _, x) => Elgate.add(Elgate.ex(cx, fn, false, x, acc), Elgate.FnPtrCall, Elgate.CResume, l, fn)
+  case El.TCall(_, _, _, _, args) => Elgate.exs(cx, fn, args, acc)
+  case El.Bin(_, _, l, r) => Elgate.ex(cx, fn, false, r, Elgate.ex(cx, fn, false, l, acc))
+  case El.Un(_, _, x) => Elgate.ex(cx, fn, false, x, acc)
+  case El.If(_, c, t, x) => Elgate.ex(cx, fn, tail, x, Elgate.ex(cx, fn, tail, t, Elgate.ex(cx, fn, false, c, acc)))
+  case El.Match(l, x, _, arms) =>
+    val a1 = Elgate.ex(cx, fn, false, x, acc)
+    Elgate.arms(cx, fn, tail, arms, Elgate.add(Elgate.add(a1, Elgate.StmtExpr, Elgate.CMatch, l, fn), Elgate.AutoType, Elgate.CMatch, l, fn))
+  case El.Block(l, ss, last) =>
+    val a1 = Elgate.add(Elgate.add(acc, Elgate.StmtExpr, Elgate.CBlock, l, fn), Elgate.AutoType, Elgate.CBlock, l, fn)
+    // a block with a handle is not a tail position (Emit.lastPos)
+    Elgate.ex(cx, fn, tail && !Elgate.hasHandle(ss), last, Elgate.ss(cx, fn, ss, a1))
+  case El.While(l, c, b) => Elgate.ex(cx, fn, false, b, Elgate.ex(cx, fn, false, c, Elgate.add(acc, Elgate.StmtExpr, Elgate.CWhile, l, fn)))
+  case El.Assign(_, _, x) => Elgate.ex(cx, fn, false, x, acc)
+  case _ => acc
+
+def Elgate.exs(cx: Emit.Cx, fn: Sym.Sym, es: Coll.List[El.Expr], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = es match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Elgate.exs(cx, fn, rest, Elgate.ex(cx, fn, false, x, acc))
+
+def Elgate.arms(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, as: Coll.List[El.Arm], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val El.Arm(l, p, b) = a
+    val a1 = Elgate.add(acc, Elgate.StmtExpr, Elgate.CArm, l, fn)
+    val a2 = p match
+      case Ast.PAny => a1
+      case Ast.PCase(_, binds) => Elgate.binds(binds, l, fn, a1)
+    Elgate.arms(cx, fn, tail, rest, Elgate.ex(cx, fn, tail, b, a2))
+
+// each binder that is not `_` is an __auto_type local (Emit.binds)
+def Elgate.binds(xs: Coll.List[Sym.Sym], l: I64, fn: Sym.Sym, acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) =>
+    if Str.eq(Sym.str(x), "_") then Elgate.binds(rest, l, fn, acc) else Elgate.binds(rest, l, fn, Elgate.add(acc, Elgate.AutoType, Elgate.CPatBind, l, fn))
+
+def Elgate.hasHandle(ss: Coll.List[El.Stmt]): Bool = ss match
+  case Coll.Nil => false
+  case Coll.Cons(s, rest) => s match
+    case El.Handle(_, _, _, _, _) => true
+    case _ => Elgate.hasHandle(rest)
+
+def Elgate.ss(cx: Emit.Cx, fn: Sym.Sym, ss: Coll.List[El.Stmt], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) => s match
+    case El.Val(_, _, _, _, e) => Elgate.ss(cx, fn, rest, Elgate.ex(cx, fn, false, e, acc))
+    case El.Do(e) => Elgate.ss(cx, fn, rest, Elgate.ex(cx, fn, false, e, acc))
+    case El.Handle(l, _, h, _, args) =>
+      val a1 = Elgate.exs(cx, fn, args, acc)
+      // the one handle of a static capability fills a file-static instance, no address of a local (Emit.block)
+      val a2 = if Emit.isStatic(cx, Emit.protoOfH(cx, h)) then a1 else Elgate.add(a1, Elgate.AddrOf, Elgate.CHandle, l, fn)
+      Elgate.ss(cx, fn, rest, a2)
+
+// vs onto acc, without its Exit rows when exits is true (a handler fn is the one place that ends the process, and so is main)
+def Elgate.push(vs: Coll.List[Elgate.V], exits: Bool, acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = vs match
+  case Coll.Nil => acc
+  case Coll.Cons(v, rest) =>
+    val Elgate.V(k, _, _, _) = v
+    val isExit = Elgate.kindN(k) == Elgate.kindN(Elgate.Exit)
+    if isExit && exits then Elgate.push(rest, exits, acc) else Elgate.push(rest, exits, Coll.Cons(v, acc))
+
+def Elgate.fns(cx: Emit.Cx, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, name, _, _, _, _, body) = f
+    val a1 = body match
+      case El.Def(e) => Elgate.push(Elgate.ex(cx, name, false, e, Coll.Nil), true, acc)
+      case El.Extern => acc
+    Elgate.fns(cx, rest, a1)
+
+def Elgate.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = hs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, rest) =>
+    val El.Handler(_, _, fs, _) = h
+    Elgate.handlers(cx, rest, Elgate.fns(cx, fs, acc))
+
+// each mono instance of a def (KDef: a self tail call is a jump) or of a given's method
+def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = is match
+  case Coll.Nil => acc
+  case Coll.Cons(i, rest) =>
+    val Mono.Inst(f, _, site) = i
+    val El.Fn(_, name, _, _, _, _, body) = f
+    val a1 = body match
+      case El.Def(e) => site match
+        case Mono.Top => Elgate.push(Elgate.ex(cx, name, true, e, Coll.Nil), Sym.eq(name, Sym.of("main")), acc)
+        case Mono.Impl(_) => Elgate.push(Elgate.ex(cx, name, false, e, Coll.Nil), false, acc)
+      case El.Extern => acc
+    Elgate.insts(cx, rest, a1)
+
+// the violations of the C Emit.program prints for res
+def Elgate.run(ds: Coll.List[Ast.Decl], res0: Ty.Result): Coll.List[Elgate.V] =
+  val Ty.Result(_, _, s, fs0, _, _) = res0
+  val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
+  val st = Emit.staticsOf(cx0, ds, res0)
+  val res = Emit.withStatics(cx0, res0, st)
+  val Ty.Result(_, _, _, fs, hs, _) = res
+  val cx = Emit.withFns(cx0, fs, st)
+  Elgate.handlers(cx, hs, Elgate.insts(cx, Mono.run(res), Coll.Nil))
+
+def Elgate.count(vs: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, n: I64): I64 = vs match
+  case Coll.Nil => n
+  case Coll.Cons(v, rest) =>
+    val Elgate.V(vk, vc, _, _) = v
+    if Elgate.kindN(vk) == Elgate.kindN(k) && Elgate.conN(vc) == Elgate.conN(c) then Elgate.count(rest, k, c, n + 1) else Elgate.count(rest, k, c, n)
+
+def Elgate.rowsOf(vs: Coll.List[Elgate.V], k: Elgate.Kind, cs: Coll.List[Elgate.Con]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val n = Elgate.count(vs, k, c, 0)
+    if n > 0 then
+      Console.print(Elgate.kindS(k))
+      Console.print("\t")
+      Console.print(Elgate.conS(c))
+      Console.print("\t")
+      Console.printI64(n)
+      Console.print("\n")
+    else ()
+    Elgate.rowsOf(vs, k, rest)
+
+def Elgate.rows(vs: Coll.List[Elgate.V], ks: Coll.List[Elgate.Kind]): Unit = ks match
+  case Coll.Nil => ()
+  case Coll.Cons(k, rest) =>
+    Elgate.rowsOf(vs, k, Elgate.cons())
+    Elgate.rows(vs, rest)
+
+// the violations of the permanent kinds, in source order
+def Elgate.failing(vs: Coll.List[Elgate.V], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = vs match
+  case Coll.Nil => acc
+  case Coll.Cons(v, rest) =>
+    val Elgate.V(k, _, _, _) = v
+    if Elgate.permanent(k) then Elgate.failing(rest, Coll.Cons(v, acc)) else Elgate.failing(rest, acc)

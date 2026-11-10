@@ -323,6 +323,24 @@ enum S2c.Mode:
   case S2c.HashAll
   // --store-check: write every hashed decl to the store, read it back, compare
   case S2c.StoreCheck
+  // --fragment: the C fragment gate (s2/elgate.srs): the table of kinds; exit 1 on a permanent kind
+  case S2c.Fragment
+
+// --fragment: the table of every kind (stdout); the C leaves the fragment where a permanent kind is found: exit 1
+def S2c.fragment(fs: Coll.List[S2c.File], vs: Coll.List[Elgate.V]): I64 =
+  Elgate.rows(vs, Elgate.kinds())
+  val bad = Elgate.failing(vs, Coll.Nil)
+  S2c.fragmentErrs(fs, bad)
+  bad match
+    case Coll.Nil => 0
+    case Coll.Cons(_, _) => 1
+
+def S2c.fragmentErrs(fs: Coll.List[S2c.File], vs: Coll.List[Elgate.V]): Unit = vs match
+  case Coll.Nil => ()
+  case Coll.Cons(v, rest) =>
+    val Elgate.V(k, c, l, _) = v
+    S2c.diag(fs, "c-fragment", l, Elgate.kindS(k), S2c.Text(Elgate.conS(c)), "the emitted C may not contain it: lower the construct to a statement, or move it into a handler")
+    S2c.fragmentErrs(fs, rest)
 
 def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 = m match
   case S2c.StoreCheck =>
@@ -331,6 +349,8 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.HashAll =>
     Hs.print(ds)
     0
+  case S2c.Fragment =>
+    S2c.fragment(fs, Elgate.run(ds, res))
   case S2c.EmitC =>
     Emit.program(ds, res)
     0
@@ -365,6 +385,7 @@ def S2c.args(): S2c.Args =
   if Args.count() > 1 && Str.eq(Args.at(1), "--eval") then S2c.Args(S2c.EvalAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--hash") then S2c.Args(S2c.HashAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--fragment") then S2c.Args(S2c.Fragment, 2)
   else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =

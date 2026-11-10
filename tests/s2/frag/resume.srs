@@ -1,0 +1,15 @@
+// expect: error[c-fragment]: fn-ptr-call El.Resume
+// a multi-shot resume is a call through a function pointer that is not a handler vtable: --fragment rejects it
+capability NonDet:
+  def choose(): Bool
+handler Count [A: Type] for NonDet:
+  def done(x: A): I64 = 1
+  def choose(k): I64 = resume k(true) + resume k(false)
+def count(): I64 =
+  handle nd = Count()
+  val a = NonDet.choose()
+  0
+def main(): I64 =
+  handle io = Srs.Console()
+  Console.printI64(count())
+  0

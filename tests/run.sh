@@ -135,4 +135,17 @@ for n in one heap two named nested; do
     esac
   else echo "FAIL s2c Region $n (build or output)"; fail=1; fi
 done
+# the C fragment gate (s2/elgate.srs, vic-de9x.1 X1): s2c and the table of --fragment. s2c itself has no violation of a
+# permanent kind (fn-ptr-call, exit), so --fragment exits 0 on it; the table lists the other kinds (stmt-expr,
+# auto-type, goto-out, address-of) as report-only until emit stops producing them. armed: each tests/s2/frag program has
+# one permanent violation, so --fragment exits 1 with its "// expect:" line
+out=$(timeout 60 "$B/s2c1" --fragment $S2C 2>&1); code=$?
+if [ $code -eq 0 ] && printf '%s\n' "$out" | grep -q '^stmt-expr'; then echo "ok s2c fragment gate: s2c has no permanent-kind violation"; else echo "FAIL s2c fragment gate exit=$code: $(printf '%s' "$out" | head -3)"; fail=1; fi
+for t in tests/s2/frag/*.srs; do
+  n=$(basename "$t" .srs); pass=1
+  msg=$(timeout 5 "$B/s2c1" --fragment $S2LIBS "$t" 2>&1 >/dev/null); code=$?
+  wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -eq 1 ] && [ -n "$wants" ] || pass=0
+  while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
+  verdict "frag/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
+done
 exit $fail
