@@ -46,6 +46,25 @@ extern def Str.at(s: Str, i: I64): I64
 extern def Str.slice(s: Str, b: I64, e: I64): Str
 extern def Str.eq(a: Str, b: Str): Bool
 
+// words U32, U64: the only conversions between int types, pure, static inline in the emitted C (s2/emit.srs
+// Emit.wordPrims). U32.of and U32.ofU64 keep the low 32 bits, U64.of and I64.of widen exactly, U64.ofI64 and
+// I64.ofU64 keep the 64 bits (two's complement)
+extern def U32.of(x: I64): U32
+extern def U32.ofU64(x: U64): U32
+extern def U64.of(x: U32): U64
+extern def U64.ofI64(x: I64): U64
+extern def I64.of(x: U32): I64
+// the little-endian word at byte i of s, TOTAL: a byte outside [0, Str.len(s)) reads as 0 (Emit.wordLoad)
+extern def Str.u32le(s: Str, i: I64): U32
+extern def Str.u64le(s: Str, i: I64): U64
+extern def I64.ofU64(x: U64): I64
+
+// rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
+def U32.rotr(x: U32, n: I64): U32 = (x >> n) | (x << (32 - n))
+def U32.rotl(x: U32, n: I64): U32 = (x << n) | (x >> (32 - n))
+def U64.rotr(x: U64, n: I64): U64 = (x >> n) | (x << (64 - n))
+def U64.rotl(x: U64, n: I64): U64 = (x << n) | (x >> (64 - n))
+
 // the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
 // main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
 // the state of a handler that keeps none (a handler with no init: s2/parse.srs Parse.stateless)

@@ -74,12 +74,13 @@ for t in tests/s2/eval/*.srs; do
   else while IFS= read -r line; do printf '%s\n' "$out" | grep -Fxq "$line" || pass=0; done <<< "$evals"; fi
   verdict "eval/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
 done
-# s2c --hash (content hashes): each "// same: a b" / "// differ: a b" holds; a test with no relation proves nothing
+# s2c --hash (content hashes): each "// same: a b" / "// differ: a b" holds, each "// golden: name a.b.c.d" is that exact digest; a test with no relation proves nothing
 for t in tests/s2/hash/*.srs; do
   n=$(basename "$t" .srs); pass=1; out=$(timeout 2 "$B/s2c1" --hash lib/prelude.srs "$t" 2>&1) || pass=0
-  rels=$(sed -n 's#^// \(same:\|differ:\) #\1 #p' "$t"); [ -n "$rels" ] || pass=0
+  rels=$(sed -n 's#^// \(same:\|differ:\|golden:\) #\1 #p' "$t"); [ -n "$rels" ] || pass=0
   while read -r rel a b; do
     ha=$(printf '%s\n' "$out" | awk -v n="$a" '$1 == n {print $2}'); hb=$(printf '%s\n' "$out" | awk -v n="$b" '$1 == n {print $2}')
+    if [ "$rel" = golden: ]; then [ "$ha" = "$b" ] || pass=0; continue; fi
     if [ -z "$ha" ] || [ -z "$hb" ]; then pass=0; elif [ "$rel" = same: ] && [ "$ha" != "$hb" ]; then pass=0; elif [ "$rel" = differ: ] && [ "$ha" = "$hb" ]; then pass=0; fi
   done <<< "$rels"
   verdict "hash/$n" $pass
@@ -112,4 +113,7 @@ else echo "FAIL s2c type level errors $c1 $m1 / $c2 $m2"; fail=1; fi
 # s2c self tail calls loop: coll folds a 1M list, at -O0 (C -O1 hides a missing loop)
 timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c_coll0") && [ "$out" = "$(cat tests/s2/coll.out)" ] && echo "ok s2c tailcall -O0" || { echo "FAIL s2c tailcall -O0"; fail=1; }
 timeout 60 $CC -O0 -o "$B/s2c1_tailcall0" "$B/s2c1_tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c1_tailcall0") && [ "$out" = "$(cat tests/s2/prog/tailcall.out)" ] && echo "ok s2c prog tailcall -O0" || { echo "FAIL s2c prog tailcall -O0"; fail=1; }
+# words are total in C (U32, U64): prog/bits under shift and signed-overflow traps; a shift count not taken mod the
+# width is C undefined behavior, and x86 masks it silently, so the plain run cannot see it
+timeout 60 $CC -fsanitize=shift,signed-integer-overflow -fsanitize-trap=shift,signed-integer-overflow -o "$B/s2c1_bits_ub" "$B/s2c1_bits.c" rt/srs_rt.c && out=$(timeout 1 "$B/s2c1_bits_ub") && [ "$out" = "$(cat tests/s2/prog/bits.out)" ] && echo "ok s2c prog bits under UB traps" || { echo "FAIL s2c prog bits under UB traps"; fail=1; }
 exit $fail

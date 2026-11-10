@@ -53,6 +53,7 @@ def LT.why(w: Lex.Why): Str = w match
   case Lex.BadDedent => "bad dedent"
   case Lex.Unterminated => "unterminated"
   case Lex.BadChar => "bad char"
+  case Lex.BigHex => "big hex"
 
 def LT.dump {r: Region} (src: Str): Unit = Lex.lex(src) match
   case Lex.Toks(ts) => LT.showAll(ts)
@@ -92,6 +93,11 @@ def main(): I64 =
   LT.dump("a\n    b\n  c\n")
   LT.dump("x = \"abc\n")
   LT.dump("a $ b\n")
+  // words: hex literals (the largest below 2^63, and 2^63 itself, which does not lex), the bit operators, >>> as one token
+  LT.dump("x >>> 0xFf << ~y & z | w ^ v >> 0x7fffffffffffffff =>> 0x\n")
+  LT.dump("0x8000000000000000\n")
+  // 2^64: a wrapping v * 16 would give 0 here, not a reject
+  LT.dump("0x10000000000000000\n")
   LT.file("lib/prelude.srs")
   LT.file("tests/s2/prog/rules.srs")
   LT.file("tests/s2/prog/file_ok.srs")

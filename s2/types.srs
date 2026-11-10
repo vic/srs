@@ -60,6 +60,8 @@ enum Ty.Clash:
   case Ty.RtOutsideSrs(line: I64, f: Sym.Sym)
   // run-time code names a top-level val (a compile-time value)
   case Ty.ValAtRunTime(line: I64, x: Sym.Sym)
+  // an int literal outside its type t (a U32 above 2^32 - 1)
+  case Ty.IntRange(line: I64, t: K.Term)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -231,7 +233,7 @@ enum Ty.Es:
   case Ty.Es(st: Ty.St, es: Coll.List[El.Expr])
 
 def Ty.expr(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = e match
-  case Ast.Int(line, v) => Ty.lit(st, line, Ty.con("I64"), want, El.Int(line, v))
+  case Ast.Int(line, v) => Ty.int(st, line, v, want)
   case Ast.Bool(line, v) => Ty.lit(st, line, Ty.con("Bool"), want, El.Bool(line, v))
   case Ast.Str(line, s) => Ty.lit(st, line, Ty.con("Str"), want, El.Str(line, s))
   case Ast.Unit(line) => Ty.lit(st, line, Ty.con("Unit"), want, El.Unit(line))
@@ -242,10 +244,12 @@ def Ty.expr(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Col
   case Ast.Method(line, recv, op, xs) => Ty.method(cx, st, bs, line, recv, op, xs, want)
   case Ast.Resume(line, k, x) => Ty.resume(cx, st, bs, line, k, x, want)
   case Ast.Bin(line, op, l, rhs) => Ty.bin(cx, st, bs, line, op, l, rhs, want)
-  case Ast.Un(line, op, x) =>
-    val t = Ty.con(Ty.unTy(op))
-    val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.Some(t))
-    Ty.lit(st1, line, t, want, El.Un(line, op, ex))
+  case Ast.Un(line, op, x) => op match
+    case Ast.BitNot => Ty.ints1(cx, st, bs, line, x, want)
+    case _ =>
+      val t = Ty.con(Ty.unTy(op))
+      val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.Some(t))
+      Ty.lit(st1, line, t, want, El.Un(line, op, ex))
   case Ast.If(line, c, t, x) =>
     val Ty.Ex(st1, _, ec) = Ty.expr(cx, st, bs, c, Coll.Some(Ty.con("Bool")))
     val Ty.Ex(st2, tt, et) = Ty.expr(cx, st1, bs, t, want)
@@ -526,17 +530,120 @@ def Ty.traitMethod(trs: Coll.List[Ast.Trait], t: Sym.Sym, op: Sym.Sym): Coll.Opt
         case Coll.None => Coll.None
     else Ty.traitMethod(rest, t, op)
 
-// ── operators: arithmetic on I64, comparison gives Bool (== and != on any one type), && || on Bool ──
+// ── operators: + - * and comparison on one int type (I64, U32, U64; U32 and U64 wrap), / % on I64 (C: no wrap
+// trap on unsigned / 0), | ^ & ~ << >> on U32 or U64 only, == and != on any one type, && || on Bool. no implicit
+// conversion between int types (U32.of, U64.of, I64.of in lib/prelude.srs). every unsigned op is defined in C for
+// every input: unsigned wraps, a shift count is taken mod the width ──
 def Ty.bin(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex = op match
   case Ast.Eq => Ty.eqOp(cx, st, bs, line, op, l, rhs, want)
   case Ast.Ne => Ty.eqOp(cx, st, bs, line, op, l, rhs, want)
   case Ast.And => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("Bool"), Ty.con("Bool"), want)
   case Ast.Or => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("Bool"), Ty.con("Bool"), want)
-  case Ast.Lt => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("Bool"), want)
-  case Ast.Le => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("Bool"), want)
-  case Ast.Gt => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("Bool"), want)
-  case Ast.Ge => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("Bool"), want)
+  case Ast.Lt => Ty.ints(cx, st, bs, line, op, l, rhs, true, Ty.AnyInt, want)
+  case Ast.Le => Ty.ints(cx, st, bs, line, op, l, rhs, true, Ty.AnyInt, want)
+  case Ast.Gt => Ty.ints(cx, st, bs, line, op, l, rhs, true, Ty.AnyInt, want)
+  case Ast.Ge => Ty.ints(cx, st, bs, line, op, l, rhs, true, Ty.AnyInt, want)
+  case Ast.Add => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.AnyInt, want)
+  case Ast.Sub => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.AnyInt, want)
+  case Ast.Mul => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.AnyInt, want)
+  case Ast.BitOr => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.WordInt, want)
+  case Ast.BitXor => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.WordInt, want)
+  case Ast.BitAnd => Ty.ints(cx, st, bs, line, op, l, rhs, false, Ty.WordInt, want)
+  case Ast.Shl => Ty.shift(cx, st, bs, line, op, l, rhs, want)
+  case Ast.Shr => Ty.shift(cx, st, bs, line, op, l, rhs, want)
   case _ => Ty.both(cx, st, bs, line, op, l, rhs, Ty.con("I64"), Ty.con("I64"), want)
+
+// the int types an operator takes: any of I64, U32, U64, or a word (U32, U64)
+enum Ty.Ints:
+  case Ty.AnyInt
+  case Ty.WordInt
+
+// the int kind of t under the substitution: U32 or U64 by name, else I64 (a var, another type: the caller unifies)
+def Ty.kindOf(st: Ty.St, t: K.Term): El.IntK =
+  val Ty.St(s, _, _, _, _, _) = st
+  K.walk(s, t) match
+    // by text: Sym.of would hash and allocate per operator
+    case K.Con(n, _) => Ty.kindNamed(Sym.str(n))
+    case _ => El.KI64
+
+def Ty.kindNamed(s: Str): El.IntK = if Str.eq(s, "U32") then El.KU32 else if Str.eq(s, "U64") then El.KU64 else El.KI64
+
+def Ty.kindTy(k: El.IntK): K.Term = k match
+  case El.KI64 => Ty.con("I64")
+  case El.KU32 => Ty.con("U32")
+  case El.KU64 => Ty.con("U64")
+
+// the kind an operator works at, from its deciding operand's kind: a word operator on a non-word wants U32
+def Ty.opKind(k: El.IntK, which: Ty.Ints): El.IntK = which match
+  case Ty.AnyInt => k
+  case Ty.WordInt => k match
+    case El.KU64 => El.KU64
+    case _ => El.KU32
+
+// the expected type passed to an operand: a wanted U32 or U64 (so a literal operand is one), else none (inferred)
+def Ty.wordHint(st: Ty.St, want: Coll.Option[K.Term]): Coll.Option[K.Term] = want match
+  case Coll.None => Coll.None
+  case Coll.Some(w) => Ty.kindOf(st, w) match
+    case El.KI64 => Coll.None
+    case _ => Coll.Some(w)
+
+// an int literal: I64, or the U32 or U64 the context wants; it must fit that type (no silent wrap)
+def Ty.int(st: Ty.St, line: I64, v: I64, want: Coll.Option[K.Term]): Ty.Ex =
+  val k: El.IntK = want match
+    case Coll.None => El.KI64
+    case Coll.Some(w) => Ty.kindOf(st, w)
+  val st1 = if Ty.fits(k, v) then st else Ty.clash(st, Ty.IntRange(line, Ty.kindTy(k)))
+  Ty.lit(st1, line, Ty.kindTy(k), want, El.Int(line, v, k))
+
+def Ty.fits(k: El.IntK, v: I64): Bool = k match
+  case El.KI64 => true
+  case El.KU32 => v >= 0 && v <= 4294967295
+  case El.KU64 => v >= 0
+
+// t0 must be the int type t (a con): no unify when t0 already is t, the common case (no new state per operator)
+def Ty.expectInt(st: Ty.St, line: I64, t0: K.Term, t: K.Term): Ty.St =
+  val Ty.St(s, _, _, _, _, _) = st
+  if Ty.sameCon(K.walk(s, t0), t) then st else Ty.expect(st, line, t0, t)
+
+def Ty.sameCon(a: K.Term, b: K.Term): Bool = a match
+  case K.Con(n, _) => b match
+    case K.Con(m, _) => Sym.eq(n, m)
+    case _ => false
+  case _ => false
+
+def Ty.isIntLit(e: Ast.Expr): Bool = e match
+  case Ast.Int(_, _) => true
+  case _ => false
+
+// one operand decides the type: the left, or the right when the left is a literal (0xff & x); the other is checked
+// against it. cmp: the result is Bool, else the operand type
+def Ty.ints(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, cmp: Bool, which: Ty.Ints, want: Coll.Option[K.Term]): Ty.Ex =
+  val lit = Ty.isIntLit(l)
+  val d = if lit then rhs else l
+  val o = if lit then l else rhs
+  val Ty.Ex(st1, t0, ed) = Ty.expr(cx, st, bs, d, if cmp then Coll.None else Ty.wordHint(st, want))
+  val t = Ty.kindTy(Ty.opKind(Ty.kindOf(st1, t0), which))
+  val Ty.Ex(st2, _, eo) = Ty.expr(cx, Ty.expectInt(st1, Ty.lineOf(d), t0, t), bs, o, Coll.Some(t))
+  Ty.lit(st2, line, if cmp then Ty.con("Bool") else t, want, El.Bin(line, op, if lit then eo else ed, if lit then ed else eo))
+
+// x << n, x >> n: x a word, n an I64 taken mod the width (C's shift is undefined for a count outside [0, width))
+def Ty.shift(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
+  val Ty.Ex(st1, t0, el) = Ty.expr(cx, st, bs, l, Ty.wordHint(st, want))
+  val k = Ty.opKind(Ty.kindOf(st1, t0), Ty.WordInt)
+  val t = Ty.kindTy(k)
+  val Ty.Ex(st2, _, en) = Ty.expr(cx, Ty.expectInt(st1, Ty.lineOf(l), t0, t), bs, rhs, Coll.Some(Ty.con("I64")))
+  val mask = Ty.widthMask(k)
+  Ty.lit(st2, line, t, want, El.Bin(line, op, el, El.Bin(line, Ast.BitAnd, en, El.Int(line, mask, El.KI64))))
+
+def Ty.widthMask(k: El.IntK): I64 = k match
+  case El.KU64 => 63
+  case _ => 31
+
+// ~x on a word
+def Ty.ints1(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, x: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
+  val Ty.Ex(st1, t0, ex) = Ty.expr(cx, st, bs, x, Ty.wordHint(st, want))
+  val t = Ty.kindTy(Ty.opKind(Ty.kindOf(st1, t0), Ty.WordInt))
+  Ty.lit(Ty.expectInt(st1, Ty.lineOf(x), t0, t), line, t, want, El.Un(line, Ast.BitNot, ex))
 
 // both operands of type arg, the result of type res
 def Ty.both(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr, arg: K.Term, res: K.Term, want: Coll.Option[K.Term]): Ty.Ex =
@@ -840,6 +947,8 @@ def Ty.groundAll(ts: Coll.List[K.Term]): Bool = ts match
 def Ty.unTy(op: Ast.UnOp): Str = op match
   case Ast.Neg => "I64"
   case Ast.Not => "Bool"
+  // not read: Ty.ints1 types ~ by its operand (U32 or U64)
+  case Ast.BitNot => "U32"
 
 def Ty.lineOf(e: Ast.Expr): I64 = e match
   case Ast.Int(l, _) => l
@@ -1385,7 +1494,7 @@ def Ty.isEnum(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool = es match
 
 def Ty.isBuiltin(n: Sym.Sym): Bool =
   val s = Sym.str(n)
-  Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type")
+  Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type") || Str.eq(s, "U32") || Str.eq(s, "U64")
 
 // x is a local whose type is protocol p
 def Ty.isCapOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match

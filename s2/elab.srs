@@ -1,8 +1,15 @@
 // s2 self-host rung T3 (vic/c/s2-selfhost.md "T3 design"): the elaborated program, what mono and emit read. Ty.expr
 // builds it while it infers, so the two cannot disagree. a term keeps its vars until mono reifies it with the final
 // substitution.
+
+// the C type of an int literal: I64, or U32 or U64 when the expected type is one (Ty.expr)
+enum El.IntK:
+  case El.KI64
+  case El.KU32
+  case El.KU64
+
 enum El.Expr:
-  case El.Int(line: I64, v: I64)
+  case El.Int(line: I64, v: I64, k: El.IntK)
   case El.Bool(line: I64, v: Bool)
   case El.Str(line: I64, s: Str)
   case El.Unit(line: I64)

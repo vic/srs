@@ -16,10 +16,18 @@ enum Ast.BinOp:
   case Ast.Ne
   case Ast.And
   case Ast.Or
+  // on U32 and U64 only: | ^ &, and << >> (>>> is >>: the operand is unsigned) with an I64 count taken mod the width
+  case Ast.BitOr
+  case Ast.BitXor
+  case Ast.BitAnd
+  case Ast.Shl
+  case Ast.Shr
 
 enum Ast.UnOp:
   case Ast.Neg
   case Ast.Not
+  // ~x on U32 and U64
+  case Ast.BitNot
 
 // T[args]^<caps>: no caps written = inferred; written = a bound
 enum Ast.Caps:
@@ -259,6 +267,11 @@ def Ast.opText(op: Ast.BinOp): Str = op match
   case Ast.Ne => "!="
   case Ast.And => "&&"
   case Ast.Or => "||"
+  case Ast.BitOr => "|"
+  case Ast.BitXor => "^"
+  case Ast.BitAnd => "&"
+  case Ast.Shl => "<<"
+  case Ast.Shr => ">>"
 
 // how tightly an expression binds as an operand, loosest first: if, match, block, while and assign only in ( ); a
 // binary operator by its level; a unary operator; an atom (literal, name, call, method)
@@ -274,25 +287,31 @@ enum Ast.Need:
   case Ast.AtLeast(b: Ast.Bind)
   case Ast.Above(b: Ast.Bind)
 
-// the order of Bind, loosest first; binary levels as the s1 parser (s1/parse.srs:593 opLevel). only compared
+// the order of Bind, loosest first; binary levels as Parse.binOf: the Scala 3 table by first char (| ^ & = < + *,
+// so || is at |, && at &, << >> at <). only compared
 def Ast.rank(b: Ast.Bind): I64 = b match
   case Ast.Loose => 0
   case Ast.Infix(op) => op match
     case Ast.Or => 1
-    case Ast.And => 2
-    case Ast.Eq => 3
-    case Ast.Ne => 3
-    case Ast.Lt => 4
-    case Ast.Le => 4
-    case Ast.Gt => 4
-    case Ast.Ge => 4
-    case Ast.Add => 5
-    case Ast.Sub => 5
-    case Ast.Mul => 6
-    case Ast.Div => 6
-    case Ast.Mod => 6
-  case Ast.Prefix => 7
-  case Ast.Atomic => 8
+    case Ast.BitOr => 1
+    case Ast.BitXor => 2
+    case Ast.And => 3
+    case Ast.BitAnd => 3
+    case Ast.Eq => 4
+    case Ast.Ne => 4
+    case Ast.Lt => 5
+    case Ast.Le => 5
+    case Ast.Gt => 5
+    case Ast.Ge => 5
+    case Ast.Shl => 5
+    case Ast.Shr => 5
+    case Ast.Add => 6
+    case Ast.Sub => 6
+    case Ast.Mul => 7
+    case Ast.Div => 7
+    case Ast.Mod => 7
+  case Ast.Prefix => 8
+  case Ast.Atomic => 9
 
 def Ast.bindOf(e: Ast.Expr): Ast.Bind = e match
   case Ast.Bin(_, op, _, _) => Ast.Infix(op)
@@ -425,6 +444,7 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
 def Ast.unText(op: Ast.UnOp): Str = op match
   case Ast.Neg => "-"
   case Ast.Not => "!"
+  case Ast.BitNot => "~"
 
 // `else` on the line of a one-line then, on its own line after a block then
 // else starts a new line when either branch takes more than one line (a block, a match, a multi-line if or while):

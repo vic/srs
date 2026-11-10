@@ -37,13 +37,14 @@ def Ev.cxDecls(ds: Coll.List[Ast.Decl], cx: Ev.Cx): Ev.Cx = ds match
   case Coll.Cons(d, rest) =>
     val Ev.Cx(fs, cs, imp) = cx
     d match
+      // a decl that names U32 or U64 is left out: a call of it has no value (Ev.wordFn)
       case Ast.DFn(f) =>
         val Ast.Fn(_, n, _, _, _, _, _) = f
-        Ev.cxDecls(rest, Ev.Cx(Coll.sInsert(fs, n, f), cs, imp))
+        Ev.cxDecls(rest, Ev.Cx(if Ev.wordFn(f) then fs else Coll.sInsert(fs, n, f), cs, imp))
       // a top-level val is a nullary fn: another val may name it
       case Ast.DVal(f) =>
         val Ast.Fn(_, n, _, _, _, _, _) = f
-        Ev.cxDecls(rest, Ev.Cx(Coll.sInsert(fs, n, f), cs, imp))
+        Ev.cxDecls(rest, Ev.Cx(if Ev.wordFn(f) then fs else Coll.sInsert(fs, n, f), cs, imp))
       case Ast.DEnum(e) =>
         val Ast.Enum(_, _, _, cases) = e
         Ev.cxDecls(rest, Ev.Cx(fs, Ev.caseMap(cases, cs), imp))
@@ -53,7 +54,70 @@ def Ev.caseMap(cs: Coll.List[Ast.Case], m: Coll.SMap[I64]): Coll.SMap[I64] = cs 
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, fs) = c
-    Ev.caseMap(rest, Coll.sInsert(m, n, Coll.length(fs)))
+    Ev.caseMap(rest, if Ev.wordBinders(fs) then m else Coll.sInsert(m, n, Coll.length(fs)))
+
+// ── words: Ev's ints do not wrap at 2^32 or 2^64, so a decl that names U32 or U64 (a param, the result, a field, a
+// val annotation, a type arg, a quantifier) has no compile-time value: never a wrong one ──
+def Ev.wordTy(t: Ast.Ty): Bool =
+  val Ast.Ty(_, n, args, _, _) = t
+  Sym.eq(n, Sym.of("U32")) || Sym.eq(n, Sym.of("U64")) || Ev.wordTys(args)
+
+def Ev.wordTys(ts: Coll.List[Ast.Ty]): Bool = ts match
+  case Coll.Nil => false
+  case Coll.Cons(t, rest) => Ev.wordTy(t) || Ev.wordTys(rest)
+
+def Ev.wordBinders(bs: Coll.List[Ast.Binder]): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Ev.wordTy(t) || Ev.wordBinders(rest)
+
+def Ev.wordFn(f: Ast.Fn): Bool =
+  val Ast.Fn(_, _, _, ps, ret, _, body) = f
+  Ev.wordBinders(ps) || Ev.wordTy(ret) || Ev.wordBody(body)
+
+def Ev.wordBody(b: Ast.Body): Bool = b match
+  case Ast.Def(_, e) => Ev.wordExpr(e)
+  case Ast.Extern => false
+
+def Ev.wordExpr(e: Ast.Expr): Bool = e match
+  case Ast.Call(_, _, targs, _, xs) => Ev.wordTys(targs) || Ev.wordExprs(xs)
+  case Ast.Method(_, _, _, xs) => Ev.wordExprs(xs)
+  case Ast.Resume(_, _, x) => Ev.wordExpr(x)
+  case Ast.Bin(_, _, l, x) => Ev.wordExpr(l) || Ev.wordExpr(x)
+  case Ast.Un(_, _, x) => Ev.wordExpr(x)
+  case Ast.If(_, c, t, x) => Ev.wordExpr(c) || Ev.wordExpr(t) || Ev.wordExpr(x)
+  case Ast.Match(_, s, arms) => Ev.wordExpr(s) || Ev.wordArms(arms)
+  case Ast.Block(_, ss, last) => Ev.wordStmts(ss) || Ev.wordExpr(last)
+  case Ast.While(_, c, b) => Ev.wordExpr(c) || Ev.wordExpr(b)
+  case Ast.Assign(_, _, x) => Ev.wordExpr(x)
+  case Ast.Quant(_, _, _, t, b) => Ev.wordTy(t) || Ev.wordExpr(b)
+  case _ => false
+
+def Ev.wordExprs(xs: Coll.List[Ast.Expr]): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(x, rest) => Ev.wordExpr(x) || Ev.wordExprs(rest)
+
+def Ev.wordArms(as: Coll.List[Ast.Arm]): Bool = as match
+  case Coll.Nil => false
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, b) = a
+    Ev.wordExpr(b) || Ev.wordArms(rest)
+
+def Ev.wordStmts(ss: Coll.List[Ast.Stmt]): Bool = ss match
+  case Coll.Nil => false
+  case Coll.Cons(s, rest) => Ev.wordStmt(s) || Ev.wordStmts(rest)
+
+def Ev.wordStmt(s: Ast.Stmt): Bool = s match
+  case Ast.Val(_, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
+  case Ast.Var(_, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
+  case Ast.Handle(_, _, _, xs) => Ev.wordExprs(xs)
+  case Ast.Do(e) => Ev.wordExpr(e)
+  case Ast.Check(_, _, e) => Ev.wordExpr(e)
+
+def Ev.wordAnn(t: Coll.Option[Ast.Ty]): Bool = t match
+  case Coll.None => false
+  case Coll.Some(x) => Ev.wordTy(x)
 
 def Ev.get(env: Coll.List[Ev.Bind], x: Sym.Sym): Coll.Option[Ev.V] = env match
   case Coll.Nil => Coll.None
@@ -230,6 +294,8 @@ def Ev.un(f: Sym.Sym, line: I64, op: Ast.UnOp, v: Ev.V, env: Coll.List[Ev.Bind],
   case Ast.Not => v match
     case Ev.VBool(b) => Ev.Ok(Ev.VBool(!b), env, fuel)
     case _ => Ev.Err(Ev.NoValue(line, f))
+  // a word op has no compile-time value (Ev.cxDecls)
+  case Ast.BitNot => Ev.Err(Ev.NoValue(line, f))
 
 def Ev.eq(a: Ev.V, b: Ev.V): Bool = a match
   case Ev.VUnit => b match
@@ -323,13 +389,15 @@ def Ev.run(cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Line]): Ev.Out 
   case Coll.Nil => Ev.Lines(Coll.rev(acc))
   case Coll.Cons(d, rest) => d match
     case Ast.DVal(f) =>
-      val Ast.Fn(_, n, _, _, _, _, body) = f
-      body match
-        case Ast.Def(_, e) => Ev.expr(cx, n, Coll.Nil, Ev.fuel(), e) match
-          case Ev.Ok(v, _, _) => Ev.run(cx, rest, Coll.Cons(Ev.Shown(n, v), acc))
-          case Ev.Err(err) => Ev.Failed(err)
-        case _ => Ev.run(cx, rest, acc)
+      val Ast.Fn(line, n, _, _, _, _, body) = f
+      if Ev.wordFn(f) then Ev.Failed(Ev.NoValue(line, n)) else Ev.runVal(cx, n, body, rest, acc)
     case _ => Ev.run(cx, rest, acc)
+
+def Ev.runVal(cx: Ev.Cx, n: Sym.Sym, body: Ast.Body, rest: Coll.List[Ast.Decl], acc: Coll.List[Ev.Line]): Ev.Out = body match
+  case Ast.Def(_, e) => Ev.expr(cx, n, Coll.Nil, Ev.fuel(), e) match
+    case Ev.Ok(v, _, _) => Ev.run(cx, rest, Coll.Cons(Ev.Shown(n, v), acc))
+    case Ev.Err(err) => Ev.Failed(err)
+  case _ => Ev.run(cx, rest, acc)
 
 def Ev.show(v: Ev.V): Unit = v match
   case Ev.VUnit => Console.print("()")

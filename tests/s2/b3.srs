@@ -1,0 +1,61 @@
+// pass: B3 (s2/b3.srs) on the official BLAKE3 test vectors: input = the bytes i % 251 for i < n, hash = the first 32
+// bytes of the "hash" field. source: https://raw.githubusercontent.com/BLAKE3-team/BLAKE3/master/test_vectors/test_vectors.json
+// fetched 2026-11-10 to tests/s2/b3_vectors.json, sha256 dcb91ea8accc77e6d6e632af7cdc1a99a9f3ae78cf648da595c7d064db32f624;
+// b3.out = jq -r '.cases[] | "\(.input_len) \(.hash[0:64])"' tests/s2/b3_vectors.json (every case, 35 lengths)
+
+// the n bytes i % 251 as one Str
+def BT.input(n: I64): Str =
+  Console.captureBegin()
+  BT.bytes(0, n)
+  Console.captureEnd()
+
+def BT.bytes(i: I64, n: I64): Unit =
+  if i < n then Console.printChar(i % 251) else ()
+  if i < n then BT.bytes(i + 1, n) else ()
+
+def BT.case(n: I64): Unit =
+  val h = B3.hash(BT.input(n))
+  Console.printI64(n)
+  Console.print(" ")
+  B3.printHex(h)
+  Console.print("\n")
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  BT.case(0)
+  BT.case(1)
+  BT.case(2)
+  BT.case(3)
+  BT.case(4)
+  BT.case(5)
+  BT.case(6)
+  BT.case(7)
+  BT.case(8)
+  BT.case(63)
+  BT.case(64)
+  BT.case(65)
+  BT.case(127)
+  BT.case(128)
+  BT.case(129)
+  BT.case(1023)
+  BT.case(1024)
+  BT.case(1025)
+  BT.case(2048)
+  BT.case(2049)
+  BT.case(3072)
+  BT.case(3073)
+  BT.case(4096)
+  BT.case(4097)
+  BT.case(5120)
+  BT.case(5121)
+  BT.case(6144)
+  BT.case(6145)
+  BT.case(7168)
+  BT.case(7169)
+  BT.case(8192)
+  BT.case(8193)
+  BT.case(16384)
+  BT.case(31744)
+  BT.case(102400)
+  0

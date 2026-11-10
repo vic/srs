@@ -210,6 +210,8 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.eq(x, "Bool") then Console.print("bool")
     else if Str.eq(x, "Str") then Console.print("srs_str")
     else if Str.eq(x, "Ptr") then Console.print("void*")
+    else if Str.eq(x, "U32") then Console.print("uint32_t")
+    else if Str.eq(x, "U64") then Console.print("uint64_t")
     else if Emit.isProto(cx, n) then Console.print("srs_cap*")
     else Emit.nominalOf(cx, n) match
       case Coll.Some(b) => Emit.ctype(cx, b)
@@ -225,8 +227,12 @@ def Emit.nominalOf(cx: Emit.Cx, n: Sym.Sym): Coll.Option[K.Term] =
 
 // ── expressions (spec sec 4) ──
 def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr): Unit = e match
-  case El.Int(_, v) =>
-    Console.print("((int64_t)")
+  case El.Int(_, v, k) =>
+    val c: Str = k match
+      case El.KI64 => "((int64_t)"
+      case El.KU32 => "((uint32_t)"
+      case El.KU64 => "((uint64_t)"
+    Console.print(c)
     Console.printI64(v)
     Console.print(")")
   case El.Bool(_, v) => Console.print(if v then "true" else "false")
@@ -336,10 +342,17 @@ def Emit.binOp(op: Ast.BinOp): Str = op match
   case Ast.Ne => " != "
   case Ast.And => " && "
   case Ast.Or => " || "
+  // on uint32_t / uint64_t (Ty.bin); a shift count is already n & 31 or n & 63 (Ty.shift): no C undefined behavior
+  case Ast.BitOr => " | "
+  case Ast.BitXor => " ^ "
+  case Ast.BitAnd => " & "
+  case Ast.Shl => " << "
+  case Ast.Shr => " >> "
 
 def Emit.unOp(op: Ast.UnOp): Str = op match
   case Ast.Neg => "(-"
   case Ast.Not => "(!"
+  case Ast.BitNot => "(~"
 
 // the length of a literal: an escape counts as one char
 def Emit.unescLen(s: Str, i: I64, n: I64): I64 =
@@ -1104,7 +1117,44 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs match
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
-  Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq"))
+  Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
+
+// the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
+def Emit.wordInline(s: Str): Bool =
+  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le")
+
+// C conversion to an unsigned type is mod 2^width (C11 6.3.1.3p2); uint64_t to int64_t above INT64_MAX is
+// implementation-defined (6.3.1.3p3), two's complement on every target compiler (gcc, clang)
+def Emit.wordPrims(): Unit =
+  Console.print("static inline uint32_t U32__of(int64_t x) { return (uint32_t)x; }\n")
+  Console.print("static inline uint32_t U32__ofU64(uint64_t x) { return (uint32_t)x; }\n")
+  Console.print("static inline uint64_t U64__of(uint32_t x) { return x; }\n")
+  Console.print("static inline uint64_t U64__ofI64(int64_t x) { return (uint64_t)x; }\n")
+  Console.print("static inline int64_t I64__of(uint32_t x) { return x; }\n")
+  Console.print("static inline int64_t I64__ofU64(uint64_t x) { return (int64_t)x; }\n")
+  Emit.wordLoad("32", "uint32_t", "4", "__builtin_bswap32")
+  Emit.wordLoad("64", "uint64_t", "8", "__builtin_bswap64")
+
+// Str.u32le / Str.u64le: one load when the whole word is in [0, n) (memcpy, byte swapped on a big endian target), else
+// the bytes in range and 0 for the rest. i >= n returns first, so i + k cannot overflow
+def Emit.wordLoad(bits: Str, ty: Str, bytes: Str, swap: Str): Unit =
+  Console.print("static inline ")
+  Console.print(ty)
+  Console.print(" Str__u")
+  Console.print(bits)
+  Console.print("le(srs_str s, int64_t i) {\n  ")
+  Console.print(ty)
+  Console.print(" v = 0;\n  if (i >= 0 && i <= s.n - ")
+  Console.print(bytes)
+  Console.print(") {\n    memcpy(&v, s.p + i, ")
+  Console.print(bytes)
+  Console.print(");\n#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__\n    v = ")
+  Console.print(swap)
+  Console.print("(v);\n#endif\n    return v;\n  }\n  if (i >= s.n) return 0;\n  for (int64_t k = 0; k < ")
+  Console.print(bytes)
+  Console.print("; k++) if (i + k >= 0 && i + k < s.n) v |= (")
+  Console.print(ty)
+  Console.print(")s.p[i + k] << (8 * k);\n  return v;\n}\n")
 
 // the semantics of rt_str_* in rt/srs_rt.c: at is -1 out of range; slice clamps b to [0, n] and e to [b, n]
 def Emit.strPrims(): Unit =
@@ -1929,6 +1979,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   Console.print("#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n")
   Console.print("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
   Emit.strPrims()
+  Emit.wordPrims()
   // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
   // always null for other handlers
   Console.print("typedef struct { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")

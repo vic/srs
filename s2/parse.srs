@@ -929,18 +929,23 @@ enum Parse.BinTok:
 def Parse.binOf(t: Lex.Tok): Coll.Option[Parse.BinTok] = t match
   case Lex.TOp(s, _) =>
     if Str.eq(s, "||") then Coll.Some(Parse.BinTok(Ast.Or, 0))
-    else if Str.eq(s, "&&") then Coll.Some(Parse.BinTok(Ast.And, 1))
-    else if Str.eq(s, "==") then Coll.Some(Parse.BinTok(Ast.Eq, 2))
-    else if Str.eq(s, "!=") then Coll.Some(Parse.BinTok(Ast.Ne, 2))
-    else if Str.eq(s, "<") then Coll.Some(Parse.BinTok(Ast.Lt, 3))
-    else if Str.eq(s, "<=") then Coll.Some(Parse.BinTok(Ast.Le, 3))
-    else if Str.eq(s, ">") then Coll.Some(Parse.BinTok(Ast.Gt, 3))
-    else if Str.eq(s, ">=") then Coll.Some(Parse.BinTok(Ast.Ge, 3))
-    else if Str.eq(s, "+") then Coll.Some(Parse.BinTok(Ast.Add, 4))
-    else if Str.eq(s, "-") then Coll.Some(Parse.BinTok(Ast.Sub, 4))
-    else if Str.eq(s, "*") then Coll.Some(Parse.BinTok(Ast.Mul, 5))
-    else if Str.eq(s, "/") then Coll.Some(Parse.BinTok(Ast.Div, 5))
-    else if Str.eq(s, "%") then Coll.Some(Parse.BinTok(Ast.Mod, 5))
+    else if Str.eq(s, "|") then Coll.Some(Parse.BinTok(Ast.BitOr, 0))
+    else if Str.eq(s, "^") then Coll.Some(Parse.BinTok(Ast.BitXor, 1))
+    else if Str.eq(s, "&&") then Coll.Some(Parse.BinTok(Ast.And, 2))
+    else if Str.eq(s, "&") then Coll.Some(Parse.BinTok(Ast.BitAnd, 2))
+    else if Str.eq(s, "==") then Coll.Some(Parse.BinTok(Ast.Eq, 3))
+    else if Str.eq(s, "!=") then Coll.Some(Parse.BinTok(Ast.Ne, 3))
+    else if Str.eq(s, "<") then Coll.Some(Parse.BinTok(Ast.Lt, 4))
+    else if Str.eq(s, "<=") then Coll.Some(Parse.BinTok(Ast.Le, 4))
+    else if Str.eq(s, ">") then Coll.Some(Parse.BinTok(Ast.Gt, 4))
+    else if Str.eq(s, ">=") then Coll.Some(Parse.BinTok(Ast.Ge, 4))
+    else if Str.eq(s, "<<") then Coll.Some(Parse.BinTok(Ast.Shl, 4))
+    else if Str.eq(s, ">>") || Str.eq(s, ">>>") then Coll.Some(Parse.BinTok(Ast.Shr, 4))
+    else if Str.eq(s, "+") then Coll.Some(Parse.BinTok(Ast.Add, 5))
+    else if Str.eq(s, "-") then Coll.Some(Parse.BinTok(Ast.Sub, 5))
+    else if Str.eq(s, "*") then Coll.Some(Parse.BinTok(Ast.Mul, 6))
+    else if Str.eq(s, "/") then Coll.Some(Parse.BinTok(Ast.Div, 6))
+    else if Str.eq(s, "%") then Coll.Some(Parse.BinTok(Ast.Mod, 6))
     else Coll.None
   case _ => Coll.None
 
@@ -961,6 +966,7 @@ def Parse.binLoop(lhs: Ast.Expr, ts: Coll.List[Lex.Tok], lvl: I64): Parse.R[Ast.
 def Parse.unary(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Expr] =
   if Parse.isOp(ts, "-") then Parse.unOf(Parse.line(ts), Ast.Neg, Parse.unary(Parse.next(ts)))
   else if Parse.isOp(ts, "!") then Parse.unOf(Parse.line(ts), Ast.Not, Parse.unary(Parse.next(ts)))
+  else if Parse.isOp(ts, "~") then Parse.unOf(Parse.line(ts), Ast.BitNot, Parse.unary(Parse.next(ts)))
   else Parse.primary(ts)
 
 def Parse.unOf(line: I64, op: Ast.UnOp, re: Parse.R[Ast.Expr]): Parse.R[Ast.Expr] = re match

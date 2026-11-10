@@ -1,28 +1,61 @@
-// s2 content hashes (s1/hash.srs, vic-uw3 H1; vic 2026-11-06: Unison hashing, names are metadata, digest (a)). the hash
-// of a decl = the digest of its Ast: a local as its binding position (innermost first), a ref to another decl as that
-// decl's hash, a ref inside its own SCC as the member's position (members ordered by their first-pass hash).
+// s2 content hashes (s1/hash.srs, vic-uw3 H1; vic 2026-11-06: Unison hashing, names are metadata). the hash of a decl =
+// the BLAKE3 (s2/b3.srs) of the canonical token stream of its Ast: a local as its binding position (innermost first), a
+// ref to another decl as that decl's hash, a ref inside its own SCC as the member's position (members ordered by their
+// first-pass hash). the stream starts with the format and the rule-set version, so a change of either is a new key.
 
-// ── digest (a): 4 lanes, each h = (h * p + x) % m, m a prime below 2^32, p < 2^30: every step stays below 2^63 ──
+// the digest: the 256 bits of the BLAKE3 as four I64 words (each two little-endian U32 words of it); the name of a store entry
 enum Hs.Dg:
   case Hs.Dg(a: I64, b: I64, c: I64, d: I64)
 
-def Hs.lane(h: I64, x: I64, p: I64, m: I64): I64 = if x >= 0 && x < 2147483648 then (h * p + x) % m else (h * p + ((x % m) + m) % m) % m
+// the stream so far, newest token first (the walk adds, Hs.fin prints it oldest first, one tail loop each)
+enum Hs.Tk:
+  case Hs.TNil
+  case Hs.TInt(x: I64, rest: Hs.Tk)
+  case Hs.TStr(s: Str, rest: Hs.Tk)
 
-def Hs.add(g: Hs.Dg, x: I64): Hs.Dg =
-  val Hs.Dg(a, b, c, d) = g
-  Hs.Dg(Hs.lane(a, x, 1000000007, 4294967291), Hs.lane(b, x, 998244353, 4294967279), Hs.lane(c, x, 754974721, 4294967231), Hs.lane(d, x, 167772161, 4294967197))
+// the rules of the walk below (what each token means): any change to them bumps this, and every hash and store entry is new
+def Hs.version(): I64 = 1
 
-// a string: its length, then its bytes, 3 per step (the length keeps it prefix-free)
-def Hs.str(g: Hs.Dg, s: Str): Hs.Dg = Hs.bytes(Hs.add(g, Str.len(s)), s, 0, Str.len(s))
+// the digest and store format: 1 was digest (a) (4 lanes mod primes), 2 is BLAKE3 of the token text; old entries are misses
+def Hs.format(): I64 = 2
 
-def Hs.bytes(g: Hs.Dg, s: Str, i: I64, n: I64): Hs.Dg =
-  if i + 2 < n then Hs.bytes(Hs.add(g, Str.at(s, i) + 256 * Str.at(s, i + 1) + 65536 * Str.at(s, i + 2)), s, i + 3, n)
-  else if i < n then Hs.bytes(Hs.add(g, Str.at(s, i)), s, i + 1, n)
-  else g
+// an empty stream of kind k (0 a decl, 9 a component): the format and the version first
+def Hs.start(k: I64): Hs.Tk = Hs.add(Hs.add(Hs.add(Hs.TNil, Hs.format()), Hs.version()), k)
 
-def Hs.dg(g: Hs.Dg, h: Hs.Dg): Hs.Dg =
+def Hs.add(g: Hs.Tk, x: I64): Hs.Tk = Hs.TInt(x, g)
+
+// a string: its length, then its bytes (the length keeps it prefix-free)
+def Hs.str(g: Hs.Tk, s: Str): Hs.Tk = Hs.TStr(s, Hs.add(g, Str.len(s)))
+
+def Hs.dg(g: Hs.Tk, h: Hs.Dg): Hs.Tk =
   val Hs.Dg(a, b, c, d) = h
   Hs.add(Hs.add(Hs.add(Hs.add(g, a), b), c), d)
+
+def Hs.rev(g: Hs.Tk, acc: Hs.Tk): Hs.Tk = g match
+  case Hs.TNil => acc
+  case Hs.TInt(x, rest) => Hs.rev(rest, Hs.TInt(x, acc))
+  case Hs.TStr(s, rest) => Hs.rev(rest, Hs.TStr(s, acc))
+
+// the text of a stream, oldest first: an integer in decimal and ";", a string as its bytes and ";"
+def Hs.emit(g: Hs.Tk): Unit = g match
+  case Hs.TNil => ()
+  case Hs.TInt(x, rest) =>
+    Console.printI64(x)
+    Console.print(";")
+    Hs.emit(rest)
+  case Hs.TStr(s, rest) =>
+    Console.print(s)
+    Console.print(";")
+    Hs.emit(rest)
+
+def Hs.word(lo: U32, hi: U32): I64 = I64.ofU64(U64.of(lo) | U64.of(hi) << 32)
+
+// the digest of a stream
+def Hs.fin(g: Hs.Tk): Hs.Dg =
+  Console.captureBegin()
+  Hs.emit(Hs.rev(g, Hs.TNil))
+  val B3.Hash(h0, h1, h2, h3, h4, h5, h6, h7) = B3.hash(Console.captureEnd())
+  Hs.Dg(Hs.word(h0, h1), Hs.word(h2, h3), Hs.word(h4, h5), Hs.word(h6, h7))
 
 def Hs.less(x: Hs.Dg, y: Hs.Dg): Bool =
   val Hs.Dg(a, b, c, d) = x
@@ -42,7 +75,7 @@ enum Hs.Where:
   case Hs.Local
   case Hs.Global
 
-def Hs.name(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, x: Sym.Sym, w: Hs.Where): Hs.Dg =
+def Hs.name(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, x: Sym.Sym, w: Hs.Where): Hs.Tk =
   val Hs.Cx(hm, mem, pass) = cx
   val pos: Coll.Option[I64] = w match
     case Hs.Local => Hs.index(env, x, 0)
@@ -63,13 +96,13 @@ def Hs.index(xs: Coll.List[Sym.Sym], x: Sym.Sym, i: I64): Coll.Option[I64] = xs 
 
 // a hash and the locals after it (binders pass their names on)
 enum Hs.W:
-  case Hs.W(g: Hs.Dg, env: Coll.List[Sym.Sym])
+  case Hs.W(g: Hs.Tk, env: Coll.List[Sym.Sym])
 
-def Hs.ty(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, t: Ast.Ty): Hs.Dg =
+def Hs.ty(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, t: Ast.Ty): Hs.Tk =
   val Ast.Ty(_, n, args, _, vals) = t
   Hs.exprs(cx, env, Hs.tys(cx, env, Hs.name(cx, env, Hs.add(Hs.add(g, 9), Coll.length(args)), n, Hs.Local), args), vals)
 
-def Hs.tys(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, ts: Coll.List[Ast.Ty]): Hs.Dg = ts match
+def Hs.tys(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, ts: Coll.List[Ast.Ty]): Hs.Tk = ts match
   case Coll.Nil => g
   case Coll.Cons(t, rest) => Hs.tys(cx, env, Hs.ty(cx, env, g, t), rest)
 
@@ -87,8 +120,13 @@ def Hs.binOp(op: Ast.BinOp): I64 = op match
   case Ast.Ne => 10
   case Ast.And => 11
   case Ast.Or => 12
+  case Ast.BitOr => 13
+  case Ast.BitXor => 14
+  case Ast.BitAnd => 15
+  case Ast.Shl => 16
+  case Ast.Shr => 17
 
-def Hs.expr(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, e: Ast.Expr): Hs.Dg = e match
+def Hs.expr(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, e: Ast.Expr): Hs.Tk = e match
   case Ast.Int(_, v) => Hs.add(Hs.add(g, 32), v)
   case Ast.Bool(_, v) => Hs.add(Hs.add(g, 33), if v then 1 else 0)
   case Ast.Str(_, s) => Hs.str(Hs.add(g, 34), s)
@@ -104,6 +142,7 @@ def Hs.expr(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, e: Ast.Expr): Hs.Dg = 
     val k = op match
       case Ast.Neg => 0
       case Ast.Not => 1
+      case Ast.BitNot => 2
     Hs.expr(cx, env, Hs.add(Hs.add(g, 44), k), x)
   case Ast.If(_, c, t, x) => Hs.expr(cx, env, Hs.expr(cx, env, Hs.expr(cx, env, Hs.add(g, 45), c), t), x)
   case Ast.Match(_, s, arms) => Hs.arms(cx, env, Hs.expr(cx, env, Hs.add(Hs.add(g, 46), Coll.length(arms)), s), arms)
@@ -118,16 +157,16 @@ def Hs.expr(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, e: Ast.Expr): Hs.Dg = 
       case Ast.Exists => 48
     Hs.expr(cx, Coll.Cons(x, env), Hs.ty(cx, env, Hs.add(g, k), t), b)
 
-def Hs.exprs(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, xs: Coll.List[Ast.Expr]): Hs.Dg = xs match
+def Hs.exprs(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, xs: Coll.List[Ast.Expr]): Hs.Tk = xs match
   case Coll.Nil => g
   case Coll.Cons(x, rest) => Hs.exprs(cx, env, Hs.expr(cx, env, g, x), rest)
 
-def Hs.names(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, xs: Coll.List[Sym.Sym]): Hs.Dg = xs match
+def Hs.names(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, xs: Coll.List[Sym.Sym]): Hs.Tk = xs match
   case Coll.Nil => g
   case Coll.Cons(x, rest) => Hs.names(cx, env, Hs.name(cx, env, g, x, Hs.Local), rest)
 
 // an arm: its case (a ref), its binders bound in its body (each one, `_` too: positions stay fixed)
-def Hs.arms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, as: Coll.List[Ast.Arm]): Hs.Dg = as match
+def Hs.arms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, as: Coll.List[Ast.Arm]): Hs.Tk = as match
   case Coll.Nil => g
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, p, b) = a
@@ -152,7 +191,7 @@ def Hs.stmts(cx: Hs.Cx, w: Hs.W, ss: Coll.List[Ast.Stmt]): Hs.W = ss match
         Hs.W(Hs.expr(cx, env, Hs.add(Hs.add(g, 56), c), e), env)
     Hs.stmts(cx, w2, rest)
 
-def Hs.ann(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, a: Coll.Option[Ast.Ty]): Hs.Dg = a match
+def Hs.ann(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, a: Coll.Option[Ast.Ty]): Hs.Tk = a match
   case Coll.None => Hs.add(g, 0)
   case Coll.Some(t) => Hs.ty(cx, env, Hs.add(g, 1), t)
 
@@ -174,13 +213,13 @@ def Hs.groups(cx: Hs.Cx, w: Hs.W, gs: Coll.List[Ast.Group]): Hs.W = gs match
       case Ast.Facts(as) => Hs.W(Hs.atoms(cx, env, Hs.add(g, 29), as), env)
     Hs.groups(cx, w2, rest)
 
-def Hs.atoms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, as: Coll.List[Ast.Atom]): Hs.Dg = as match
+def Hs.atoms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, as: Coll.List[Ast.Atom]): Hs.Tk = as match
   case Coll.Nil => g
   case Coll.Cons(a, rest) =>
     val Ast.Atom(_, rel, ts) = a
     Hs.atoms(cx, env, Hs.terms(cx, env, Hs.str(Hs.add(g, Coll.length(ts)), Sym.str(rel)), ts), rest)
 
-def Hs.terms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, ts: Coll.List[Ast.Term]): Hs.Dg = ts match
+def Hs.terms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, ts: Coll.List[Ast.Term]): Hs.Tk = ts match
   case Coll.Nil => g
   case Coll.Cons(t, rest) =>
     val g2 = t match
@@ -188,7 +227,7 @@ def Hs.terms(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, ts: Coll.List[Ast.Ter
       case Ast.TNum(v) => Hs.add(Hs.add(g, 31), v)
     Hs.terms(cx, env, g2, rest)
 
-def Hs.clauses(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, cs: Coll.List[Ast.Clause]): Hs.Dg = cs match
+def Hs.clauses(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, cs: Coll.List[Ast.Clause]): Hs.Tk = cs match
   case Coll.Nil => g
   case Coll.Cons(c, rest) =>
     val g2 = c match
@@ -206,9 +245,9 @@ def Hs.clauses(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, cs: Coll.List[Ast.C
     Hs.clauses(cx, env, g2, rest)
 
 // a def: its groups, params, result, exit facts, then its body and clauses (all see the params)
-def Hs.fn(cx: Hs.Cx, f: Ast.Fn): Hs.Dg =
+def Hs.fn(cx: Hs.Cx, f: Ast.Fn): Hs.Tk =
   val Ast.Fn(_, _, gs, ps, ret, exit, body) = f
-  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.Dg(1, 2, 3, 4), 12), Coll.Nil), gs)
+  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.start(0), 12), Coll.Nil), gs)
   val Hs.W(g2, env2) = Hs.binders(cx, Hs.W(Hs.add(g1, Coll.length(ps)), env1), ps)
   val g3 = Hs.atoms(cx, env2, Hs.ty(cx, env2, g2, ret), exit)
   body match
@@ -216,12 +255,12 @@ def Hs.fn(cx: Hs.Cx, f: Ast.Fn): Hs.Dg =
     case Ast.Def(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 71), e), cs)
 
 // an enum: its groups, then each case's fields (the field and case names are metadata: positions only)
-def Hs.enum_(cx: Hs.Cx, e: Ast.Enum): Hs.Dg =
+def Hs.enum_(cx: Hs.Cx, e: Ast.Enum): Hs.Tk =
   val Ast.Enum(_, _, gs, cases) = e
-  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.Dg(1, 2, 3, 4), 13), Coll.Nil), gs)
+  val Hs.W(g1, env1) = Hs.groups(cx, Hs.W(Hs.add(Hs.start(0), 13), Coll.Nil), gs)
   Hs.cases(cx, env1, Hs.add(g1, Coll.length(cases)), cases)
 
-def Hs.cases(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Dg, cs: Coll.List[Ast.Case]): Hs.Dg = cs match
+def Hs.cases(cx: Hs.Cx, env: Coll.List[Sym.Sym], g: Hs.Tk, cs: Coll.List[Ast.Case]): Hs.Tk = cs match
   case Coll.Nil => g
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, _, fs) = c
@@ -241,7 +280,9 @@ def Hs.dName(d: Hs.D): Sym.Sym = d match
     val Ast.Enum(_, n, _, _) = e
     n
 
-def Hs.hashD(cx: Hs.Cx, d: Hs.D): Hs.Dg = d match
+def Hs.hashD(cx: Hs.Cx, d: Hs.D): Hs.Dg = Hs.fin(Hs.walk(cx, d))
+
+def Hs.walk(cx: Hs.Cx, d: Hs.D): Hs.Tk = d match
   case Hs.DF(f) => Hs.fn(cx, f)
   case Hs.DE(e) => Hs.enum_(cx, e)
 
@@ -383,7 +424,7 @@ def Hs.comp(dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], ms: Coll.List[Sym.Sym]): 
     if Coll.length(more) == 0 && !selfRef then Hs.put(dm, hm, m, Hs.hashOf(dm, Hs.Cx(hm, Coll.Nil, Hs.Second), m))
     else
       val order = Hs.sorted(dm, hm, ms, ms, Coll.Nil)
-      val whole = Hs.whole(dm, Hs.Cx(hm, order, Hs.Second), order, Hs.Dg(9, 9, 9, 9))
+      val whole = Hs.whole(dm, Hs.Cx(hm, order, Hs.Second), order, Hs.start(9))
       Hs.members(dm, hm, whole, order, 0)
 
 def Hs.hashOf(dm: Coll.SMap[Hs.D], cx: Hs.Cx, m: Sym.Sym): Hs.Dg = Coll.sLookup(dm, m) match
@@ -411,13 +452,13 @@ def Hs.mNames(xs: Coll.List[Hs.M], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] 
     val Hs.M(n, _) = x
     Hs.mNames(rest, Coll.Cons(n, acc))
 
-def Hs.whole(dm: Coll.SMap[Hs.D], cx: Hs.Cx, ms: Coll.List[Sym.Sym], g: Hs.Dg): Hs.Dg = ms match
+def Hs.whole(dm: Coll.SMap[Hs.D], cx: Hs.Cx, ms: Coll.List[Sym.Sym], g: Hs.Tk): Hs.Tk = ms match
   case Coll.Nil => g
   case Coll.Cons(m, rest) => Hs.whole(dm, cx, rest, Hs.dg(g, Hs.hashOf(dm, cx, m)))
 
-def Hs.members(dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], whole: Hs.Dg, ms: Coll.List[Sym.Sym], i: I64): Coll.SMap[Hs.Dg] = ms match
+def Hs.members(dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], whole: Hs.Tk, ms: Coll.List[Sym.Sym], i: I64): Coll.SMap[Hs.Dg] = ms match
   case Coll.Nil => hm
-  case Coll.Cons(m, rest) => Hs.members(dm, Hs.put(dm, hm, m, Hs.add(Hs.add(whole, 10), i)), whole, rest, i + 1)
+  case Coll.Cons(m, rest) => Hs.members(dm, Hs.put(dm, hm, m, Hs.fin(Hs.add(Hs.add(whole, 10), i))), whole, rest, i + 1)
 
 // an enum's cases are refs too: (enum hash, tag)
 def Hs.put(dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], m: Sym.Sym, g: Hs.Dg): Coll.SMap[Hs.Dg] =
@@ -434,7 +475,7 @@ def Hs.casesPut(hm: Coll.SMap[Hs.Dg], g: Hs.Dg, cs: Coll.List[Ast.Case], i: I64)
   case Coll.Nil => hm
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, _) = c
-    Hs.casesPut(Coll.sInsert(hm, n, Hs.add(Hs.add(g, 8), i)), g, rest, i + 1)
+    Hs.casesPut(Coll.sInsert(hm, n, Hs.fin(Hs.add(Hs.dg(Hs.start(8), g), i))), g, rest, i + 1)
 
 def Hs.compsPut(dm: Coll.SMap[Hs.D], hm: Coll.SMap[Hs.Dg], cs: Coll.List[Coll.List[Sym.Sym]]): Coll.SMap[Hs.Dg] = cs match
   case Coll.Nil => hm

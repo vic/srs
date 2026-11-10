@@ -155,6 +155,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: Coll.IMap[K.Term], cs: Coll.List
       case Ty.GivenRow(l, p) => S2c.diag(fs, "given-row", l, "a given fn uses a capability its trait method does not declare:", S2c.Name(p), "add it to the trait method's {} binders (def show {Console} (x: A): Str), or remove the request")
       case Ty.RtOutsideSrs(l, f) => S2c.diag(fs, "rt-outside-srs", l, "rt_* is called only in the body of a Srs.* handler, not here:", S2c.Name(f), "request the effect (Console.print(s)) and handle it in main (handle c = Srs.Console())")
       case Ty.ValAtRunTime(l, x) => S2c.diag(fs, "val-at-run-time", l, "a top-level val is a compile-time value; run-time code cannot name it yet:", S2c.Name(x), "use it from another top-level val, or call a def")
+      case Ty.IntRange(l, t) => S2c.diag(fs, "int-range", l, "the int literal does not fit its type", S2c.Type(K.reify(s, t)), "write a literal in range (U32: 0 to 0xffffffff), or convert: U64.ofI64(n)")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match

@@ -1,0 +1,548 @@
+// s2 B3 (vic/c/bits-blake3-design.md): BLAKE3 (O'Connor, Aumasson, Neves, Wilcox-O'Hearn 2020) in pure srs, one thread,
+// no SIMD: the 32-byte hash of a Str's bytes. a chunk is 1 KiB of 64-byte blocks, each block one compression of 7
+// rounds of G (unrolled: no allocation inside a block); chunks join in a left-full binary tree of parent nodes.
+// oracle: tests/s2/b3.srs, the official test vectors
+
+// a hash or a chaining value: 8 words; its bytes are each word little-endian, h0 first
+enum B3.Hash:
+  case B3.Hash(h0: U32, h1: U32, h2: U32, h3: U32, h4: U32, h5: U32, h6: U32, h7: U32)
+
+// the IV (the SHA-256 IV): the key of an unkeyed hash
+def B3.iv(): B3.Hash = B3.Hash(0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19)
+
+// the compression function (spec 2.2): state = cv, IV[0..4], counter low and high, block length, flags; 7 rounds,
+// the message permuted between rounds (the schedule is written out per round); the result is the chaining value
+def B3.compress(cv: B3.Hash, m0: U32, m1: U32, m2: U32, m3: U32, m4: U32, m5: U32, m6: U32, m7: U32, m8: U32, m9: U32, m10: U32, m11: U32, m12: U32, m13: U32, m14: U32, m15: U32, counter: U64, blen: I64, flags: U32): B3.Hash =
+  val B3.Hash(s0, s1, s2, s3, s4, s5, s6, s7) = cv
+  val s8: U32 = 0x6a09e667
+  val s9: U32 = 0xbb67ae85
+  val s10: U32 = 0x3c6ef372
+  val s11: U32 = 0xa54ff53a
+  val s12 = U32.ofU64(counter)
+  val s13 = U32.ofU64(counter >> 32)
+  val s14 = U32.of(blen)
+  val s15 = flags
+  // round 1
+  val t1 = s0 + s4 + m0
+  val t2 = U32.rotr(s12 ^ t1, 16)
+  val t3 = s8 + t2
+  val t4 = U32.rotr(s4 ^ t3, 12)
+  val t5 = t1 + t4 + m1
+  val t6 = U32.rotr(t2 ^ t5, 8)
+  val t7 = t3 + t6
+  val t8 = U32.rotr(t4 ^ t7, 7)
+  val t9 = s1 + s5 + m2
+  val t10 = U32.rotr(s13 ^ t9, 16)
+  val t11 = s9 + t10
+  val t12 = U32.rotr(s5 ^ t11, 12)
+  val t13 = t9 + t12 + m3
+  val t14 = U32.rotr(t10 ^ t13, 8)
+  val t15 = t11 + t14
+  val t16 = U32.rotr(t12 ^ t15, 7)
+  val t17 = s2 + s6 + m4
+  val t18 = U32.rotr(s14 ^ t17, 16)
+  val t19 = s10 + t18
+  val t20 = U32.rotr(s6 ^ t19, 12)
+  val t21 = t17 + t20 + m5
+  val t22 = U32.rotr(t18 ^ t21, 8)
+  val t23 = t19 + t22
+  val t24 = U32.rotr(t20 ^ t23, 7)
+  val t25 = s3 + s7 + m6
+  val t26 = U32.rotr(s15 ^ t25, 16)
+  val t27 = s11 + t26
+  val t28 = U32.rotr(s7 ^ t27, 12)
+  val t29 = t25 + t28 + m7
+  val t30 = U32.rotr(t26 ^ t29, 8)
+  val t31 = t27 + t30
+  val t32 = U32.rotr(t28 ^ t31, 7)
+  val t33 = t5 + t16 + m8
+  val t34 = U32.rotr(t30 ^ t33, 16)
+  val t35 = t23 + t34
+  val t36 = U32.rotr(t16 ^ t35, 12)
+  val t37 = t33 + t36 + m9
+  val t38 = U32.rotr(t34 ^ t37, 8)
+  val t39 = t35 + t38
+  val t40 = U32.rotr(t36 ^ t39, 7)
+  val t41 = t13 + t24 + m10
+  val t42 = U32.rotr(t6 ^ t41, 16)
+  val t43 = t31 + t42
+  val t44 = U32.rotr(t24 ^ t43, 12)
+  val t45 = t41 + t44 + m11
+  val t46 = U32.rotr(t42 ^ t45, 8)
+  val t47 = t43 + t46
+  val t48 = U32.rotr(t44 ^ t47, 7)
+  val t49 = t21 + t32 + m12
+  val t50 = U32.rotr(t14 ^ t49, 16)
+  val t51 = t7 + t50
+  val t52 = U32.rotr(t32 ^ t51, 12)
+  val t53 = t49 + t52 + m13
+  val t54 = U32.rotr(t50 ^ t53, 8)
+  val t55 = t51 + t54
+  val t56 = U32.rotr(t52 ^ t55, 7)
+  val t57 = t29 + t8 + m14
+  val t58 = U32.rotr(t22 ^ t57, 16)
+  val t59 = t15 + t58
+  val t60 = U32.rotr(t8 ^ t59, 12)
+  val t61 = t57 + t60 + m15
+  val t62 = U32.rotr(t58 ^ t61, 8)
+  val t63 = t59 + t62
+  val t64 = U32.rotr(t60 ^ t63, 7)
+  // round 2
+  val t65 = t37 + t64 + m2
+  val t66 = U32.rotr(t46 ^ t65, 16)
+  val t67 = t55 + t66
+  val t68 = U32.rotr(t64 ^ t67, 12)
+  val t69 = t65 + t68 + m6
+  val t70 = U32.rotr(t66 ^ t69, 8)
+  val t71 = t67 + t70
+  val t72 = U32.rotr(t68 ^ t71, 7)
+  val t73 = t45 + t40 + m3
+  val t74 = U32.rotr(t54 ^ t73, 16)
+  val t75 = t63 + t74
+  val t76 = U32.rotr(t40 ^ t75, 12)
+  val t77 = t73 + t76 + m10
+  val t78 = U32.rotr(t74 ^ t77, 8)
+  val t79 = t75 + t78
+  val t80 = U32.rotr(t76 ^ t79, 7)
+  val t81 = t53 + t48 + m7
+  val t82 = U32.rotr(t62 ^ t81, 16)
+  val t83 = t39 + t82
+  val t84 = U32.rotr(t48 ^ t83, 12)
+  val t85 = t81 + t84 + m0
+  val t86 = U32.rotr(t82 ^ t85, 8)
+  val t87 = t83 + t86
+  val t88 = U32.rotr(t84 ^ t87, 7)
+  val t89 = t61 + t56 + m4
+  val t90 = U32.rotr(t38 ^ t89, 16)
+  val t91 = t47 + t90
+  val t92 = U32.rotr(t56 ^ t91, 12)
+  val t93 = t89 + t92 + m13
+  val t94 = U32.rotr(t90 ^ t93, 8)
+  val t95 = t91 + t94
+  val t96 = U32.rotr(t92 ^ t95, 7)
+  val t97 = t69 + t80 + m1
+  val t98 = U32.rotr(t94 ^ t97, 16)
+  val t99 = t87 + t98
+  val t100 = U32.rotr(t80 ^ t99, 12)
+  val t101 = t97 + t100 + m11
+  val t102 = U32.rotr(t98 ^ t101, 8)
+  val t103 = t99 + t102
+  val t104 = U32.rotr(t100 ^ t103, 7)
+  val t105 = t77 + t88 + m12
+  val t106 = U32.rotr(t70 ^ t105, 16)
+  val t107 = t95 + t106
+  val t108 = U32.rotr(t88 ^ t107, 12)
+  val t109 = t105 + t108 + m5
+  val t110 = U32.rotr(t106 ^ t109, 8)
+  val t111 = t107 + t110
+  val t112 = U32.rotr(t108 ^ t111, 7)
+  val t113 = t85 + t96 + m9
+  val t114 = U32.rotr(t78 ^ t113, 16)
+  val t115 = t71 + t114
+  val t116 = U32.rotr(t96 ^ t115, 12)
+  val t117 = t113 + t116 + m14
+  val t118 = U32.rotr(t114 ^ t117, 8)
+  val t119 = t115 + t118
+  val t120 = U32.rotr(t116 ^ t119, 7)
+  val t121 = t93 + t72 + m15
+  val t122 = U32.rotr(t86 ^ t121, 16)
+  val t123 = t79 + t122
+  val t124 = U32.rotr(t72 ^ t123, 12)
+  val t125 = t121 + t124 + m8
+  val t126 = U32.rotr(t122 ^ t125, 8)
+  val t127 = t123 + t126
+  val t128 = U32.rotr(t124 ^ t127, 7)
+  // round 3
+  val t129 = t101 + t128 + m3
+  val t130 = U32.rotr(t110 ^ t129, 16)
+  val t131 = t119 + t130
+  val t132 = U32.rotr(t128 ^ t131, 12)
+  val t133 = t129 + t132 + m4
+  val t134 = U32.rotr(t130 ^ t133, 8)
+  val t135 = t131 + t134
+  val t136 = U32.rotr(t132 ^ t135, 7)
+  val t137 = t109 + t104 + m10
+  val t138 = U32.rotr(t118 ^ t137, 16)
+  val t139 = t127 + t138
+  val t140 = U32.rotr(t104 ^ t139, 12)
+  val t141 = t137 + t140 + m12
+  val t142 = U32.rotr(t138 ^ t141, 8)
+  val t143 = t139 + t142
+  val t144 = U32.rotr(t140 ^ t143, 7)
+  val t145 = t117 + t112 + m13
+  val t146 = U32.rotr(t126 ^ t145, 16)
+  val t147 = t103 + t146
+  val t148 = U32.rotr(t112 ^ t147, 12)
+  val t149 = t145 + t148 + m2
+  val t150 = U32.rotr(t146 ^ t149, 8)
+  val t151 = t147 + t150
+  val t152 = U32.rotr(t148 ^ t151, 7)
+  val t153 = t125 + t120 + m7
+  val t154 = U32.rotr(t102 ^ t153, 16)
+  val t155 = t111 + t154
+  val t156 = U32.rotr(t120 ^ t155, 12)
+  val t157 = t153 + t156 + m14
+  val t158 = U32.rotr(t154 ^ t157, 8)
+  val t159 = t155 + t158
+  val t160 = U32.rotr(t156 ^ t159, 7)
+  val t161 = t133 + t144 + m6
+  val t162 = U32.rotr(t158 ^ t161, 16)
+  val t163 = t151 + t162
+  val t164 = U32.rotr(t144 ^ t163, 12)
+  val t165 = t161 + t164 + m5
+  val t166 = U32.rotr(t162 ^ t165, 8)
+  val t167 = t163 + t166
+  val t168 = U32.rotr(t164 ^ t167, 7)
+  val t169 = t141 + t152 + m9
+  val t170 = U32.rotr(t134 ^ t169, 16)
+  val t171 = t159 + t170
+  val t172 = U32.rotr(t152 ^ t171, 12)
+  val t173 = t169 + t172 + m0
+  val t174 = U32.rotr(t170 ^ t173, 8)
+  val t175 = t171 + t174
+  val t176 = U32.rotr(t172 ^ t175, 7)
+  val t177 = t149 + t160 + m11
+  val t178 = U32.rotr(t142 ^ t177, 16)
+  val t179 = t135 + t178
+  val t180 = U32.rotr(t160 ^ t179, 12)
+  val t181 = t177 + t180 + m15
+  val t182 = U32.rotr(t178 ^ t181, 8)
+  val t183 = t179 + t182
+  val t184 = U32.rotr(t180 ^ t183, 7)
+  val t185 = t157 + t136 + m8
+  val t186 = U32.rotr(t150 ^ t185, 16)
+  val t187 = t143 + t186
+  val t188 = U32.rotr(t136 ^ t187, 12)
+  val t189 = t185 + t188 + m1
+  val t190 = U32.rotr(t186 ^ t189, 8)
+  val t191 = t187 + t190
+  val t192 = U32.rotr(t188 ^ t191, 7)
+  // round 4
+  val t193 = t165 + t192 + m10
+  val t194 = U32.rotr(t174 ^ t193, 16)
+  val t195 = t183 + t194
+  val t196 = U32.rotr(t192 ^ t195, 12)
+  val t197 = t193 + t196 + m7
+  val t198 = U32.rotr(t194 ^ t197, 8)
+  val t199 = t195 + t198
+  val t200 = U32.rotr(t196 ^ t199, 7)
+  val t201 = t173 + t168 + m12
+  val t202 = U32.rotr(t182 ^ t201, 16)
+  val t203 = t191 + t202
+  val t204 = U32.rotr(t168 ^ t203, 12)
+  val t205 = t201 + t204 + m9
+  val t206 = U32.rotr(t202 ^ t205, 8)
+  val t207 = t203 + t206
+  val t208 = U32.rotr(t204 ^ t207, 7)
+  val t209 = t181 + t176 + m14
+  val t210 = U32.rotr(t190 ^ t209, 16)
+  val t211 = t167 + t210
+  val t212 = U32.rotr(t176 ^ t211, 12)
+  val t213 = t209 + t212 + m3
+  val t214 = U32.rotr(t210 ^ t213, 8)
+  val t215 = t211 + t214
+  val t216 = U32.rotr(t212 ^ t215, 7)
+  val t217 = t189 + t184 + m13
+  val t218 = U32.rotr(t166 ^ t217, 16)
+  val t219 = t175 + t218
+  val t220 = U32.rotr(t184 ^ t219, 12)
+  val t221 = t217 + t220 + m15
+  val t222 = U32.rotr(t218 ^ t221, 8)
+  val t223 = t219 + t222
+  val t224 = U32.rotr(t220 ^ t223, 7)
+  val t225 = t197 + t208 + m4
+  val t226 = U32.rotr(t222 ^ t225, 16)
+  val t227 = t215 + t226
+  val t228 = U32.rotr(t208 ^ t227, 12)
+  val t229 = t225 + t228 + m0
+  val t230 = U32.rotr(t226 ^ t229, 8)
+  val t231 = t227 + t230
+  val t232 = U32.rotr(t228 ^ t231, 7)
+  val t233 = t205 + t216 + m11
+  val t234 = U32.rotr(t198 ^ t233, 16)
+  val t235 = t223 + t234
+  val t236 = U32.rotr(t216 ^ t235, 12)
+  val t237 = t233 + t236 + m2
+  val t238 = U32.rotr(t234 ^ t237, 8)
+  val t239 = t235 + t238
+  val t240 = U32.rotr(t236 ^ t239, 7)
+  val t241 = t213 + t224 + m5
+  val t242 = U32.rotr(t206 ^ t241, 16)
+  val t243 = t199 + t242
+  val t244 = U32.rotr(t224 ^ t243, 12)
+  val t245 = t241 + t244 + m8
+  val t246 = U32.rotr(t242 ^ t245, 8)
+  val t247 = t243 + t246
+  val t248 = U32.rotr(t244 ^ t247, 7)
+  val t249 = t221 + t200 + m1
+  val t250 = U32.rotr(t214 ^ t249, 16)
+  val t251 = t207 + t250
+  val t252 = U32.rotr(t200 ^ t251, 12)
+  val t253 = t249 + t252 + m6
+  val t254 = U32.rotr(t250 ^ t253, 8)
+  val t255 = t251 + t254
+  val t256 = U32.rotr(t252 ^ t255, 7)
+  // round 5
+  val t257 = t229 + t256 + m12
+  val t258 = U32.rotr(t238 ^ t257, 16)
+  val t259 = t247 + t258
+  val t260 = U32.rotr(t256 ^ t259, 12)
+  val t261 = t257 + t260 + m13
+  val t262 = U32.rotr(t258 ^ t261, 8)
+  val t263 = t259 + t262
+  val t264 = U32.rotr(t260 ^ t263, 7)
+  val t265 = t237 + t232 + m9
+  val t266 = U32.rotr(t246 ^ t265, 16)
+  val t267 = t255 + t266
+  val t268 = U32.rotr(t232 ^ t267, 12)
+  val t269 = t265 + t268 + m11
+  val t270 = U32.rotr(t266 ^ t269, 8)
+  val t271 = t267 + t270
+  val t272 = U32.rotr(t268 ^ t271, 7)
+  val t273 = t245 + t240 + m15
+  val t274 = U32.rotr(t254 ^ t273, 16)
+  val t275 = t231 + t274
+  val t276 = U32.rotr(t240 ^ t275, 12)
+  val t277 = t273 + t276 + m10
+  val t278 = U32.rotr(t274 ^ t277, 8)
+  val t279 = t275 + t278
+  val t280 = U32.rotr(t276 ^ t279, 7)
+  val t281 = t253 + t248 + m14
+  val t282 = U32.rotr(t230 ^ t281, 16)
+  val t283 = t239 + t282
+  val t284 = U32.rotr(t248 ^ t283, 12)
+  val t285 = t281 + t284 + m8
+  val t286 = U32.rotr(t282 ^ t285, 8)
+  val t287 = t283 + t286
+  val t288 = U32.rotr(t284 ^ t287, 7)
+  val t289 = t261 + t272 + m7
+  val t290 = U32.rotr(t286 ^ t289, 16)
+  val t291 = t279 + t290
+  val t292 = U32.rotr(t272 ^ t291, 12)
+  val t293 = t289 + t292 + m2
+  val t294 = U32.rotr(t290 ^ t293, 8)
+  val t295 = t291 + t294
+  val t296 = U32.rotr(t292 ^ t295, 7)
+  val t297 = t269 + t280 + m5
+  val t298 = U32.rotr(t262 ^ t297, 16)
+  val t299 = t287 + t298
+  val t300 = U32.rotr(t280 ^ t299, 12)
+  val t301 = t297 + t300 + m3
+  val t302 = U32.rotr(t298 ^ t301, 8)
+  val t303 = t299 + t302
+  val t304 = U32.rotr(t300 ^ t303, 7)
+  val t305 = t277 + t288 + m0
+  val t306 = U32.rotr(t270 ^ t305, 16)
+  val t307 = t263 + t306
+  val t308 = U32.rotr(t288 ^ t307, 12)
+  val t309 = t305 + t308 + m1
+  val t310 = U32.rotr(t306 ^ t309, 8)
+  val t311 = t307 + t310
+  val t312 = U32.rotr(t308 ^ t311, 7)
+  val t313 = t285 + t264 + m6
+  val t314 = U32.rotr(t278 ^ t313, 16)
+  val t315 = t271 + t314
+  val t316 = U32.rotr(t264 ^ t315, 12)
+  val t317 = t313 + t316 + m4
+  val t318 = U32.rotr(t314 ^ t317, 8)
+  val t319 = t315 + t318
+  val t320 = U32.rotr(t316 ^ t319, 7)
+  // round 6
+  val t321 = t293 + t320 + m9
+  val t322 = U32.rotr(t302 ^ t321, 16)
+  val t323 = t311 + t322
+  val t324 = U32.rotr(t320 ^ t323, 12)
+  val t325 = t321 + t324 + m14
+  val t326 = U32.rotr(t322 ^ t325, 8)
+  val t327 = t323 + t326
+  val t328 = U32.rotr(t324 ^ t327, 7)
+  val t329 = t301 + t296 + m11
+  val t330 = U32.rotr(t310 ^ t329, 16)
+  val t331 = t319 + t330
+  val t332 = U32.rotr(t296 ^ t331, 12)
+  val t333 = t329 + t332 + m5
+  val t334 = U32.rotr(t330 ^ t333, 8)
+  val t335 = t331 + t334
+  val t336 = U32.rotr(t332 ^ t335, 7)
+  val t337 = t309 + t304 + m8
+  val t338 = U32.rotr(t318 ^ t337, 16)
+  val t339 = t295 + t338
+  val t340 = U32.rotr(t304 ^ t339, 12)
+  val t341 = t337 + t340 + m12
+  val t342 = U32.rotr(t338 ^ t341, 8)
+  val t343 = t339 + t342
+  val t344 = U32.rotr(t340 ^ t343, 7)
+  val t345 = t317 + t312 + m15
+  val t346 = U32.rotr(t294 ^ t345, 16)
+  val t347 = t303 + t346
+  val t348 = U32.rotr(t312 ^ t347, 12)
+  val t349 = t345 + t348 + m1
+  val t350 = U32.rotr(t346 ^ t349, 8)
+  val t351 = t347 + t350
+  val t352 = U32.rotr(t348 ^ t351, 7)
+  val t353 = t325 + t336 + m13
+  val t354 = U32.rotr(t350 ^ t353, 16)
+  val t355 = t343 + t354
+  val t356 = U32.rotr(t336 ^ t355, 12)
+  val t357 = t353 + t356 + m3
+  val t358 = U32.rotr(t354 ^ t357, 8)
+  val t359 = t355 + t358
+  val t360 = U32.rotr(t356 ^ t359, 7)
+  val t361 = t333 + t344 + m0
+  val t362 = U32.rotr(t326 ^ t361, 16)
+  val t363 = t351 + t362
+  val t364 = U32.rotr(t344 ^ t363, 12)
+  val t365 = t361 + t364 + m10
+  val t366 = U32.rotr(t362 ^ t365, 8)
+  val t367 = t363 + t366
+  val t368 = U32.rotr(t364 ^ t367, 7)
+  val t369 = t341 + t352 + m2
+  val t370 = U32.rotr(t334 ^ t369, 16)
+  val t371 = t327 + t370
+  val t372 = U32.rotr(t352 ^ t371, 12)
+  val t373 = t369 + t372 + m6
+  val t374 = U32.rotr(t370 ^ t373, 8)
+  val t375 = t371 + t374
+  val t376 = U32.rotr(t372 ^ t375, 7)
+  val t377 = t349 + t328 + m4
+  val t378 = U32.rotr(t342 ^ t377, 16)
+  val t379 = t335 + t378
+  val t380 = U32.rotr(t328 ^ t379, 12)
+  val t381 = t377 + t380 + m7
+  val t382 = U32.rotr(t378 ^ t381, 8)
+  val t383 = t379 + t382
+  val t384 = U32.rotr(t380 ^ t383, 7)
+  // round 7
+  val t385 = t357 + t384 + m11
+  val t386 = U32.rotr(t366 ^ t385, 16)
+  val t387 = t375 + t386
+  val t388 = U32.rotr(t384 ^ t387, 12)
+  val t389 = t385 + t388 + m15
+  val t390 = U32.rotr(t386 ^ t389, 8)
+  val t391 = t387 + t390
+  val t392 = U32.rotr(t388 ^ t391, 7)
+  val t393 = t365 + t360 + m5
+  val t394 = U32.rotr(t374 ^ t393, 16)
+  val t395 = t383 + t394
+  val t396 = U32.rotr(t360 ^ t395, 12)
+  val t397 = t393 + t396 + m0
+  val t398 = U32.rotr(t394 ^ t397, 8)
+  val t399 = t395 + t398
+  val t400 = U32.rotr(t396 ^ t399, 7)
+  val t401 = t373 + t368 + m1
+  val t402 = U32.rotr(t382 ^ t401, 16)
+  val t403 = t359 + t402
+  val t404 = U32.rotr(t368 ^ t403, 12)
+  val t405 = t401 + t404 + m9
+  val t406 = U32.rotr(t402 ^ t405, 8)
+  val t407 = t403 + t406
+  val t408 = U32.rotr(t404 ^ t407, 7)
+  val t409 = t381 + t376 + m8
+  val t410 = U32.rotr(t358 ^ t409, 16)
+  val t411 = t367 + t410
+  val t412 = U32.rotr(t376 ^ t411, 12)
+  val t413 = t409 + t412 + m6
+  val t414 = U32.rotr(t410 ^ t413, 8)
+  val t415 = t411 + t414
+  val t416 = U32.rotr(t412 ^ t415, 7)
+  val t417 = t389 + t400 + m14
+  val t418 = U32.rotr(t414 ^ t417, 16)
+  val t419 = t407 + t418
+  val t420 = U32.rotr(t400 ^ t419, 12)
+  val t421 = t417 + t420 + m10
+  val t422 = U32.rotr(t418 ^ t421, 8)
+  val t423 = t419 + t422
+  val t424 = U32.rotr(t420 ^ t423, 7)
+  val t425 = t397 + t408 + m2
+  val t426 = U32.rotr(t390 ^ t425, 16)
+  val t427 = t415 + t426
+  val t428 = U32.rotr(t408 ^ t427, 12)
+  val t429 = t425 + t428 + m12
+  val t430 = U32.rotr(t426 ^ t429, 8)
+  val t431 = t427 + t430
+  val t432 = U32.rotr(t428 ^ t431, 7)
+  val t433 = t405 + t416 + m3
+  val t434 = U32.rotr(t398 ^ t433, 16)
+  val t435 = t391 + t434
+  val t436 = U32.rotr(t416 ^ t435, 12)
+  val t437 = t433 + t436 + m4
+  val t438 = U32.rotr(t434 ^ t437, 8)
+  val t439 = t435 + t438
+  val t440 = U32.rotr(t436 ^ t439, 7)
+  val t441 = t413 + t392 + m7
+  val t442 = U32.rotr(t406 ^ t441, 16)
+  val t443 = t399 + t442
+  val t444 = U32.rotr(t392 ^ t443, 12)
+  val t445 = t441 + t444 + m13
+  val t446 = U32.rotr(t442 ^ t445, 8)
+  val t447 = t443 + t446
+  val t448 = U32.rotr(t444 ^ t447, 7)
+  B3.Hash(t421 ^ t439, t429 ^ t447, t437 ^ t423, t445 ^ t431, t448 ^ t430, t424 ^ t438, t432 ^ t446, t440 ^ t422)
+
+// the byte at i as a word, 0 at or after e (the zero padding of a last block)
+def B3.byte(s: Str, i: I64, e: I64): U32 = if i < e then U32.of(Str.at(s, i)) else 0
+
+// the little-endian word at i
+def B3.word(s: Str, i: I64, e: I64): U32 =
+  if i + 4 <= e then Str.u32le(s, i)
+  else B3.byte(s, i, e) | B3.byte(s, i + 1, e) << 8 | B3.byte(s, i + 2, e) << 16 | B3.byte(s, i + 3, e) << 24
+
+// the block of s at b (the chunk ends at e)
+def B3.block(cv: B3.Hash, s: Str, b: I64, e: I64, counter: U64, flags: U32): B3.Hash =
+  val blen = if e - b < 64 then e - b else 64
+  B3.compress(cv, B3.word(s, b, e), B3.word(s, b + 4, e), B3.word(s, b + 8, e), B3.word(s, b + 12, e), B3.word(s, b + 16, e), B3.word(s, b + 20, e), B3.word(s, b + 24, e), B3.word(s, b + 28, e), B3.word(s, b + 32, e), B3.word(s, b + 36, e), B3.word(s, b + 40, e), B3.word(s, b + 44, e), B3.word(s, b + 48, e), B3.word(s, b + 52, e), B3.word(s, b + 56, e), B3.word(s, b + 60, e), counter, blen, flags)
+
+// the blocks of a chunk from b to e (at least one: the empty input is one empty block). flags: CHUNK_START 1 on
+// the first, CHUNK_END 2 on the last, ROOT 8 on the last when the chunk is the whole tree
+def B3.blocks(cv: B3.Hash, s: Str, b: I64, e: I64, counter: U64, first: U32, root: Bool): B3.Hash =
+  val last = b + 64 >= e
+  val flags = first | (if last then 2 else 0) | (if last && root then 8 else 0)
+  val h = B3.block(cv, s, b, e, counter, flags)
+  if last then h else B3.blocks(h, s, b + 64, e, counter, 0, root)
+
+// the largest power of 2 that is at most n (n >= 1), from p
+def B3.pow2(n: I64, p: I64): I64 = if p * 2 <= n then B3.pow2(n, p * 2) else p
+
+// the subtree of the len bytes of s at off, whose first chunk is number c: one chunk, or a parent of a left subtree
+// of the most chunks that are a power of 2 and leave at least one byte to the right (spec 2.1)
+def B3.tree(s: Str, off: I64, len: I64, c: I64, root: Bool): B3.Hash =
+  if len <= 1024 then B3.blocks(B3.iv(), s, off, off + len, U64.ofI64(c), 1, root)
+  else
+    val k = 1024 * B3.pow2((len - 1) / 1024, 1)
+    val l = B3.tree(s, off, k, c, false)
+    val r = B3.tree(s, off + k, len - k, c + k / 1024, false)
+    B3.parent(l, r, root)
+
+// a parent node: one block of the two children's chaining values, counter 0, PARENT 4 (and ROOT 8 at the top)
+def B3.parent(l: B3.Hash, r: B3.Hash, root: Bool): B3.Hash =
+  val B3.Hash(l0, l1, l2, l3, l4, l5, l6, l7) = l
+  val B3.Hash(r0, r1, r2, r3, r4, r5, r6, r7) = r
+  B3.compress(B3.iv(), l0, l1, l2, l3, l4, l5, l6, l7, r0, r1, r2, r3, r4, r5, r6, r7, 0, 64, if root then 12 else 4)
+
+// the hash of the bytes of s
+def B3.hash(s: Str): B3.Hash = B3.tree(s, 0, Str.len(s), 0, true)
+
+// the hash as 64 lowercase hex digits, the bytes in order
+def B3.printHex(h: B3.Hash): Unit =
+  val B3.Hash(h0, h1, h2, h3, h4, h5, h6, h7) = h
+  B3.hexWord(h0)
+  B3.hexWord(h1)
+  B3.hexWord(h2)
+  B3.hexWord(h3)
+  B3.hexWord(h4)
+  B3.hexWord(h5)
+  B3.hexWord(h6)
+  B3.hexWord(h7)
+
+// a word's 4 bytes, low byte first, two hex digits each
+def B3.hexWord(w: U32): Unit =
+  B3.hexByte(w)
+  B3.hexByte(w >> 8)
+  B3.hexByte(w >> 16)
+  B3.hexByte(w >> 24)
+
+def B3.hexByte(w: U32): Unit =
+  B3.hexDigit(I64.of((w >> 4) & 15))
+  B3.hexDigit(I64.of(w & 15))
+
+def B3.hexDigit(d: I64): Unit = Console.printChar(if d < 10 then '0' + d else 'a' + d - 10)

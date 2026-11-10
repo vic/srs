@@ -1,0 +1,52 @@
+// pass: Str.u32le / Str.u64le (vic/c/bits-blake3-design.md): the little-endian word at byte i, TOTAL: a byte outside
+// [0, len) reads as 0. checked against a byte-by-byte reference at every i from -12 to len + 12, at the extremes of
+// I64, and on the empty string; the bytes are above 127 (no sign extension)
+def say(s: Str, v: I64): Unit =
+  Console.print(s)
+  Console.print(" ")
+  Console.printI64(v)
+  Console.print("\n")
+
+def rb32(s: Str, i: I64): U32 = if Str.at(s, i) < 0 then 0 else U32.of(Str.at(s, i))
+def rb64(s: Str, i: I64): U64 = U64.of(rb32(s, i))
+
+def ref32(s: Str, i: I64): U32 = rb32(s, i) | rb32(s, i + 1) << 8 | rb32(s, i + 2) << 16 | rb32(s, i + 3) << 24
+def ref64(s: Str, i: I64): U64 = U64.of(ref32(s, i)) | U64.of(ref32(s, i + 4)) << 32
+
+// the number of positions in [i, hi) where a word load differs from the reference
+def bad32(s: Str, i: I64, hi: I64, n: I64): I64 =
+  if i >= hi then n else bad32(s, i + 1, hi, if Str.u32le(s, i) == ref32(s, i) then n else n + 1)
+
+def bad64(s: Str, i: I64, hi: I64, n: I64): I64 =
+  if i >= hi then n else bad64(s, i + 1, hi, if Str.u64le(s, i) == ref64(s, i) then n else n + 1)
+
+def check(name: Str, s: Str): Unit =
+  say(name, Str.len(s))
+  say("  bad32", bad32(s, 0 - 12, Str.len(s) + 12, 0))
+  say("  bad64", bad64(s, 0 - 12, Str.len(s) + 12, 0))
+  val lo: I64 = 0 - 9223372036854775807 - 1
+  val hi: I64 = 9223372036854775807
+  say("  ext32", (if Str.u32le(s, lo) == 0 && Str.u32le(s, hi) == 0 && Str.u32le(s, hi - 2) == 0 then 0 else 1) + (if Str.u32le(s, lo + 1) == 0 && Str.u32le(s, lo + 3) == 0 then 0 else 1))
+  say("  ext64", (if Str.u64le(s, lo) == 0 && Str.u64le(s, hi) == 0 && Str.u64le(s, hi - 6) == 0 then 0 else 1) + (if Str.u64le(s, lo + 1) == 0 && Str.u64le(s, lo + 7) == 0 then 0 else 1))
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val s = "éabcdef€"
+  check("s", s)
+  check("empty", Str.slice(s, 0, 0))
+  check("one", Str.slice(s, 0, 1))
+  check("three", Str.slice(s, 2, 5))
+  check("eight", Str.slice(s, 1, 9))
+  // anchors: the reference above is not trusted alone
+  say("u32@0", I64.of(Str.u32le(s, 0)))
+  say("u32@-1", I64.of(Str.u32le(s, 0 - 1)))
+  say("u32@len-1", I64.of(Str.u32le(s, Str.len(s) - 1)))
+  say("u32@len-3", I64.of(Str.u32le(s, Str.len(s) - 3)))
+  say("u32@len", I64.of(Str.u32le(s, Str.len(s))))
+  say("u64@0", I64.ofU64(Str.u64le(s, 0)))
+  say("u64@-1", I64.ofU64(Str.u64le(s, 0 - 1)))
+  say("u64@len-1", I64.ofU64(Str.u64le(s, Str.len(s) - 1)))
+  say("u64@len-7", I64.ofU64(Str.u64le(s, Str.len(s) - 7)))
+  say("u64@len", I64.ofU64(Str.u64le(s, Str.len(s))))
+  0

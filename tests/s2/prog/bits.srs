@@ -1,0 +1,79 @@
+// pass: U32 and U64 (vic/c/bits-blake3-design.md): + - * wrap; | ^ & ~; << >> >>> with the count taken mod the
+// width (0, 31, 32, 63, 64, -1); U32.rotr / rotl by 0 and 32; hex literals; the Scala 3 precedence of | ^ & << and
+// the explicit conversions (no implicit one). each line is a label and the value as an I64
+def say(s: Str, v: I64): Unit =
+  Console.print(s)
+  Console.print(" ")
+  Console.printI64(v)
+  Console.print("\n")
+
+def w(s: Str, x: U32): Unit = say(s, I64.of(x))
+def d(s: Str, x: U64): Unit = say(s, I64.ofU64(x))
+
+enum Pair:
+  case Pair(hi: U32, lo: U32)
+
+def join(p: Pair): U64 = p match
+  case Pair(hi, lo) => U64.of(hi) << 32 | U64.of(lo)
+
+enum Ws:
+  case WNil
+  case WCons(x: U32, rest: Ws)
+
+def wsum(xs: Ws, acc: U32): U32 = xs match
+  case WNil => acc
+  case WCons(x, rest) => wsum(rest, acc + x)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val one: U32 = 1
+  val max: U32 = 0xffffffff
+  w("hex", 0xDEADbeef)
+  w("wrap+", max + 1)
+  // the literal is a U32 too (an I64 1 would widen the sum: 2147483648, and the == false)
+  w("wrapshr", (max + 1) >> 1)
+  say("wrapeq", if max + 1 == 0 then 1 else 0)
+  w("wrap-", 0 - one)
+  w("wrap*", 0x10000 * 0x10000 + 7)
+  w("not", ~0)
+  w("xor", 0xff00ff00 ^ 0x0ff00ff0)
+  w("and", 0xff00ff00 & 0x0ff00ff0)
+  w("or", 0xff00ff00 | 0x0ff00ff0)
+  w("shl0", one << 0)
+  w("shl31", one << 31)
+  w("shl32", one << 32)
+  w("shl63", one << 63)
+  w("shl64", one << 64)
+  w("shl-1", one << -1)
+  w("shr31", max >> 31)
+  w("shr32", max >> 32)
+  w("ushr", max >>> 28)
+  val big: U64 = 1
+  d("dshl32", big << 32)
+  d("dshl63", big << 63)
+  d("dshl64", big << 64)
+  d("dshl-1", big << -1)
+  d("dshr", (big << 63) >> 63)
+  w("rotr0", U32.rotr(0x12345678, 0))
+  w("rotr32", U32.rotr(0x12345678, 32))
+  w("rotr8", U32.rotr(0x12345678, 8))
+  w("rotl4", U32.rotl(0x12345678, 4))
+  d("drotr0", U64.rotr(big, 0))
+  d("drotr64", U64.rotr(big, 64))
+  d("drotr1", U64.rotr(big << 1, 1))
+  d("drotl1", U64.rotl(big << 63, 1))
+  w("prec|^&", 1 | 6 ^ 3 & 5)
+  w("prec<<+", one << 1 + 2)
+  w("litleft", 0xff & max)
+  say("cmp", if max > one then 1 else 0)
+  say("eq", if max == 0xffffffff then 1 else 0)
+  w("of-1", U32.of(-1))
+  w("oftrunc", U32.of(0x123456789))
+  w("ofu64", U32.ofU64(U64.ofI64(-2)))
+  say("i64u64", I64.ofU64(U64.ofI64(-5)))
+  d("u64of", U64.of(max) + 1)
+  w("byte", U32.of(Str.at("\n", 0)) & 0xff)
+  d("join", join(Pair(1, 2)))
+  w("list", wsum(WCons(max, WCons(3, WNil)), 0))
+  0

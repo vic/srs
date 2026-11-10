@@ -10,6 +10,7 @@
 // differ: hev hod
 // differ: hfa hex
 // differ: hs1 hs2
+// differ: hcaseA hcaseB
 enum HSeq:
   case HNil
   case HCons(h: I64, t: HSeq)
@@ -52,3 +53,13 @@ def hex(x: I64): I64
 def hs1(): Str = "abc"
 def hs2(): Str = "abd"
 def main(): I64 = 0
+// the cases of one enum are refs by (enum hash, tag): a match on the first case and on the second differ
+enum HTag:
+  case HTagA
+  case HTagB
+def hcaseA(x: HTag): I64 = x match
+  case HTagA => 1
+  case HTagB => 1
+def hcaseB(x: HTag): I64 = x match
+  case HTagB => 1
+  case HTagA => 1

@@ -20,6 +20,8 @@ enum Lex.Why:
   case Lex.BadDedent
   case Lex.Unterminated
   case Lex.BadChar
+  // a hex literal of 2^63 or more (an int token is an I64)
+  case Lex.BigHex
 
 enum Lex.Result:
   case Lex.Toks(ts: Coll.List[Lex.Tok])
@@ -28,9 +30,23 @@ enum Lex.Result:
 def Lex.isAlpha(c: I64): Bool = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
 def Lex.isDigit(c: I64): Bool = c >= '0' && c <= '9'
 def Lex.isPunct(c: I64): Bool =
-  c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == ',' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '<' || c == '>' || c == '!' || c == '.' || c == '^' || c == '@'
+  c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == ',' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '<' || c == '>' || c == '!' || c == '.' || c == '^' || c == '@' || c == '&' || c == '|' || c == '~'
 def Lex.isTwo(a: I64, b: I64): Bool =
-  (a == '=' && b == '>') || (a == '=' && b == '=') || (a == '!' && b == '=') || (a == '<' && b == '=') || (a == '>' && b == '=') || (a == '&' && b == '&') || (a == '|' && b == '|') || (a == '~' && b == '>')
+  (a == '=' && b == '>') || (a == '=' && b == '=') || (a == '!' && b == '=') || (a == '<' && b == '=') || (a == '>' && b == '=') || (a == '&' && b == '&') || (a == '|' && b == '|') || (a == '~' && b == '>') || (a == '<' && b == '<') || (a == '>' && b == '>')
+
+// the width of the operator token at i (c, then b): >>> is the one three-char operator
+def Lex.opWidth(src: Str, i: I64, c: I64, b: I64): I64 =
+  if c == '>' && b == '>' && Str.at(src, i + 2) == '>' then 3 else if Lex.isTwo(c, b) then 2 else 1
+
+// a hex digit's value, or -1
+def Lex.hexVal(c: I64): I64 =
+  if Lex.isDigit(c) then c - '0' else if c >= 'a' && c <= 'f' then c - 'a' + 10 else if c >= 'A' && c <= 'F' then c - 'A' + 10 else -1
+
+// the value of the hex digits from i, or -1 when it reaches 2^63 (v < 2^59 keeps v * 16 + 15 below 2^63: no overflow)
+def Lex.hex(src: Str, i: I64, v: I64): I64 =
+  val d = Lex.hexVal(Str.at(src, i))
+  if d < 0 then v else if v >= 576460752303423488 then -1 else Lex.hex(src, i + 1, v * 16 + d)
+def Lex.hexEnd(src: Str, i: I64): I64 = if Lex.hexVal(Str.at(src, i)) >= 0 then Lex.hexEnd(src, i + 1) else i
 
 // the last token is a layout token (no TNl after it)
 def Lex.layoutLast(out: Coll.List[Lex.Tok]): Bool = out match
@@ -94,13 +110,18 @@ def Lex.go(src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll
       val e0 = Lex.word(src, i)
       val e = if c >= 'A' && c <= 'Z' then Lex.dotted(src, e0) else e0
       Lex.go(src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TIdent(Str.slice(src, i, e), line), out))
-    else if Lex.isDigit(c) then Lex.go(src, n, Lex.digitsEnd(src, i), line, depth, bol, ind, Coll.Cons(Lex.TInt(Lex.digits(src, i, 0), line), out))
+    else if Lex.isDigit(c) then
+      // 0x: a hex literal (tested only on a digit: the lexer's hot path stays as it was)
+      if c == '0' && Str.at(src, i + 1) == 'x' && Lex.hexVal(Str.at(src, i + 2)) >= 0 then
+        val v = Lex.hex(src, i + 2, 0)
+        if v < 0 then Lex.Bad(line, Lex.BigHex) else Lex.go(src, n, Lex.hexEnd(src, i + 2), line, depth, bol, ind, Coll.Cons(Lex.TInt(v, line), out))
+      else Lex.go(src, n, Lex.digitsEnd(src, i), line, depth, bol, ind, Coll.Cons(Lex.TInt(Lex.digits(src, i, 0), line), out))
     else if c == '"' || c == '\'' then
       val e = Lex.litEnd(src, i + 1, n, c)
       if Str.at(src, e) != c then Lex.Bad(line, Lex.Unterminated)
       else Lex.go(src, n, e + 1, line, depth, bol, ind, Coll.Cons(if c == '"' then Lex.TStr(Str.slice(src, i + 1, e), line) else Lex.TChar(Str.slice(src, i + 1, e), line), out))
     else
-      val w = if Lex.isTwo(c, Str.at(src, i + 1)) then 2 else 1
+      val w = Lex.opWidth(src, i, c, Str.at(src, i + 1))
       if w == 1 && !Lex.isPunct(c) then Lex.Bad(line, Lex.BadChar)
       else
         val d = if c == '(' || c == '[' then depth + 1 else if (c == ')' || c == ']') && depth > 0 then depth - 1 else depth

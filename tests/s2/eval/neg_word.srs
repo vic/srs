@@ -1,0 +1,6 @@
+// expect: error[comptime-no-value]: no compile-time value at
+// --eval has no wrapping words: a decl that names U32 or U64 has no compile-time value, never a wrong one (without
+// the rule cWrap is false: Ev's 4294967295 + 1 does not wrap to 0)
+def bump(x: U32): U32 = x + 1
+val cWrap: Bool = bump(0xffffffff) == 0
+def main(): I64 = 0
