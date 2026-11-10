@@ -1,0 +1,31 @@
+// pass: the chunk free list (A14): 40 rounds, each opens an Arena, fills it past several 1 MiB chunks (and one chunk
+// bigger than 1 MiB, which goes back to malloc), sums it and frees it; the next round's chunks are the freed ones,
+// so a chunk reused without its used reset, or still linked to the old arena, breaks a sum
+enum AR.L:
+  case AR.Nil
+  case AR.Cons(h: I64, t: AR.L)
+
+def AR.build(i: I64, acc: AR.L): AR.L = if i == 0 then acc else AR.build(i - 1, AR.Cons(i, acc))
+
+def AR.sum(l: AR.L, a: I64): I64 = l match
+  case AR.Nil => a
+  case AR.Cons(h, t) => AR.sum(t, a + h)
+
+def AR.round(k: I64): I64 =
+  handle r = Srs.Arena()
+  val big = r.alloc(1500000)
+  val xs = AR.build(100000 + k, AR.Nil)
+  AR.sum(xs, 0)
+
+def AR.rounds(k: I64, ok: I64): I64 =
+  if k == 0 then ok
+  else
+    val n = 100000 + k
+    val good = if AR.round(k) == n * (n + 1) / 2 then 1 else 0
+    AR.rounds(k - 1, ok + good)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  Console.printI64(AR.rounds(40, 0))
+  Console.print("\n")
+  0

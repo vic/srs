@@ -1,0 +1,31 @@
+// pass: capability Process (A13): argv[0] found on PATH, the exit code and a killing signal as values, a program that
+// is not there and an empty argv as Os.NoStart; the child's output comes before the parent's next line
+def OP.show(r: Os.Ran): Unit =
+  r match
+    case Os.Exited(n) =>
+      Console.print("exited ")
+      Console.printI64(n)
+    case Os.Killed(s) =>
+      Console.print("killed ")
+      Console.printI64(s)
+    case Os.NoStart(e) => e match
+      case Os.NotFound => Console.print("nostart NotFound")
+      case Os.BadPath => Console.print("nostart BadPath")
+      case _ => Console.print("nostart other")
+  Console.print("\n")
+
+def OP.sh(cmd: Str): Os.Strs = Os.More("sh", Os.More("-c", Os.More(cmd, Os.End)))
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle p = Srs.Process()
+  Console.print("before\n")
+  OP.show(Process.run(OP.sh("echo child $0 $1")))
+  OP.show(Process.run(OP.sh("exit 3")))
+  OP.show(Process.run(Os.More("tests/s2/fs/tool", Os.End)))
+  OP.show(Process.run(OP.sh("kill -9 $$")))
+  OP.show(Process.run(Os.More("/nonexistent/srs-no-such-program", Os.End)))
+  OP.show(Process.run(Os.End))
+  OP.show(Process.run(Os.More("sh\0", Os.End)))
+  0

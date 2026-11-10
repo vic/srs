@@ -43,10 +43,11 @@ verdict() { # name pass
   if todo "$1"; then if [ "$2" = 1 ]; then echo "FAIL $1 passes: remove it from tests/s2/todo"; fail=1; else echo "todo $1"; fi
   elif [ "$2" = 1 ]; then echo "ok $1"; else echo "FAIL $1 $3"; fail=1; fi
 }
+# a "// env: A=1 B=" line: the program runs with those variables set (os_env, stack_deep)
 for t in tests/s2/prog/*.srs; do
   n=$(basename "$t" .srs); m=s2c1_$n; pass=0
   timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
-    && out=$(timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+    && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "prog/$n" $pass
 done
 for t in tests/s2/neg/*.srs; do

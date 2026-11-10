@@ -1,0 +1,104 @@
+// pass: capability Files (A13) on the fixtures in tests/s2/fs: bytes, kind with and without following a link, the
+// executable bit, a sorted listing, readLink, realPath, cwd; each failure is an Os.Err value, none aborts
+def OF.err(e: Os.Err): Unit = e match
+  case Os.NotFound => Console.print("NotFound")
+  case Os.Denied => Console.print("Denied")
+  case Os.NotDir => Console.print("NotDir")
+  case Os.IsDir => Console.print("IsDir")
+  case Os.Loop => Console.print("Loop")
+  case Os.TooLong => Console.print("TooLong")
+  case Os.BadPath => Console.print("BadPath")
+  case Os.Refused => Console.print("Refused")
+  case Os.Closed => Console.print("Closed")
+  case Os.Other(n) =>
+    Console.print("Other ")
+    Console.printI64(n)
+
+def OF.str(r: Os.Res[Str]): Unit =
+  r match
+    case Os.Ok(s) =>
+      Console.print("ok ")
+      Console.print(s)
+    case Os.Fail(e) =>
+      Console.print("fail ")
+      OF.err(e)
+  Console.print("\n")
+
+def OF.kind(k: Os.Kind): Unit =
+  k match
+    case Os.Absent => Console.print("absent")
+    case Os.Regular => Console.print("regular")
+    case Os.Dir => Console.print("dir")
+    case Os.Link => Console.print("link")
+    case Os.Special => Console.print("special")
+  Console.print("\n")
+
+def OF.names(xs: Os.Strs): Unit = xs match
+  case Os.End => Console.print("\n")
+  case Os.More(s, rest) =>
+    Console.print(s)
+    Console.print(";")
+    OF.names(rest)
+
+def OF.list(r: Os.Res[Os.Strs]): Unit = r match
+  case Os.Ok(xs) =>
+    Console.print("ok ")
+    OF.names(xs)
+  case Os.Fail(e) =>
+    Console.print("fail ")
+    OF.err(e)
+    Console.print("\n")
+
+def OF.yes(b: Bool): Unit = if b then Console.print("yes\n") else Console.print("no\n")
+
+def OF.same(a: Os.Res[Str], b: Os.Res[Str]): Unit = a match
+  case Os.Ok(x) => b match
+    case Os.Ok(y) => OF.yes(Str.eq(x, y))
+    case Os.Fail(e) => OF.str(b)
+  case Os.Fail(e) => OF.str(a)
+
+// a /proc file says st_size 0: bytes reads none of it, readAll reads it to the end
+def OF.some(r: Os.Res[Str]): Unit = r match
+  case Os.Ok(s) => OF.yes(Str.len(s) > 0)
+  case Os.Fail(e) => OF.str(r)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle f = Srs.Files()
+  OF.str(Files.bytes("tests/s2/fs/a.txt"))
+  OF.str(Files.bytes("tests/s2/fs/link"))
+  OF.str(Files.bytes("tests/s2/fs/sub/b"))
+  OF.str(Files.bytes("tests/s2/fs/nope"))
+  OF.str(Files.bytes("tests/s2/fs/sub"))
+  OF.str(Files.bytes("tests/s2/fs/a.txt/x"))
+  OF.str(Files.bytes("tests/s2/fs/dangle"))
+  OF.str(Files.bytes("tests/s2/fs/a.txt\0"))
+  OF.kind(Files.kind("tests/s2/fs/a.txt\0", Os.Follow))
+  OF.str(Files.readAll("tests/s2/fs/link"))
+  OF.str(Files.readAll("tests/s2/fs/sub"))
+  OF.str(Files.readAll("tests/s2/fs/nope"))
+  OF.some(Files.bytes("/proc/self/comm"))
+  OF.some(Files.readAll("/proc/self/comm"))
+  OF.kind(Files.kind("tests/s2/fs/a.txt", Os.Follow))
+  OF.kind(Files.kind("tests/s2/fs/sub", Os.Follow))
+  OF.kind(Files.kind("tests/s2/fs/link", Os.Follow))
+  OF.kind(Files.kind("tests/s2/fs/link", Os.NoFollow))
+  OF.kind(Files.kind("tests/s2/fs/dangle", Os.Follow))
+  OF.kind(Files.kind("tests/s2/fs/dangle", Os.NoFollow))
+  OF.kind(Files.kind("/dev/null", Os.Follow))
+  OF.kind(Files.kind("tests/s2/fs/nope", Os.NoFollow))
+  OF.yes(Files.executable("tests/s2/fs/tool"))
+  OF.yes(Files.executable("tests/s2/fs/a.txt"))
+  OF.yes(Files.executable("tests/s2/fs/sub"))
+  OF.list(Files.list("tests/s2/fs/sub"))
+  OF.list(Files.list("tests/s2/fs"))
+  OF.list(Files.list("tests/s2/fs/nope"))
+  OF.list(Files.list("tests/s2/fs/a.txt"))
+  OF.str(Files.readLink("tests/s2/fs/link"))
+  OF.str(Files.readLink("tests/s2/fs/dangle"))
+  OF.str(Files.readLink("tests/s2/fs/a.txt"))
+  OF.same(Files.realPath("tests/s2/fs/link"), Files.realPath("tests/s2/fs/./sub/../a.txt"))
+  OF.str(Files.realPath("tests/s2/fs/dangle"))
+  OF.same(Files.realPath("."), Files.cwd())
+  0

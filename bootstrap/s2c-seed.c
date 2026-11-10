@@ -554,6 +554,15 @@ struct E_Coll__ISet;
 struct E_Coll__Split__Coll__Unit;
 struct E_Ast__Bind;
 struct E_Ast__Need;
+struct E_Os__Ran;
+struct E_Os__Err;
+struct E_Os__Var;
+struct E_Os__Res__Os__Strs;
+struct E_Os__Strs;
+struct E_Os__Kind;
+struct E_Os__Links;
+struct E_Os__Status;
+struct E_Os__Res__Str;
 struct E_Coll__List__K__Term { union { uint8_t tag; union { struct { uint8_t t_; struct E_K__Term* f_h; struct E_Coll__List__K__Term* f_t; } C_Coll__Cons; uint8_t none_; } u; }; };
 struct E_K__Term { union { uint8_t tag; union { struct { uint8_t t_; int64_t f_n; } C_K__Var; struct { uint8_t t_; struct E_Sym__Sym* f_f; struct E_Coll__List__K__Term* f_args; } C_K__Con; struct { uint8_t t_; int64_t f_v; } C_K__Int; uint8_t none_; } u; }; };
 struct E_Sym__Sym { union { uint8_t tag; union { struct { uint8_t t_; int64_t f_h; srs_str f_s; } C_Sym__Sym; uint8_t none_; } u; }; };
@@ -1092,6 +1101,15 @@ struct E_Coll__ISet { union { uint8_t tag; union { struct { uint8_t t_; struct E
 struct E_Coll__Split__Coll__Unit { union { uint8_t tag; union { struct { uint8_t t_; struct E_Coll__BTree__Coll__Unit* f_l; int64_t f_k; struct E_Coll__Unit* f_v; struct E_Coll__BTree__Coll__Unit* f_r; } C_Coll__Split; uint8_t none_; } u; }; };
 struct E_Ast__Bind { union { uint8_t tag; union { struct { uint8_t t_; struct E_Ast__BinOp* f_op; } C_Ast__Infix; uint8_t none_; } u; }; };
 struct E_Ast__Need { union { uint8_t tag; union { struct { uint8_t t_; struct E_Ast__Bind* f_b; } C_Ast__AtLeast; struct { uint8_t t_; struct E_Ast__Bind* f_b; } C_Ast__Above; uint8_t none_; } u; }; };
+struct E_Os__Ran { union { uint8_t tag; union { struct { uint8_t t_; int64_t f_code; } C_Os__Exited; struct { uint8_t t_; int64_t f_signal; } C_Os__Killed; struct { uint8_t t_; struct E_Os__Err* f_e; } C_Os__NoStart; uint8_t none_; } u; }; };
+struct E_Os__Err { union { uint8_t tag; union { struct { uint8_t t_; int64_t f_errno; } C_Os__Other; uint8_t none_; } u; }; };
+struct E_Os__Var { union { uint8_t tag; union { struct { uint8_t t_; srs_str f_v; } C_Os__Set; uint8_t none_; } u; }; };
+struct E_Os__Res__Os__Strs { union { uint8_t tag; union { struct { uint8_t t_; struct E_Os__Strs* f_v; } C_Os__Ok; struct { uint8_t t_; struct E_Os__Err* f_e; } C_Os__Fail; uint8_t none_; } u; }; };
+struct E_Os__Strs { union { uint8_t tag; union { struct { uint8_t t_; srs_str f_s; struct E_Os__Strs* f_rest; } C_Os__More; uint8_t none_; } u; }; };
+struct E_Os__Kind { union { uint8_t tag; union { uint8_t none_; } u; }; };
+struct E_Os__Links { union { uint8_t tag; union { uint8_t none_; } u; }; };
+struct E_Os__Status { union { uint8_t tag; union { struct { uint8_t t_; struct E_Os__Err* f_e; } C_Os__Failed; uint8_t none_; } u; }; };
+struct E_Os__Res__Str { union { uint8_t tag; union { struct { uint8_t t_; srs_str f_v; } C_Os__Ok; struct { uint8_t t_; struct E_Os__Err* f_e; } C_Os__Fail; uint8_t none_; } u; }; };
 static const struct E_Coll__List__K__Term N_Coll__Nil__K__Term = { .tag = 0 };
 static struct E_Coll__List__K__Term* const P_Coll__Nil__K__Term = (struct E_Coll__List__K__Term*)&N_Coll__Nil__K__Term;
 static const struct E_Coll__List__S2c__Err N_Coll__Nil__S2c__Err = { .tag = 0 };
@@ -2032,6 +2050,44 @@ static const struct E_Ast__Bind N_Ast__Prefix = { .tag = 2 };
 static struct E_Ast__Bind* const P_Ast__Prefix = (struct E_Ast__Bind*)&N_Ast__Prefix;
 static const struct E_Ast__Bind N_Ast__Atomic = { .tag = 3 };
 static struct E_Ast__Bind* const P_Ast__Atomic = (struct E_Ast__Bind*)&N_Ast__Atomic;
+static const struct E_Os__Err N_Os__NotFound = { .tag = 0 };
+static struct E_Os__Err* const P_Os__NotFound = (struct E_Os__Err*)&N_Os__NotFound;
+static const struct E_Os__Err N_Os__Denied = { .tag = 1 };
+static struct E_Os__Err* const P_Os__Denied = (struct E_Os__Err*)&N_Os__Denied;
+static const struct E_Os__Err N_Os__NotDir = { .tag = 2 };
+static struct E_Os__Err* const P_Os__NotDir = (struct E_Os__Err*)&N_Os__NotDir;
+static const struct E_Os__Err N_Os__IsDir = { .tag = 3 };
+static struct E_Os__Err* const P_Os__IsDir = (struct E_Os__Err*)&N_Os__IsDir;
+static const struct E_Os__Err N_Os__Loop = { .tag = 4 };
+static struct E_Os__Err* const P_Os__Loop = (struct E_Os__Err*)&N_Os__Loop;
+static const struct E_Os__Err N_Os__TooLong = { .tag = 5 };
+static struct E_Os__Err* const P_Os__TooLong = (struct E_Os__Err*)&N_Os__TooLong;
+static const struct E_Os__Err N_Os__BadPath = { .tag = 6 };
+static struct E_Os__Err* const P_Os__BadPath = (struct E_Os__Err*)&N_Os__BadPath;
+static const struct E_Os__Err N_Os__Refused = { .tag = 7 };
+static struct E_Os__Err* const P_Os__Refused = (struct E_Os__Err*)&N_Os__Refused;
+static const struct E_Os__Err N_Os__Closed = { .tag = 8 };
+static struct E_Os__Err* const P_Os__Closed = (struct E_Os__Err*)&N_Os__Closed;
+static const struct E_Os__Var N_Os__Unset = { .tag = 0 };
+static struct E_Os__Var* const P_Os__Unset = (struct E_Os__Var*)&N_Os__Unset;
+static const struct E_Os__Strs N_Os__End = { .tag = 0 };
+static struct E_Os__Strs* const P_Os__End = (struct E_Os__Strs*)&N_Os__End;
+static const struct E_Os__Kind N_Os__Absent = { .tag = 0 };
+static struct E_Os__Kind* const P_Os__Absent = (struct E_Os__Kind*)&N_Os__Absent;
+static const struct E_Os__Kind N_Os__Regular = { .tag = 1 };
+static struct E_Os__Kind* const P_Os__Regular = (struct E_Os__Kind*)&N_Os__Regular;
+static const struct E_Os__Kind N_Os__Dir = { .tag = 2 };
+static struct E_Os__Kind* const P_Os__Dir = (struct E_Os__Kind*)&N_Os__Dir;
+static const struct E_Os__Kind N_Os__Link = { .tag = 3 };
+static struct E_Os__Kind* const P_Os__Link = (struct E_Os__Kind*)&N_Os__Link;
+static const struct E_Os__Kind N_Os__Special = { .tag = 4 };
+static struct E_Os__Kind* const P_Os__Special = (struct E_Os__Kind*)&N_Os__Special;
+static const struct E_Os__Links N_Os__Follow = { .tag = 0 };
+static struct E_Os__Links* const P_Os__Follow = (struct E_Os__Links*)&N_Os__Follow;
+static const struct E_Os__Links N_Os__NoFollow = { .tag = 1 };
+static struct E_Os__Links* const P_Os__NoFollow = (struct E_Os__Links*)&N_Os__NoFollow;
+static const struct E_Os__Status N_Os__Done = { .tag = 0 };
+static struct E_Os__Status* const P_Os__Done = (struct E_Os__Status*)&N_Os__Done;
 int64_t rt_argc(void);
 srs_str rt_arg(int64_t p_i);
 srs_str rt_read_file(srs_str p_path);
@@ -2054,12 +2110,40 @@ int64_t rt_heap_free(void* p_self);
 void* Srs__noState(void);
 int64_t rt_capture_begin(void);
 srs_str rt_capture_end(void);
+srs_str rt_fs_bytes(srs_str p_path);
+srs_str rt_fs_read_all(srs_str p_path);
+int64_t rt_fs_kind(srs_str p_path, bool p_follow);
+bool rt_fs_exec(srs_str p_path);
+srs_str rt_fs_list(srs_str p_path);
+srs_str rt_fs_readlink(srs_str p_path);
+srs_str rt_fs_realpath(srs_str p_path);
+srs_str rt_fs_cwd(void);
+srs_str rt_env_get(srs_str p_name);
+int64_t rt_clock_now(void);
+void* rt_net_new(void);
+int64_t rt_net_connect(void* p_self, srs_str p_path);
+int64_t rt_net_send(void* p_self, srs_str p_s);
+srs_str rt_net_recv(void* p_self, int64_t p_n);
+srs_str rt_net_drain(void* p_self);
+int64_t rt_net_close(void* p_self);
+void* rt_proc_new(void);
+int64_t rt_proc_arg(void* p_self, srs_str p_a);
+int64_t rt_proc_run(void* p_self);
 srs_str rt_store_dir(void);
 void* rt_out_new(srs_str p_dir, int64_t p_a, int64_t p_b, int64_t p_c, int64_t p_d);
 int64_t rt_out_str(void* p_self, srs_str p_s);
 int64_t rt_out_i64(void* p_self, int64_t p_n);
 int64_t rt_out_commit(void* p_self);
 srs_str rt_store_read(srs_str p_dir, int64_t p_a, int64_t p_b, int64_t p_c, int64_t p_d);
+static struct E_Os__Err* f_Os__err(srs_cap* p_eff__Region, int64_t p_c);
+static struct E_Os__Res__Str* f_Os__res(srs_cap* p_eff__Region, srs_str p_s);
+static struct E_Os__Status* f_Os__status(srs_cap* p_eff__Region, int64_t p_c);
+static bool f_Os__follow(struct E_Os__Links* p_l);
+static struct E_Os__Kind* f_Os__kind(int64_t p_k);
+static struct E_Os__Strs* f_Os__names(srs_cap* p_eff__Region, srs_str p_s);
+static struct E_Os__Res__Os__Strs* f_Os__listRes(srs_cap* p_eff__Region, srs_str p_s);
+static struct E_Os__Var* f_Os__var(srs_cap* p_eff__Region, srs_str p_s);
+static struct E_Os__Ran* f_Os__ran(srs_cap* p_eff__Region, int64_t p_r);
 static int64_t f_strHash(srs_str p_s);
 static int64_t f_Ast__step(void);
 static int64_t f_Ast__sym(srs_cap* p_eff__Console, struct E_Sym__Sym* p_s);
@@ -4013,8 +4097,28 @@ static srs_str h_Srs__Console_captureEnd(void* p_self);
 static void* h_Srs__Args_init(void);
 static int64_t h_Srs__Args_count(void* p_self);
 static srs_str h_Srs__Args_at(void* p_self, int64_t p_i);
-static void* h_Srs__Files_init(void);
-static srs_str h_Srs__Files_read(void* p_self, srs_str p_path);
+static void* h_Srs__Files_init(srs_cap* p_eff__Region);
+static srs_str h_Srs__Files_read(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Str* h_Srs__Files_bytes(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Str* h_Srs__Files_readAll(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Kind* h_Srs__Files_kind(srs_cap* p_eff__Region, void* p_self, srs_str p_path, struct E_Os__Links* p_l);
+static bool h_Srs__Files_executable(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Os__Strs* h_Srs__Files_list(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Str* h_Srs__Files_readLink(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Str* h_Srs__Files_realPath(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Res__Str* h_Srs__Files_cwd(srs_cap* p_eff__Region, void* p_self);
+static void* h_Srs__Env_init(srs_cap* p_eff__Region);
+static struct E_Os__Var* h_Srs__Env_get(srs_cap* p_eff__Region, void* p_self, srs_str p_name);
+static void* h_Srs__Clock_init(void);
+static int64_t h_Srs__Clock_now(void* p_self);
+static void* h_Srs__Net_init(srs_cap* p_eff__Region);
+static struct E_Os__Status* h_Srs__Net_connect(srs_cap* p_eff__Region, void* p_self, srs_str p_path);
+static struct E_Os__Status* h_Srs__Net_send(srs_cap* p_eff__Region, void* p_self, srs_str p_s);
+static struct E_Os__Res__Str* h_Srs__Net_recv(srs_cap* p_eff__Region, void* p_self, int64_t p_n);
+static struct E_Os__Res__Str* h_Srs__Net_drain(srs_cap* p_eff__Region, void* p_self);
+static int64_t h_Srs__Net_close(srs_cap* p_eff__Region, void* p_self);
+static void* h_Srs__Process_init(srs_cap* p_eff__Region);
+static struct E_Os__Ran* h_Srs__Process_run(srs_cap* p_eff__Region, void* p_self, struct E_Os__Strs* p_argv);
 static void* h_Srs__Exit_init(void);
 static int64_t h_Srs__Exit_exit(void* p_self, int64_t p_code);
 static void* h_Srs__Store_init(void);
@@ -4027,7 +4131,27 @@ static void* const vt_Srs__Arena[] = { (void*)h_Srs__Arena_alloc, (void*)h_Srs__
 static void* const vt_Srs__Heap[] = { (void*)h_Srs__Heap_alloc, (void*)h_Srs__Heap_free, 0 };
 static void* const vt_Srs__Console[] = { (void*)h_Srs__Console_print, (void*)h_Srs__Console_printI64, (void*)h_Srs__Console_printChar, (void*)h_Srs__Console_eprint, (void*)h_Srs__Console_eprintI64, (void*)h_Srs__Console_captureBegin, (void*)h_Srs__Console_captureEnd, 0 };
 static void* const vt_Srs__Args[] = { (void*)h_Srs__Args_count, (void*)h_Srs__Args_at, 0 };
-static void* const vt_Srs__Files[] = { (void*)h_Srs__Files_read, 0 };
+static srs_str w_Srs__Files_read(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_read(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Str* w_Srs__Files_bytes(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_bytes(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Str* w_Srs__Files_readAll(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_readAll(e->c[0], e->st, p_path); }
+static struct E_Os__Kind* w_Srs__Files_kind(void* e_, srs_str p_path, struct E_Os__Links* p_l) { srs_env* e = (srs_env*)e_; return h_Srs__Files_kind(e->c[0], e->st, p_path, p_l); }
+static bool w_Srs__Files_executable(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_executable(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Os__Strs* w_Srs__Files_list(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_list(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Str* w_Srs__Files_readLink(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_readLink(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Str* w_Srs__Files_realPath(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Files_realPath(e->c[0], e->st, p_path); }
+static struct E_Os__Res__Str* w_Srs__Files_cwd(void* e_) { srs_env* e = (srs_env*)e_; return h_Srs__Files_cwd(e->c[0], e->st); }
+static void* const vt_Srs__Files[] = { (void*)w_Srs__Files_read, (void*)w_Srs__Files_bytes, (void*)w_Srs__Files_readAll, (void*)w_Srs__Files_kind, (void*)w_Srs__Files_executable, (void*)w_Srs__Files_list, (void*)w_Srs__Files_readLink, (void*)w_Srs__Files_realPath, (void*)w_Srs__Files_cwd, 0 };
+static struct E_Os__Var* w_Srs__Env_get(void* e_, srs_str p_name) { srs_env* e = (srs_env*)e_; return h_Srs__Env_get(e->c[0], e->st, p_name); }
+static void* const vt_Srs__Env[] = { (void*)w_Srs__Env_get, 0 };
+static void* const vt_Srs__Clock[] = { (void*)h_Srs__Clock_now, 0 };
+static struct E_Os__Status* w_Srs__Net_connect(void* e_, srs_str p_path) { srs_env* e = (srs_env*)e_; return h_Srs__Net_connect(e->c[0], e->st, p_path); }
+static struct E_Os__Status* w_Srs__Net_send(void* e_, srs_str p_s) { srs_env* e = (srs_env*)e_; return h_Srs__Net_send(e->c[0], e->st, p_s); }
+static struct E_Os__Res__Str* w_Srs__Net_recv(void* e_, int64_t p_n) { srs_env* e = (srs_env*)e_; return h_Srs__Net_recv(e->c[0], e->st, p_n); }
+static struct E_Os__Res__Str* w_Srs__Net_drain(void* e_) { srs_env* e = (srs_env*)e_; return h_Srs__Net_drain(e->c[0], e->st); }
+static int64_t w_Srs__Net_close(void* e_) { srs_env* e = (srs_env*)e_; return h_Srs__Net_close(e->c[0], e->st); }
+static void* const vt_Srs__Net[] = { (void*)w_Srs__Net_connect, (void*)w_Srs__Net_send, (void*)w_Srs__Net_recv, (void*)w_Srs__Net_drain, (void*)w_Srs__Net_close, 0 };
+static struct E_Os__Ran* w_Srs__Process_run(void* e_, struct E_Os__Strs* p_argv) { srs_env* e = (srs_env*)e_; return h_Srs__Process_run(e->c[0], e->st, p_argv); }
+static void* const vt_Srs__Process[] = { (void*)w_Srs__Process_run, 0 };
 static void* const vt_Srs__Exit[] = { (void*)h_Srs__Exit_exit, 0 };
 static void* const vt_Srs__Store[] = { (void*)h_Srs__Store_dir, (void*)h_Srs__Store_load, 0 };
 static void* const vt_Srs__StoreFile[] = { (void*)h_Srs__StoreFile_put, (void*)h_Srs__StoreFile_commit, 0 };
@@ -4048,6 +4172,15 @@ static inline void* srs_alloc(srs_cap* c, int64_t size) {
   if ((size_t)(c->end - p) >= n) { c->cur = p + n; return p; }
   return srs_alloc_slow(c, size);
 }
+static struct E_Os__Err* f_Os__err(srs_cap* p_eff__Region, int64_t p_c) { return ({ __auto_type res_ = ((p_c == ((int64_t)1)) ? P_Os__NotFound : ((p_c == ((int64_t)2)) ? P_Os__Denied : ((p_c == ((int64_t)3)) ? P_Os__NotDir : ((p_c == ((int64_t)4)) ? P_Os__IsDir : ((p_c == ((int64_t)5)) ? P_Os__Loop : ((p_c == ((int64_t)6)) ? P_Os__TooLong : ((p_c == ((int64_t)7)) ? P_Os__BadPath : ((p_c == ((int64_t)8)) ? P_Os__Refused : ((p_c == ((int64_t)9)) ? P_Os__Closed : ({ struct E_Os__Err* o0 = (struct E_Os__Err*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Err, u) + sizeof(((struct E_Os__Err*)0)->u.C_Os__Other))); o0->u.C_Os__Other.t_ = 9; o0->u.C_Os__Other.f_errno = (p_c - ((int64_t)1000)); o0; })))))))))); res_; }); }
+static struct E_Os__Res__Str* f_Os__res(srs_cap* p_eff__Region, srs_str p_s) { return ((Str__len(p_s) < ((int64_t)0)) ? ({ struct E_Os__Res__Str* o0 = (struct E_Os__Res__Str*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Res__Str, u) + sizeof(((struct E_Os__Res__Str*)0)->u.C_Os__Fail))); o0->u.C_Os__Fail.t_ = 1; o0->u.C_Os__Fail.f_e = f_Os__err(p_eff__Region, (((int64_t)0) - Str__len(p_s))); o0; }) : ({ struct E_Os__Res__Str* o0 = (struct E_Os__Res__Str*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Res__Str, u) + sizeof(((struct E_Os__Res__Str*)0)->u.C_Os__Ok))); o0->u.C_Os__Ok.t_ = 0; o0->u.C_Os__Ok.f_v = p_s; o0; })); }
+static struct E_Os__Status* f_Os__status(srs_cap* p_eff__Region, int64_t p_c) { return ((p_c == ((int64_t)0)) ? P_Os__Done : ({ struct E_Os__Status* o0 = (struct E_Os__Status*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Status, u) + sizeof(((struct E_Os__Status*)0)->u.C_Os__Failed))); o0->u.C_Os__Failed.t_ = 1; o0->u.C_Os__Failed.f_e = f_Os__err(p_eff__Region, p_c); o0; })); }
+static bool f_Os__follow(struct E_Os__Links* p_l) { return ({ __auto_type s0 = p_l; s0->tag == 0 ? ({ true; }) : ({ false; }); }); }
+static struct E_Os__Kind* f_Os__kind(int64_t p_k) { return ({ __auto_type res_ = ((p_k == ((int64_t)1)) ? P_Os__Regular : ((p_k == ((int64_t)2)) ? P_Os__Dir : ((p_k == ((int64_t)3)) ? P_Os__Link : ((p_k == ((int64_t)4)) ? P_Os__Special : P_Os__Absent)))); res_; }); }
+static struct E_Os__Strs* f_Os__names(srs_cap* p_eff__Region, srs_str p_s) { return ({ struct E_Os__Strs* v_acc_0 = P_Os__End; int64_t v_j_1 = (Str__len(p_s) - ((int64_t)1)); (void)(({ while ((v_j_1 >= ((int64_t)0))) { (void)(({ int64_t v_k_2 = (v_j_1 - ((int64_t)1)); (void)(({ while (((v_k_2 >= ((int64_t)0)) && (Str__at(p_s, v_k_2) != ((int64_t)0)))) { (void)(({ __auto_type res_ = (v_k_2 = ((v_k_2 - ((int64_t)1))), (int64_t)0); res_; })); } (int64_t)0; })); (void)((v_acc_0 = (({ struct E_Os__Strs* o3 = (struct E_Os__Strs*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Strs, u) + sizeof(((struct E_Os__Strs*)0)->u.C_Os__More))); o3->u.C_Os__More.t_ = 1; o3->u.C_Os__More.f_s = Str__slice(p_s, (v_k_2 + ((int64_t)1)), v_j_1); o3->u.C_Os__More.f_rest = v_acc_0; o3; })), (int64_t)0)); __auto_type res_ = (v_j_1 = (v_k_2), (int64_t)0); res_; })); } (int64_t)0; })); __auto_type res_ = v_acc_0; res_; }); }
+static struct E_Os__Res__Os__Strs* f_Os__listRes(srs_cap* p_eff__Region, srs_str p_s) { return ((Str__len(p_s) < ((int64_t)0)) ? ({ struct E_Os__Res__Os__Strs* o0 = (struct E_Os__Res__Os__Strs*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Res__Os__Strs, u) + sizeof(((struct E_Os__Res__Os__Strs*)0)->u.C_Os__Fail))); o0->u.C_Os__Fail.t_ = 1; o0->u.C_Os__Fail.f_e = f_Os__err(p_eff__Region, (((int64_t)0) - Str__len(p_s))); o0; }) : ({ struct E_Os__Res__Os__Strs* o0 = (struct E_Os__Res__Os__Strs*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Res__Os__Strs, u) + sizeof(((struct E_Os__Res__Os__Strs*)0)->u.C_Os__Ok))); o0->u.C_Os__Ok.t_ = 0; o0->u.C_Os__Ok.f_v = f_Os__names(p_eff__Region, p_s); o0; })); }
+static struct E_Os__Var* f_Os__var(srs_cap* p_eff__Region, srs_str p_s) { return ((Str__len(p_s) < ((int64_t)0)) ? P_Os__Unset : ({ struct E_Os__Var* o0 = (struct E_Os__Var*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Var, u) + sizeof(((struct E_Os__Var*)0)->u.C_Os__Set))); o0->u.C_Os__Set.t_ = 1; o0->u.C_Os__Set.f_v = p_s; o0; })); }
+static struct E_Os__Ran* f_Os__ran(srs_cap* p_eff__Region, int64_t p_r) { return ({ int64_t v_how_0 = (p_r / ((int64_t)1048576)); int64_t v_v_1 = (p_r % ((int64_t)1048576)); __auto_type res_ = ((v_how_0 == ((int64_t)0)) ? ({ struct E_Os__Ran* o2 = (struct E_Os__Ran*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Ran, u) + sizeof(((struct E_Os__Ran*)0)->u.C_Os__Exited))); o2->u.C_Os__Exited.t_ = 0; o2->u.C_Os__Exited.f_code = v_v_1; o2; }) : ((v_how_0 == ((int64_t)1)) ? ({ struct E_Os__Ran* o2 = (struct E_Os__Ran*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Ran, u) + sizeof(((struct E_Os__Ran*)0)->u.C_Os__Killed))); o2->u.C_Os__Killed.t_ = 1; o2->u.C_Os__Killed.f_signal = v_v_1; o2; }) : ({ struct E_Os__Ran* o2 = (struct E_Os__Ran*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_Os__Ran, u) + sizeof(((struct E_Os__Ran*)0)->u.C_Os__NoStart))); o2->u.C_Os__NoStart.t_ = 2; o2->u.C_Os__NoStart.f_e = f_Os__err(p_eff__Region, v_v_1); o2; }))); res_; }); }
 static int64_t f_strHash(srs_str p_s) { return ({ int64_t v_h_0 = ((int64_t)2166136261); int64_t v_i_1 = ((int64_t)0); int64_t v_n_2 = Str__len(p_s); (void)(({ while ((v_i_1 < v_n_2)) { (void)(({ (void)((v_h_0 = ((((v_h_0 + Str__at(p_s, v_i_1)) * ((int64_t)16777619)) % ((int64_t)4294967296))), (int64_t)0)); __auto_type res_ = (v_i_1 = ((v_i_1 + ((int64_t)1))), (int64_t)0); res_; })); } (int64_t)0; })); __auto_type res_ = v_h_0; res_; }); }
 static int64_t f_Ast__step(void) { return ((int64_t)2); }
 static int64_t f_Ast__sym(srs_cap* p_eff__Console, struct E_Sym__Sym* p_s) { return ({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[0]))(p_eff__Console->self, f_Sym__str(p_s)); p_eff__Console->live = 0; r_; }); }
@@ -5981,7 +6114,7 @@ static int64_t f_S2c__internal(srs_cap* p_eff__Console, srs_str p_phase, struct 
 static int64_t f_S2c__finish(srs_cap* p_eff__Console, srs_cap* p_eff__Store, srs_cap* p_eff__Region, struct E_S2c__Mode* p_m, struct E_Coll__List__S2c__File* p_fs, struct E_Coll__List__Ast__Decl* p_ds, struct E_Eff__Rows* p_rows, struct E_Ty__Result* p_res) { return ({ __auto_type s0 = p_m; s0->tag == 3 ? ({ ({ (void)(f_Store__check(p_eff__Store, p_eff__Region, p_eff__Console, p_ds)); __auto_type res_ = ((int64_t)0); res_; }); }) : s0->tag == 2 ? ({ ({ (void)(f_Hs__print(p_eff__Console, p_eff__Region, p_ds)); __auto_type res_ = ((int64_t)0); res_; }); }) : s0->tag == 0 ? ({ ({ (void)(f_Emit__program(p_eff__Region, p_eff__Console, p_ds, p_res)); __auto_type res_ = ((int64_t)0); res_; }); }) : ({ ({ __auto_type s0 = f_Pure__impure(p_eff__Region, p_ds, p_rows); s0->tag == 1 ? ({ __auto_type v_rel_0 = s0->u.C_Pure__RulesBad.f_rel; f_S2c__internal(p_eff__Console, ((srs_str){(const uint8_t*)"purity", 6}), v_rel_0); }) : ({ __auto_type v_imp_0 = s0->u.C_Pure__Got.f_impure; ({ __auto_type s1 = f_Ev__all(p_eff__Region, p_ds, v_imp_0); s1->tag == 0 ? ({ __auto_type v_ls_1 = s1->u.C_Ev__Lines.f_ls; ({ (void)(f_S2c__showLines(p_eff__Console, v_ls_1)); __auto_type res_ = ((int64_t)0); res_; }); }) : ({ __auto_type v_e_1 = s1->u.C_Ev__Failed.f_e; ({ (void)(({ __auto_type s2 = v_e_1; s2->tag == 0 ? ({ __auto_type v_l_2 = s2->u.C_Ev__Fuel.f_line; __auto_type v_f_3 = s2->u.C_Ev__Fuel.f_f; f_S2c__diag(p_eff__Region, p_eff__Console, p_fs, ((srs_str){(const uint8_t*)"comptime-fuel", 13}), v_l_2, ((srs_str){(const uint8_t*)"comptime evaluation ran out of fuel at", 38}), ({ struct E_S2c__What* o4 = (struct E_S2c__What*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__What, u) + sizeof(((struct E_S2c__What*)0)->u.C_S2c__Name))); o4->u.C_S2c__Name.t_ = 1; o4->u.C_S2c__Name.f_n = v_f_3; o4; }), ((srs_str){(const uint8_t*)"the evaluation loops or runs too long: bound it", 47})); }) : s2->tag == 1 ? ({ __auto_type v_l_2 = s2->u.C_Ev__DivZero.f_line; __auto_type v_f_3 = s2->u.C_Ev__DivZero.f_f; f_S2c__diag(p_eff__Region, p_eff__Console, p_fs, ((srs_str){(const uint8_t*)"comptime-div-zero", 17}), v_l_2, ((srs_str){(const uint8_t*)"comptime division by zero in", 28}), ({ struct E_S2c__What* o4 = (struct E_S2c__What*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__What, u) + sizeof(((struct E_S2c__What*)0)->u.C_S2c__Name))); o4->u.C_S2c__Name.t_ = 1; o4->u.C_S2c__Name.f_n = v_f_3; o4; }), ((srs_str){(const uint8_t*)"divide by a nonzero value", 25})); }) : ({ __auto_type v_l_2 = s2->u.C_Ev__NoValue.f_line; __auto_type v_f_3 = s2->u.C_Ev__NoValue.f_f; f_S2c__diag(p_eff__Region, p_eff__Console, p_fs, ((srs_str){(const uint8_t*)"comptime-no-value", 17}), v_l_2, ((srs_str){(const uint8_t*)"no compile-time value at", 24}), ({ struct E_S2c__What* o4 = (struct E_S2c__What*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__What, u) + sizeof(((struct E_S2c__What*)0)->u.C_S2c__Name))); o4->u.C_S2c__Name.t_ = 1; o4->u.C_S2c__Name.f_n = v_f_3; o4; }), ((srs_str){(const uint8_t*)"call only pure fns at compile time", 34})); }); })); __auto_type res_ = ((int64_t)1); res_; }); }); }); }); }); }); }); }
 static int64_t f_S2c__showLines(srs_cap* p_eff__Console, struct E_Coll__List__Ev__Line* p_ls) { srs_tail: return ({ __auto_type s0 = p_ls; s0->tag == 0 ? ({ ((int64_t)0); }) : ({ __auto_type v_l_0 = s0->u.C_Coll__Cons.f_h; __auto_type v_rest_1 = s0->u.C_Coll__Cons.f_t; ({ __auto_type res_ = ({ __auto_type s2 = v_l_0; ({ __auto_type v_n_2 = s2->u.C_Ev__Shown.f_name; __auto_type v_v_3 = s2->u.C_Ev__Shown.f_v; ({ (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[0]))(p_eff__Console->self, f_Sym__str(v_n_2)); p_eff__Console->live = 0; r_; })); (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[0]))(p_eff__Console->self, ((srs_str){(const uint8_t*)" ", 1})); p_eff__Console->live = 0; r_; })); (void)(f_Ev__show(p_eff__Console, v_v_3)); (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[0]))(p_eff__Console->self, ((srs_str){(const uint8_t*)"\n", 1})); p_eff__Console->live = 0; r_; })); __auto_type res_ = ({ srs_cap* t0 = p_eff__Console; struct E_Coll__List__Ev__Line* t1 = v_rest_1; p_eff__Console = t0; p_ls = t1; goto srs_tail; (int64_t){0}; }); res_; }); }); }); res_; }); }); }); }
 static struct E_S2c__Args* f_S2c__args(srs_cap* p_eff__Args, srs_cap* p_eff__Region) { return ({ __auto_type res_ = (((({ __auto_type r_ = ((int64_t(*)(void*))(p_eff__Args->vt[0]))(p_eff__Args->self); p_eff__Args->live = 0; r_; }) > ((int64_t)1)) && Str__eq(({ __auto_type r_ = ((srs_str(*)(void*, int64_t))(p_eff__Args->vt[1]))(p_eff__Args->self, ((int64_t)1)); p_eff__Args->live = 0; r_; }), ((srs_str){(const uint8_t*)"--eval", 6}))) ? ({ struct E_S2c__Args* o0 = (struct E_S2c__Args*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__Args, u) + sizeof(((struct E_S2c__Args*)0)->u.C_S2c__Args))); o0->u.C_S2c__Args.t_ = 0; o0->u.C_S2c__Args.f_m = P_S2c__EvalAll; o0->u.C_S2c__Args.f_first = ((int64_t)2); o0; }) : (((({ __auto_type r_ = ((int64_t(*)(void*))(p_eff__Args->vt[0]))(p_eff__Args->self); p_eff__Args->live = 0; r_; }) > ((int64_t)1)) && Str__eq(({ __auto_type r_ = ((srs_str(*)(void*, int64_t))(p_eff__Args->vt[1]))(p_eff__Args->self, ((int64_t)1)); p_eff__Args->live = 0; r_; }), ((srs_str){(const uint8_t*)"--hash", 6}))) ? ({ struct E_S2c__Args* o0 = (struct E_S2c__Args*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__Args, u) + sizeof(((struct E_S2c__Args*)0)->u.C_S2c__Args))); o0->u.C_S2c__Args.t_ = 0; o0->u.C_S2c__Args.f_m = P_S2c__HashAll; o0->u.C_S2c__Args.f_first = ((int64_t)2); o0; }) : (((({ __auto_type r_ = ((int64_t(*)(void*))(p_eff__Args->vt[0]))(p_eff__Args->self); p_eff__Args->live = 0; r_; }) > ((int64_t)1)) && Str__eq(({ __auto_type r_ = ((srs_str(*)(void*, int64_t))(p_eff__Args->vt[1]))(p_eff__Args->self, ((int64_t)1)); p_eff__Args->live = 0; r_; }), ((srs_str){(const uint8_t*)"--store-check", 13}))) ? ({ struct E_S2c__Args* o0 = (struct E_S2c__Args*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__Args, u) + sizeof(((struct E_S2c__Args*)0)->u.C_S2c__Args))); o0->u.C_S2c__Args.t_ = 0; o0->u.C_S2c__Args.f_m = P_S2c__StoreCheck; o0->u.C_S2c__Args.f_first = ((int64_t)2); o0; }) : ({ struct E_S2c__Args* o0 = (struct E_S2c__Args*)srs_alloc(p_eff__Region, (int64_t)(offsetof(struct E_S2c__Args, u) + sizeof(((struct E_S2c__Args*)0)->u.C_S2c__Args))); o0->u.C_S2c__Args.t_ = 0; o0->u.C_S2c__Args.f_m = P_S2c__EmitC; o0->u.C_S2c__Args.f_first = ((int64_t)1); o0; })))); res_; }); }
-static int64_t f_main(void) { return ({ srs_cap v_r_0_v = { h_Srs__Arena_init(), vt_Srs__Arena, 1 }; srs_cap* v_r_0 = &v_r_0_v; srs_cap v_c_1_v = { h_Srs__Console_init(), vt_Srs__Console, 1 }; srs_cap* v_c_1 = &v_c_1_v; srs_cap v_a_2_v = { h_Srs__Args_init(), vt_Srs__Args, 1 }; srs_cap* v_a_2 = &v_a_2_v; srs_cap v_f_3_v = { h_Srs__Files_init(), vt_Srs__Files, 1 }; srs_cap* v_f_3 = &v_f_3_v; srs_cap v_st_4_v = { h_Srs__Store_init(), vt_Srs__Store, 1 }; srs_cap* v_st_4 = &v_st_4_v; __auto_type res_ = ({ __auto_type s5 = f_S2c__args(v_a_2, v_r_0); ({ __auto_type v_m_5 = s5->u.C_S2c__Args.f_m; __auto_type v_first_6 = s5->u.C_S2c__Args.f_first; ({ __auto_type res_ = ({ __auto_type s7 = f_S2c__read(v_a_2, v_r_0, v_f_3, v_first_6, ((int64_t)1), P_Coll__Nil__Ast__Decl, P_Coll__Nil__S2c__Err, P_Coll__Nil__S2c__File); ({ __auto_type v_ds_7 = s7->u.C_S2c__Read.f_ds; __auto_type v_errs_8 = s7->u.C_S2c__Read.f_errs; __auto_type v_fs_9 = s7->u.C_S2c__Read.f_files; ({ __auto_type res_ = ({ __auto_type s10 = v_errs_8; s10->tag == 1 ? ({ ({ (void)(f_S2c__showErrs(v_c_1, v_r_0, v_fs_9, v_errs_8)); __auto_type res_ = ((int64_t)1); res_; }); }) : ({ f_S2c__compile(v_st_4, v_r_0, v_c_1, v_m_5, v_fs_9, v_ds_7); }); }); res_; }); }); }); res_; }); }); }); if (v_r_0->live) ((int64_t(*)(void*))(v_r_0->vt[1]))(v_r_0->self); res_; }); }
+static int64_t f_main(void) { return ({ srs_cap v_r_0_v = { h_Srs__Arena_init(), vt_Srs__Arena, 1 }; srs_cap* v_r_0 = &v_r_0_v; srs_cap v_c_1_v = { h_Srs__Console_init(), vt_Srs__Console, 1 }; srs_cap* v_c_1 = &v_c_1_v; srs_cap v_a_2_v = { h_Srs__Args_init(), vt_Srs__Args, 1 }; srs_cap* v_a_2 = &v_a_2_v; struct { void* st; srs_cap* c[1]; } v_f_3_e = { h_Srs__Files_init(v_r_0), { v_r_0 } }; srs_cap v_f_3_v = { &v_f_3_e, vt_Srs__Files, 1 }; srs_cap* v_f_3 = &v_f_3_v; srs_cap v_st_4_v = { h_Srs__Store_init(), vt_Srs__Store, 1 }; srs_cap* v_st_4 = &v_st_4_v; __auto_type res_ = ({ __auto_type s5 = f_S2c__args(v_a_2, v_r_0); ({ __auto_type v_m_5 = s5->u.C_S2c__Args.f_m; __auto_type v_first_6 = s5->u.C_S2c__Args.f_first; ({ __auto_type res_ = ({ __auto_type s7 = f_S2c__read(v_a_2, v_r_0, v_f_3, v_first_6, ((int64_t)1), P_Coll__Nil__Ast__Decl, P_Coll__Nil__S2c__Err, P_Coll__Nil__S2c__File); ({ __auto_type v_ds_7 = s7->u.C_S2c__Read.f_ds; __auto_type v_errs_8 = s7->u.C_S2c__Read.f_errs; __auto_type v_fs_9 = s7->u.C_S2c__Read.f_files; ({ __auto_type res_ = ({ __auto_type s10 = v_errs_8; s10->tag == 1 ? ({ ({ (void)(f_S2c__showErrs(v_c_1, v_r_0, v_fs_9, v_errs_8)); __auto_type res_ = ((int64_t)1); res_; }); }) : ({ f_S2c__compile(v_st_4, v_r_0, v_c_1, v_m_5, v_fs_9, v_ds_7); }); }); res_; }); }); }); res_; }); }); }); if (v_r_0->live) ((int64_t(*)(void*))(v_r_0->vt[1]))(v_r_0->self); res_; }); }
 static int64_t f_S2c__term(srs_cap* p_eff__Console, struct E_K__Term* p_t) { return ({ __auto_type s0 = p_t; s0->tag == 1 ? ({ __auto_type v_n_0 = s0->u.C_K__Con.f_f; __auto_type v_args_1 = s0->u.C_K__Con.f_args; ({ (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[3]))(p_eff__Console->self, f_Sym__str(v_n_0)); p_eff__Console->live = 0; r_; })); __auto_type res_ = ({ __auto_type s2 = v_args_1; s2->tag == 0 ? ({ ((int64_t)0); }) : ({ __auto_type v_a_2 = s2->u.C_Coll__Cons.f_h; __auto_type v_rest_3 = s2->u.C_Coll__Cons.f_t; ({ (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[3]))(p_eff__Console->self, ((srs_str){(const uint8_t*)"[", 1})); p_eff__Console->live = 0; r_; })); (void)(f_S2c__term(p_eff__Console, v_a_2)); (void)(f_S2c__terms(p_eff__Console, v_rest_3)); __auto_type res_ = ({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[3]))(p_eff__Console->self, ((srs_str){(const uint8_t*)"]", 1})); p_eff__Console->live = 0; r_; }); res_; }); }); }); res_; }); }) : s0->tag == 2 ? ({ __auto_type v_v_0 = s0->u.C_K__Int.f_v; ({ __auto_type r_ = ((int64_t(*)(void*, int64_t))(p_eff__Console->vt[4]))(p_eff__Console->self, v_v_0); p_eff__Console->live = 0; r_; }); }) : ({ __auto_type v_v_0 = s0->u.C_K__Var.f_n; ({ (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[3]))(p_eff__Console->self, ((srs_str){(const uint8_t*)"?", 1})); p_eff__Console->live = 0; r_; })); __auto_type res_ = ({ __auto_type r_ = ((int64_t(*)(void*, int64_t))(p_eff__Console->vt[4]))(p_eff__Console->self, v_v_0); p_eff__Console->live = 0; r_; }); res_; }); }); }); }
 static int64_t f_S2c__terms(srs_cap* p_eff__Console, struct E_Coll__List__K__Term* p_ts) { srs_tail: return ({ __auto_type s0 = p_ts; s0->tag == 0 ? ({ ((int64_t)0); }) : ({ __auto_type v_t_0 = s0->u.C_Coll__Cons.f_h; __auto_type v_rest_1 = s0->u.C_Coll__Cons.f_t; ({ (void)(({ __auto_type r_ = ((int64_t(*)(void*, srs_str))(p_eff__Console->vt[3]))(p_eff__Console->self, ((srs_str){(const uint8_t*)", ", 2})); p_eff__Console->live = 0; r_; })); (void)(f_S2c__term(p_eff__Console, v_t_0)); __auto_type res_ = ({ srs_cap* t0 = p_eff__Console; struct E_Coll__List__K__Term* t1 = v_rest_1; p_eff__Console = t0; p_ts = t1; goto srs_tail; (int64_t){0}; }); res_; }); }); }); }
 static void* h_Srs__Arena_init(void) { return rt_arena_new(); }
@@ -6001,8 +6134,28 @@ static srs_str h_Srs__Console_captureEnd(void* p_self) { return rt_capture_end()
 static void* h_Srs__Args_init(void) { return Srs__noState(); }
 static int64_t h_Srs__Args_count(void* p_self) { return rt_argc(); }
 static srs_str h_Srs__Args_at(void* p_self, int64_t p_i) { return rt_arg(p_i); }
-static void* h_Srs__Files_init(void) { return Srs__noState(); }
-static srs_str h_Srs__Files_read(void* p_self, srs_str p_path) { return rt_read_file(p_path); }
+static void* h_Srs__Files_init(srs_cap* p_eff__Region) { return Srs__noState(); }
+static srs_str h_Srs__Files_read(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return rt_read_file(p_path); }
+static struct E_Os__Res__Str* h_Srs__Files_bytes(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__res(p_eff__Region, rt_fs_bytes(p_path)); }
+static struct E_Os__Res__Str* h_Srs__Files_readAll(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__res(p_eff__Region, rt_fs_read_all(p_path)); }
+static struct E_Os__Kind* h_Srs__Files_kind(srs_cap* p_eff__Region, void* p_self, srs_str p_path, struct E_Os__Links* p_l) { return f_Os__kind(rt_fs_kind(p_path, f_Os__follow(p_l))); }
+static bool h_Srs__Files_executable(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return rt_fs_exec(p_path); }
+static struct E_Os__Res__Os__Strs* h_Srs__Files_list(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__listRes(p_eff__Region, rt_fs_list(p_path)); }
+static struct E_Os__Res__Str* h_Srs__Files_readLink(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__res(p_eff__Region, rt_fs_readlink(p_path)); }
+static struct E_Os__Res__Str* h_Srs__Files_realPath(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__res(p_eff__Region, rt_fs_realpath(p_path)); }
+static struct E_Os__Res__Str* h_Srs__Files_cwd(srs_cap* p_eff__Region, void* p_self) { return f_Os__res(p_eff__Region, rt_fs_cwd()); }
+static void* h_Srs__Env_init(srs_cap* p_eff__Region) { return Srs__noState(); }
+static struct E_Os__Var* h_Srs__Env_get(srs_cap* p_eff__Region, void* p_self, srs_str p_name) { return f_Os__var(p_eff__Region, rt_env_get(p_name)); }
+static void* h_Srs__Clock_init(void) { return Srs__noState(); }
+static int64_t h_Srs__Clock_now(void* p_self) { return rt_clock_now(); }
+static void* h_Srs__Net_init(srs_cap* p_eff__Region) { return rt_net_new(); }
+static struct E_Os__Status* h_Srs__Net_connect(srs_cap* p_eff__Region, void* p_self, srs_str p_path) { return f_Os__status(p_eff__Region, rt_net_connect(p_self, p_path)); }
+static struct E_Os__Status* h_Srs__Net_send(srs_cap* p_eff__Region, void* p_self, srs_str p_s) { return f_Os__status(p_eff__Region, rt_net_send(p_self, p_s)); }
+static struct E_Os__Res__Str* h_Srs__Net_recv(srs_cap* p_eff__Region, void* p_self, int64_t p_n) { return f_Os__res(p_eff__Region, rt_net_recv(p_self, p_n)); }
+static struct E_Os__Res__Str* h_Srs__Net_drain(srs_cap* p_eff__Region, void* p_self) { return f_Os__res(p_eff__Region, rt_net_drain(p_self)); }
+static int64_t h_Srs__Net_close(srs_cap* p_eff__Region, void* p_self) { return rt_net_close(p_self); }
+static void* h_Srs__Process_init(srs_cap* p_eff__Region) { return Srs__noState(); }
+static struct E_Os__Ran* h_Srs__Process_run(srs_cap* p_eff__Region, void* p_self, struct E_Os__Strs* p_argv) { return ({ void* v_p_0 = rt_proc_new(); struct E_Os__Strs* v_a_1 = p_argv; bool v_go_2 = true; (void)(({ while (v_go_2) { (void)(({ __auto_type res_ = ({ __auto_type s3 = v_a_1; s3->tag == 0 ? ({ (v_go_2 = (false), (int64_t)0); }) : ({ __auto_type v_s_3 = s3->u.C_Os__More.f_s; __auto_type v_rest_4 = s3->u.C_Os__More.f_rest; ({ (void)(rt_proc_arg(v_p_0, v_s_3)); __auto_type res_ = (v_a_1 = (v_rest_4), (int64_t)0); res_; }); }); }); res_; })); } (int64_t)0; })); __auto_type res_ = f_Os__ran(p_eff__Region, rt_proc_run(v_p_0)); res_; }); }
 static void* h_Srs__Exit_init(void) { return Srs__noState(); }
 static int64_t h_Srs__Exit_exit(void* p_self, int64_t p_code) { return rt_exit(p_code); }
 static void* h_Srs__Store_init(void) { return Srs__noState(); }

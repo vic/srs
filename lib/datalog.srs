@@ -48,20 +48,20 @@ enum Edb:
 // why a fact of a model holds: it was given, or clause i (0-based) fired under env e
 enum Source:
   case Given
-  case ByRule(i: I64, e: Env)
+  case ByRule(i: I64, e: Binds)
 
 // a model, in derivation order: each derived fact comes after the facts its clause used
 enum Facts:
   case FactNil
   case FactCons(h: Fact, src: Source, t: Facts)
 
-enum Env:
+enum Binds:
   case EnvNil
-  case EnvBind(n: I64, v: Val, t: Env)
+  case EnvBind(n: I64, v: Val, t: Binds)
 
 enum Envs:
   case EnvsNil
-  case EnvsCons(h: Env, t: Envs)
+  case EnvsCons(h: Binds, t: Envs)
 
 // relation -> stratum
 enum Strata:
@@ -100,12 +100,12 @@ def hasFact(db: Facts, f: Fact): Bool = db match
   case FactCons(h, _, t) => factEq(h, f) || hasFact(t, f)
 
 // ── matching ──
-def envGet(e: Env, n: I64): Arg = e match
+def envGet(e: Binds, n: I64): Arg = e match
   case EnvNil => AVar(n)
   case EnvBind(m, v, t) => if m == n then AVal(v) else envGet(t, n)
 
 // e extended so args match vals, or none
-def matchArgs(e: Env, args: ArgList, vals: Vals): Envs = args match
+def matchArgs(e: Binds, args: ArgList, vals: Vals): Envs = args match
   case ArgNil => vals match
     case ValNil => EnvsCons(e, EnvsNil)
     case ValCons(_, _) => EnvsNil
@@ -115,14 +115,14 @@ def matchArgs(e: Env, args: ArgList, vals: Vals): Envs = args match
       case EnvsNil => EnvsNil
       case EnvsCons(e2, _) => matchArgs(e2, at, vt)
 
-def matchOne(e: Env, a: Arg, v: Val): Envs = a match
+def matchOne(e: Binds, a: Arg, v: Val): Envs = a match
   case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
   case AVar(n) => envGet(e, n) match
     case AVal(w) => if valEq(w, v) then EnvsCons(e, EnvsNil) else EnvsNil
     case AVar(_) => EnvsCons(EnvBind(n, v, e), EnvsNil)
 
 // every extension of e that matches atom a against a fact of db, in db order
-def matchFacts(e: Env, a: Atom, db: Facts): Envs = db match
+def matchFacts(e: Binds, a: Atom, db: Facts): Envs = db match
   case FactNil => EnvsNil
   case FactCons(f, _, t) => a match
     case Atom(p, args) => f match
@@ -140,7 +140,7 @@ def matchEach(es: Envs, a: Atom, db: Facts): Envs = es match
 
 // the values of args under e. evalDatalog runs only safe rules, so every variable is bound here
 // shortcut: an unbound variable is skipped, not an error; a typed safe clause (vars proven bound) would remove it
-def ground(e: Env, args: ArgList): Vals = args match
+def ground(e: Binds, args: ArgList): Vals = args match
   case ArgNil => ValNil
   case ArgCons(a, t) => a match
     case AVal(v) => ValCons(v, ground(e, t))
@@ -148,7 +148,7 @@ def ground(e: Env, args: ArgList): Vals = args match
       case AVal(v) => ValCons(v, ground(e, t))
       case AVar(_) => ground(e, t)
 
-def factOf(e: Env, a: Atom): Fact = a match
+def factOf(e: Binds, a: Atom): Fact = a match
   case Atom(p, args) => Fact(p, ground(e, args))
 
 // the environments of the positive literals, then the ones no negative literal matches
@@ -322,11 +322,11 @@ def addFacts(rs: Rels, fs: Facts, delta: Bool): Rels = fs match
   case FactCons(f, src, t) => addFacts(addFact(rs, f, src, delta), t, delta)
 
 // the facts of p that can match args under e: the bucket of the first bound column, else all
-def candidates(rs: Rels, p: Str, args: ArgList, e: Env): Facts = rs match
+def candidates(rs: Rels, p: Str, args: ArgList, e: Binds): Facts = rs match
   case RelNil => FactNil
   case Rel(q, all, _, cs, t) => if Str.eq(p, q) then boundCol(all, cs, args, e) else candidates(t, p, args, e)
 
-def boundCol(all: Facts, cs: Cols, args: ArgList, e: Env): Facts = args match
+def boundCol(all: Facts, cs: Cols, args: ArgList, e: Binds): Facts = args match
   case ArgNil => all
   case ArgCons(a, at) => cs match
     case ColNil => all
@@ -343,7 +343,7 @@ def knownFact(rs: Rels, f: Fact): Bool = f match
     case ValCons(v, _) => hasFact(candidates(rs, p, ArgCons(AVal(v), ArgNil), EnvNil), f)
 
 // every extension of e that matches args against a fact of fs (one relation)
-def matchRel(e: Env, args: ArgList, fs: Facts): Envs = fs match
+def matchRel(e: Binds, args: ArgList, fs: Facts): Envs = fs match
   case FactNil => EnvsNil
   case FactCons(f, _, t) => f match
     case Fact(_, vals) => envsAppend(matchArgs(e, args, vals), matchRel(e, args, t))
@@ -475,13 +475,13 @@ def edbHas(edb: Edb, f: Fact): Bool = edb match
   case EdbNil => false
   case EdbCons(h, t) => factEq(h, f) || edbHas(t, f)
 
-def posIn(e: Env, body: Lits, seen: Facts): Bool = body match
+def posIn(e: Binds, body: Lits, seen: Facts): Bool = body match
   case LitNil => true
   case LitCons(l, t) => l match
     case Pos(a) => hasFact(seen, factOf(e, a)) && posIn(e, t, seen)
     case Neg(_) => posIn(e, t, seen)
 
-def negOut(e: Env, body: Lits, model: Facts): Bool = body match
+def negOut(e: Binds, body: Lits, model: Facts): Bool = body match
   case LitNil => true
   case LitCons(l, t) => l match
     case Pos(_) => negOut(e, t, model)

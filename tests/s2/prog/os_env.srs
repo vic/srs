@@ -1,0 +1,21 @@
+// pass: capability Env (A13): a set variable, a set but empty one, an unset one, and a name with a NUL byte (refused,
+// so unset) are three different answers, not "" for all. The gate runs this test with the env line below
+// env: SRS_T_SET=abc SRS_T_EMPTY=
+def OE.show(v: Os.Var): Unit =
+  v match
+    case Os.Unset => Console.print("unset")
+    case Os.Set(s) =>
+      Console.print("set [")
+      Console.print(s)
+      Console.print("]")
+  Console.print("\n")
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle e = Srs.Env()
+  OE.show(Env.get("SRS_T_SET"))
+  OE.show(Env.get("SRS_T_EMPTY"))
+  OE.show(Env.get("SRS_T_NONE"))
+  OE.show(Env.get("SRS_T_SET\0"))
+  0

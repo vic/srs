@@ -81,11 +81,200 @@ handler Srs.Args for Args:
   def count(): I64 = rt_argc()
   def at(i: I64): Str = rt_arg(i)
 
+// ── the outside world (A13): every OS observation is an op of Files, Env, Clock, Net or Process, so a fn whose row has
+// none of them reads nothing outside its arguments. Failures are values (Os.Err), never an abort
+extern def rt_fs_bytes(path: Str): Str
+extern def rt_fs_read_all(path: Str): Str
+extern def rt_fs_kind(path: Str, follow: Bool): I64
+extern def rt_fs_exec(path: Str): Bool
+extern def rt_fs_list(path: Str): Str
+extern def rt_fs_readlink(path: Str): Str
+extern def rt_fs_realpath(path: Str): Str
+extern def rt_fs_cwd(): Str
+extern def rt_env_get(name: Str): Str
+extern def rt_clock_now(): I64
+extern def rt_net_new(): Ptr
+extern def rt_net_connect(self: Ptr, path: Str): I64
+extern def rt_net_send(self: Ptr, s: Str): I64
+extern def rt_net_recv(self: Ptr, n: I64): Str
+extern def rt_net_drain(self: Ptr): Str
+extern def rt_net_close(self: Ptr): Unit
+extern def rt_proc_new(): Ptr
+extern def rt_proc_arg(self: Ptr, a: Str): Unit
+extern def rt_proc_run(self: Ptr): I64
+
+// why an OS op failed (errno, as rt/srs_rt.c os_code maps it)
+enum Os.Err:
+  case Os.NotFound
+  case Os.Denied
+  case Os.NotDir
+  case Os.IsDir
+  case Os.Loop
+  case Os.TooLong
+  // a path or name with a NUL byte: refused, never cut short at the NUL
+  case Os.BadPath
+  case Os.Refused
+  // the peer is gone, or the connection never opened
+  case Os.Closed
+  case Os.Other(errno: I64)
+
+enum Os.Res [A: Type]:
+  case Os.Ok(v: A)
+  case Os.Fail(e: Os.Err)
+
+enum Os.Status:
+  case Os.Done
+  case Os.Failed(e: Os.Err)
+
+// what a path names; Os.Absent: stat failed (snx fsKind 0)
+enum Os.Kind:
+  case Os.Absent
+  case Os.Regular
+  case Os.Dir
+  case Os.Link
+  case Os.Special
+
+// stat follows a symlink, lstat does not
+enum Os.Links:
+  case Os.Follow
+  case Os.NoFollow
+
+enum Os.Strs:
+  case Os.End
+  case Os.More(s: Str, rest: Os.Strs)
+
+enum Os.Var:
+  case Os.Unset
+  case Os.Set(v: Str)
+
+enum Os.Ran:
+  case Os.Exited(code: I64)
+  case Os.Killed(signal: I64)
+  case Os.NoStart(e: Os.Err)
+
+// the codes of rt/srs_rt.c os_code; 1000 + errno for the rest
+def Os.err(c: I64): Os.Err =
+  if c == 1 then Os.NotFound
+  else if c == 2 then Os.Denied
+  else if c == 3 then Os.NotDir
+  else if c == 4 then Os.IsDir
+  else if c == 5 then Os.Loop
+  else if c == 6 then Os.TooLong
+  else if c == 7 then Os.BadPath
+  else if c == 8 then Os.Refused
+  else if c == 9 then Os.Closed
+  else Os.Other(c - 1000)
+
+// a Str from rt: its bytes, or length -code on failure
+def Os.res(s: Str): Os.Res[Str] = if Str.len(s) < 0 then Os.Fail(Os.err(0 - Str.len(s))) else Os.Ok(s)
+
+def Os.status(c: I64): Os.Status = if c == 0 then Os.Done else Os.Failed(Os.err(c))
+
+def Os.follow(l: Os.Links): Bool = l match
+  case Os.Follow => true
+  case Os.NoFollow => false
+
+// rt_fs_kind's code, in Os.Kind order
+def Os.kind(k: I64): Os.Kind =
+  if k == 1 then Os.Regular else if k == 2 then Os.Dir else if k == 3 then Os.Link else if k == 4 then Os.Special else Os.Absent
+
+// names each followed by a NUL, cut from the end so the list keeps their order
+def Os.names(s: Str): Os.Strs =
+  var acc = Os.End
+  var j = Str.len(s) - 1
+  while j >= 0 do
+    var k = j - 1
+    while k >= 0 && Str.at(s, k) != 0 do
+      k = k - 1
+    acc = Os.More(Str.slice(s, k + 1, j), acc)
+    j = k
+  acc
+
+def Os.listRes(s: Str): Os.Res[Os.Strs] = if Str.len(s) < 0 then Os.Fail(Os.err(0 - Str.len(s))) else Os.Ok(Os.names(s))
+
+def Os.var(s: Str): Os.Var = if Str.len(s) < 0 then Os.Unset else Os.Set(s)
+
+// rt_proc_run's how * 2^20 + val (rt/srs_rt.c OS_HOW)
+def Os.ran(r: I64): Os.Ran =
+  val how = r / 1048576
+  val v = r % 1048576
+  if how == 0 then Os.Exited(v) else if how == 1 then Os.Killed(v) else Os.NoStart(Os.err(v))
+
 capability Files:
   def read(path: Str): Str
+  // st_size bytes (a file in /proc reads as empty); readAll reads to the end of the file
+  def bytes(path: Str): Os.Res[Str]
+  def readAll(path: Str): Os.Res[Str]
+  def kind(path: Str, l: Os.Links): Os.Kind
+  def executable(path: Str): Bool
+  // the names but . and .., sorted by bytes
+  def list(path: Str): Os.Res[Os.Strs]
+  def readLink(path: Str): Os.Res[Str]
+  def realPath(path: Str): Os.Res[Str]
+  def cwd(): Os.Res[Str]
 
 handler Srs.Files for Files:
   def read(path: Str): Str = rt_read_file(path)
+  def bytes(path: Str): Os.Res[Str] = Os.res(rt_fs_bytes(path))
+  def readAll(path: Str): Os.Res[Str] = Os.res(rt_fs_read_all(path))
+  def kind(path: Str, l: Os.Links): Os.Kind = Os.kind(rt_fs_kind(path, Os.follow(l)))
+  def executable(path: Str): Bool = rt_fs_exec(path)
+  def list(path: Str): Os.Res[Os.Strs] = Os.listRes(rt_fs_list(path))
+  def readLink(path: Str): Os.Res[Str] = Os.res(rt_fs_readlink(path))
+  def realPath(path: Str): Os.Res[Str] = Os.res(rt_fs_realpath(path))
+  def cwd(): Os.Res[Str] = Os.res(rt_fs_cwd())
+
+capability Env:
+  def get(name: Str): Os.Var
+
+handler Srs.Env for Env:
+  def get(name: Str): Os.Var = Os.var(rt_env_get(name))
+
+capability Clock:
+  // seconds since the epoch
+  def now(): I64
+
+handler Srs.Clock for Clock:
+  def now(): I64 = rt_clock_now()
+
+// a client stream to a Unix socket. connect moves to Open even when it fails (its Os.Status says so): the ops of a
+// connection that did not open return Os.Closed, and close is due in both cases
+capability Net:
+  state Closed, Open
+  start Closed
+  stop Closed
+  def connect <Closed> (path: Str): Os.Status <Open>
+  def send <Open> (s: Str): Os.Status <Open>
+  // up to n bytes, fewer only at the end of the stream
+  def recv <Open> (n: I64): Os.Res[Str] <Open>
+  // every byte up to the end of the stream
+  def drain <Open> (): Os.Res[Str] <Open>
+  def close <Open> (): Unit <Closed>
+
+handler Srs.Net for Net:
+  def init(): Ptr = rt_net_new()
+  def connect(self: Ptr, path: Str): Os.Status = Os.status(rt_net_connect(self, path))
+  def send(self: Ptr, s: Str): Os.Status = Os.status(rt_net_send(self, s))
+  def recv(self: Ptr, n: I64): Os.Res[Str] = Os.res(rt_net_recv(self, n))
+  def drain(self: Ptr): Os.Res[Str] = Os.res(rt_net_drain(self))
+  def close(self: Ptr): Unit = rt_net_close(self)
+
+capability Process:
+  // argv[0] is found on PATH, as execvp; the child shares stdin, stdout and stderr; run waits for it
+  def run(argv: Os.Strs): Os.Ran
+
+handler Srs.Process for Process:
+  def run(argv: Os.Strs): Os.Ran =
+    val p = rt_proc_new()
+    var a = argv
+    var go = true
+    while go do
+      a match
+        case Os.End => go = false
+        case Os.More(s, rest) =>
+          rt_proc_arg(p, s)
+          a = rest
+    Os.ran(rt_proc_run(p))
 
 capability Exit:
   def exit(code: I64): Unit

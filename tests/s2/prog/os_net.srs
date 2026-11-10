@@ -1,0 +1,52 @@
+// pass: capability Net (A13) as a protocol, Closed -> Open -> Closed: a Unix socket server (ext_net_echo, a child
+// that reads 4 bytes, writes them back twice, closes) answers send, recv and drain; a connect that fails is a value,
+// and the ops of that connection say Closed. Each handle is closed before its scope ends (else capability-not-ended)
+extern def ext_net_echo(): Str
+
+def ON.err(e: Os.Err): Unit = e match
+  case Os.NotFound => Console.print("NotFound")
+  case Os.Closed => Console.print("Closed")
+  case Os.BadPath => Console.print("BadPath")
+  case Os.Refused => Console.print("Refused")
+  case _ => Console.print("other")
+
+def ON.status(s: Os.Status): Unit =
+  s match
+    case Os.Done => Console.print("done")
+    case Os.Failed(e) =>
+      Console.print("failed ")
+      ON.err(e)
+  Console.print("\n")
+
+def ON.got(r: Os.Res[Str]): Unit =
+  r match
+    case Os.Ok(s) =>
+      Console.print("got [")
+      Console.print(s)
+      Console.print("]")
+    case Os.Fail(e) =>
+      Console.print("fail ")
+      ON.err(e)
+  Console.print("\n")
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val path = ext_net_echo()
+  handle n = Srs.Net()
+  ON.status(n.connect(path))
+  ON.status(n.send("ping"))
+  ON.got(n.recv(4))
+  ON.got(n.drain())
+  ON.got(n.drain())
+  n.close()
+  handle m = Srs.Net()
+  ON.status(Net.connect("/nonexistent/srs.sock"))
+  ON.status(Net.send("x"))
+  ON.got(Net.recv(1))
+  ON.got(Net.drain())
+  Net.close()
+  handle q = Srs.Net()
+  ON.status(q.connect(""))
+  q.close()
+  0

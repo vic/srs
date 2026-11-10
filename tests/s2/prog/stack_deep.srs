@@ -1,0 +1,15 @@
+// pass: main's stack (A14): a 5M-deep recursion that is not a tail call (each frame keeps n for after the call) runs
+// on main's thread stack of $SRS_STACK bytes; no ulimit -s, no re-exec. Without the env line its 160 MB of frames
+// overflow an 8 MiB stack. 20M deep (626 MB) passes too, in ~1.1 s: over the gate's 1 s per test
+// env: SRS_STACK=4g
+def SD.deep(n: I64): I64 =
+  if n == 0 then 0
+  else
+    val r = SD.deep(n - 1)
+    if r % 3 == n % 5 then r + 2 else r + 1
+
+def main(): I64 =
+  handle c = Srs.Console()
+  Console.printI64(SD.deep(5000000))
+  Console.print("\n")
+  0
