@@ -462,28 +462,71 @@ def D.strata(rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64): Coll.IMap[I64]
   val D.Raised(st2, changed) = D.raiseAll(rs, st, false)
   if !changed || D.topOf(st2, 0, k, 0) > k then st2 else D.strata(rs, st2, k)
 
-// the head with the smallest id whose stratum passed k (only heads are ever raised), or None: no cycle through negation
-def D.overHead(rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64, best: Coll.Option[D.CAtom]): Coll.Option[Sym.Sym] = rs match
-  case Coll.Nil => best match
-    case Coll.None => Coll.None
-    case Coll.Some(a) =>
-      val D.CAtom(nameRef, _) = a
-      val name = D.nameOfRef(nameRef)
-      Coll.Some(name)
-  case Coll.Cons(rl, rest) =>
-    val D.CRule(h, _, _, _, _) = rl
-    val D.CAtom(hrRef, _) = h
-    val hr = D.idOfRef(hrRef)
-    if D.stOf(st, hr) <= k then D.overHead(rest, st, k, best) else D.overHead(rest, st, k, D.smaller(h, best))
+// ── the negation cycle a program reports (vic-kpev): a relation x depends on each relation in the body of a rule with
+// head x, through a positive or a negated atom. a relation is ON A CYCLE THROUGH NEGATION when some rule with head h
+// negates n and n reaches h (reflexively, transitively) through x: n ->* x ->* h. the report is the relation on such a
+// cycle with the smallest id (ids: the order the names are first met, the rules' names first), so it depends on the
+// rules only, not on the order the strata were raised in nor on the facts' relations ──
+def D.atomRefs(as: Coll.List[D.CAtom], acc: Coll.List[D.RelRef]): Coll.List[D.RelRef] = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(ref, _) = a
+    D.atomRefs(rest, Coll.Cons(ref, acc))
 
-def D.smaller(h: D.CAtom, best: Coll.Option[D.CAtom]): Coll.Option[D.CAtom] = best match
-  case Coll.None => Coll.Some(h)
-  case Coll.Some(b) =>
-    val D.CAtom(hrRef, _) = h
-    val hr = D.idOfRef(hrRef)
-    val D.CAtom(brRef, _) = b
-    val br = D.idOfRef(brRef)
-    if hr < br then Coll.Some(h) else best
+def D.memberR(id: I64, xs: Coll.List[D.RelRef]): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(h, t) => if D.idOfRef(h) == id then true else D.memberR(id, t)
+
+// the relations the rules with head x read, put before acc
+def D.readsOf(rs: Coll.List[D.CRule], x: I64, acc: Coll.List[D.RelRef]): Coll.List[D.RelRef] = rs match
+  case Coll.Nil => acc
+  case Coll.Cons(rl, rest) =>
+    val D.CRule(h, body, neg, _, _) = rl
+    val D.CAtom(hRef, _) = h
+    if D.idOfRef(hRef) == x then D.readsOf(rest, x, D.atomRefs(neg, D.atomRefs(body, acc))) else D.readsOf(rest, x, acc)
+
+// every relation reached from todo (itself included) by reads
+def D.reach(rs: Coll.List[D.CRule], todo: Coll.List[D.RelRef], seen: Coll.List[D.RelRef]): Coll.List[D.RelRef] = todo match
+  case Coll.Nil => seen
+  case Coll.Cons(x, rest) =>
+    val id = D.idOfRef(x)
+    if D.memberR(id, seen) then D.reach(rs, rest, seen) else D.reach(rs, D.readsOf(rs, id, rest), Coll.Cons(x, seen))
+
+def D.reachOf(rs: Coll.List[D.CRule], x: D.RelRef): Coll.List[D.RelRef] = D.reach(rs, Coll.Cons(x, Coll.Nil), Coll.Nil)
+
+def D.smaller(x: D.RelRef, best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = best match
+  case Coll.None => Coll.Some(x)
+  case Coll.Some(b) => if D.idOfRef(x) < D.idOfRef(b) then Coll.Some(x) else best
+
+// the relations x of from (reached from n) that reach h, folded into best
+def D.onCycle(rs: Coll.List[D.CRule], h: I64, from: Coll.List[D.RelRef], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = from match
+  case Coll.Nil => best
+  case Coll.Cons(x, rest) =>
+    if D.memberR(h, D.reachOf(rs, x)) then D.onCycle(rs, h, rest, D.smaller(x, best)) else D.onCycle(rs, h, rest, best)
+
+// the negated atoms ns of a rule with head h
+def D.negEdges(rs: Coll.List[D.CRule], h: I64, ns: Coll.List[D.CAtom], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = ns match
+  case Coll.Nil => best
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(nRef, _) = a
+    val from = D.reachOf(rs, nRef)
+    if D.memberR(h, from) then D.negEdges(rs, h, rest, D.onCycle(rs, h, from, best)) else D.negEdges(rs, h, rest, best)
+
+// the relation on a cycle through negation with the smallest id, or None: no cycle
+def D.negCycle(all: Coll.List[D.CRule], todo: Coll.List[D.CRule], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = todo match
+  case Coll.Nil => best
+  case Coll.Cons(rl, rest) =>
+    val D.CRule(h, _, neg, _, _) = rl
+    val D.CAtom(hRef, _) = h
+    D.negCycle(all, rest, D.negEdges(all, D.idOfRef(hRef), neg, best))
+
+def D.nameOpt(x: Coll.Option[D.RelRef]): Coll.Option[Sym.Sym] = x match
+  case Coll.None => Coll.None
+  case Coll.Some(r) => Coll.Some(D.nameOfRef(r))
+
+// the report when the strata passed k (over): the cycle's relation. a stratification fails only for a cycle through
+// negation, so a None here can not happen; it is no cycle
+def D.cycleOf(rs: Coll.List[D.CRule], over: Bool): Coll.Option[Sym.Sym] = if over then D.nameOpt(D.negCycle(rs, rs, Coll.None)) else Coll.None
 
 def D.rulesAt(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
@@ -635,7 +678,7 @@ def D.compile(rules: Coll.List[D.Rule]): D.Compiled =
     case Coll.None =>
       val k = Coll.length(tab)
       val st = D.strata(crs, Coll.Tip, k)
-      D.overHead(crs, st, k, Coll.None) match
+      D.cycleOf(crs, D.topOf(st, 0, k, 0) > k) match
         case Coll.Some(cyc) => D.NegLoop(cyc)
         case Coll.None => D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
 
@@ -651,22 +694,8 @@ def D.run(c: D.Compiled, facts: Coll.List[D.Fact]): D.Result = c match
     val D.Next(rels, _) = D.advance(rels0, 0, k, rels0, 0)
     D.Solved(D.Model(tab, D.runStrata(strata, rels, D.firstRound(), k)))
 
-// the model of rules over facts, compiled for this solve. its cycle check is bounded by every relation, the facts'
-// too, so the head it names in a cycle can differ from D.compile's (bounded by the rules' relations)
-def D.solve(rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
-  val D.With(tab1, ds) = D.drafts(Coll.Nil, rules, 0, Coll.Nil)
-  val crs = D.crules(ds, D.headIds(ds, Coll.Nil), Coll.Nil)
-  D.firstUnsafe(crs) match
-    case Coll.Some(bad) => D.Unsafe(bad)
-    case Coll.None =>
-      val D.With(tab, rels0) = D.load(tab1, facts, D.initRels(D.probesAll(crs, Coll.Tip), 0, Coll.length(tab1), Coll.Tip))
-      val k = Coll.length(tab)
-      val st = D.strata(crs, Coll.Tip, k)
-      D.overHead(crs, st, k, Coll.None) match
-        case Coll.Some(cyc) => D.NegCycle(cyc)
-        case Coll.None =>
-          val D.Next(rels, _) = D.advance(rels0, 0, k, rels0, 0)
-          D.Solved(D.Model(tab, D.runStrata(D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil), rels, D.firstRound(), k)))
+// the model of rules over facts: one body for one semantics, the rules compiled for this solve
+def D.solve(rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result = D.run(D.compile(rules), facts)
 
 def D.rowsOf(rows: Coll.List[D.Row], acc: Coll.List[Coll.List[D.Val]]): Coll.List[Coll.List[D.Val]] = rows match
   case Coll.Nil => acc

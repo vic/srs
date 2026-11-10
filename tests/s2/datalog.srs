@@ -59,6 +59,23 @@ def T.show {r: Region} (res: D.Result, rel: Str): Unit =
     case _ => T.count(res, rel)
   Console.print("\n")
 
+// D.solve and D.run(D.compile) must give the same result; a negation cycle names the same relation on both paths
+def T.same {r: Region} (a: D.Result, b: D.Result): Bool = a match
+  case D.Solved(_) => b match
+    case D.Solved(_) => true
+    case _ => false
+  case D.Unsafe(p) => b match
+    case D.Unsafe(q) => Sym.eq(p, q)
+    case _ => false
+  case D.NegCycle(p) => b match
+    case D.NegCycle(q) => Sym.eq(p, q)
+    case _ => false
+
+def T.agree {r: Region} (rules: Coll.List[D.Rule], facts: Coll.List[D.Fact], rel: Str): Unit =
+  val a = D.solve(rules, facts)
+  if T.same(a, D.run(D.compile(rules), facts)) then Console.print("agree ") else Console.print("DIFFER ")
+  T.show(a, rel)
+
 def main(): I64 =
   handle io = Srs.Console()
   handle r = Srs.Arena()
@@ -98,4 +115,16 @@ def main(): I64 =
   // big(X) :- num(X), not small(X).  num(1) num(2) small(1)
   val nums = Coll.Cons(T.f1("num", D.VInt(1)), Coll.Cons(T.f1("num", D.VInt(2)), Coll.Cons(T.f1("small", D.VInt(1)), Coll.Nil)))
   T.show(D.solve(Coll.Cons(D.Rule(T.a1("big", x), T.b2(T.p(T.a1("num", x)), T.n(T.a1("small", x)))), Coll.Nil), nums), "big")
+  // the negcycle names the smallest id among the relations on a cycle through negation, however many relations the
+  // facts add and whatever lies downstream. ids are in order of first mention: p(0) node(1) q(2) in nc
+  T.agree(nc, nodes, "p")
+  T.agree(nc, Coll.Nil, "p")
+  // r(X) :- p(X) first: r has id 0 but is on no cycle (it only reads one), so the answer is p
+  val down = Coll.Cons(D.Rule(T.a1("r", x), T.b1(T.p(T.a1("p", x)))), nc)
+  T.agree(down, nodes, "r")
+  // q is mentioned first, so q has the smaller id
+  val ncq = Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Nil))
+  T.agree(ncq, nodes, "p")
+  // a stratified program: both paths solve it
+  T.agree(un, db, "unreach")
   0
