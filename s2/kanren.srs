@@ -64,3 +64,38 @@ def K.reify(s: Coll.IMap[K.Term], t: K.Term): K.Term = K.walk(s, t) match
 def K.reifyOnto(s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.reifyOnto(s, t, Coll.Cons(K.reify(s, h), acc))
+
+// unify with a trail, for the search (s2/ksearch.srs): the substitution and the variables it bound, newest first,
+// so the constraints on those variables wake and no others. K.unify above is the checker's, and stays without a trail
+enum K.Uni:
+  case K.Clash
+  case K.Uni(s: Coll.IMap[K.Term], bound: Coll.List[I64])
+
+def K.unifyT(s: Coll.IMap[K.Term], a: K.Term, b: K.Term, tr: Coll.List[I64]): K.Uni =
+  val x = K.walk(s, a)
+  val y = K.walk(s, b)
+  x match
+    case K.Var(n) => K.bindT(s, n, y, tr)
+    case K.Con(f, xs) => y match
+      case K.Var(m) => K.bindT(s, m, x, tr)
+      case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllT(s, xs, ys, tr) else K.Clash
+      case K.Int(_) => K.Clash
+    case K.Int(v) => y match
+      case K.Var(m) => K.bindT(s, m, x, tr)
+      case K.Int(w) => if v == w then K.Uni(s, tr) else K.Clash
+      case K.Con(_, _) => K.Clash
+
+def K.bindT(s: Coll.IMap[K.Term], n: I64, t: K.Term, tr: Coll.List[I64]): K.Uni = t match
+  case K.Var(m) => if m == n then K.Uni(s, tr) else K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
+  case K.Con(_, _) => if K.occurs(s, n, t) then K.Clash else K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
+  case K.Int(_) => K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
+
+def K.unifyAllT(s: Coll.IMap[K.Term], xs: Coll.List[K.Term], ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = xs match
+  case Coll.Nil => ys match
+    case Coll.Nil => K.Uni(s, tr)
+    case Coll.Cons(_, _) => K.Clash
+  case Coll.Cons(x, xt) => ys match
+    case Coll.Nil => K.Clash
+    case Coll.Cons(y, yt) => K.unifyT(s, x, y, tr) match
+      case K.Clash => K.Clash
+      case K.Uni(s2, tr2) => K.unifyAllT(s2, xt, yt, tr2)

@@ -1,12 +1,17 @@
 // s2 component 5: disequality and finite domains (CLP(FD), Alvis et al. 2011), the semantics of lib/kanren.srs K3 K4:
-// a branch settles its constraints in rounds until nothing changes. domains live in a Coll.IMap by variable (the s1
-// lib: a list); a disequality is its pair, violated when unify would add no binding (an O(1) map size check).
+// a branch settles its constraints until nothing changes. domains live in a Coll.IMap by variable (the s1 lib: a list);
+// a disequality is its pair, violated when unify would add no binding (an O(1) map size check). Constraints are
+// attributed to variables (vic-kpev K6 c): propagators and disequalities are watched under the variables they read,
+// and a unify wakes only the watchers of the variables it bound (K.Uni: the trail of its bindings).
 enum K.Neq:
   case K.Neq(a: K.Term, b: K.Term)
 
-// a domain: ascending, never empty (h = its smallest value, hi its largest, n how many); size and bounds in O(1)
+// a domain: never empty, ascending. Up to 64 wide it is a bitset (vic-kpev K6 f): bit i of m stands for lo + i, bit 0
+// is set (lo is the smallest value) and so is bit hi - lo; n counts the bits. Wider, a list (h = smallest, hi = largest,
+// n how many). Size and bounds are O(1) in both; hi - lo < 64 is always a Bits (K.dOfList, K.bitsAt)
 enum K.Dom:
-  case K.Dom(n: I64, hi: I64, h: I64, t: Coll.List[I64])
+  case K.Bits(n: I64, lo: I64, hi: I64, m: U64)
+  case K.Ints(n: I64, hi: I64, h: I64, t: Coll.List[I64])
 
 enum K.Bin:
   case K.Le
@@ -27,30 +32,65 @@ def K.member(v: I64, xs: Coll.List[I64]): Bool = xs match
   case Coll.Nil => false
   case Coll.Cons(h, t) => if h == v then true else K.member(v, t)
 
-def K.ints(d: K.Dom): Coll.List[I64] =
-  val K.Dom(_, _, h, t) = d
-  Coll.Cons(h, t)
+// SWAR bit counts of a word (srs has no popcount builtin): ones in x; trailing zeros of x /= 0; bits up to the highest
+def K.popcount(x: U64): I64 =
+  val a: U64 = x - ((x >> 1) & 0x5555555555555555)
+  val b: U64 = (a & 0x3333333333333333) + ((a >> 2) & 0x3333333333333333)
+  val c: U64 = (b + (b >> 4)) & 0x0f0f0f0f0f0f0f0f
+  I64.ofU64((c * 0x0101010101010101) >> 56)
 
-def K.lo(d: K.Dom): I64 =
-  val K.Dom(_, _, h, _) = d
-  h
+def K.ctz(x: U64): I64 = K.popcount((x & (0 - x)) - 1)
+
+def K.bitlen(x: U64): I64 =
+  val a: U64 = x | (x >> 1)
+  val b: U64 = a | (a >> 2)
+  val c: U64 = b | (b >> 4)
+  val d: U64 = c | (c >> 8)
+  val e: U64 = d | (d >> 16)
+  K.popcount(e | (e >> 32))
+
+// the bits i0..i1 (0 <= i0 <= i1 <= 63)
+def K.span(i0: I64, i1: I64): U64 =
+  val one: U64 = 1
+  val all: U64 = ~0
+  if i1 - i0 >= 63 then all else ((one << (i1 - i0 + 1)) - 1) << i0
+
+// the domain of the bits m, bit i standing for base + i: none when m is empty
+def K.bitsAt(base: I64, m: U64): Coll.Option[K.Dom] =
+  if m == 0 then Coll.None
+  else
+    val c = K.ctz(m)
+    val m1: U64 = m >> c
+    Coll.Some(K.Bits(K.popcount(m1), base + c, base + c + K.bitlen(m1) - 1, m1))
+
+def K.lo(d: K.Dom): I64 = d match
+  case K.Bits(_, lo, _, _) => lo
+  case K.Ints(_, _, h, _) => h
+
+def K.hi(d: K.Dom): I64 = d match
+  case K.Bits(_, _, hi, _) => hi
+  case K.Ints(_, hi, _, _) => hi
+
+def K.domSize(d: K.Dom): I64 = d match
+  case K.Bits(n, _, _, _) => n
+  case K.Ints(n, _, _, _) => n
+
+// the values of d, ascending
+def K.ints(d: K.Dom): Coll.List[I64] = d match
+  case K.Bits(_, lo, hi, m) => K.bitsOnto(m, lo, hi - lo, Coll.Nil)
+  case K.Ints(_, _, h, t) => Coll.Cons(h, t)
+
+def K.bitsOnto(m: U64, lo: I64, i: I64, acc: Coll.List[I64]): Coll.List[I64] =
+  if i < 0 then acc else K.bitsOnto(m, lo, i - 1, if ((m >> i) & 1) == 1 then Coll.Cons(lo + i, acc) else acc)
 
 def K.lastOf(h: I64, t: Coll.List[I64]): I64 = t match
   case Coll.Nil => h
   case Coll.Cons(h2, t2) => K.lastOf(h2, t2)
 
-def K.hi(d: K.Dom): I64 =
-  val K.Dom(_, x, _, _) = d
-  x
-
-def K.domSize(d: K.Dom): I64 =
-  val K.Dom(n, _, _, _) = d
-  n
-
 // v is a value of d (no allocation)
-def K.inDom(v: I64, d: K.Dom): Bool =
-  val K.Dom(_, x, h, t) = d
-  v >= h && v <= x && (v == h || K.member(v, t))
+def K.inDom(v: I64, d: K.Dom): Bool = d match
+  case K.Bits(_, lo, hi, m) => v >= lo && v <= hi && ((m >> (v - lo)) & 1) == 1
+  case K.Ints(_, x, h, t) => v >= h && v <= x && (v == h || K.member(v, t))
 
 // a..b ascending
 def K.range(a: I64, b: I64): Coll.List[I64] = K.rangeOnto(a, b, Coll.Nil)
@@ -69,6 +109,49 @@ def K.meetOnto(xs: Coll.List[I64], d: K.Dom, acc: Coll.List[I64]): Coll.List[I64
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.meetOnto(t, d, if K.inDom(h, d) then Coll.Cons(h, acc) else acc)
 
+// ── the set operations of domains (none = empty) ──
+// the domain of an ascending list
+def K.dOfList(xs: Coll.List[I64]): Coll.Option[K.Dom] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(h, t) =>
+    val x = K.lastOf(h, t)
+    if x - h < 64 then K.bitsAt(h, K.maskOf(xs, h, 0))
+    else Coll.Some(K.Ints(1 + Coll.length(t), x, h, t))
+
+def K.maskOf(xs: Coll.List[I64], lo: I64, acc: U64): U64 = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, t) =>
+    val one: U64 = 1
+    K.maskOf(t, lo, acc | (one << (h - lo)))
+
+// the values of d in a..b
+def K.dBetween(d: K.Dom, a: I64, b: I64): Coll.Option[K.Dom] = d match
+  case K.Bits(_, lo, hi, m) =>
+    if a <= lo && b >= hi then Coll.Some(d)
+    else if a > hi || b < lo || a > b then Coll.None
+    else K.bitsAt(lo, m & K.span(if a > lo then a - lo else 0, if b < hi then b - lo else hi - lo))
+  case K.Ints(_, _, h, t) => K.dOfList(K.between(Coll.Cons(h, t), a, b))
+
+// the values of d but v
+def K.dWithout(d: K.Dom, v: I64): Coll.Option[K.Dom] = d match
+  case K.Bits(n, lo, hi, m) =>
+    val one: U64 = 1
+    val bit: U64 = one << (v - lo)
+    if v < lo || v > hi || (m & bit) == 0 then Coll.Some(d)
+    else if v == lo || v == hi then K.bitsAt(lo, m & ~bit)
+    else Coll.Some(K.Bits(n - 1, lo, hi, m & ~bit))
+  case K.Ints(_, _, h, t) => K.dOfList(Coll.rev(K.withoutOnto(Coll.Cons(h, t), v, Coll.Nil)))
+
+// the values of both
+def K.dMeet(d: K.Dom, e: K.Dom): Coll.Option[K.Dom] = d match
+  case K.Bits(_, lo, hi, m) => e match
+    case K.Bits(_, lo2, hi2, m2) =>
+      if hi2 < lo || hi < lo2 then Coll.None
+      else if lo2 >= lo then K.bitsAt(lo, m & (m2 << (lo2 - lo)))
+      else K.bitsAt(lo, m & (m2 >> (lo - lo2)))
+    case K.Ints(_, _, _, _) => K.dOfList(K.meetInts(K.ints(d), e))
+  case K.Ints(_, _, _, _) => K.dOfList(K.meetInts(K.ints(d), e))
+
 // the domain of t: an integer has itself, a variable its entry (or none), a constructor is not an integer
 def K.domOf(st: K.State, t: K.Term): K.DomOf =
   val K.State(s, _, ds, _, _) = st
@@ -76,62 +159,66 @@ def K.domOf(st: K.State, t: K.Term): K.DomOf =
     case K.Var(n) => Coll.node(ds, n) match
       case Coll.Tip => K.NoDom
       case Coll.Bin(_, _, d, _, _) => K.Has(d)
-    case K.Int(v) => K.Has(K.Dom(1, v, v, Coll.Nil))
+    case K.Int(v) => K.Has(K.Bits(1, v, v, 1))
     case K.Con(_, _) => K.NotInt
 
-// t takes a value of xs (ascending; a subset of its domain, if it has one): None when none is left, bound (a fix event)
+// t takes a value of d (a subset of its domain, if it has one): None when none is left (d is none), bound (a fix event)
 // when one is left, else narrowed (an event) unless as many values are left as before
-def K.setDom(st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] =
+def K.setDomO(st: K.State, t: K.Term, d: Coll.Option[K.Dom]): Coll.Option[K.State] = d match
+  case Coll.None => Coll.None
+  case Coll.Some(nd) => K.setDom(st, t, nd)
+
+def K.setDom(st: K.State, t: K.Term, d: K.Dom): Coll.Option[K.State] =
   val K.State(s, ns, ds, ps, nx) = st
-  xs match
-    case Coll.Nil => Coll.None
-    case Coll.Cons(h, rest) => K.walk(s, t) match
-      case K.Int(v) => if K.member(v, xs) then Coll.Some(st) else Coll.None
-      case K.Con(_, _) => Coll.None
-      case K.Var(n) => rest match
-        case Coll.Nil => K.unify(s, K.Var(n), K.Int(h)) match
-          case Coll.None => Coll.None
-          case Coll.Some(s2) => Coll.Some(K.State(s2, ns, ds, K.emit(ps, n, K.Fixed), nx))
-        case Coll.Cons(_, _) =>
-          val k = 1 + Coll.length(rest)
-          if K.hasSize(ds, n, k) then Coll.Some(st)
-          else Coll.Some(K.State(s, ns, Coll.insert(ds, n, K.Dom(k, K.lastOf(h, rest), h, rest)), K.emit(ps, n, K.Narrowed), nx))
+  K.walk(s, t) match
+    case K.Int(v) => if K.inDom(v, d) then Coll.Some(st) else Coll.None
+    case K.Con(_, _) => Coll.None
+    case K.Var(n) =>
+      val k = K.domSize(d)
+      if k == 1 then K.wakeNeq(K.State(Coll.insert(s, n, K.Int(K.lo(d))), ns, ds, K.emit(ps, n, K.Fixed), nx), n)
+      else if K.hasSize(ds, n, k) then Coll.Some(st)
+      else Coll.Some(K.State(s, ns, Coll.insert(ds, n, d), K.emit(ps, n, K.Narrowed), nx))
 
 // n has a domain of size k (no allocation); false when n has no domain
 def K.hasSize(ds: Coll.IMap[K.Dom], n: I64, k: I64): Bool = ds match
   case Coll.Tip => false
   case Coll.Bin(_, key, d, l, r2) => if n < key then K.hasSize(l, n, k) else if n > key then K.hasSize(r2, n, k) else K.domSize(d) == k
 
-// t takes a value of xs and of the domain it already has
-def K.meet(st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.domOf(st, t) match
-  case K.NoDom => K.setDom(st, t, xs)
-  case K.Has(d) => K.setDom(st, t, K.meetInts(xs, d))
+// t takes a value of d and of the domain it already has
+def K.meetDom(st: K.State, t: K.Term, d: K.Dom): Coll.Option[K.State] = K.domOf(st, t) match
+  case K.NoDom => K.setDom(st, t, d)
+  case K.Has(e) => K.setDomO(st, t, K.dMeet(d, e))
   case K.NotInt => Coll.None
+
+// t takes a value of xs (ascending) and of the domain it already has
+def K.meet(st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.dOfList(xs) match
+  case Coll.None => Coll.None
+  case Coll.Some(d) => K.meetDom(st, t, d)
 
 // ── propagators ──
 // x <= y - k: k = 0 for <=, 1 for <
 def K.leAt(st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom, k: I64): Coll.Option[K.State] =
   // a bound that already holds builds no new domain
-  val sx: Coll.Option[K.State] = if K.hi(dx) <= K.hi(dy) - k then Coll.Some(st) else K.setDom(st, x, K.between(K.ints(dx), K.lo(dx), K.hi(dy) - k))
+  val sx: Coll.Option[K.State] = if K.hi(dx) <= K.hi(dy) - k then Coll.Some(st) else K.setDomO(st, x, K.dBetween(dx, K.lo(dx), K.hi(dy) - k))
   sx match
     case Coll.None => Coll.None
-    case Coll.Some(st2) => if K.lo(dy) >= K.lo(dx) + k then Coll.Some(st2) else K.setDom(st2, y, K.between(K.ints(dy), K.lo(dx) + k, K.hi(dy)))
+    case Coll.Some(st2) => if K.lo(dy) >= K.lo(dx) + k then Coll.Some(st2) else K.setDomO(st2, y, K.dBetween(dy, K.lo(dx) + k, K.hi(dy)))
 
 def K.neAt(st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom): Coll.Option[K.State] =
   val nx = K.domSize(dx)
   val ny = K.domSize(dy)
   if nx == 1 && ny == 1 then (if K.lo(dx) == K.lo(dy) then Coll.None else Coll.Some(st))
-  else if nx == 1 then (if K.inDom(K.lo(dx), dy) then K.setDom(st, y, Coll.rev(K.withoutOnto(K.ints(dy), K.lo(dx), Coll.Nil))) else Coll.Some(st))
-  else if ny == 1 then (if K.inDom(K.lo(dy), dx) then K.setDom(st, x, Coll.rev(K.withoutOnto(K.ints(dx), K.lo(dy), Coll.Nil))) else Coll.Some(st))
+  else if nx == 1 then (if K.inDom(K.lo(dx), dy) then K.setDomO(st, y, K.dWithout(dy, K.lo(dx))) else Coll.Some(st))
+  else if ny == 1 then (if K.inDom(K.lo(dy), dx) then K.setDomO(st, x, K.dWithout(dx, K.lo(dy))) else Coll.Some(st))
   else Coll.Some(st)
 
 // x + y = z
 def K.plusAt(st: K.State, x: K.Term, y: K.Term, z: K.Term, dx: K.Dom, dy: K.Dom, dz: K.Dom): Coll.Option[K.State] =
-  K.setDom(st, z, K.between(K.ints(dz), K.lo(dx) + K.lo(dy), K.hi(dx) + K.hi(dy))) match
+  K.setDomO(st, z, K.dBetween(dz, K.lo(dx) + K.lo(dy), K.hi(dx) + K.hi(dy))) match
     case Coll.None => Coll.None
-    case Coll.Some(st1) => K.setDom(st1, x, K.between(K.ints(dx), K.lo(dz) - K.hi(dy), K.hi(dz) - K.lo(dy))) match
+    case Coll.Some(st1) => K.setDomO(st1, x, K.dBetween(dx, K.lo(dz) - K.hi(dy), K.hi(dz) - K.lo(dy))) match
       case Coll.None => Coll.None
-      case Coll.Some(st2) => K.setDom(st2, y, K.between(K.ints(dy), K.lo(dz) - K.hi(dx), K.hi(dz) - K.lo(dx)))
+      case Coll.Some(st2) => K.setDomO(st2, y, K.dBetween(dy, K.lo(dz) - K.hi(dx), K.hi(dz) - K.lo(dx)))
 
 // a propagator runs once every variable it reads has a domain
 def K.fire(st: K.State, c: K.Fd): Coll.Option[K.State] = c match
@@ -168,19 +255,24 @@ enum K.Change:
 enum K.Ev:
   case K.Ev(v: I64, change: K.Change)
 
-// the fd field of a state: the watch indexes (variable -> propagators) and the events not yet woken
+// the fd field of a state: the watch indexes (variable -> propagators; variable -> disequalities that read it) and the
+// events not yet woken
 enum K.Props:
-  case K.Props(fix: Coll.IMap[Coll.List[K.Fd]], any: Coll.IMap[Coll.List[K.Fd]], evs: Coll.List[K.Ev])
+  case K.Props(fix: Coll.IMap[Coll.List[K.Fd]], any: Coll.IMap[Coll.List[K.Fd]], nw: Coll.IMap[Coll.List[K.Neq]], evs: Coll.List[K.Ev])
 
 def K.emit(ps: K.Props, n: I64, change: K.Change): K.Props =
-  val K.Props(fx, an, evs) = ps
-  K.Props(fx, an, Coll.Cons(K.Ev(n, change), evs))
+  val K.Props(fx, an, nw, evs) = ps
+  K.Props(fx, an, nw, Coll.Cons(K.Ev(n, change), evs))
 
 def K.fdTerms(c: K.Fd): Coll.List[K.Term] = c match
   case K.FBin(_, x, y) => Coll.Cons(x, Coll.Cons(y, Coll.Nil))
   case K.FPlus(x, y, z) => Coll.Cons(x, Coll.Cons(y, Coll.Cons(z, Coll.Nil)))
 
 def K.watchers(w: Coll.IMap[Coll.List[K.Fd]], n: I64): Coll.List[K.Fd] = Coll.node(w, n) match
+  case Coll.Tip => Coll.Nil
+  case Coll.Bin(_, _, cs, _, _) => cs
+
+def K.neqsOf(w: Coll.IMap[Coll.List[K.Neq]], n: I64): Coll.List[K.Neq] = Coll.node(w, n) match
   case Coll.Tip => Coll.Nil
   case Coll.Bin(_, _, cs, _, _) => cs
 
@@ -192,8 +284,8 @@ def K.watchIn(s: Coll.IMap[K.Term], w: Coll.IMap[Coll.List[K.Fd]], c: K.Fd, ts: 
 
 // c registered under the variables it reads (under s): =/= in the fix index, the others in the any index
 def K.watch(s: Coll.IMap[K.Term], ps: K.Props, c: K.Fd): K.Props =
-  val K.Props(fx, an, evs) = ps
-  if K.isNe(c) then K.Props(K.watchIn(s, fx, c, K.fdTerms(c)), an, evs) else K.Props(fx, K.watchIn(s, an, c, K.fdTerms(c)), evs)
+  val K.Props(fx, an, nw, evs) = ps
+  if K.isNe(c) then K.Props(K.watchIn(s, fx, c, K.fdTerms(c)), an, nw, evs) else K.Props(fx, K.watchIn(s, an, c, K.fdTerms(c)), nw, evs)
 
 def K.isNe(c: K.Fd): Bool = c match
   case K.FBin(op, _, _) => op match
@@ -207,7 +299,7 @@ def K.wakeAll(ps: K.Props, evs: Coll.List[K.Ev], agenda: Coll.List[K.Fd]): Coll.
   case Coll.Nil => agenda
   case Coll.Cons(e, rest) =>
     val K.Ev(n, change) = e
-    val K.Props(fx, an, _) = ps
+    val K.Props(fx, an, _, _) = ps
     val a1 = Coll.revOnto(K.watchers(an, n), agenda)
     val a2 = change match
       case K.Fixed => Coll.revOnto(K.watchers(fx, n), a1)
@@ -221,70 +313,110 @@ def K.prop(st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = agenda 
     case Coll.Some(st2) => K.prop(st2, rest)
   case Coll.Nil =>
     val K.State(s, ns, ds, ps, nx) = st
-    val K.Props(fx, an, evs) = ps
+    val K.Props(fx, an, nw, evs) = ps
     evs match
       case Coll.Nil => Coll.Some(st)
-      case Coll.Cons(_, _) => K.prop(K.State(s, ns, ds, K.Props(fx, an, Coll.Nil), nx), K.wakeAll(ps, evs, Coll.Nil))
+      case Coll.Cons(_, _) => K.prop(K.State(s, ns, ds, K.Props(fx, an, nw, Coll.Nil), nx), K.wakeAll(ps, evs, Coll.Nil))
 
-// propagate, then check the disequality store
-def K.settleFrom(st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = K.prop(st, agenda) match
-  case Coll.None => Coll.None
-  case Coll.Some(st2) =>
-    val K.State(s, ns, ds, ps, nx) = st2
-    K.recheck(s, ns, Coll.Nil) match
+// the variables of s that nothing is attached to: no domain, no propagator, no disequality
+def K.plain(ds: Coll.IMap[K.Dom], ps: K.Props, m: I64): Bool =
+  val K.Props(fx, an, nw, _) = ps
+  K.noDom(ds, m) && K.noFd(fx, m) && K.noFd(an, m) && K.noNeq(nw, m)
+
+def K.noDom(ds: Coll.IMap[K.Dom], m: I64): Bool = Coll.node(ds, m) match
+  case Coll.Tip => true
+  case Coll.Bin(_, _, _, _, _) => false
+
+def K.noFd(w: Coll.IMap[Coll.List[K.Fd]], m: I64): Bool = K.watchers(w, m) match
+  case Coll.Nil => true
+  case Coll.Cons(_, _) => false
+
+def K.noNeq(w: Coll.IMap[Coll.List[K.Neq]], m: I64): Bool = K.neqsOf(w, m) match
+  case Coll.Nil => true
+  case Coll.Cons(_, _) => false
+
+// after unify bound the variables ms (st holds its substitution): a variable m with nothing attached costs nothing. else,
+// bound to a variable k, its watchers move to k, its domain meets k's, and k's watchers wake; bound to a value, the
+// value must be in its domain, and its watchers wake (a fix event). the disequalities that read m are checked last
+def K.bound(ms: Coll.List[I64], st: K.State): Coll.Option[K.State] = ms match
+  case Coll.Nil => Coll.Some(st)
+  case Coll.Cons(m, rest) =>
+    val K.State(_, _, ds, ps, _) = st
+    if K.plain(ds, ps, m) then K.bound(rest, st)
+    else K.boundOne(m, st) match
       case Coll.None => Coll.None
-      case Coll.Some(ns2) => Coll.Some(K.State(s, ns2, ds, ps, nx))
+      case Coll.Some(st2) => K.bound(rest, st2)
 
-// the variables of t (not walked)
-def K.varsOf(t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = t match
+def K.boundOne(m: I64, st: K.State): Coll.Option[K.State] =
+  val K.State(s, ns, ds, ps, nx) = st
+  val fd: Coll.Option[K.State] = K.walk(s, K.Var(m)) match
+    case K.Var(k) =>
+      val K.Props(fx, an, nw, evs) = ps
+      val moved = K.Props(Coll.insert(fx, k, Coll.revOnto(K.watchers(fx, m), K.watchers(fx, k))), Coll.insert(an, k, Coll.revOnto(K.watchers(an, m), K.watchers(an, k))), nw, Coll.Cons(K.Ev(k, K.Fixed), evs))
+      val st1 = K.State(s, ns, ds, moved, nx)
+      Coll.node(ds, m) match
+        case Coll.Tip => Coll.Some(st1)
+        case Coll.Bin(_, _, d, _, _) => K.meetDom(st1, K.Var(k), d)
+    case K.Int(v) =>
+      val st1 = K.State(s, ns, ds, K.emit(ps, m, K.Fixed), nx)
+      Coll.node(ds, m) match
+        case Coll.Tip => Coll.Some(st1)
+        case Coll.Bin(_, _, d, _, _) => if K.inDom(v, d) then Coll.Some(st1) else Coll.None
+    case K.Con(_, _) =>
+      val st1 = K.State(s, ns, ds, K.emit(ps, m, K.Fixed), nx)
+      Coll.node(ds, m) match
+        case Coll.Tip => Coll.Some(st1)
+        case Coll.Bin(_, _, _, _, _) => Coll.None
+  fd match
+    case Coll.None => Coll.None
+    case Coll.Some(st2) => K.wakeNeq(st2, m)
+
+// the state after unify gave u: dead on a clash, else the variables it bound settle
+def K.post(st: K.State, u: K.Uni): Coll.Option[K.State] = u match
+  case K.Clash => Coll.None
+  case K.Uni(s2, bound) => bound match
+    case Coll.Nil => Coll.Some(st)
+    case Coll.Cons(_, _) =>
+      val K.State(_, ns, ds, ps, nx) = st
+      K.bound(bound, K.State(s2, ns, ds, ps, nx)) match
+        case Coll.None => Coll.None
+        case Coll.Some(st2) => K.prop(st2, Coll.Nil)
+
+// the variables of t that are still free under s (a leaf of the term it stands for)
+def K.leaves(s: Coll.IMap[K.Term], t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = K.walk(s, t) match
   case K.Var(n) => Coll.Cons(n, acc)
   case K.Int(_) => acc
-  case K.Con(_, args) => K.varsOfAll(args, acc)
+  case K.Con(_, args) => K.leavesAll(s, args, acc)
 
-def K.varsOfAll(ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
+def K.leavesAll(s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
   case Coll.Nil => acc
-  case Coll.Cons(h, t) => K.varsOfAll(t, K.varsOf(h, acc))
+  case Coll.Cons(h, t) => K.leavesAll(s, t, K.leaves(s, h, acc))
 
-// after unify (old substitution s0, the new one in st): a variable m that stood for itself under s0 and is bound now:
-// bound to a variable k, its watchers move to k, its domain meets k's, and k's watchers wake; bound to a value, the
-// value must be in its domain, and its watchers wake (a fix event)
-def K.bound(s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State): Coll.Option[K.State] = ms match
+// p watched under each variable of vs: a binding of one of them is what can change whether p holds
+def K.watchNeq(nw: Coll.IMap[Coll.List[K.Neq]], p: K.Neq, vs: Coll.List[I64]): Coll.IMap[Coll.List[K.Neq]] = vs match
+  case Coll.Nil => nw
+  case Coll.Cons(v, rest) => K.watchNeq(Coll.insert(nw, v, Coll.Cons(p, K.neqsOf(nw, v))), p, rest)
+
+// the disequalities that read m, after m got bound: one that can never unify is done (it stays watched, and is dropped
+// from the store when the branch answers: K.finish); one already equal fails; else it is watched under the variables
+// m now stands for
+def K.wakeNeq(st: K.State, m: I64): Coll.Option[K.State] =
+  val K.State(_, _, _, ps, _) = st
+  val K.Props(_, _, nw, _) = ps
+  K.wakePairs(st, m, K.neqsOf(nw, m))
+
+def K.wakePairs(st: K.State, m: I64, qs: Coll.List[K.Neq]): Coll.Option[K.State] = qs match
   case Coll.Nil => Coll.Some(st)
-  case Coll.Cons(v, rest) =>
+  case Coll.Cons(p, rest) =>
+    val K.Neq(a, b) = p
     val K.State(s, ns, ds, ps, nx) = st
-    K.walk(s0, K.Var(v)) match
-      case K.Var(m) => K.walk(s, K.Var(m)) match
-        case K.Var(k) =>
-          if k == m then K.bound(s0, rest, st)
-          else
-            val K.Props(fx, an, evs) = ps
-            val moved = K.Props(Coll.insert(fx, k, Coll.revOnto(K.watchers(fx, m), K.watchers(fx, k))), Coll.insert(an, k, Coll.revOnto(K.watchers(an, m), K.watchers(an, k))), Coll.Cons(K.Ev(k, K.Fixed), evs))
-            val st1 = K.State(s, ns, ds, moved, nx)
-            val met: Coll.Option[K.State] = Coll.lookup(ds, m) match
-              case Coll.None => Coll.Some(st1)
-              case Coll.Some(d) => K.meet(st1, K.Var(k), K.ints(d))
-            met match
-              case Coll.None => Coll.None
-              case Coll.Some(st2) => K.bound(s0, rest, st2)
-        case _ =>
-          val st1 = K.State(s, ns, ds, K.emit(ps, m, K.Fixed), nx)
-          val met: Coll.Option[K.State] = Coll.lookup(ds, m) match
-            case Coll.None => Coll.Some(st1)
-            case Coll.Some(d) => K.meet(st1, K.Var(m), K.ints(d))
-          met match
-            case Coll.None => Coll.None
-            case Coll.Some(st2) => K.bound(s0, rest, st2)
-      case _ => K.bound(s0, rest, st)
-
-// the state after unify of the terms ts gave u: dead on None, else the changed variables settle
-def K.post(st: K.State, ts: Coll.List[K.Term], u: Coll.Option[Coll.IMap[K.Term]]): Coll.Option[K.State] = u match
-  case Coll.None => Coll.None
-  case Coll.Some(s2) =>
-    val K.State(s, ns, ds, ps, nx) = st
-    if Coll.size(s2) == Coll.size(s) then Coll.Some(st)
-    else K.bound(s, K.varsOfAll(ts, Coll.Nil), K.State(s2, ns, ds, ps, nx)) match
-      case Coll.None => Coll.None
-      case Coll.Some(st2) => K.settleFrom(st2, Coll.Nil)
+    K.unify(s, a, b) match
+      case Coll.None => K.wakePairs(st, m, rest)
+      case Coll.Some(s2) =>
+        if Coll.size(s2) == Coll.size(s) then Coll.None
+        else
+          val K.Props(fx, an, nw, evs) = ps
+          K.wakePairs(K.State(s, ns, ds, K.Props(fx, an, K.watchNeq(nw, p, K.leaves(s, K.Var(m), Coll.Nil)), evs), nx), m, rest)
 
 // the store under s: a pair that can never unify is dropped; one that already is equal (unify adds no binding) fails
 def K.recheck(s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
@@ -295,11 +427,26 @@ def K.recheck(s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]
       case Coll.None => K.recheck(s, t, kept)
       case Coll.Some(s2) => if Coll.size(s2) == Coll.size(s) then Coll.None else K.recheck(s, t, Coll.Cons(h, kept))
 
+// a branch with no goal left answers with its store cleaned: the pairs that died since they were added are dropped
+// (once per answer; the watchers only wake the pairs that read a bound variable)
+def K.finish(st: K.State): K.Step =
+  val K.State(s, ns, ds, ps, nx) = st
+  ns match
+    case Coll.Nil => K.Done(st)
+    case Coll.Cons(_, _) => K.recheck(s, ns, Coll.Nil) match
+      case Coll.None => K.Dead
+      case Coll.Some(ns2) => K.Done(K.State(s, ns2, ds, ps, nx))
+
 def K.addNeq(st: K.State, a: K.Term, b: K.Term): Coll.Option[K.State] =
   val K.State(s, ns, ds, fs, nx) = st
   K.unify(s, a, b) match
     case Coll.None => Coll.Some(st)
-    case Coll.Some(s2) => if Coll.size(s2) == Coll.size(s) then Coll.None else Coll.Some(K.State(s, Coll.Cons(K.Neq(a, b), ns), ds, fs, nx))
+    case Coll.Some(s2) =>
+      if Coll.size(s2) == Coll.size(s) then Coll.None
+      else
+        val p = K.Neq(a, b)
+        val K.Props(fx, an, nw, evs) = fs
+        Coll.Some(K.State(s, Coll.Cons(p, ns), ds, K.Props(fx, an, K.watchNeq(nw, p, K.leaves(s, a, K.leaves(s, b, Coll.Nil))), evs), nx))
 
 // ── labeling: the variable of xs with the smallest domain of 2 or more values (first-fail) ──
 enum K.Pick:

@@ -75,25 +75,25 @@ def K.shiftFd(c: K.Fd, k: I64): K.Fd = c match
   case K.FBin(op, x, y) => K.FBin(op, K.shift(x, k), K.shift(y, k))
   case K.FPlus(x, y, z) => K.FPlus(K.shift(x, k), K.shift(y, k), K.shift(z, k))
 
-// K.unify(s, K.shift(h, k), y) without the copy: a head subterm is shifted only when it is bound into s, so a head
+// K.unifyT(s, K.shift(h, k), y, tr) without the copy: a head subterm is shifted only when it is bound into s, so a head
 // that clashes allocates nothing. The binding direction is that of K.unify, so s is the same.
-def K.unifyOff(s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term): Coll.Option[Coll.IMap[K.Term]] = h match
-  case K.Var(n) => K.unify(s, K.Var(n + k), y)
-  case K.Int(_) => K.unify(s, h, y)
+def K.unifyOff(s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term, tr: Coll.List[I64]): K.Uni = h match
+  case K.Var(n) => K.unifyT(s, K.Var(n + k), y, tr)
+  case K.Int(_) => K.unifyT(s, h, y, tr)
   case K.Con(f, hs) => K.walk(s, y) match
-    case K.Var(m) => K.bind(s, m, K.shift(h, k))
-    case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllOff(s, hs, k, ys) else Coll.None
-    case K.Int(_) => Coll.None
+    case K.Var(m) => K.bindT(s, m, K.shift(h, k), tr)
+    case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllOff(s, hs, k, ys, tr) else K.Clash
+    case K.Int(_) => K.Clash
 
-def K.unifyAllOff(s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = hs match
+def K.unifyAllOff(s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = hs match
   case Coll.Nil => ys match
-    case Coll.Nil => Coll.Some(s)
-    case Coll.Cons(_, _) => Coll.None
+    case Coll.Nil => K.Uni(s, tr)
+    case Coll.Cons(_, _) => K.Clash
   case Coll.Cons(h, ht) => ys match
-    case Coll.Nil => Coll.None
-    case Coll.Cons(y, yt) => K.unifyOff(s, h, k, y) match
-      case Coll.None => Coll.None
-      case Coll.Some(s2) => K.unifyAllOff(s2, ht, k, yt)
+    case Coll.Nil => K.Clash
+    case Coll.Cons(y, yt) => K.unifyOff(s, h, k, y, tr) match
+      case K.Clash => K.Clash
+      case K.Uni(s2, tr2) => K.unifyAllOff(s2, ht, k, yt, tr2)
 
 // the branches of the clauses of rel whose heads unify with args (in clause order), and the clauses picked
 def K.picks(rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.State, rest: Coll.List[K.Goal], out: Coll.List[K.Branch], cost: I64): K.Step = rs match
@@ -102,7 +102,7 @@ def K.picks(rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.
     val K.Rule(f, head, body, nv) = h
     val K.State(s, ns, ds, fs, nx) = st
     if !Sym.eq(f, rel) then K.picks(t, rel, args, st, rest, out, cost)
-    else K.post(st, args, K.unifyAllOff(s, head, nx, args)) match
+    else K.post(st, K.unifyAllOff(s, head, nx, args, Coll.Nil)) match
       case Coll.None => K.picks(t, rel, args, st, rest, out, cost + 1)
       case Coll.Some(st2) =>
         val K.State(s2, ns2, ds2, fs2, _) = st2
@@ -111,7 +111,7 @@ def K.picks(rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.
 // after a domain on x: the events it left wake their propagators
 def K.settled(c: Coll.Option[K.State]): Coll.Option[K.State] = c match
   case Coll.None => Coll.None
-  case Coll.Some(st) => K.settleFrom(st, Coll.Nil)
+  case Coll.Some(st) => K.prop(st, Coll.Nil)
 
 def K.onward(c: Coll.Option[K.State], rest: Coll.List[K.Goal]): K.Step = c match
   case Coll.None => K.Dead
@@ -121,13 +121,13 @@ def K.kstep(ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step =
   val K.Branch(st, gs) = b
   val K.State(s, ns, ds, fs, nx) = st
   gs match
-    case Coll.Nil => K.Done(st)
+    case Coll.Nil => K.finish(st)
     case Coll.Cons(g, rest) => g match
       case K.True => K.More(K.Branch(st, rest))
-      case K.Eq(a, c) => K.onward(K.post(st, Coll.Cons(a, Coll.Cons(c, Coll.Nil)), K.unify(s, a, c)), rest)
+      case K.Eq(a, c) => K.onward(K.post(st, K.unifyT(s, a, c, Coll.Nil)), rest)
       case K.Diseq(a, c) => K.onward(K.addNeq(st, a, c), rest)
       case K.In(x, xs) => K.onward(K.settled(K.meet(st, x, xs)), rest)
-      case K.Post(c) => K.onward(K.settleFrom(K.State(s, ns, ds, K.watch(s, fs, c), nx), Coll.Cons(c, Coll.Nil)), rest)
+      case K.Post(c) => K.onward(K.prop(K.State(s, ns, ds, K.watch(s, fs, c), nx), Coll.Cons(c, Coll.Nil)), rest)
       case K.Label(xs) => K.pickVar(st, xs, K.NoPick) match
         case K.NoPick => K.More(K.Branch(st, rest))
         case K.Pick(t, d) => K.Split(K.labelBranches(st, t, K.ints(d), gs, Coll.Nil), K.domSize(d))
@@ -151,4 +151,4 @@ def K.loop(ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Branch], q: Queu
 
 // prove g (variables 0..nvars-1) over rules: at most limit answers, within fuel
 def K.solve(rules: Coll.List[K.Rule], g: K.Goal, nvars: I64, fuel: I64, limit: I64): K.Run =
-  K.loop(K.index(rules), Coll.Some(K.Branch(K.State(Coll.Tip, Coll.Nil, Coll.Tip, K.Props(Coll.Tip, Coll.Tip, Coll.Nil), nvars), Coll.Cons(g, Coll.Nil))), Queue.empty(), fuel, limit, Coll.Nil, 0)
+  K.loop(K.index(rules), Coll.Some(K.Branch(K.State(Coll.Tip, Coll.Nil, Coll.Tip, K.Props(Coll.Tip, Coll.Tip, Coll.Tip, Coll.Nil), nvars), Coll.Cons(g, Coll.Nil))), Queue.empty(), fuel, limit, Coll.Nil, 0)
