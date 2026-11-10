@@ -195,4 +195,28 @@ def main(): I64 =
   T.fd(T.both(T.both(T.both(T.both(xy2, K.Eq(x, fz)), K.Eq(y, f1)), K.Eq(z, K.Int(1))), split), 3, 0)
   T.fd(T.both(T.both(T.both(T.both(xy2, K.Eq(x, fz)), K.Eq(y, f1)), K.Eq(z, K.Int(2))), split), 3, 0)
   T.fd(T.both(T.both(K.Diseq(x, a), K.Eq(x, b)), split), 1, 0)
+  // x =/= y reads a bound term as its integer, on either side: outside the domain it prunes nothing, equal it dies, a
+  // constructor dies, a variable without a domain waits; labeling passes over bound terms and variables without a domain
+  val x3 = T.in(x, 1, 3)
+  T.fd(T.both(T.both(x3, T.ne(K.Int(2), x)), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.both(x3, T.ne(x, K.Int(2))), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.both(x3, T.ne(K.Int(5), x)), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.both(x3, T.ne(x, K.Int(5))), K.Label(x1)), 1, 1000)
+  T.fd(T.both(T.both(T.in(x, 2, 2), T.ne(K.Int(2), x)), K.Label(x1)), 1, 1000)
+  T.fd(T.ne(K.Int(3), K.Int(3)), 0, 1000)
+  T.fd(T.ne(K.Int(3), K.Int(4)), 0, 1000)
+  T.fd(T.both(T.both(x3, K.Eq(y, a)), T.ne(x, y)), 2, 1000)
+  T.fd(T.both(T.both(x3, K.Eq(y, a)), T.ne(y, x)), 2, 1000)
+  T.fd(T.both(K.Eq(x, a), T.ne(x, K.Int(1))), 1, 1000)
+  T.fd(T.both(K.Eq(x, a), T.ne(K.Int(1), x)), 1, 1000)
+  T.fd(T.both(T.both(T.in(x, 1, 2), T.ne(x, y)), K.Label(xy)), 2, 1000)
+  T.fd(T.both(T.both(T.in(y, 1, 2), T.ne(x, y)), K.Label(xy)), 2, 1000)
+  T.fd(T.both(T.both(T.both(x3, T.in(y, 2, 3)), T.ne(x, y)), K.Label(xy)), 2, 1000)
+  T.fd(T.both(T.both(T.both(x3, T.in(y, 1, 3)), T.ne(x, y)), T.both(K.Eq(y, K.Int(2)), K.Label(xy))), 2, 1000)
+  T.fd(T.both(T.both(T.both(x3, T.in(y, 1, 3)), T.ne(x, y)), T.both(K.Eq(x, K.Int(1)), K.Label(xy))), 2, 1000)
+  val w3 = T.in(w, 1, 2)
+  T.fd(T.both(T.both(T.both(K.Eq(x, K.Int(7)), K.Eq(y, a)), w3), K.Label(Coll.Cons(x, Coll.Cons(y, Coll.Cons(z, Coll.Cons(w, Coll.Nil)))))), 4, 1000)
+  // the removal is made when the propagator runs, not when the label reaches the value: fuel 2 ends with two branches
+  T.fd(T.both(T.both(x3, T.ne(x, K.Int(2))), K.Label(x1)), 1, 2)
+  T.fd(T.both(T.both(x3, T.ne(K.Int(2), x)), K.Label(x1)), 1, 2)
   0
