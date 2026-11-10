@@ -160,8 +160,5 @@ void* ext_same(void* x) { return x; }
 void* ext_handle(void) { static int64_t h; return &h; }
 // Srs.noState: the state of a handler that keeps none (s2/parse.srs Parse.stateless)
 void* Srs__noState(void) { return 0; }
-// the pure string primitives Str.len, Str.at, Str.slice, Str.eq (lib/prelude.srs)
-int64_t Str__len(srs_str s) { return rt_str_len(s); }
-int64_t Str__at(srs_str s, int64_t i) { return rt_str_at(s, i); }
-srs_str Str__slice(srs_str s, int64_t b, int64_t e) { return rt_str_slice(s, b, e); }
-bool Str__eq(srs_str a, srs_str b) { return rt_str_eq(a, b); }
+// the pure string primitives Str.len, Str.at, Str.slice, Str.eq (lib/prelude.srs) are static inline in the emitted C
+// (s2/emit.srs Emit.strPrims), with the semantics of rt_str_* above

@@ -1,0 +1,27 @@
+// pass: the edges of the inline Str primitives (s2/emit.srs Emit.strPrims, rt/srs_rt.c rt_str_*): Str.at out of range
+// is -1 on both sides, Str.slice clamps b to [0, n] and e to [b, n], Str.eq compares length then bytes
+def show(n: I64): Unit =
+  Console.print(" ")
+  Console.printI64(n)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  val s = "abc"
+  show(Str.at(s, -1))
+  show(Str.at(s, 0))
+  show(Str.at(s, 2))
+  show(Str.at(s, 3))
+  show(Str.at(s, 100))
+  Console.print("\n")
+  Console.print(Str.slice(s, -5, 2))
+  Console.print("|")
+  Console.print(Str.slice(s, 1, 99))
+  Console.print("|")
+  show(Str.len(Str.slice(s, 2, 1)))
+  show(Str.len(Str.slice(s, 7, 9)))
+  Console.print("\n")
+  Console.print(if Str.eq(s, "abc") then "eq " else "ne ")
+  Console.print(if Str.eq(s, "abd") then "eq " else "ne ")
+  Console.print(if Str.eq(s, "ab") then "eq " else "ne ")
+  Console.print(if Str.eq(Str.slice(s, 0, 0), "") then "eq\n" else "ne\n")
+  0
