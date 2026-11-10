@@ -1,0 +1,15 @@
+// pass: an assignment is a strong update also when its value lives nowhere: xs held a list in tmp, then Nil; the read
+// after tmp's block end is alive
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  var xs = build{sess}(1)
+  val y =
+    handle tmp = Srs.Arena()
+    xs = build{tmp}(2)
+    val n = sum(xs)
+    xs = Nil
+    n
+  Console.printI64(sum(xs) + y)
+  Console.print("\n")
+  0

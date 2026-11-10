@@ -29,10 +29,12 @@ enum Ast.UnOp:
   // ~x on U32 and U64
   case Ast.BitNot
 
-// T[args]^<caps>: no caps written = inferred; written = a bound
+// T[args]^<caps>: no caps written = inferred; written = a bound. T{self}: the result of a capability op whose type's {}
+// binders the receiver takes (only there: Parse.capDef)
 enum Ast.Caps:
   case Ast.Inferred
   case Ast.Stated(cs: Coll.List[Sym.Sym])
+  case Ast.Chosen(cs: Coll.List[Sym.Sym])
 
 enum Ast.Ty:
   case Ast.Ty(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], caps: Ast.Caps, vals: Coll.List[Ast.Expr])
@@ -252,6 +254,10 @@ def Ast.ty(t: Ast.Ty): Unit =
       Console.print("^<")
       Ast.syms(cs, ", ")
       Console.print(">")
+    case Ast.Chosen(cs) =>
+      Console.print("{")
+      Ast.syms(cs, ", ")
+      Console.print("}")
 
 def Ast.opText(op: Ast.BinOp): Str = op match
   case Ast.Add => "+"

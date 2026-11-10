@@ -1,0 +1,11 @@
+// expect: error[capability-bound]
+// the bound names the a in scope at the var; an inner a that shadows it is another capability
+def main(): I64 =
+  handle a = Srs.Arena()
+  var xs: List^<a> = build{a}(1)
+  val n =
+    handle a = Srs.Arena()
+    xs = build{a}(2)
+    0
+  sum(xs) + n
+// expect: --> tests/s2/neg/var_bound_shadow.srs:8

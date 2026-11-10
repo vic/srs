@@ -1,0 +1,9 @@
+// expect: error[use-after-free]
+// a [] binder param is data too: it may live in r, which the def frees before it reads it
+def pick [A: Type] {r: Region} <r: Open> (a: A): A <r: Freed> =
+  r.free()
+  a
+def main(): I64 =
+  handle tmp = Srs.Arena()
+  sum(pick{tmp}(build{tmp}(2)))
+// expect: --> tests/s2/neg/param_tparam.srs:5

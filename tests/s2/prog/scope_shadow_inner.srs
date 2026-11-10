@@ -1,0 +1,14 @@
+// pass: an inner x that lives in a shadows an outer x in sess; a is freed after the block: the outer x read later is
+// alive (its binding is not the inner one)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  val x = build{sess}(2)
+  handle a = Srs.Arena()
+  val y =
+    val x = build{a}(3)
+    sum(x)
+  a.free()
+  Console.printI64(sum(x) + y)
+  Console.print("\n")
+  0

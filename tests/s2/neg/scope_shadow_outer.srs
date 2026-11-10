@@ -1,0 +1,13 @@
+// expect: error[use-after-free]
+// a block val shadows an outer x; the outer x (it lives in a) is read after a.free(): the inner binding must not
+// stand for it
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle sess = Srs.Heap()
+  val x = build{a}(2)
+  val y =
+    val x = build{sess}(3)
+    sum(x)
+  a.free()
+  sum(x) + y
+// expect: --> tests/s2/neg/scope_shadow_outer.srs:12

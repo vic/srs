@@ -569,13 +569,26 @@ def Parse.capDef(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Parse.COp] = Parse.
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(ps, t3) => Parse.op(t3, ":") match
         case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(_, t4) => Parse.ty(t4) match
+        case Parse.Ok(_, t4) => Parse.opRet(t4) match
           case Parse.Err(l, w) => Parse.Err(l, w)
           case Parse.Ok(ret, t5) => Parse.exitState(t5) match
             case Parse.Err(l, w) => Parse.Err(l, w)
             case Parse.Ok(ex, t6) => Parse.moves(line, en, ex) match
               case Parse.Err(l, w) => Parse.Err(l, w)
               case Parse.Ok(mv, _) => Parse.Ok(Parse.COp(line, name, ps, ret, mv), t6)
+
+// an op result: ty, or ty{names} (the receiver takes the type's {} binders: View{self}); a type with ^<...> takes no {}
+def Parse.opRet(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ty(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(t, t1) =>
+    if Parse.isOp(t1, "{") then
+      val Ast.Ty(l, n, args, caps, vals) = t
+      caps match
+        case Ast.Inferred => Parse.names(Parse.next(t1), "}", Coll.Nil) match
+          case Parse.Err(l2, w) => Parse.Err(l2, w)
+          case Parse.Ok(cs, t2) => Parse.Ok(Ast.Ty(l, n, args, Ast.Chosen(cs), vals), t2)
+        case _ => Parse.Err(Parse.line(t1), "an exit state <B> (a type with ^<...> takes no {...})")
+    else Parse.Ok(t, t1)
 
 // the entry facts of a capability def: none, <A> (a state), or <s r t> (s moves to t by relation r)
 enum Parse.Entry:

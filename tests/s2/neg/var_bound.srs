@@ -1,0 +1,9 @@
+// expect: error[capability-bound]
+// a var stated to live in a gets a list made in b by an assignment: the assignment keeps the bound
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle b = Srs.Arena()
+  var xs: List^<a> = build{a}(1)
+  xs = build{b}(2)
+  sum(xs)
+// expect: --> tests/s2/neg/var_bound.srs:7

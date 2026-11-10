@@ -1,0 +1,38 @@
+// pass: alloc's memory is used while its region is open; a View{self} is used while its builder is Viewed, then the
+// builder changes and a new view is taken
+capability Scratch:
+  state Building, Viewed, Gone
+  start Building
+  stop Gone
+  def add <Building> (s: Str): Unit <Building>
+  def view <Building> (): View{self} <Viewed>
+  def clear <Viewed> (): Unit <Building>
+  transition ends Building -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+handler HScratch for Scratch:
+  def add(s: Str): Unit = ()
+  def view(): Ptr = Srs.noState()
+  def clear(): Unit = ()
+  def done(): Unit = ()
+
+type View {b: Scratch} <b: Viewed> = Ptr
+def peek(p: Ptr): I64 = 7
+def hash {b: Scratch} <b: Viewed> (v: View): I64 = 5
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle tmp = Srs.Arena()
+  val p = tmp.alloc(8)
+  val n = peek(p)
+  handle b = HScratch()
+  val v = b.view()
+  val h = hash(v)
+  b.clear()
+  val w = b.view()
+  val h2 = hash(w)
+  b.done()
+  tmp.free()
+  Console.printI64(n + h + h2)
+  Console.print("\n")
+  0

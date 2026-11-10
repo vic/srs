@@ -1,0 +1,14 @@
+// expect: error[op-result-choice]
+// T{self} on an op of Pool, but T's {} binder is a Region: the receiver cannot take it
+type Words {r: Region} <r: Open> = Ptr
+capability Pool:
+  def take (n: I64): Words{self}
+
+handler HPool for Pool:
+  def take(n: I64): Ptr = Srs.noState()
+
+def main(): I64 =
+  handle p = HPool()
+  0
+// expect: 'Words'
+// expect: --> tests/s2/neg/op_result_choice.srs:5

@@ -1,0 +1,12 @@
+// expect: error[op-result-capability]
+// an op result names a capability other than its receiver: the checker could not track it
+capability Pool:
+  def take (n: I64): Ptr^<other>
+
+handler HPool for Pool:
+  def take(n: I64): Ptr = Srs.noState()
+
+def main(): I64 =
+  handle p = HPool()
+  0
+// expect: --> tests/s2/neg/op_result_cap.srs:4

@@ -213,6 +213,8 @@ def S2c.showFx(fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs matc
       case Fx.RuleUnknown(l, rel) => S2c.diag(fs, "rule-unknown", l, "unknown relation in rule:", S2c.Name(rel), "use next, at, or a rule def of this capability")
       case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the capability:", S2c.Name(op), "use an op of this capability")
       case Fx.Ambiguous(l, op, s) => S2c.diag(fs, "protocol-ambiguous", l, "an op goes to more than one state from one state:", S2c.OpFrom(op, s), "give the op one target per state: a run-time outcome is not the program's choice (split the op, one per target)")
+      case Fx.OpCap(l, x) => S2c.diag(fs, "op-result-capability", l, "an op result lives in a capability other than its receiver:", S2c.Name(x), "write Ptr^<self>: self is the receiver, the only capability an op names")
+      case Fx.OpChoice(l, t) => S2c.diag(fs, "op-result-choice", l, "an op result's {...} does not give each {} binder of its type the receiver:", S2c.Name(t), "write T{self} with one self per {} binder of T, each a binder of this capability")
     S2c.showFx(fs, rest)
 
 def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =

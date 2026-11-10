@@ -20,12 +20,12 @@ extern def rt_heap_new(): Ptr
 extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
 extern def rt_heap_free(self: Ptr): Unit
 
-// Memory region = effect. Open until free; values captured by a region die at free.
+// Memory region = effect. Open until free; values captured by a region die at free, alloc's memory too (^<self>).
 capability Region:
   state Open, Freed
   start Open
   stop Freed
-  def alloc <Open> (size: I64): Ptr <Open>
+  def alloc <Open> (size: I64): Ptr^<self> <Open>
   def free <Open> (): Unit <Freed>
   drop free
 

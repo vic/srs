@@ -1,0 +1,29 @@
+// expect: error[stale-value]
+// an op result of a fact type of its own capability (View{self}) is bound to the receiver in Viewed: after done it is
+// stale
+capability Scratch:
+  state Building, Viewed, Gone
+  start Building
+  stop Gone
+  def add <Building> (s: Str): Unit <Building>
+  def view <Building> (): View{self} <Viewed>
+  def clear <Viewed> (): Unit <Building>
+  transition ends Building -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+handler HScratch for Scratch:
+  def add(s: Str): Unit = ()
+  def view(): Ptr = Srs.noState()
+  def clear(): Unit = ()
+  def done(): Unit = ()
+
+type View {b: Scratch} <b: Viewed> = Ptr
+def peek(p: Ptr): I64 = 7
+
+def main(): I64 =
+  handle b = HScratch()
+  val p = b.view()
+  b.done()
+  peek(p)
+// expect: 'p'
+// expect: --> tests/s2/neg/op_fact.srs:27

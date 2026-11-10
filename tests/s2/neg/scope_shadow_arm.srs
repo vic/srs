@@ -1,0 +1,14 @@
+// expect: error[use-after-free]
+// the one arm's binder shadows an outer x; after the match the outer x (it lives in a) is read after a.free()
+enum Box:
+  case Box(v: List)
+
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle sess = Srs.Heap()
+  val x = build{a}(2)
+  val y = Box(build{sess}(3)) match
+    case Box(x) => sum(x)
+  a.free()
+  sum(x) + y
+// expect: --> tests/s2/neg/scope_shadow_arm.srs:13

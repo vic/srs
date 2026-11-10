@@ -1,0 +1,17 @@
+// expect: error[op-result-choice]
+// T{} gives no receiver for View's one {} binder
+capability Scratch:
+  state Building, Viewed
+  start Building
+  stop Building, Viewed
+  def view <Building> (): View{} <Viewed>
+
+handler HScratch for Scratch:
+  def view(): Ptr = Srs.noState()
+
+type View {b: Scratch} <b: Viewed> = Ptr
+
+def main(): I64 =
+  handle b = HScratch()
+  0
+// expect: --> tests/s2/neg/op_result_none.srs:7
