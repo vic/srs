@@ -1,0 +1,344 @@
+// pass: enum representation (rung S1a, S1d): a nullary case is one static per enum instance and case; a payload case
+// is a box whose tag is the smallest unsigned int that holds the case count, with its Bool fields beside the tag. A
+// generic enum at two instances (I64, Str) with nullary cases between payload cases, Bool fields mixed with word
+// fields, a Bool-only case (a 2-byte box: the next box stays aligned only by the allocation granule), and an enum of
+// 258 cases (a 2-byte tag) with a payload case past tag 255
+enum Rp.Shape [A: Type]:
+  case Rp.Dot
+  case Rp.Line(on: Bool, a: A)
+  case Rp.Gap
+  case Rp.Box(a: A, lit: Bool, b: A, hid: Bool)
+  case Rp.End
+  case Rp.Flag(b: Bool)
+
+def Rp.b2i(b: Bool): I64 = if b then 1 else 0
+
+def Rp.code [A: Type] (s: Rp.Shape[A]): I64 = s match
+  case Rp.Dot => 1
+  case Rp.Line(on, _) => 20 + Rp.b2i(on)
+  case Rp.Gap => 3
+  case Rp.Box(_, lit, _, hid) => 40 + 2 * Rp.b2i(lit) + Rp.b2i(hid)
+  case Rp.End => 5
+  case Rp.Flag(b) => 60 + Rp.b2i(b)
+
+def Rp.showI(s: Rp.Shape[I64]): Unit =
+  Console.printI64(Rp.code(s))
+  Console.print(" ")
+  s match
+    case Rp.Line(_, a) => Console.printI64(a)
+    case Rp.Box(a, _, b, _) => Console.printI64(a * 100 + b)
+    case _ => Console.print("-")
+  Console.print("\n")
+
+def Rp.showS(s: Rp.Shape[Str]): Unit =
+  Console.printI64(Rp.code(s))
+  Console.print(" ")
+  s match
+    case Rp.Line(_, a) => Console.print(a)
+    case Rp.Box(a, _, b, _) =>
+      Console.print(a)
+      Console.print(b)
+    case _ => Console.print("-")
+  Console.print("\n")
+
+enum Rp.Big:
+  case Rp.B0
+  case Rp.B1
+  case Rp.B2
+  case Rp.B3
+  case Rp.B4
+  case Rp.B5
+  case Rp.B6
+  case Rp.B7
+  case Rp.B8
+  case Rp.B9
+  case Rp.B10
+  case Rp.B11
+  case Rp.B12
+  case Rp.B13
+  case Rp.B14
+  case Rp.B15
+  case Rp.B16
+  case Rp.B17
+  case Rp.B18
+  case Rp.B19
+  case Rp.B20
+  case Rp.B21
+  case Rp.B22
+  case Rp.B23
+  case Rp.B24
+  case Rp.B25
+  case Rp.B26
+  case Rp.B27
+  case Rp.B28
+  case Rp.B29
+  case Rp.B30
+  case Rp.B31
+  case Rp.B32
+  case Rp.B33
+  case Rp.B34
+  case Rp.B35
+  case Rp.B36
+  case Rp.B37
+  case Rp.B38
+  case Rp.B39
+  case Rp.B40
+  case Rp.B41
+  case Rp.B42
+  case Rp.B43
+  case Rp.B44
+  case Rp.B45
+  case Rp.B46
+  case Rp.B47
+  case Rp.B48
+  case Rp.B49
+  case Rp.B50
+  case Rp.B51
+  case Rp.B52
+  case Rp.B53
+  case Rp.B54
+  case Rp.B55
+  case Rp.B56
+  case Rp.B57
+  case Rp.B58
+  case Rp.B59
+  case Rp.B60
+  case Rp.B61
+  case Rp.B62
+  case Rp.B63
+  case Rp.B64
+  case Rp.B65
+  case Rp.B66
+  case Rp.B67
+  case Rp.B68
+  case Rp.B69
+  case Rp.B70
+  case Rp.B71
+  case Rp.B72
+  case Rp.B73
+  case Rp.B74
+  case Rp.B75
+  case Rp.B76
+  case Rp.B77
+  case Rp.B78
+  case Rp.B79
+  case Rp.B80
+  case Rp.B81
+  case Rp.B82
+  case Rp.B83
+  case Rp.B84
+  case Rp.B85
+  case Rp.B86
+  case Rp.B87
+  case Rp.B88
+  case Rp.B89
+  case Rp.B90
+  case Rp.B91
+  case Rp.B92
+  case Rp.B93
+  case Rp.B94
+  case Rp.B95
+  case Rp.B96
+  case Rp.B97
+  case Rp.B98
+  case Rp.B99
+  case Rp.B100
+  case Rp.B101
+  case Rp.B102
+  case Rp.B103
+  case Rp.B104
+  case Rp.B105
+  case Rp.B106
+  case Rp.B107
+  case Rp.B108
+  case Rp.B109
+  case Rp.B110
+  case Rp.B111
+  case Rp.B112
+  case Rp.B113
+  case Rp.B114
+  case Rp.B115
+  case Rp.B116
+  case Rp.B117
+  case Rp.B118
+  case Rp.B119
+  case Rp.B120
+  case Rp.B121
+  case Rp.B122
+  case Rp.B123
+  case Rp.B124
+  case Rp.B125
+  case Rp.B126
+  case Rp.B127
+  case Rp.B128
+  case Rp.B129
+  case Rp.B130
+  case Rp.B131
+  case Rp.B132
+  case Rp.B133
+  case Rp.B134
+  case Rp.B135
+  case Rp.B136
+  case Rp.B137
+  case Rp.B138
+  case Rp.B139
+  case Rp.B140
+  case Rp.B141
+  case Rp.B142
+  case Rp.B143
+  case Rp.B144
+  case Rp.B145
+  case Rp.B146
+  case Rp.B147
+  case Rp.B148
+  case Rp.B149
+  case Rp.B150
+  case Rp.B151
+  case Rp.B152
+  case Rp.B153
+  case Rp.B154
+  case Rp.B155
+  case Rp.B156
+  case Rp.B157
+  case Rp.B158
+  case Rp.B159
+  case Rp.B160
+  case Rp.B161
+  case Rp.B162
+  case Rp.B163
+  case Rp.B164
+  case Rp.B165
+  case Rp.B166
+  case Rp.B167
+  case Rp.B168
+  case Rp.B169
+  case Rp.B170
+  case Rp.B171
+  case Rp.B172
+  case Rp.B173
+  case Rp.B174
+  case Rp.B175
+  case Rp.B176
+  case Rp.B177
+  case Rp.B178
+  case Rp.B179
+  case Rp.B180
+  case Rp.B181
+  case Rp.B182
+  case Rp.B183
+  case Rp.B184
+  case Rp.B185
+  case Rp.B186
+  case Rp.B187
+  case Rp.B188
+  case Rp.B189
+  case Rp.B190
+  case Rp.B191
+  case Rp.B192
+  case Rp.B193
+  case Rp.B194
+  case Rp.B195
+  case Rp.B196
+  case Rp.B197
+  case Rp.B198
+  case Rp.B199
+  case Rp.B200
+  case Rp.B201
+  case Rp.B202
+  case Rp.B203
+  case Rp.B204
+  case Rp.B205
+  case Rp.B206
+  case Rp.B207
+  case Rp.B208
+  case Rp.B209
+  case Rp.B210
+  case Rp.B211
+  case Rp.B212
+  case Rp.B213
+  case Rp.B214
+  case Rp.B215
+  case Rp.B216
+  case Rp.B217
+  case Rp.B218
+  case Rp.B219
+  case Rp.B220
+  case Rp.B221
+  case Rp.B222
+  case Rp.B223
+  case Rp.B224
+  case Rp.B225
+  case Rp.B226
+  case Rp.B227
+  case Rp.B228
+  case Rp.B229
+  case Rp.B230
+  case Rp.B231
+  case Rp.B232
+  case Rp.B233
+  case Rp.B234
+  case Rp.B235
+  case Rp.B236
+  case Rp.B237
+  case Rp.B238
+  case Rp.B239
+  case Rp.B240
+  case Rp.B241
+  case Rp.B242
+  case Rp.B243
+  case Rp.B244
+  case Rp.B245
+  case Rp.B246
+  case Rp.B247
+  case Rp.B248
+  case Rp.B249
+  case Rp.B250
+  case Rp.B251
+  case Rp.B252
+  case Rp.B253
+  case Rp.B254
+  case Rp.B255
+  case Rp.B256
+  case Rp.BPay(n: I64, ok: Bool)
+
+def Rp.big(b: Rp.Big): I64 = b match
+  case Rp.B0 => 1
+  case Rp.B255 => 2
+  case Rp.B256 => 3
+  case Rp.BPay(n, ok) => n + Rp.b2i(ok)
+  case _ => 0
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val d: Rp.Shape[I64] = Rp.Dot
+  val g: Rp.Shape[I64] = Rp.Gap
+  val e: Rp.Shape[I64] = Rp.End
+  Rp.showI(d)
+  Rp.showI(g)
+  Rp.showI(e)
+  Rp.showI(Rp.Line(true, 7))
+  Rp.showI(Rp.Flag(true))
+  Rp.showI(Rp.Line(false, 8))
+  Rp.showI(Rp.Box(1, true, 2, false))
+  Rp.showI(Rp.Box(3, false, 4, true))
+  val sd: Rp.Shape[Str] = Rp.Dot
+  val sg: Rp.Shape[Str] = Rp.Gap
+  val se: Rp.Shape[Str] = Rp.End
+  Rp.showS(sd)
+  Rp.showS(sg)
+  Rp.showS(se)
+  Rp.showS(Rp.Line(true, "x"))
+  Rp.showS(Rp.Flag(false))
+  Rp.showS(Rp.Box("p", true, "q", true))
+  Console.printI64(Rp.big(Rp.B0))
+  Console.print(" ")
+  Console.printI64(Rp.big(Rp.B1))
+  Console.print(" ")
+  Console.printI64(Rp.big(Rp.B255))
+  Console.print(" ")
+  Console.printI64(Rp.big(Rp.B256))
+  Console.print(" ")
+  Console.printI64(Rp.big(Rp.BPay(40, true)))
+  Console.print("\n")
+  0

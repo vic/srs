@@ -28,7 +28,7 @@ enum { CHUNK = 1 << 20 };
 void* rt_arena_new(void) { return calloc(1, sizeof(arena)); }
 void* rt_arena_alloc(void* self, int64_t size) {
   arena* a = self;
-  size_t n = ((size_t)size + 15) & ~(size_t)15;
+  size_t n = ((size_t)size + 7) & ~(size_t)7;  // 8-byte granule, as the inline bump (s2/emit.srs Emit.allocFast)
   if (!a->head || a->head->used + n > a->head->cap) {
     size_t cap = n > CHUNK ? n : CHUNK;
     chunk* c = malloc(sizeof(chunk) + cap);

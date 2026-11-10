@@ -260,11 +260,11 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
   case El.New(_, en, ts, c, at, args) => at match
     case El.In(reg) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, reg, args)
     case El.Comptime => Console.print("0")
+  // a nullary case is P_, the address of its read-only static (Emit.nullaries)
   case El.Nullary(_, _, ts, c) =>
-    Console.print("(&N_")
+    Console.print("P_")
     Emit.id(c)
     Emit.suffix(Emit.grAll(cx, fi, ts))
-    Console.print(")")
   case El.Op(_, recv, ty, op, args) => Emit.op(cx, fi, env, recv, Emit.gr(cx, fi, ty), op, args)
   // a multi-shot handle: the locals in scope by address, then the first segment (Emit.mSite prints the segments)
   case El.MHandled(_, _, _, _, _, _, _, _) =>
@@ -494,7 +494,10 @@ def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.Lis
     Emit.id(c)
     Console.print("))); o")
     Console.printI64(n)
-    Console.print("->tag = ")
+    // the tag is written through the case struct (its t_), as every field is: one union member per box
+    Console.print("->u.C_")
+    Emit.id(c)
+    Console.print(".t_ = ")
     Console.printI64(tag)
     Console.print(";")
     Emit.fieldSets(cx, fi, env, n, c, fields, args)
@@ -972,39 +975,87 @@ def Emit.withEnum(cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
         val Ast.Enum(_, _, gs, cases) = e
         val tv = Ty.zipBind(Ty.tparams(gs, Coll.Nil), args, Coll.Nil)
         what match
+          // the tag and every case struct start at offset 0: a case struct begins with its own copy of the tag (t_),
+          // so its one-byte fields share the tag's word and a box is just its case struct
           case Emit.Layout =>
+            val w = Emit.tagWidth(Coll.length(cases))
             Console.print("struct E_")
             Emit.enumName(n, args)
-            Console.print(" { int64_t tag; union {")
-            Emit.caseStructs(cx, cases, tv)
-            Console.print(" int64_t none_; } u; };\n")
+            Console.print(" { union { ")
+            Emit.tagType(w)
+            Console.print(" tag; union {")
+            Emit.caseStructs(cx, cases, tv, w)
+            Console.print(" ")
+            Emit.tagType(w)
+            Console.print(" none_; } u; }; };\n")
           case Emit.Code => Emit.nullaries(n, args, cases, 0)
   case _ => ()
 
-def Emit.caseStructs(cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind]): Unit = cs match
+def Emit.caseStructs(cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind], w: Emit.TagW): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, cn, fs) = c
     fs match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        Console.print(" struct {")
-        Emit.fieldDecls(cx, fs, tv)
+        Console.print(" struct { ")
+        Emit.tagType(w)
+        Console.print(" t_;")
+        Emit.fieldDecls(cx, fs, tv, Emit.AByte)
+        Emit.fieldDecls(cx, fs, tv, Emit.AWord)
         Console.print(" } C_")
         Emit.id(cn)
         Console.print(";")
-    Emit.caseStructs(cx, rest, tv)
+    Emit.caseStructs(cx, rest, tv, w)
 
-def Emit.fieldDecls(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind]): Unit = fs match
+// the fields of alignment a, in declaration order (fields are read and written by name, so their order is free)
+def Emit.fieldDecls(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], a: Emit.Align): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val Ast.Binder(_, x, t) = f
-    Console.print(" ")
-    Emit.ctype(cx, Ty.term(t, tv))
-    Console.print(" f_")
-    Emit.id(x)
-    Console.print(";")
-    Emit.fieldDecls(cx, rest, tv)
+    val ft = Ty.term(t, tv)
+    if Emit.sameAlign(Emit.alignOf(cx, ft), a) then
+      Console.print(" ")
+      Emit.ctype(cx, ft)
+      Console.print(" f_")
+      Emit.id(x)
+      Console.print(";")
+    else ()
+    Emit.fieldDecls(cx, rest, tv, a)
+
+// a tag is the smallest unsigned C int that holds the case count
+enum Emit.TagW:
+  case Emit.T8
+  case Emit.T16
+  case Emit.T32
+
+def Emit.tagWidth(cases: I64): Emit.TagW = if cases <= 256 then Emit.T8 else if cases <= 65536 then Emit.T16 else Emit.T32
+
+def Emit.tagType(w: Emit.TagW): Unit = w match
+  case Emit.T8 => Console.print("uint8_t")
+  case Emit.T16 => Console.print("uint16_t")
+  case Emit.T32 => Console.print("uint32_t")
+
+// a field's C alignment (Emit.ctype): bool is one byte; every other field type is an 8-byte word
+enum Emit.Align:
+  case Emit.AByte
+  case Emit.AWord
+
+def Emit.alignOf(cx: Emit.Cx, t: K.Term): Emit.Align = t match
+  case K.Con(n, _) =>
+    if Str.eq(Sym.str(n), "Bool") then Emit.AByte
+    else Emit.nominalOf(cx, n) match
+      case Coll.Some(b) => Emit.alignOf(cx, b)
+      case Coll.None => Emit.AWord
+  case _ => Emit.AWord
+
+def Emit.sameAlign(a: Emit.Align, b: Emit.Align): Bool = a match
+  case Emit.AByte => Emit.isByte(b)
+  case Emit.AWord => if Emit.isByte(b) then false else true
+
+def Emit.isByte(a: Emit.Align): Bool = a match
+  case Emit.AByte => true
+  case Emit.AWord => false
 
 def Emit.nullaries(n: Sym.Sym, args: Coll.List[K.Term], cs: Coll.List[Ast.Case], i: I64): Unit = cs match
   case Coll.Nil => ()
@@ -1012,14 +1063,27 @@ def Emit.nullaries(n: Sym.Sym, args: Coll.List[K.Term], cs: Coll.List[Ast.Case],
     val Ast.Case(_, cn, fs) = c
     fs match
       case Coll.Nil =>
-        Console.print("static struct E_")
+        Console.print("static const struct E_")
         Emit.enumName(n, args)
         Console.print(" N_")
         Emit.id(cn)
         Emit.suffix(args)
-        Console.print(" = { ")
+        Console.print(" = { .tag = ")
         Console.printI64(i)
-        Console.print(", { 0 } };\n")
+        Console.print(" };\n")
+        // no box is written after its constructor, so the static is const data; P_ is its address as the value's
+        // type (a const pointer: the C compiler folds a match on it)
+        Console.print("static struct E_")
+        Emit.enumName(n, args)
+        Console.print("* const P_")
+        Emit.id(cn)
+        Emit.suffix(args)
+        Console.print(" = (struct E_")
+        Emit.enumName(n, args)
+        Console.print("*)&N_")
+        Emit.id(cn)
+        Emit.suffix(args)
+        Console.print(";\n")
       case Coll.Cons(_, _) => ()
     Emit.nullaries(n, args, rest, i + 1)
 
@@ -1841,8 +1905,9 @@ def Emit.allocFast(cx: Emit.Cx): Unit =
   Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
   Console.print("])(c->self, size);\n")
   Console.print("}\n")
+  // an 8-byte granule: no box field is aligned to more than 8 (Emit.alignOf), and chunk data starts 8-aligned
   Console.print("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n")
-  Console.print("  size_t n = ((size_t)size + 15) & ~(size_t)15;\n")
+  Console.print("  size_t n = ((size_t)size + 7) & ~(size_t)7;\n")
   Console.print("  char* p = c->cur;\n")
   Console.print("  if ((size_t)(c->end - p) >= n) { c->cur = p + n; return p; }\n")
   Console.print("  return srs_alloc_slow(c, size);\n")
