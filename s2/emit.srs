@@ -10,6 +10,10 @@ enum Emit.Alloc:
   case Emit.Inline
   case Emit.VTable
 
+def Emit.isInline(al: Emit.Alloc): Bool = al match
+  case Emit.Inline => true
+  case Emit.VTable => false
+
 // the declarations emit reads, by name
 enum Emit.Cx:
   case Emit.Cx(s: Coll.IMap[K.Term], fns: Coll.SMap[El.Fn], cases: Coll.SMap[Emit.CaseAt], enums: Coll.SMap[Ast.Enum], protos: Coll.SMap[Ast.Proto], hprotos: Coll.SMap[Sym.Sym], alloc: Emit.Alloc, nominal: Coll.SMap[K.Term])
@@ -534,8 +538,14 @@ def Emit.opIn(os: Coll.List[Ast.Op], op: Sym.Sym, i: I64): I64 = os match
 // trait method of {} evidence: the given's static fn (rung T2)
 def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr]): Unit = ty match
   case K.Con(pn, targs) =>
-    val Emit.Cx(_, _, _, _, ps, _, _, _) = cx
-    Coll.sLookup(ps, pn) match
+    val Emit.Cx(_, _, _, _, ps, _, al, _) = cx
+    // r.alloc(n) bumps through srs_alloc as a constructor does: the capability holds an Arena's bump (Emit.allocFast)
+    if Sym.eq(pn, Sym.of("Region")) && Sym.eq(op, Sym.of("alloc")) && Emit.isInline(al) then
+      Console.print("srs_alloc(")
+      Emit.local(Emit.vs(env), recv)
+      Emit.args(cx, fi, env, args, Emit.Comma)
+      Console.print(")")
+    else Coll.sLookup(ps, pn) match
       case Coll.Some(p) =>
         val Ast.Proto(_, _, _, _, ends, _, ops, _) = p
         Ty.opIn(ops, op) match
@@ -1813,19 +1823,29 @@ def Emit.vtOps(pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
     Console.print(",")
     Emit.vtOps(pre, hn, rest)
 
-// the inline Arena bump (spec sec 5.2): the chunk layout of rt/srs_rt.c:24-25
+// the inline Arena bump (spec sec 5.2): the free bytes of an Arena's head chunk are cur..end of its capability, so an
+// allocation is a compare and a bump with no vtable test. The slow path (end reached, or a Region handler that is not
+// an Arena: its cur and end stay null) runs the handler's alloc; for an Arena it writes the bump back into the head
+// chunk (the chunk layout of rt/srs_rt.c:24-25), lets rt_arena_alloc open a chunk, and takes the new head's free bytes
 def Emit.allocFast(cx: Emit.Cx): Unit =
   Console.print("typedef struct srs_chunk { struct srs_chunk* next; size_t used, cap; } srs_chunk;\n")
-  Console.print("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n")
+  Console.print("__attribute__((noinline)) static void* srs_alloc_slow(srs_cap* c, int64_t size) {\n")
   Console.print("  if (c->vt == vt_Srs__Arena) {\n")
-  Console.print("    srs_chunk* h = *(srs_chunk**)c->self;\n")
-  Console.print("    size_t n = ((size_t)size + 15) & ~(size_t)15;\n")
-  Console.print("    if (h && h->used + n <= h->cap) { void* p = (char*)(h + 1) + h->used; h->used += n; return p; }\n")
-  Console.print("    return rt_arena_alloc(c->self, size);\n")
+  Console.print("    srs_chunk** hp = (srs_chunk**)c->self;\n")
+  Console.print("    if (c->end) (*hp)->used = (size_t)(c->cur - (char*)(*hp + 1));\n")
+  Console.print("    void* p = rt_arena_alloc(c->self, size);\n")
+  Console.print("    c->cur = (char*)(*hp + 1) + (*hp)->used; c->end = (char*)(*hp + 1) + (*hp)->cap;\n")
+  Console.print("    return p;\n")
   Console.print("  }\n")
   Console.print("  return ((void*(*)(void*, int64_t))c->vt[")
   Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
   Console.print("])(c->self, size);\n")
+  Console.print("}\n")
+  Console.print("static inline void* srs_alloc(srs_cap* c, int64_t size) {\n")
+  Console.print("  size_t n = ((size_t)size + 15) & ~(size_t)15;\n")
+  Console.print("  char* p = c->cur;\n")
+  Console.print("  if ((size_t)(c->end - p) >= n) { c->cur = p + n; return p; }\n")
+  Console.print("  return srs_alloc_slow(c, size);\n")
   Console.print("}\n")
 
 def Emit.hasMain(cx: Emit.Cx): Bool =
@@ -1844,7 +1864,9 @@ def Emit.program(ds: Coll.List[Ast.Decl], res: Ty.Result): Unit =
   Console.print("#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n")
   Console.print("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
   Emit.strPrims()
-  Console.print("typedef struct { void* self; void* const* vt; int64_t live; } srs_cap;\n")
+  // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
+  // always null for other handlers
+  Console.print("typedef struct { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")
   Console.print("typedef struct { void* st; srs_cap* c[]; } srs_env;\n")
   Console.print("void rt_init(int argc, char** argv);\n")
   Emit.fwds(ens)
