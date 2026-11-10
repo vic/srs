@@ -1,0 +1,26 @@
+def g(): I64 = 1
+enum T:
+  case A
+  case B
+def g(): I64 = 2
+enum T:
+  case A
+def h(): I64 = 3
+def g(): I64 = zz()
+def h(x: Nope): I64 = yy
+def main(): I64 = g()
+// every clash of the names pass, in the order it reports them: a name declared three times, two in each namespace,
+// a case declared twice, unknown names and an unknown type (the gate checks each line; the order is checked by the
+// differential of the names lane, which compares the whole output)
+// expect: error[duplicate]
+// expect: --> tests/s2/neg/names_order.srs:1
+// expect: --> tests/s2/neg/names_order.srs:5
+// expect: --> tests/s2/neg/names_order.srs:9
+// expect: --> tests/s2/neg/names_order.srs:2
+// expect: --> tests/s2/neg/names_order.srs:6
+// expect: --> tests/s2/neg/names_order.srs:3
+// expect: --> tests/s2/neg/names_order.srs:7
+// expect: --> tests/s2/neg/names_order.srs:8
+// expect: error[unknown-name]
+// expect: --> tests/s2/neg/names_order.srs:10
+// expect: error[unknown-type]

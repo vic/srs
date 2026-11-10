@@ -100,7 +100,9 @@ def Names.s(x: Sym.Sym): D.Val = D.VSym(x)
 def Names.f2(rel: Names.Rel, a: D.Val, b: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
 def Names.f3(rel: Names.Rel, a: D.Val, b: D.Val, c: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil))))
 def Names.f5(rel: Names.Rel, a: D.Val, b: D.Val, c: D.Val, d: D.Val, e: D.Val): D.Fact = D.Fact(Names.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Cons(d, Coll.Cons(e, Coll.Nil))))))
-def Names.fDecl(ns: Names.Ns, n: Sym.Sym, id: I64): D.Fact = Names.f3(Names.RDecl, Names.nsVal(ns), Names.s(n), Names.i(id))
+// decl(n, ns, id), the name first: D indexes the first bound column of an atom, so dup finds the other declarations
+// of n by name (ns first: each probe read every declaration of its namespace, a quadratic join)
+def Names.fDecl(ns: Names.Ns, n: Sym.Sym, id: I64): D.Fact = Names.f3(Names.RDecl, Names.s(n), Names.nsVal(ns), Names.i(id))
 def Names.fDeclLine(id: I64, line: I64): D.Fact = Names.f2(Names.RDeclLine, Names.i(id), Names.i(line))
 def Names.fUseCall(n: Sym.Sym, line: I64): D.Fact = Names.f2(Names.RUseCall, Names.s(n), Names.i(line))
 def Names.fTyRef(n: Sym.Sym, line: I64): D.Fact = Names.f2(Names.RTyRef, Names.s(n), Names.i(line))
@@ -383,9 +385,9 @@ def Names.callNs(): D.Arg = D.AVal(D.VInt(0))
 def Names.typeNs(): D.Arg = D.AVal(D.VInt(1))
 
 def Names.rules(): Coll.List[D.Rule] =
-  val declared = Names.rule(Names.RDeclared, Names.l2(0, 1), Names.l1(Names.pos(Names.RDecl, Names.l3(0, 1, 2))))
+  val declared = Names.rule(Names.RDeclared, Names.l2(0, 1), Names.l1(Names.pos(Names.RDecl, Names.l3(1, 0, 2))))
   // every declaration of a name declared twice in one namespace (declaration ids differ)
-  val dup = Names.rule(Names.RDupAt, Names.l2(4, 1), Names.l4(Names.pos(Names.RDecl, Names.l3(0, 1, 2)), Names.pos(Names.RDecl, Names.l3(0, 1, 3)), Names.neg(Names.RSame, Names.l2(2, 3)), Names.pos(Names.RDeclLine, Names.l2(2, 4))))
+  val dup = Names.rule(Names.RDupAt, Names.l2(4, 1), Names.l4(Names.pos(Names.RDecl, Names.l3(1, 0, 2)), Names.pos(Names.RDecl, Names.l3(1, 0, 3)), Names.neg(Names.RSame, Names.l2(2, 3)), Names.pos(Names.RDeclLine, Names.l2(2, 4))))
   val unknown = D.Rule(Names.atom(Names.RUnknownAt, Names.l2(4, 1)), Names.l2(Names.pos(Names.RUseCall, Names.l2(1, 4)), D.Neg(D.Atom(Names.relSym(Names.RDeclared), Coll.Cons(Names.callNs(), Names.l1(Names.v(1)))))))
   val noType = D.Rule(Names.atom(Names.RNoTypeAt, Names.l2(4, 1)), Names.l2(Names.pos(Names.RTyRef, Names.l2(1, 4)), D.Neg(D.Atom(Names.relSym(Names.RDeclared), Coll.Cons(Names.typeNs(), Names.l1(Names.v(1)))))))
   // protocol well-formed: start and transition states are its states; its drop op is its op
