@@ -126,7 +126,7 @@ if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_main_call.c" && ! grep -q 's_
 # their params, so the grep is on the rows f_*). compiled with the prelude alone: tests/s2/prog/list.lib writes a {r: Region}
 # binder, which keeps the param in every program that loads it. each is also run: its output must be its .out
 rowreg='f_[A-Za-z0-9_]*(srs_cap\* p_eff__Region'
-for n in one heap two named nested; do
+for n in one heap two named nested handler trait traitg given givenfn; do
   t=tests/s2/prog/cap_region_$n; c="$B/s2c_rg_$n.c"
   if timeout 5 "$B/s2c1" lib/prelude.srs "$t.srs" > "$c" && timeout 60 $CC -o "$B/s2c_rg_$n" "$c" rt/srs_rt.c && [ "$(timeout 1 "$B/s2c_rg_$n")" = "$(cat "$t.out")" ]; then
     case $n in
@@ -148,4 +148,33 @@ for t in tests/s2/frag/*.srs; do
   while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
   verdict "frag/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
+# the ratchet (tests/s2/fragment.base): per input, the count of each report-only kind (stmt-expr, auto-type, goto-out,
+# address-of) may not grow, and a decrease must update the base in the same change. inputs: the frozen bench corpus and
+# s2c's own source. armed: tiny_grow.srs (tiny.srs + one extra match) fails against the "tiny" row, and a lowered base
+# row fails too
+frag_ratchet() { # name base fragment-output: one line per cell that differs; exit 1 when any
+  local name=$1 base=$2 out=$3 rc=0 k n b
+  for k in stmt-expr auto-type goto-out address-of; do
+    n=$(printf '%s\n' "$out" | awk -F'\t' -v k="$k" '$1 == k {s += $3} END {print s + 0}')
+    b=$(awk -v i="$name" -v k="$k" '$1 == i && $2 == k {print $3}' "$base")
+    if [ -z "$b" ]; then echo "$name $k: no row in $base"; rc=1
+    elif [ "$n" -gt "$b" ]; then echo "$name $k grew $b -> $n"; rc=1
+    elif [ "$n" -lt "$b" ]; then echo "$name $k shrank $b -> $n: update tests/s2/fragment.base in this change"; rc=1; fi
+  done
+  return $rc
+}
+FB=tests/s2/fragment.base
+CSRCF="bench/corpus/lib/prelude.srs $(ls bench/corpus/s2/*.srs | tr '\n' ' ') bench/corpus/s2c/main.srs"
+for pair in "corpus:$CSRCF" "s2c:$S2C" "tiny:lib/prelude.srs tests/s2/fragbase/tiny.srs"; do
+  name=${pair%%:*}; out=$(timeout 60 "$B/s2c1" --fragment ${pair#*:} 2>/dev/null); msg=$(frag_ratchet "$name" "$FB" "$out"); code=$?
+  # s2c rows only report: s2c's own source moves with every s2 edit, so the corpus and tiny rows are the ratchet
+  if [ $code -eq 0 ]; then echo "ok fragment ratchet $name"
+  elif [ "$name" = s2c ]; then echo "info fragment s2c (report only): $(printf '%s' "$msg" | tr '\n' ';')"
+  else echo "FAIL fragment ratchet $name: $(printf '%s' "$msg" | head -2 | tr '\n' ';')"; fail=1; fi
+done
+out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny_grow.srs 2>/dev/null); msg=$(frag_ratchet tiny "$FB" "$out"); code=$?
+case "$msg" in *"stmt-expr grew"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: one extra match grows stmt-expr" || { echo "FAIL fragment ratchet armed (grow)"; fail=1; };; *) echo "FAIL fragment ratchet armed (grow): $msg"; fail=1;; esac
+sed 's/^tiny stmt-expr .*/tiny stmt-expr 40/' "$FB" > "$B/fragment.low"
+out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny.srs 2>/dev/null); msg=$(frag_ratchet tiny "$B/fragment.low" "$out"); code=$?
+case "$msg" in *"stmt-expr shrank"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: a decrease needs a base update" || { echo "FAIL fragment ratchet armed (shrink)"; fail=1;};; *) echo "FAIL fragment ratchet armed (shrink): $msg"; fail=1;; esac
 exit $fail

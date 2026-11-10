@@ -1,0 +1,18 @@
+// the ratchet's armed control: tiny.srs plus ONE extra match (a stmt-expr): the ratchet against the row "tiny" must fail
+enum Ft.B:
+  case Ft.Y
+  case Ft.N
+
+def Ft.not(b: Ft.B): Ft.B = b match
+  case Ft.Y => Ft.N
+  case Ft.N => Ft.Y
+
+def Ft.id(b: Ft.B): Ft.B = b match
+  case Ft.Y => Ft.Y
+  case Ft.N => Ft.N
+
+def main(): I64 =
+  handle c = Srs.Console()
+  Ft.id(Ft.not(Ft.Y)) match
+    case Ft.Y => 1
+    case Ft.N => 0

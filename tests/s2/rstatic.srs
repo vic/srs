@@ -1,0 +1,42 @@
+// s2 component (Region static, rule of Emit.staticsOf): El-level, not a grep of C. each probe is the prelude plus one program
+// with ONE Arena handle in main; the line says whether Emit.staticsOf makes Region a file-static instance. static = 1 only
+// when no Region binder {r: Region} is written anywhere. every namesRegion arm has its probe: a def, a named call, a handler
+// fn, a trait method, a trait head, a given head, a given method. a mutant that drops an arm (or the whole named
+// condition) prints 1 where 0 is expected
+def RS.src(s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
+  case Parse.Ok(ds, _) => ds
+  case Parse.Err(_, _) => Coll.Nil
+
+def RS.regions(sts: Coll.List[Emit.Static], n: I64): I64 = sts match
+  case Coll.Nil => n
+  case Coll.Cons(s, rest) =>
+    val Emit.Static(p, _, _) = s
+    RS.regions(rest, if Sym.eq(p, Sym.of("Region")) then n + 1 else n)
+
+def RS.probe(name: Str, src: Str, lib: Coll.List[Ast.Decl]): Unit =
+  val ds = Coll.revOnto(Coll.rev(RS.src(src)), lib)
+  val res = Ty.check(ds)
+  val Ty.Result(cs, _, s, fs, _, _) = res
+  val cx = Emit.cxOf(ds, s, fs, Coll.Nil)
+  Console.print(name)
+  Console.print(": clashes ")
+  Console.printI64(Coll.length(cs))
+  Console.print(", static Region ")
+  Console.printI64(RS.regions(Emit.staticsOf(cx, ds, res), 0))
+  Console.print("\n")
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle fs = Srs.Files()
+  val lib = RS.src(Files.read("lib/prelude.srs"))
+  RS.probe("none", "def f(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("def", "def f {q: Region} (x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("named", "def f {q: Region} (x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  f{r}(1)\n", lib)
+  RS.probe("handler", "capability T:\n  def add(a: I64): I64\nhandler H for T:\n  def add {q: Region} (a: I64): I64 = a\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("trait", "trait Tr [A: Type]:\n  def mk {q: Region} (x: A): A\ngiven Tr[I64]:\n  def mk(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("traithead", "trait Tr [A: Type] {q: Region}:\n  def mk(x: A): A\ngiven Tr[I64]:\n  def mk(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("givenhead", "trait Tr [A: Type]:\n  def mk(x: A): A\ngiven {q: Region} Tr[I64]:\n  def mk(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("givenfn", "trait Tr [A: Type]:\n  def mk(x: A): A\ngiven Tr[I64]:\n  def mk {q: Region} (x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("two", "def main(): I64 =\n  handle r = Srs.Arena()\n  handle q = Srs.Heap()\n  0\n", lib)
+  0

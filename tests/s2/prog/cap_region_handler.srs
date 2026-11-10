@@ -1,0 +1,16 @@
+// pass: one Arena in main, but a handler fn writes a Region binder {r: Region}: namesRegion looks into handler fns, so Region
+// is not static and every row keeps its Region param (tests/run.sh greps the C). the handler is installed but its op is not
+// called: a handler fn with a Region binder is called through the vtable without the cap arg (open bug, see REPORT-follow1)
+capability Rh.Tally:
+  def add(a: I64, b: I64): I64
+
+handler Rh.Plain for Rh.Tally:
+  def add {r: Region} (a: I64, b: I64): I64 = a + b
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle p = Rh.Plain()
+  Console.printI64(5)
+  Console.printChar(10)
+  0
