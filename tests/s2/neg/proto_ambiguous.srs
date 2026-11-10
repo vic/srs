@@ -1,0 +1,30 @@
+// expect: error[protocol-ambiguous]
+// one op from one state to two states: the next op would choose the state (both branches run the Busy-only op)
+capability PThunk:
+  state Pending, Busy, Done, Lost
+  start Pending
+  stop Done
+  transition tries Pending -> Busy, Pending -> Lost
+  def tryClaim <s tries t> (): Bool <t>
+  def run <Busy> (): I64 <Busy>
+  def put <Busy> (v: I64): Unit <Done>
+  def wait <Lost> (): I64 <Done>
+
+handler HP for PThunk:
+  def tryClaim(): Bool = true
+  def run(): I64 = 42
+  def put(v: I64): Unit = ()
+  def wait(): I64 = 0
+
+def main(): I64 =
+  handle t = HP()
+  if t.tryClaim() then
+    val v = t.run()
+    t.put(v)
+    v
+  else
+    val w = t.run()
+    t.put(w)
+    w
+// expect: 'tryClaim' from state 'Pending'
+// expect: --> tests/s2/neg/proto_ambiguous.srs:8

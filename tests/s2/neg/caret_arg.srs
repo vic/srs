@@ -1,0 +1,13 @@
+// expect: error[capability-bound]
+// a param a: List^<s> is a bound the body trusts: an arg that lives in t does not fit
+def keep {s: Region} {t: Region} (a: List^<s>): I64 = sum(a)
+def go {s: Region} {t: Region} (): I64 =
+  val x = build{t}(3)
+  keep{s, t}(x)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  handle tmp = Srs.Arena()
+  go{sess, tmp}()
+// expect: 't'
+// expect: --> tests/s2/neg/caret_arg.srs:6

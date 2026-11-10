@@ -1,0 +1,10 @@
+// expect: error[capability-bound]
+// a result type List^<r> bounds the body's value: a list built in s does not fit
+def mk {r: Region} {s: Region} (): List^<r> = build{s}(2)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle b = Srs.Heap()
+  sum(mk{a, b}())
+// expect: 's'
+// expect: --> tests/s2/neg/caret_result.srs:3

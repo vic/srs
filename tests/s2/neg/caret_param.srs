@@ -1,0 +1,11 @@
+// expect: error[use-after-free]
+// inside the def, a param a: List^<r> lives in r: a read after r.free() is dead
+def work {r: Region} <r: Open> (a: List^<r>): I64 <r: Freed> =
+  r.free()
+  sum(a)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle tmp = Srs.Arena()
+  val xs = build{tmp}(2)
+  work(xs)
+// expect: --> tests/s2/neg/caret_param.srs:5

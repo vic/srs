@@ -1,0 +1,19 @@
+// pass: a result of a fact type is bound to the capability its binder takes, not to its args: Code made in sess from an
+// ast in the per-file arena outlives the arena
+type Code {r: Region} <r: Open> = Ptr
+extern def ext_handle {r: Region} <r: Open> (): Code
+def compileTo {r: Region} <r: Open> (ast: List): Code = ext_handle()
+def runCode(c: Ptr): I64 = 7
+def loadFile {sess: Region} <sess: Open> (n: I64): Code =
+  handle file = Srs.Arena()
+  val ast = build{file}(n)
+  compileTo{sess}(ast)
+def session {s: Region} <s: Open> (): I64 =
+  val c: Code = loadFile(3)
+  runCode(c)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  Console.printI64(session())
+  Console.print("\n")
+  0

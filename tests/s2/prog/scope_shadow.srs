@@ -1,0 +1,12 @@
+// pass: a val declared in a block that closes tmp shadows an outer x; the outer x read after the block is alive
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  val x = Cons(1, Nil)
+  val y =
+    handle tmp = Srs.Arena()
+    val x = Cons(2, Nil)
+    sum(x)
+  Console.printI64(sum(x) + y)
+  Console.print("\n")
+  0

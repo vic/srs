@@ -1,0 +1,12 @@
+// expect: error[region-escape]
+// the Code is made in the per-file arena (compileTo{file}): it escapes loadFile's block
+type Code {r: Region} <r: Open> = Ptr
+extern def compileTo {r: Region} <r: Open> (ast: List): Code
+extern def runCode(c: Ptr): I64
+def loadFile {sess: Region} <sess: Open> (n: I64): Code =
+  handle file = Srs.Arena()
+  val ast = build{file}(n)
+  compileTo{file}(ast)
+def main(): I64 = 0
+// expect: 'file'
+// expect: --> tests/s2/neg/tf_maker_arena.srs:7

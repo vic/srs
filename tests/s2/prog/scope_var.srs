@@ -1,0 +1,14 @@
+// pass: an outer var updated inside a block that opens and closes a region: its new value lives in sess, not tmp
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  var cache = build{sess}(1)
+  var i = 0
+  while i < 3 do
+    handle tmp = Srs.Arena()
+    val xs = build{tmp}(2)
+    cache = build{sess}(sum(xs) + i)
+    i = i + 1
+  Console.printI64(sum(cache))
+  Console.print("\n")
+  0

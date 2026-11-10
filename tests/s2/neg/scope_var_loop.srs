@@ -1,0 +1,19 @@
+// expect: error[use-after-free]
+// each turn of the loop opens and closes tmp: the var keeps cells of the turns before (hung at run time)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  var cache = Cons(1, Nil)
+  var i = 0
+  while i < 3 do
+    handle tmp = Srs.Arena()
+    val big = tmp.alloc(2000000)
+    cache = Cons(i, cache)
+    i = i + 1
+  Console.printI64(i)
+  Console.print(" ")
+  Console.printI64(sum(cache))
+  0
+// the 2nd turn reads the 1st turn's cells, and so does the read after the loop
+// expect: --> tests/s2/neg/scope_var_loop.srs:11
+// expect: --> tests/s2/neg/scope_var_loop.srs:15

@@ -1,0 +1,37 @@
+// expect: error[capability-bound]
+// an arg of a fact type is bound to its maker: b1's view passed where o's view is wanted (same{o}) does not fit
+capability Scratch:
+  state Building, Viewed, Gone
+  start Building
+  stop Gone
+  def add <Building> (s: Str): Unit <Building>
+  def view <Building> (): Ptr <Viewed>
+  def clear <Viewed> (): Unit <Building>
+  transition ends Building -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+handler HScratch for Scratch:
+  def add(s: Str): Unit = ()
+  def view(): Ptr = Srs.noState()
+  def clear(): Unit = ()
+  def done(): Unit = ()
+
+// bytes of the builder, valid only while it is Viewed (no change since the view)
+type View {b: Scratch} <b: Viewed> = Ptr
+extern def I6.viewOf {b: Scratch} <b: Viewed> (p: Ptr): View
+def I6.hash {b: Scratch} <b: Viewed> (v: View): I64 = 7
+def I6.keep(p: Ptr): I64 = 0
+def I6.same {b: Scratch} <b: Viewed> (v: View): View = v
+def main(): I64 =
+  handle o = HScratch()
+  handle b1 = HScratch()
+  val ov = I6.viewOf{o}(o.view())
+  val v = I6.viewOf{b1}(b1.view())
+  val w = I6.same{o}(v)
+  b1.clear()
+  val n = I6.keep(w)
+  o.done()
+  b1.done()
+  n
+// expect: 'b1'
+// expect: --> tests/s2/neg/tf_through.srs:30

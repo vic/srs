@@ -1,0 +1,43 @@
+// pass: each view is read before its builder leaves Viewed (type facts bind a value to the capability that made it)
+// a view of the one reusable string builder
+capability Scratch:
+  state Building, Viewed, Gone
+  start Building
+  stop Gone
+  def add <Building> (s: Str): Unit <Building>
+  def view <Building> (): Ptr <Viewed>
+  def clear <Viewed> (): Unit <Building>
+  transition ends Building -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+handler HScratch for Scratch:
+  def add(s: Str): Unit = ()
+  def view(): Ptr = Srs.noState()
+  def clear(): Unit = ()
+  def done(): Unit = ()
+
+// bytes of the builder, valid only while it is Viewed (no change since the view)
+type View {b: Scratch} <b: Viewed> = Ptr
+// the C test helper ext_handle (rt/srs_rt.c) stands for the bytes of the builder
+extern def ext_handle {b: Scratch} <b: Viewed> (): View
+def I6.viewOf {b: Scratch} <b: Viewed> (p: Ptr): View = ext_handle()
+def I6.hash {b: Scratch} <b: Viewed> (v: View): I64 = 7
+def I6.keep(p: Ptr): I64 = 0
+
+// each view is consumed (hashed) before the builder changes
+def I6.two {b: Scratch} <b: Building> (): I64 <b: Viewed> =
+  b.add("Derive(")
+  val v: View = I6.viewOf(b.view())
+  val h = I6.hash(v)
+  b.clear()
+  b.add("text")
+  val w: View = I6.viewOf(b.view())
+  h + I6.hash(w)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle b = HScratch()
+  val n = I6.two()
+  b.done()
+  Console.printI64(n)
+  Console.print("\n")
+  0

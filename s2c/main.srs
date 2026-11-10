@@ -39,6 +39,8 @@ enum S2c.What:
   case S2c.Type(t: K.Term)
   case S2c.Want(want: K.Term, got: K.Term)
   case S2c.Text(s: Str)
+  // an op of a capability and one of its source states
+  case S2c.OpFrom(op: Sym.Sym, s: Sym.Sym)
 
 def S2c.diag(fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.What, help: Str): Unit =
   Console.eprint("error[")
@@ -49,6 +51,12 @@ def S2c.diag(fs: Coll.List[S2c.File], code: Str, line: I64, title: Str, w: S2c.W
     case S2c.Name(n) =>
       Console.eprint(" '")
       Console.eprint(Sym.str(n))
+      Console.eprint("'")
+    case S2c.OpFrom(op, s) =>
+      Console.eprint(" '")
+      Console.eprint(Sym.str(op))
+      Console.eprint("' from state '")
+      Console.eprint(Sym.str(s))
       Console.eprint("'")
     case S2c.Text(x) =>
       Console.eprint(" ")
@@ -204,6 +212,7 @@ def S2c.showFx(fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs matc
       case Fx.Unsafe(l, x) => S2c.diag(fs, "rule-unsafe", l, "a rule def param is not in its body:", S2c.Name(x), "use each param in the body")
       case Fx.RuleUnknown(l, rel) => S2c.diag(fs, "rule-unknown", l, "unknown relation in rule:", S2c.Name(rel), "use next, at, or a rule def of this capability")
       case Fx.RuleOp(l, op) => S2c.diag(fs, "rule-op", l, "next: not an op of the capability:", S2c.Name(op), "use an op of this capability")
+      case Fx.Ambiguous(l, op, s) => S2c.diag(fs, "protocol-ambiguous", l, "an op goes to more than one state from one state:", S2c.OpFrom(op, s), "give the op one target per state: a run-time outcome is not the program's choice (split the op, one per target)")
     S2c.showFx(fs, rest)
 
 def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
@@ -290,6 +299,7 @@ def S2c.showFlow(fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs 
       case Flow.Dead(l, n) => S2c.diag(fs, "use-after-free", l, "use of a value after its region ended:", S2c.Name(n), "use it before the region ends, or allocate it in a longer region")
       case Flow.Escape(l, n) => S2c.diag(fs, "region-escape", l, "a value escapes the scope of its region", S2c.Name(n), "allocate it in a region that outlives the block")
       case Flow.Stale(l, x) => S2c.diag(fs, "stale-value", l, "the value needs its capability in the state its type names; it is in another state:", S2c.Name(x), "use it before the capability changes state")
+      case Flow.Bound(l, n) => S2c.diag(fs, "capability-bound", l, "a value lives in, or is bound to, a capability its type does not name:", S2c.Name(n), "pass or make a value of the capability the type names (its ^<...> or its fact), or name that capability in the type")
       case Flow.MsState(l, c) => S2c.diag(fs, "multishot-state", l, "a capability from outside a multi-shot handle is in another state here than at the end of the block:", S2c.Name(c), "each resume runs the rest of the block again from here: bring the capability back to this state by the end, or open it inside the block")
     S2c.showFlow(fs, rest)
 

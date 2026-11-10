@@ -1,0 +1,14 @@
+// pass: ^<r> on val, param and result types: a bound that holds, and the value lives in r
+def keep {s: Region} {t: Region} (a: List^<s>): I64 = sum(a)
+def mk {r: Region} {s: Region} (): List^<r> = build{r}(2)
+def go {s: Region} {t: Region} (): I64 =
+  val x: List^<s> = build{s}(3)
+  val y = mk{t, s}()
+  keep{s, t}(x) + sum(y)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  handle tmp = Srs.Arena()
+  Console.printI64(go{sess, tmp}())
+  Console.print("\n")
+  0

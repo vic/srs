@@ -20,6 +20,8 @@ enum Fx.Clash:
   case Fx.Unsafe(line: I64, x: Sym.Sym)
   case Fx.RuleUnknown(line: I64, rel: Sym.Sym)
   case Fx.RuleOp(line: I64, op: Sym.Sym)
+  // R2a unambiguous protocols: op goes from state s to two states (a run-time outcome the program would choose)
+  case Fx.Ambiguous(line: I64, op: Sym.Sym, s: Sym.Sym)
 
 enum Fx.Verdict:
   case Fx.Ok
@@ -66,6 +68,9 @@ enum Fx.Rel:
   case Fx.RUnsafeAt
   case Fx.RRuleUnknownAt
   case Fx.RRuleOpAt
+  case Fx.RTr
+  case Fx.RSameS
+  case Fx.RAmbigAt
 
 def Fx.relSym(rel: Fx.Rel): Sym.Sym = rel match
   case Fx.RCap => Sym.of("fxCap")
@@ -106,6 +111,9 @@ def Fx.relSym(rel: Fx.Rel): Sym.Sym = rel match
   case Fx.RUnsafeAt => Sym.of("fxUnsafeAt")
   case Fx.RRuleUnknownAt => Sym.of("fxRuleUnknownAt")
   case Fx.RRuleOpAt => Sym.of("fxRuleOpAt")
+  case Fx.RTr => Sym.of("fxTr")
+  case Fx.RSameS => Sym.of("fxSameS")
+  case Fx.RAmbigAt => Sym.of("fxAmbigAt")
 
 // ── rule builders: a var by number, a constant, an atom ──
 def Fx.v(n: I64): D.Arg = D.AVar(n)
@@ -146,7 +154,9 @@ def Fx.rules(): Coll.List[D.Rule] =
   val a = Fx.l5(isCap, defOp, defRel, defRelN, var0)
   val b = Fx.l5(rrel, notCap, badState, twice, notOp)
   val c = Fx.l5(unknownRel, relArity, unbound, exitOther, reserved)
-  val d = Fx.l4(clauseArity, unsafe, ruleUnknown, ruleOp)
+  // unambiguous protocols: one op from one state has one target (vars: p 0, op 1, s 2, t 3, line 4, t2 5, line2 6)
+  val ambig = Fx.rule(Fx.RAmbigAt, Fx.l3(4, 1, 2), Fx.l3(Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 5, 6))), Fx.n(Fx.RSameS, Fx.vs(Fx.l2(3, 5)))))
+  val d = Fx.l5(clauseArity, unsafe, ruleUnknown, ruleOp, ambig)
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), Coll.revOnto(Coll.rev(c), d)))
 
 // ── facts ──
@@ -198,13 +208,20 @@ def Fx.proto(p: Ast.Proto, st: Fx.St): Fx.St =
 
 def Fx.statesF(p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Fx.St): Fx.St = ss match
   case Coll.Nil => st
-  case Coll.Cons(s, rest) => Fx.statesF(p, rest, Fx.add(st, Fx.fact(Fx.RState, Fx.l2(Fx.s(p), Fx.s(s)))))
+  case Coll.Cons(s, rest) => Fx.statesF(p, rest, Fx.add(Fx.add(st, Fx.fact(Fx.RState, Fx.l2(Fx.s(p), Fx.s(s)))), Fx.fact(Fx.RSameS, Fx.l2(Fx.s(s), Fx.s(s)))))
 
 def Fx.opsF(p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, n, _, _, _) = o
-    Fx.opsF(p, rest, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))
+    val Ast.Op(line, n, _, _, trs) = o
+    Fx.opsF(p, rest, Fx.trsF(p, n, line, trs, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n))))))
+
+// fxTr(p, op, s, t, line): op of p goes from s to t
+def Fx.trsF(p: Sym.Sym, op: Sym.Sym, line: I64, trs: Coll.List[Ast.Trans], st: Fx.St): Fx.St = trs match
+  case Coll.Nil => st
+  case Coll.Cons(t, rest) =>
+    val Ast.Trans(a, b) = t
+    Fx.trsF(p, op, line, rest, Fx.add(st, Fx.fact(Fx.RTr, Fx.l5(Fx.s(p), Fx.s(op), Fx.s(a), Fx.s(b), Fx.i(line)))))
 
 // a rule def: its relation and arity; reserved names; its params; its body's names and relations
 def Fx.ruleDefs(p: Sym.Sym, rs: Coll.List[Ast.RuleDef], st: Fx.St): Fx.St = rs match
@@ -313,7 +330,9 @@ def Fx.varsFrom(d: Sym.Sym, g: I64, line: I64, ts: Coll.List[Ast.Term], i: I64, 
 
 // ── the verdict: each clash relation read as (line, name) ──
 def Fx.check(ds: Coll.List[Ast.Decl]): Fx.Verdict = D.solve(Fx.rules(), Fx.facts(ds)) match
-  case D.Solved(m) => Fx.readAll(m, Fx.kinds(), Coll.Nil)
+  case D.Solved(m) => Fx.ambigRows(D.tuples(m, Fx.relSym(Fx.RAmbigAt)), Coll.Nil) match
+    case Coll.Some(acc) => Fx.readAll(m, Fx.kinds(), acc)
+    case Coll.None => Fx.RulesBad(Fx.relSym(Fx.RAmbigAt))
   case D.Unsafe(rel) => Fx.RulesBad(rel)
   case D.NegCycle(rel) => Fx.RulesBad(rel)
 
@@ -342,6 +361,23 @@ def Fx.rows(k: Fx.Rel, ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Fx.Clash]
             case Coll.None => Coll.None
           case D.VInt(_) => Coll.None
         case D.VSym(_) => Coll.None
+      case Coll.Nil => Coll.None
+    case Coll.Nil => Coll.None
+
+// fxAmbigAt rows are (line, op, state)
+def Fx.ambigRows(ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[Fx.Clash]): Coll.Option[Coll.List[Fx.Clash]] = ts match
+  case Coll.Nil => Coll.Some(acc)
+  case Coll.Cons(t, rest) => t match
+    case Coll.Cons(a, r1) => r1 match
+      case Coll.Cons(b, r2) => r2 match
+        case Coll.Cons(c, _) => a match
+          case D.VInt(line) => b match
+            case D.VSym(op) => c match
+              case D.VSym(s) => Fx.ambigRows(rest, Coll.Cons(Fx.Ambiguous(line, op, s), acc))
+              case D.VInt(_) => Coll.None
+            case D.VInt(_) => Coll.None
+          case D.VSym(_) => Coll.None
+        case Coll.Nil => Coll.None
       case Coll.Nil => Coll.None
     case Coll.Nil => Coll.None
 

@@ -1,0 +1,13 @@
+// expect: error[use-after-free]
+// an outer var assigned a value made in the region a block opens, read after the block (its end closes the region)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  var cache = Cons(1, Nil)
+  val y =
+    handle tmp = Srs.Arena()
+    cache = Cons(2, cache)
+    0
+  Console.printI64(sum(cache) + y)
+  0
+// expect: --> tests/s2/neg/scope_var_block.srs:11
