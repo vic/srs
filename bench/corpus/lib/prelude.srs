@@ -21,31 +21,84 @@ extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
 extern def rt_heap_free(self: Ptr): Unit
 
 // Memory region = effect. Open until free; values captured by a region die at free.
-protocol Region:
+capability Region:
   state Open, Freed
   start Open
-  end Freed
-  op alloc(size: I64): Ptr : Open -> Open
-  op free(): Unit : Open -> Freed
+  stop Freed
+  def alloc <Open> (size: I64): Ptr <Open>
+  def free <Open> (): Unit <Freed>
   drop free
 
 // Allocators = handlers of Region.
-handler Arena for Region:
+handler Srs.Arena for Region:
   def init(): Ptr = rt_arena_new()
   def alloc(self: Ptr, size: I64): Ptr = rt_arena_alloc(self, size)
   def free(self: Ptr): Unit = rt_arena_free(self)
 
-handler Heap for Region:
+handler Srs.Heap for Region:
   def init(): Ptr = rt_heap_new()
   def alloc(self: Ptr, size: I64): Ptr = rt_heap_alloc(self, size)
   def free(self: Ptr): Unit = rt_heap_free(self)
+
+// strings: pure primitives, no effect (vic 2026-11-09)
+extern def Str.len(s: Str): I64
+extern def Str.at(s: Str, i: I64): I64
+extern def Str.slice(s: Str, b: I64, e: I64): Str
+extern def Str.eq(a: Str, b: Str): Bool
+
+// the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
+// main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
+// the state of a handler that keeps none (a handler with no init: s2/parse.srs Parse.stateless)
+extern def Srs.noState(): Ptr
+// what rt_print and rt_print_i64 write between begin and end, as one string
+extern def rt_capture_begin(): Unit
+extern def rt_capture_end(): Str
+
+// captureBegin .. captureEnd: the prints between them are one string, not output
+capability Console:
+  def print(s: Str): Unit
+  def printI64(v: I64): Unit
+  def printChar(c: I64): Unit
+  def eprint(s: Str): Unit
+  def eprintI64(v: I64): Unit
+  def captureBegin(): Unit
+  def captureEnd(): Str
+
+handler Srs.Console for Console:
+  def print(s: Str): Unit = rt_print(s)
+  def printI64(v: I64): Unit = rt_print_i64(v)
+  def printChar(c: I64): Unit = rt_print_char(c)
+  def eprint(s: Str): Unit = rt_eprint(s)
+  def eprintI64(v: I64): Unit = rt_eprint_i64(v)
+  def captureBegin(): Unit = rt_capture_begin()
+  def captureEnd(): Str = rt_capture_end()
+
+capability Args:
+  def count(): I64
+  def at(i: I64): Str
+
+handler Srs.Args for Args:
+  def count(): I64 = rt_argc()
+  def at(i: I64): Str = rt_arg(i)
+
+capability Files:
+  def read(path: Str): Str
+
+handler Srs.Files for Files:
+  def read(path: Str): Str = rt_read_file(path)
+
+capability Exit:
+  def exit(code: I64): Unit
+
+handler Srs.Exit for Exit:
+  def exit(code: I64): Unit = rt_exit(code)
 
 // a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
 def strHash(s: Str): I64 =
   var h = 2166136261
   var i = 0
-  val n = rt_str_len(s)
+  val n = Str.len(s)
   while i < n do
-    h = ((h + rt_str_at(s, i)) * 16777619) % 4294967296
+    h = ((h + Str.at(s, i)) * 16777619) % 4294967296
     i = i + 1
   h

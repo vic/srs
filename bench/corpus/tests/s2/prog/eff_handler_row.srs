@@ -1,0 +1,29 @@
+// pass: E1b (vic 2026-11-09: kyo semantics, deep handlers): a handler op body may request effects; the handlers outside
+// its handle answer them, captured when the handle runs. Tag requests Out inside its own put: Std answers, not Tag.
+// viaStd opens Std itself: its row gets Console from Std's row
+capability Out:
+  state Live
+  start Live
+  stop Live
+  def put(n: I64): Unit
+
+handler Std for Out:
+  def put(n: I64): Unit =
+    Console.printI64(n)
+    Console.print("\n")
+
+handler Tag for Out:
+  def put(n: I64): Unit = Out.put(n * 10)
+
+def viaStd(n: I64): Unit =
+  handle s = Std()
+  Out.put(n)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle s = Std()
+  Out.put(1)
+  handle t = Tag()
+  Out.put(2)
+  viaStd(3)
+  0

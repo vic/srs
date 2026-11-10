@@ -16,9 +16,9 @@ enum Mono.Key:
   case Mono.Goal(t: K.Term)
 
 // t reified, then each binder of sub replaced by its arg
-def Mono.ground {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], t: K.Term): K.Term = Mono.apply(sub, K.reify(s, t))
+def Mono.ground(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], t: K.Term): K.Term = Mono.apply(sub, K.reify(s, t))
 
-def Mono.apply {r: Region} (sub: Coll.List[Ty.Bind], t: K.Term): K.Term = t match
+def Mono.apply(sub: Coll.List[Ty.Bind], t: K.Term): K.Term = t match
   case K.Con(n, args) => args match
     case Coll.Nil => Ty.lookup(sub, n) match
       case Coll.Some(a) => a
@@ -26,11 +26,11 @@ def Mono.apply {r: Region} (sub: Coll.List[Ty.Bind], t: K.Term): K.Term = t matc
     case Coll.Cons(_, _) => K.Con(n, Mono.applyAll(sub, args, Coll.Nil))
   case _ => t
 
-def Mono.applyAll {r: Region} (sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def Mono.applyAll(sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => Mono.applyAll(sub, rest, Coll.Cons(Mono.apply(sub, t), acc))
 
-def Mono.groundAll {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def Mono.groundAll(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => Mono.groundAll(s, sub, rest, Coll.Cons(Mono.ground(s, sub, t), acc))
 
@@ -80,7 +80,7 @@ def Mono.inBucket(ks: Coll.List[Mono.Key], k: Mono.Key): Bool = ks match
   case Coll.Cons(x, rest) => if Mono.keyEq(x, k) then true else Mono.inBucket(rest, k)
 
 // ── the worklist: roots first, then every generic call they reach, each key once ──
-def Mono.run {r: Region} (res: Ty.Result): Coll.List[Mono.Inst] =
+def Mono.run(res: Ty.Result): Coll.List[Mono.Inst] =
   val Ty.Result(_, _, s, fs, _, gvs) = res
   Mono.loop(Mono.Cx(s, Mono.fnMap(fs, Coll.sEmpty()), gvs), Mono.roots(fs, Coll.Nil), Coll.BTip, Coll.Nil)
 
@@ -88,13 +88,13 @@ def Mono.run {r: Region} (res: Ty.Result): Coll.List[Mono.Inst] =
 enum Mono.Cx:
   case Mono.Cx(s: Coll.IMap[K.Term], fs: Coll.SMap[El.Fn], gvs: Coll.List[El.Given])
 
-def Mono.fnMap {r: Region} (fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
+def Mono.fnMap(fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
   case Coll.Nil => m
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, _, _, _, _, _) = f
     Mono.fnMap(rest, Coll.sInsert(m, n, f))
 
-def Mono.roots {r: Region} (fs: Coll.List[El.Fn], acc: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = fs match
+def Mono.roots(fs: Coll.List[El.Fn], acc: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = fs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(f, rest) =>
     val El.Fn(_, _, tps, _, _, _, _) = f
@@ -103,7 +103,7 @@ def Mono.roots {r: Region} (fs: Coll.List[El.Fn], acc: Coll.List[Mono.Inst]): Co
       case Coll.Cons(_, _) => Mono.roots(rest, acc)
 
 // todo: instances whose bodies are not yet scanned; made: keys already instantiated (by hash bucket); out: the result
-def Mono.loop {r: Region} (cx: Mono.Cx, todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.List[Mono.Key]], out: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = todo match
+def Mono.loop(cx: Mono.Cx, todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.List[Mono.Key]], out: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = todo match
   case Coll.Nil => Coll.rev(out)
   case Coll.Cons(i, rest) =>
     val Mono.Inst(f, sub, _) = i
@@ -119,7 +119,7 @@ enum Mono.Grow:
   case Mono.Grow(todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.List[Mono.Key]])
 
 // each new key becomes instances to scan: a generic def at its args, or every method of the given picked for a goal
-def Mono.enqueue {r: Region} (cx: Mono.Cx, ks: Coll.List[Mono.Key], todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.List[Mono.Key]]): Mono.Grow = ks match
+def Mono.enqueue(cx: Mono.Cx, ks: Coll.List[Mono.Key], todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.List[Mono.Key]]): Mono.Grow = ks match
   case Coll.Nil => Mono.Grow(todo, made)
   case Coll.Cons(k, rest) =>
     val h = Mono.keyHash(k)
@@ -140,7 +140,7 @@ def Mono.enqueue {r: Region} (cx: Mono.Cx, ks: Coll.List[Mono.Key], todo: Coll.L
             Mono.implInsts(gfs, sub, t, todo)
       Mono.enqueue(cx, rest, todo2, Coll.bPushT(made, h, k))
 
-def Mono.implInsts {r: Region} (fs: Coll.List[El.Fn], sub: Coll.List[Ty.Bind], goal: K.Term, todo: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = fs match
+def Mono.implInsts(fs: Coll.List[El.Fn], sub: Coll.List[Ty.Bind], goal: K.Term, todo: Coll.List[Mono.Inst]): Coll.List[Mono.Inst] = fs match
   case Coll.Nil => todo
   case Coll.Cons(f, rest) => Mono.implInsts(rest, sub, goal, Coll.Cons(Mono.Inst(f, sub, Mono.Impl(goal)), todo))
 
@@ -149,7 +149,7 @@ def Mono.implInsts {r: Region} (fs: Coll.List[El.Fn], sub: Coll.List[Ty.Bind], g
 enum Mono.Match:
   case Mono.Match(g: El.Given, sub: Coll.List[Ty.Bind])
 
-def Mono.pick {r: Region} (gvs: Coll.List[El.Given], t: K.Term, best: Coll.Option[Mono.Match]): Coll.Option[Mono.Match] = gvs match
+def Mono.pick(gvs: Coll.List[El.Given], t: K.Term, best: Coll.Option[Mono.Match]): Coll.Option[Mono.Match] = gvs match
   case Coll.Nil => best
   case Coll.Cons(g, rest) =>
     val El.Given(tps, _, head, _) = g
@@ -163,7 +163,7 @@ def Mono.pick {r: Region} (gvs: Coll.List[El.Given], t: K.Term, best: Coll.Optio
             val Mono.Match(bg, _) = b
             Mono.pick(rest, t, if Mono.better(g, bg) then Coll.Some(m) else best)
 
-def Mono.better {r: Region} (a: El.Given, b: El.Given): Bool =
+def Mono.better(a: El.Given, b: El.Given): Bool =
   val El.Given(atps, aev, ah, _) = a
   val El.Given(btps, bev, bh, _) = b
   val ab = Mono.isSome(Mono.matchT(btps, bh, ah, Coll.Some(Coll.Nil)))
@@ -175,7 +175,7 @@ def Mono.isSome(o: Coll.Option[Coll.List[Ty.Bind]]): Bool = o match
   case Coll.None => false
 
 // t is an instance of the pattern p whose vars are the binder names xs: the binding (one-way match)
-def Mono.matchT {r: Region} (xs: Coll.List[Sym.Sym], p: K.Term, t: K.Term, acc: Coll.Option[Coll.List[Ty.Bind]]): Coll.Option[Coll.List[Ty.Bind]] = acc match
+def Mono.matchT(xs: Coll.List[Sym.Sym], p: K.Term, t: K.Term, acc: Coll.Option[Coll.List[Ty.Bind]]): Coll.Option[Coll.List[Ty.Bind]] = acc match
   case Coll.None => Coll.None
   case Coll.Some(bs) => p match
     case K.Con(n, pargs) =>
@@ -188,14 +188,14 @@ def Mono.matchT {r: Region} (xs: Coll.List[Sym.Sym], p: K.Term, t: K.Term, acc: 
         case _ => Coll.None
     case _ => if Mono.termEq(p, t) then acc else Coll.None
 
-def Mono.matchAll {r: Region} (xs: Coll.List[Sym.Sym], ps: Coll.List[K.Term], ts: Coll.List[K.Term], acc: Coll.Option[Coll.List[Ty.Bind]]): Coll.Option[Coll.List[Ty.Bind]] = ps match
+def Mono.matchAll(xs: Coll.List[Sym.Sym], ps: Coll.List[K.Term], ts: Coll.List[K.Term], acc: Coll.Option[Coll.List[Ty.Bind]]): Coll.Option[Coll.List[Ty.Bind]] = ps match
   case Coll.Nil => acc
   case Coll.Cons(p, prest) => ts match
     case Coll.Nil => acc
     case Coll.Cons(t, trest) => Mono.matchAll(xs, prest, trest, Mono.matchT(xs, p, t, acc))
 
 // the generic calls of e, at ground args under sub
-def Mono.calls {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = e match
+def Mono.calls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = e match
   case El.CallFn(_, f, ts, _, args) =>
     val acc2 = ts match
       case Coll.Nil => acc
@@ -203,6 +203,9 @@ def Mono.calls {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El
     Mono.callsAll(s, sub, args, acc2)
   case El.New(_, _, _, _, _, args) => Mono.callsAll(s, sub, args, acc)
   case El.Op(_, _, ty, _, args) => Mono.callsAll(s, sub, args, Coll.Cons(Mono.Goal(Mono.ground(s, sub, ty)), acc))
+  case El.MHandled(_, _, _, _, args, rest, _, _) => Mono.callsAll(s, sub, Coll.Cons(rest, args), acc)
+  case El.Resume(_, _, x) => Mono.calls(s, sub, x, acc)
+  case El.TCall(_, ty, _, _, args) => Mono.callsAll(s, sub, args, Coll.Cons(Mono.Goal(Mono.ground(s, sub, ty)), acc))
   case El.Bin(_, _, l, rhs) => Mono.calls(s, sub, rhs, Mono.calls(s, sub, l, acc))
   case El.Un(_, _, x) => Mono.calls(s, sub, x, acc)
   case El.If(_, c, t, x) => Mono.calls(s, sub, x, Mono.calls(s, sub, t, Mono.calls(s, sub, c, acc)))
@@ -212,21 +215,21 @@ def Mono.calls {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El
   case El.Assign(_, _, x) => Mono.calls(s, sub, x, acc)
   case _ => acc
 
-def Mono.callsAll {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.callsAll(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Mono.callsAll(s, sub, rest, Mono.calls(s, sub, x, acc))
 
-def Mono.armCalls {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Arm], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.armCalls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Arm], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
     val El.Arm(_, _, b) = a
     Mono.armCalls(s, sub, rest, Mono.calls(s, sub, b, acc))
 
-def Mono.stmtCalls {r: Region} (s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Stmt], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.stmtCalls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Stmt], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) =>
     val acc2 = x match
       case El.Val(_, _, _, _, e) => Mono.calls(s, sub, e, acc)
       case El.Do(e) => Mono.calls(s, sub, e, acc)
-      case El.Handle(_, _, _, args) => Mono.callsAll(s, sub, args, acc)
+      case El.Handle(_, _, _, _, args) => Mono.callsAll(s, sub, args, acc)
     Mono.stmtCalls(s, sub, rest, acc2)

@@ -11,23 +11,24 @@ def show {r: Region} (run: Run, nv: I64): Unit = run match
   case Run(ans, st) =>
     showAnswers(ans, nv)
     st match
-      case Ended => rt_print("ended\n")
-      case Limit => rt_print("limit\n")
-      case NoFuel => rt_print("nofuel\n")
+      case Ended => Console.print("ended\n")
+      case Limit => Console.print("limit\n")
+      case NoFuel => Console.print("nofuel\n")
 
 def showAnswers {r: Region} (ans: Answers, nv: I64): Unit = ans match
   case ANil => ()
   case ACons(st, t) =>
     var i = 0
     while i < nv do
-      if i > 0 then rt_print(" ; ") else ()
+      if i > 0 then Console.print(" ; ") else ()
       showTerm(walkAll(substOf(st), TVar(i)))
       i = i + 1
-    rt_print("\n")
+    Console.print("\n")
     showAnswers(t, nv)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val x = TVar(0)
   val y = TVar(1)
   val z = TVar(2)

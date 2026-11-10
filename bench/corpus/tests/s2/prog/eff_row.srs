@@ -1,0 +1,44 @@
+// pass: E1 effect rows (vic 2026-11-09): a request names the protocol, Log.say(n), never a handler instance. a fn's
+// row is inferred (no {} binder is written): its requests, its constructors (a request on Region) and the rows of
+// its callees, minus what it handles. main handles every protocol it needs, so its row is empty
+capability Log:
+  state Live
+  start Live
+  stop Live
+  def say(n: I64): Unit
+
+handler Out for Log:
+  def say(n: I64): Unit =
+    Console.printI64(n)
+    Console.print("\n")
+
+enum Nums:
+  case NNil
+  case NCons(h: I64, t: Nums)
+
+// row {Log}: a request
+def tell(n: I64): Unit = Log.say(n)
+
+// row {Log, Region}: through tell and a constructor; recursion adds nothing
+def grow(n: I64): Nums =
+  tell(n)
+  if n == 0 then NNil else NCons(n, grow(n - 1))
+
+def total(xs: Nums): I64 = xs match
+  case NNil => 0
+  case NCons(h, t) => h + total(t)
+
+// row {}: it handles Log itself, so main calls it before main opens a Log handler
+def quiet(n: I64): Unit =
+  handle q = Out()
+  tell(n)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  quiet(7)
+  handle o = Out()
+  handle a = Srs.Arena()
+  val s = total(grow(3))
+  Log.say(s)
+  a.free()
+  0

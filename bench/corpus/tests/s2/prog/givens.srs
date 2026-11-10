@@ -18,8 +18,8 @@ given [A: Type] {s: Show[A]} Show[Box[A]]:
     case Box(v) => 100 + s.show(v)
 
 def print [A: Type] {s: Show[A]} (x: A): Unit =
-  rt_print_i64(s.show(x))
-  rt_print("\n")
+  Console.printI64(s.show(x))
+  Console.print("\n")
 
 // local evidence passes on: twice needs Show[A], it has s
 def twice [A: Type] {s: Show[A]} (x: A): Unit =
@@ -27,7 +27,8 @@ def twice [A: Type] {s: Show[A]} (x: A): Unit =
   print{s}(x)
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   print(41)
   print(true)
   print(Box(Box(false)))

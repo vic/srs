@@ -42,72 +42,72 @@ def Lex.layoutLast(out: Coll.List[Lex.Tok]): Bool = out match
     case _ => false
 
 // the end of a run of spaces from i
-def Lex.spaces(src: Str, i: I64): I64 = if rt_str_at(src, i) == ' ' then Lex.spaces(src, i + 1) else i
+def Lex.spaces(src: Str, i: I64): I64 = if Str.at(src, i) == ' ' then Lex.spaces(src, i + 1) else i
 
 // the end of a run of letters and digits from i
-def Lex.word(src: Str, i: I64): I64 = if Lex.isAlpha(rt_str_at(src, i)) || Lex.isDigit(rt_str_at(src, i)) then Lex.word(src, i + 1) else i
+def Lex.word(src: Str, i: I64): I64 = if Lex.isAlpha(Str.at(src, i)) || Lex.isDigit(Str.at(src, i)) then Lex.word(src, i + 1) else i
 
 // the end of an identifier that starts with an upper case letter: Upper(.name)*
 def Lex.dotted(src: Str, i: I64): I64 =
-  if rt_str_at(src, i) == '.' && Lex.isAlpha(rt_str_at(src, i + 1)) then Lex.dotted(src, Lex.word(src, i + 1)) else i
+  if Str.at(src, i) == '.' && Lex.isAlpha(Str.at(src, i + 1)) then Lex.dotted(src, Lex.word(src, i + 1)) else i
 
 // the value of the digits from i (and where they end)
-def Lex.digits(src: Str, i: I64, v: I64): I64 = if Lex.isDigit(rt_str_at(src, i)) then Lex.digits(src, i + 1, v * 10 + (rt_str_at(src, i) - '0')) else v
-def Lex.digitsEnd(src: Str, i: I64): I64 = if Lex.isDigit(rt_str_at(src, i)) then Lex.digitsEnd(src, i + 1) else i
+def Lex.digits(src: Str, i: I64, v: I64): I64 = if Lex.isDigit(Str.at(src, i)) then Lex.digits(src, i + 1, v * 10 + (Str.at(src, i) - '0')) else v
+def Lex.digitsEnd(src: Str, i: I64): I64 = if Lex.isDigit(Str.at(src, i)) then Lex.digitsEnd(src, i + 1) else i
 
 // the closing quote q of a literal from i (a backslash skips the next character), or the line end
 def Lex.litEnd(src: Str, i: I64, n: I64, q: I64): I64 =
   if i >= n then i
-  else if rt_str_at(src, i) == q || rt_str_at(src, i) == '\n' then i
-  else if rt_str_at(src, i) == '\\' then Lex.litEnd(src, i + 2, n, q)
+  else if Str.at(src, i) == q || Str.at(src, i) == '\n' then i
+  else if Str.at(src, i) == '\\' then Lex.litEnd(src, i + 2, n, q)
   else Lex.litEnd(src, i + 1, n, q)
 
 // the end of a comment from i (the newline stays)
-def Lex.lineEnd(src: Str, i: I64, n: I64): I64 = if i < n && rt_str_at(src, i) != '\n' then Lex.lineEnd(src, i + 1, n) else i
+def Lex.lineEnd(src: Str, i: I64, n: I64): I64 = if i < n && Str.at(src, i) != '\n' then Lex.lineEnd(src, i + 1, n) else i
 
 def Lex.top(ind: Coll.List[I64]): I64 = ind match
   case Coll.Nil => 0
   case Coll.Cons(c, _) => c
 
-def Lex.lex {r: Region} (src: Str): Lex.Result = Lex.lexFrom(src, 1)
+def Lex.lex(src: Str): Lex.Result = Lex.lexFrom(src, 1)
 
 // src whose first line has number line (a file after others: its lines continue the numbering, so a line names a file)
-def Lex.lexFrom {r: Region} (src: Str, line: I64): Lex.Result = Lex.go(src, rt_str_len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
+def Lex.lexFrom(src: Str, line: I64): Lex.Result = Lex.go(src, Str.len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
 
 // the scan from i: depth = open ( and [, bol = at the start of a line, ind = the indent stack, out = tokens, newest first
-def Lex.go {r: Region} (src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
+def Lex.go(src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
   if i >= n then Lex.finish(line, ind, out)
   else if bol && depth == 0 then
     val j = Lex.spaces(src, i)
     val col = j - i
-    val c = rt_str_at(src, j)
+    val c = Str.at(src, j)
     if c == '\t' then Lex.Bad(line, Lex.Tab)
-    else if c == -1 || c == '\n' || (c == '/' && rt_str_at(src, j + 1) == '/') then Lex.go(src, n, j, line, depth, false, ind, out)
+    else if c == -1 || c == '\n' || (c == '/' && Str.at(src, j + 1) == '/') then Lex.go(src, n, j, line, depth, false, ind, out)
     else if col > Lex.top(ind) then Lex.go(src, n, j, line, depth, false, Coll.Cons(col, ind), Coll.Cons(Lex.TIndent(line), out))
     else Lex.dedent(src, n, j, line, col, ind, out)
   else
-    val c = rt_str_at(src, i)
+    val c = Str.at(src, i)
     if c == '\n' then Lex.go(src, n, i + 1, line + 1, depth, true, ind, if depth == 0 && !Lex.layoutLast(out) then Coll.Cons(Lex.TNl(line), out) else out)
     else if c == ' ' || c == '\r' then Lex.go(src, n, i + 1, line, depth, bol, ind, out)
-    else if c == '/' && rt_str_at(src, i + 1) == '/' then Lex.go(src, n, Lex.lineEnd(src, i, n), line, depth, bol, ind, out)
+    else if c == '/' && Str.at(src, i + 1) == '/' then Lex.go(src, n, Lex.lineEnd(src, i, n), line, depth, bol, ind, out)
     else if Lex.isAlpha(c) then
       val e0 = Lex.word(src, i)
       val e = if c >= 'A' && c <= 'Z' then Lex.dotted(src, e0) else e0
-      Lex.go(src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TIdent(rt_str_slice(src, i, e), line), out))
+      Lex.go(src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TIdent(Str.slice(src, i, e), line), out))
     else if Lex.isDigit(c) then Lex.go(src, n, Lex.digitsEnd(src, i), line, depth, bol, ind, Coll.Cons(Lex.TInt(Lex.digits(src, i, 0), line), out))
     else if c == '"' || c == '\'' then
       val e = Lex.litEnd(src, i + 1, n, c)
-      if rt_str_at(src, e) != c then Lex.Bad(line, Lex.Unterminated)
-      else Lex.go(src, n, e + 1, line, depth, bol, ind, Coll.Cons(if c == '"' then Lex.TStr(rt_str_slice(src, i + 1, e), line) else Lex.TChar(rt_str_slice(src, i + 1, e), line), out))
+      if Str.at(src, e) != c then Lex.Bad(line, Lex.Unterminated)
+      else Lex.go(src, n, e + 1, line, depth, bol, ind, Coll.Cons(if c == '"' then Lex.TStr(Str.slice(src, i + 1, e), line) else Lex.TChar(Str.slice(src, i + 1, e), line), out))
     else
-      val w = if Lex.isTwo(c, rt_str_at(src, i + 1)) then 2 else 1
+      val w = if Lex.isTwo(c, Str.at(src, i + 1)) then 2 else 1
       if w == 1 && !Lex.isPunct(c) then Lex.Bad(line, Lex.BadChar)
       else
         val d = if c == '(' || c == '[' then depth + 1 else if (c == ')' || c == ']') && depth > 0 then depth - 1 else depth
-        Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(Lex.TOp(rt_str_slice(src, i, i + w), line), out))
+        Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(Lex.TOp(Str.slice(src, i, i + w), line), out))
 
 // a line at column col, shallower than or as deep as the indent: close every deeper indent; col must be on the stack
-def Lex.dedent {r: Region} (src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
+def Lex.dedent(src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
   case Coll.Nil => Lex.Bad(line, Lex.BadDedent)
   case Coll.Cons(t, rest) =>
     if col < t then Lex.dedent(src, n, j, line, col, rest, Coll.Cons(Lex.TDedent(line), out))
@@ -115,7 +115,7 @@ def Lex.dedent {r: Region} (src: Str, n: I64, j: I64, line: I64, col: I64, ind: 
     else Lex.Bad(line, Lex.BadDedent)
 
 // the end: a last TNl, a TDedent for each open indent, TEof
-def Lex.finish {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
+def Lex.finish(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
   val out1: Coll.List[Lex.Tok] = out match
     case Coll.Nil => out
     case Coll.Cons(t, _) => t match
@@ -124,6 +124,6 @@ def Lex.finish {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.T
       case _ => Coll.Cons(Lex.TNl(line), out)
   Lex.Toks(Lex.closeAll(line, ind, out1))
 
-def Lex.closeAll {r: Region} (line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ind match
+def Lex.closeAll(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ind match
   case Coll.Nil => Coll.rev(Coll.Cons(Lex.TEof(line), out))
   case Coll.Cons(t, rest) => if t > 0 then Lex.closeAll(line, rest, Coll.Cons(Lex.TDedent(line), out)) else Coll.rev(Coll.Cons(Lex.TEof(line), out))

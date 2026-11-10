@@ -1,34 +1,36 @@
 // pass: BD5b-2 rule defs in protocols (vic 2026-11-05): a protocol is its own Datalog program; a def's <> facts use
 // its caps' rules. reach has 2 rule defs (clauses, a disjunction) and recursion
-protocol Door:
+capability Door:
   state Shut, Open1, Open2, Gone
   start Shut
-  end Gone
-  op knock(): I64 : Shut -> Open1, Open1 -> Open2
-  op leave(): Unit : Open1 -> Gone, Open2 -> Gone
+  stop Gone
+  transition knocks Shut -> Open1, Open1 -> Open2
+  def knock <s knocks t> (): I64 <t>
+  transition leaves Open1 -> Gone, Open2 -> Gone
+  def leave <s leaves t> (): Unit <t>
   rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
   rule def reach(s, t) = next(s, knock, t)
   rule def reach(s, t) = next(s, knock, u), reach(u, t)
 
 handler HDoor for Door:
-  def init(): Ptr = rt_arena_new()
-  def knock(self: Ptr): I64 = 3
-  def leave(self: Ptr): Unit = rt_arena_free(self)
+  def knock(): I64 = 3
+  def leave(): Unit = ()
 
-def knockTwice {d: Door} <at(d, s), twoKnocks(s, s3)> (): I64 <at(d, s3)> =
+def knockTwice {d: Door} <d: s, twoKnocks(s, s3)> (): I64 <d: s3> =
   val a = d.knock()
   a + d.knock()
 
 // recursive reach: Shut reaches Open1 and Open2; next(Shut, knock, t) keeps the one a single knock reaches
-def knockOnce {d: Door} <at(d, Shut), reach(Shut, t), next(Shut, knock, t)> (): I64 <at(d, t)> = d.knock()
+def knockOnce {d: Door} <d: Shut, reach(Shut, t), next(Shut, knock, t)> (): I64 <d: t> = d.knock()
 
 def main(): I64 =
+  handle io = Srs.Console()
   handle d = HDoor()
   val x = knockTwice()
   d.leave()
   handle e = HDoor()
   val y = knockOnce{e}()
   e.leave()
-  rt_print_i64(x + y)
-  rt_print("\n")
+  Console.printI64(x + y)
+  Console.print("\n")
   0

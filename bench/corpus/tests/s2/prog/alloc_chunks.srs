@@ -1,0 +1,28 @@
+// pass: two Arenas and a Heap filled in turns, each Arena past its 1 MiB chunks (the inline bump's slow path, a
+// capability's own bump per Arena, a Heap that always takes the vtable), and an explicit r.alloc of 3 MB between
+// them; the sums see every node intact
+enum Ac.L:
+  case Ac.Nil
+  case Ac.Cons(h: I64, t: Ac.L)
+
+def Ac.one {r: Region} (h: I64, t: Ac.L): Ac.L = Ac.Cons(h, t)
+
+def Ac.sum(l: Ac.L, a: I64): I64 = l match
+  case Ac.Nil => a
+  case Ac.Cons(h, t) => Ac.sum(t, a + h)
+
+def Ac.turns {a: Region, b: Region, h: Region} (i: I64, xa: Ac.L, xb: Ac.L, xh: Ac.L): I64 =
+  if i == 0 then Ac.sum(xa, 0) + Ac.sum(xb, 0) * 2 + Ac.sum(xh, 0) * 3
+  else Ac.turns{a, b, h}(i - 1, Ac.one{a}(i, xa), Ac.one{b}(i, xb), Ac.one{h}(i, xh))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle b = Srs.Arena()
+  handle h = Srs.Heap()
+  val big = a.alloc(3000000)
+  val s1 = Ac.turns{a, b, h}(50000, Ac.Nil, Ac.Nil, Ac.Nil)
+  val s2 = Ac.turns{b, a, h}(50000, Ac.Nil, Ac.Nil, Ac.Nil)
+  Console.printI64(s1 + s2)
+  Console.print("\n")
+  0

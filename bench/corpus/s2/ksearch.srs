@@ -38,9 +38,9 @@ enum K.Run:
   case K.Run(answers: Coll.List[K.State], status: K.Status)
 
 // relation hash -> its clauses, in written order
-def K.index {r: Region} (rules: Coll.List[K.Rule]): Coll.IMap[Coll.List[K.Rule]] = K.indexOnto(Coll.rev(rules), Coll.Tip)
+def K.index(rules: Coll.List[K.Rule]): Coll.IMap[Coll.List[K.Rule]] = K.indexOnto(Coll.rev(rules), Coll.Tip)
 
-def K.indexOnto {r: Region} (rs: Coll.List[K.Rule], ix: Coll.IMap[Coll.List[K.Rule]]): Coll.IMap[Coll.List[K.Rule]] = rs match
+def K.indexOnto(rs: Coll.List[K.Rule], ix: Coll.IMap[Coll.List[K.Rule]]): Coll.IMap[Coll.List[K.Rule]] = rs match
   case Coll.Nil => ix
   case Coll.Cons(h, t) =>
     val K.Rule(rel, _, _, _) = h
@@ -51,16 +51,16 @@ def K.indexOnto {r: Region} (rs: Coll.List[K.Rule], ix: Coll.IMap[Coll.List[K.Ru
     K.indexOnto(t, Coll.insert(ix, k, Coll.Cons(h, old)))
 
 // rename apart: every variable moved by k
-def K.shift {r: Region} (t: K.Term, k: I64): K.Term = t match
+def K.shift(t: K.Term, k: I64): K.Term = t match
   case K.Var(n) => K.Var(n + k)
   case K.Int(v) => K.Int(v)
   case K.Con(f, args) => K.Con(f, Coll.rev(K.shiftOnto(args, k, Coll.Nil)))
 
-def K.shiftOnto {r: Region} (ts: Coll.List[K.Term], k: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def K.shiftOnto(ts: Coll.List[K.Term], k: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.shiftOnto(t, k, Coll.Cons(K.shift(h, k), acc))
 
-def K.shiftGoal {r: Region} (g: K.Goal, k: I64): K.Goal = g match
+def K.shiftGoal(g: K.Goal, k: I64): K.Goal = g match
   case K.True => K.True
   case K.Eq(a, b) => K.Eq(K.shift(a, k), K.shift(b, k))
   case K.Conj(x, y) => K.Conj(K.shiftGoal(x, k), K.shiftGoal(y, k))
@@ -71,13 +71,13 @@ def K.shiftGoal {r: Region} (g: K.Goal, k: I64): K.Goal = g match
   case K.Post(c) => K.Post(K.shiftFd(c, k))
   case K.Label(xs) => K.Label(Coll.rev(K.shiftOnto(xs, k, Coll.Nil)))
 
-def K.shiftFd {r: Region} (c: K.Fd, k: I64): K.Fd = c match
+def K.shiftFd(c: K.Fd, k: I64): K.Fd = c match
   case K.FBin(op, x, y) => K.FBin(op, K.shift(x, k), K.shift(y, k))
   case K.FPlus(x, y, z) => K.FPlus(K.shift(x, k), K.shift(y, k), K.shift(z, k))
 
 // K.unify(s, K.shift(h, k), y) without the copy: a head subterm is shifted only when it is bound into s, so a head
 // that clashes allocates nothing. The binding direction is that of K.unify, so s is the same.
-def K.unifyOff {r: Region} (s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term): Coll.Option[Coll.IMap[K.Term]] = h match
+def K.unifyOff(s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term): Coll.Option[Coll.IMap[K.Term]] = h match
   case K.Var(n) => K.unify(s, K.Var(n + k), y)
   case K.Int(_) => K.unify(s, h, y)
   case K.Con(f, hs) => K.walk(s, y) match
@@ -85,7 +85,7 @@ def K.unifyOff {r: Region} (s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term):
     case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllOff(s, hs, k, ys) else Coll.None
     case K.Int(_) => Coll.None
 
-def K.unifyAllOff {r: Region} (s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = hs match
+def K.unifyAllOff(s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = hs match
   case Coll.Nil => ys match
     case Coll.Nil => Coll.Some(s)
     case Coll.Cons(_, _) => Coll.None
@@ -96,7 +96,7 @@ def K.unifyAllOff {r: Region} (s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I
       case Coll.Some(s2) => K.unifyAllOff(s2, ht, k, yt)
 
 // the branches of the clauses of rel whose heads unify with args (in clause order), and the clauses picked
-def K.picks {r: Region} (rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.State, rest: Coll.List[K.Goal], out: Coll.List[K.Branch], cost: I64): K.Step = rs match
+def K.picks(rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.Term], st: K.State, rest: Coll.List[K.Goal], out: Coll.List[K.Branch], cost: I64): K.Step = rs match
   case Coll.Nil => K.Split(Coll.rev(out), cost)
   case Coll.Cons(h, t) =>
     val K.Rule(f, head, body, nv) = h
@@ -109,15 +109,15 @@ def K.picks {r: Region} (rs: Coll.List[K.Rule], rel: Sym.Sym, args: Coll.List[K.
         K.picks(t, rel, args, st, rest, Coll.Cons(K.Branch(K.State(s2, ns2, ds2, fs2, nx + nv), Coll.Cons(K.shiftGoal(body, nx), rest)), out), cost + 1)
 
 // after a domain on x: the events it left wake their propagators
-def K.settled {r: Region} (c: Coll.Option[K.State]): Coll.Option[K.State] = c match
+def K.settled(c: Coll.Option[K.State]): Coll.Option[K.State] = c match
   case Coll.None => Coll.None
   case Coll.Some(st) => K.settleFrom(st, Coll.Nil)
 
-def K.onward {r: Region} (c: Coll.Option[K.State], rest: Coll.List[K.Goal]): K.Step = c match
+def K.onward(c: Coll.Option[K.State], rest: Coll.List[K.Goal]): K.Step = c match
   case Coll.None => K.Dead
   case Coll.Some(st) => K.More(K.Branch(st, rest))
 
-def K.kstep {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step =
+def K.kstep(ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step =
   val K.Branch(st, gs) = b
   val K.State(s, ns, ds, fs, nx) = st
   gs match
@@ -139,7 +139,7 @@ def K.kstep {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step 
 
 // the driver: the current branch runs until a choice; the choice's branches go to the back of the queue (fair, so
 // complete); a choice that costs more than the fuel left stops the run (vic §17)
-def K.loop {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Branch], q: Queue.Queue[K.Branch], fuel: I64, limit: I64, found: Coll.List[K.State], n: I64): K.Run = cur match
+def K.loop(ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Branch], q: Queue.Queue[K.Branch], fuel: I64, limit: I64, found: Coll.List[K.State], n: I64): K.Run = cur match
   case Coll.None => Queue.pop(q) match
     case Queue.Empty => K.Run(Coll.rev(found), K.Ended)
     case Queue.Got(b, rest) => K.loop(ix, Coll.Some(b), rest, fuel, limit, found, n)
@@ -150,5 +150,5 @@ def K.loop {r: Region} (ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Bra
     case K.Split(bs, cost) => if cost > fuel then K.Run(Coll.rev(found), K.NoFuel) else K.loop(ix, Coll.None, Queue.pushAll(q, bs), fuel - cost, limit, found, n)
 
 // prove g (variables 0..nvars-1) over rules: at most limit answers, within fuel
-def K.solve {r: Region} (rules: Coll.List[K.Rule], g: K.Goal, nvars: I64, fuel: I64, limit: I64): K.Run =
+def K.solve(rules: Coll.List[K.Rule], g: K.Goal, nvars: I64, fuel: I64, limit: I64): K.Run =
   K.loop(K.index(rules), Coll.Some(K.Branch(K.State(Coll.Tip, Coll.Nil, Coll.Tip, K.Props(Coll.Tip, Coll.Tip, Coll.Nil), nvars), Coll.Cons(g, Coll.Nil))), Queue.empty(), fuel, limit, Coll.Nil, 0)

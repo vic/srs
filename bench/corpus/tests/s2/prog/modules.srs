@@ -26,12 +26,13 @@ def Gen.get [A: Type] (o: Gen.Opt[A], d: A): A = o match
   case Gen.Some(v) => v
 
 def main(): I64 =
-  handle r = Arena()
-  rt_print_i64(Kanren.step(Kanren.TInt(1)) + Kanren.step(Kanren.TVar(2)))
-  rt_print("\n")
-  rt_print_i64(S1.step(S1.TInt(21)))
-  rt_print("\n")
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(Kanren.step(Kanren.TInt(1)) + Kanren.step(Kanren.TVar(2)))
+  Console.print("\n")
+  Console.printI64(S1.step(S1.TInt(21)))
+  Console.print("\n")
   val n: Gen.Opt[I64] = Gen.None
-  rt_print_i64(Gen.get(Gen.Some(5), 0) + Gen.get(n, 1))
-  rt_print("\n")
+  Console.printI64(Gen.get(Gen.Some(5), 0) + Gen.get(n, 1))
+  Console.print("\n")
   0

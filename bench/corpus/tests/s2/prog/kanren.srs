@@ -5,12 +5,13 @@ def c2 {r: Region} (f: Str, a: Term, b: Term): Term = TCon(f, TCons(a, TCons(b, 
 
 def show {r: Region} (u: Unified, t: Term): Unit =
   u match
-    case Fail => rt_print("fail")
+    case Fail => Console.print("fail")
     case Ok(s) => showTerm(walkAll(s, t))
-  rt_print("\n")
+  Console.print("\n")
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val x = TVar(0)
   val y = TVar(1)
   // f(X, b) == f(a, Y)  =>  f(a, b)
@@ -18,7 +19,7 @@ def main(): I64 =
   // X == Y, Y == c  =>  X = c
   val u = unify(SNil, x, y)
   u match
-    case Fail => rt_print("fail\n")
+    case Fail => Console.print("fail\n")
     case Ok(s) => show(unify(s, y, c0("c")), x)
   // X == X  =>  X unbound
   show(unify(SNil, x, x), x)
@@ -26,7 +27,7 @@ def main(): I64 =
   show(unify(SNil, x, c1("list", x)), x)
   // X == Y, Y == list(X)  =>  occurs check through a chain
   u match
-    case Fail => rt_print("fail\n")
+    case Fail => Console.print("fail\n")
     case Ok(s) => show(unify(s, y, c1("list", x)), x)
   // f(a) == g(a)  =>  clash
   show(unify(SNil, c1("f", c0("a")), c1("g", c0("a"))), x)

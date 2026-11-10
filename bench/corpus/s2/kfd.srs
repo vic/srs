@@ -27,7 +27,7 @@ def K.member(v: I64, xs: Coll.List[I64]): Bool = xs match
   case Coll.Nil => false
   case Coll.Cons(h, t) => if h == v then true else K.member(v, t)
 
-def K.ints {r: Region} (d: K.Dom): Coll.List[I64] =
+def K.ints(d: K.Dom): Coll.List[I64] =
   val K.Dom(_, _, h, t) = d
   Coll.Cons(h, t)
 
@@ -53,24 +53,24 @@ def K.inDom(v: I64, d: K.Dom): Bool =
   v >= h && v <= x && (v == h || K.member(v, t))
 
 // a..b ascending
-def K.range {r: Region} (a: I64, b: I64): Coll.List[I64] = K.rangeOnto(a, b, Coll.Nil)
-def K.rangeOnto {r: Region} (a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = if a > b then acc else K.rangeOnto(a, b - 1, Coll.Cons(b, acc))
+def K.range(a: I64, b: I64): Coll.List[I64] = K.rangeOnto(a, b, Coll.Nil)
+def K.rangeOnto(a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = if a > b then acc else K.rangeOnto(a, b - 1, Coll.Cons(b, acc))
 
 // the values of xs in a..b; xs without v; xs in d (each in order)
-def K.between {r: Region} (xs: Coll.List[I64], a: I64, b: I64): Coll.List[I64] = Coll.rev(K.betweenOnto(xs, a, b, Coll.Nil))
-def K.betweenOnto {r: Region} (xs: Coll.List[I64], a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
+def K.between(xs: Coll.List[I64], a: I64, b: I64): Coll.List[I64] = Coll.rev(K.betweenOnto(xs, a, b, Coll.Nil))
+def K.betweenOnto(xs: Coll.List[I64], a: I64, b: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.betweenOnto(t, a, b, if h >= a && h <= b then Coll.Cons(h, acc) else acc)
-def K.withoutOnto {r: Region} (xs: Coll.List[I64], v: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
+def K.withoutOnto(xs: Coll.List[I64], v: I64, acc: Coll.List[I64]): Coll.List[I64] = xs match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.withoutOnto(t, v, if h == v then acc else Coll.Cons(h, acc))
-def K.meetInts {r: Region} (xs: Coll.List[I64], d: K.Dom): Coll.List[I64] = Coll.rev(K.meetOnto(xs, d, Coll.Nil))
-def K.meetOnto {r: Region} (xs: Coll.List[I64], d: K.Dom, acc: Coll.List[I64]): Coll.List[I64] = xs match
+def K.meetInts(xs: Coll.List[I64], d: K.Dom): Coll.List[I64] = Coll.rev(K.meetOnto(xs, d, Coll.Nil))
+def K.meetOnto(xs: Coll.List[I64], d: K.Dom, acc: Coll.List[I64]): Coll.List[I64] = xs match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.meetOnto(t, d, if K.inDom(h, d) then Coll.Cons(h, acc) else acc)
 
 // the domain of t: an integer has itself, a variable its entry (or none), a constructor is not an integer
-def K.domOf {r: Region} (st: K.State, t: K.Term): K.DomOf =
+def K.domOf(st: K.State, t: K.Term): K.DomOf =
   val K.State(s, _, ds, _, _) = st
   K.walk(s, t) match
     case K.Var(n) => Coll.node(ds, n) match
@@ -81,7 +81,7 @@ def K.domOf {r: Region} (st: K.State, t: K.Term): K.DomOf =
 
 // t takes a value of xs (ascending; a subset of its domain, if it has one): None when none is left, bound (a fix event)
 // when one is left, else narrowed (an event) unless as many values are left as before
-def K.setDom {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] =
+def K.setDom(st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] =
   val K.State(s, ns, ds, ps, nx) = st
   xs match
     case Coll.Nil => Coll.None
@@ -103,21 +103,21 @@ def K.hasSize(ds: Coll.IMap[K.Dom], n: I64, k: I64): Bool = ds match
   case Coll.Bin(_, key, d, l, r2) => if n < key then K.hasSize(l, n, k) else if n > key then K.hasSize(r2, n, k) else K.domSize(d) == k
 
 // t takes a value of xs and of the domain it already has
-def K.meet {r: Region} (st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.domOf(st, t) match
+def K.meet(st: K.State, t: K.Term, xs: Coll.List[I64]): Coll.Option[K.State] = K.domOf(st, t) match
   case K.NoDom => K.setDom(st, t, xs)
   case K.Has(d) => K.setDom(st, t, K.meetInts(xs, d))
   case K.NotInt => Coll.None
 
 // ── propagators ──
 // x <= y - k: k = 0 for <=, 1 for <
-def K.leAt {r: Region} (st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom, k: I64): Coll.Option[K.State] =
+def K.leAt(st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom, k: I64): Coll.Option[K.State] =
   // a bound that already holds builds no new domain
   val sx: Coll.Option[K.State] = if K.hi(dx) <= K.hi(dy) - k then Coll.Some(st) else K.setDom(st, x, K.between(K.ints(dx), K.lo(dx), K.hi(dy) - k))
   sx match
     case Coll.None => Coll.None
     case Coll.Some(st2) => if K.lo(dy) >= K.lo(dx) + k then Coll.Some(st2) else K.setDom(st2, y, K.between(K.ints(dy), K.lo(dx) + k, K.hi(dy)))
 
-def K.neAt {r: Region} (st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom): Coll.Option[K.State] =
+def K.neAt(st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom): Coll.Option[K.State] =
   val nx = K.domSize(dx)
   val ny = K.domSize(dy)
   if nx == 1 && ny == 1 then (if K.lo(dx) == K.lo(dy) then Coll.None else Coll.Some(st))
@@ -126,7 +126,7 @@ def K.neAt {r: Region} (st: K.State, x: K.Term, y: K.Term, dx: K.Dom, dy: K.Dom)
   else Coll.Some(st)
 
 // x + y = z
-def K.plusAt {r: Region} (st: K.State, x: K.Term, y: K.Term, z: K.Term, dx: K.Dom, dy: K.Dom, dz: K.Dom): Coll.Option[K.State] =
+def K.plusAt(st: K.State, x: K.Term, y: K.Term, z: K.Term, dx: K.Dom, dy: K.Dom, dz: K.Dom): Coll.Option[K.State] =
   K.setDom(st, z, K.between(K.ints(dz), K.lo(dx) + K.lo(dy), K.hi(dx) + K.hi(dy))) match
     case Coll.None => Coll.None
     case Coll.Some(st1) => K.setDom(st1, x, K.between(K.ints(dx), K.lo(dz) - K.hi(dy), K.hi(dz) - K.lo(dy))) match
@@ -134,7 +134,7 @@ def K.plusAt {r: Region} (st: K.State, x: K.Term, y: K.Term, z: K.Term, dx: K.Do
       case Coll.Some(st2) => K.setDom(st2, y, K.between(K.ints(dy), K.lo(dz) - K.hi(dx), K.hi(dz) - K.lo(dx)))
 
 // a propagator runs once every variable it reads has a domain
-def K.fire {r: Region} (st: K.State, c: K.Fd): Coll.Option[K.State] = c match
+def K.fire(st: K.State, c: K.Fd): Coll.Option[K.State] = c match
   case K.FBin(op, x, y) => K.domOf(st, x) match
     case K.NoDom => Coll.Some(st)
     case K.NotInt => Coll.None
@@ -172,26 +172,26 @@ enum K.Ev:
 enum K.Props:
   case K.Props(fix: Coll.IMap[Coll.List[K.Fd]], any: Coll.IMap[Coll.List[K.Fd]], evs: Coll.List[K.Ev])
 
-def K.emit {r: Region} (ps: K.Props, n: I64, change: K.Change): K.Props =
+def K.emit(ps: K.Props, n: I64, change: K.Change): K.Props =
   val K.Props(fx, an, evs) = ps
   K.Props(fx, an, Coll.Cons(K.Ev(n, change), evs))
 
-def K.fdTerms {r: Region} (c: K.Fd): Coll.List[K.Term] = c match
+def K.fdTerms(c: K.Fd): Coll.List[K.Term] = c match
   case K.FBin(_, x, y) => Coll.Cons(x, Coll.Cons(y, Coll.Nil))
   case K.FPlus(x, y, z) => Coll.Cons(x, Coll.Cons(y, Coll.Cons(z, Coll.Nil)))
 
-def K.watchers {r: Region} (w: Coll.IMap[Coll.List[K.Fd]], n: I64): Coll.List[K.Fd] = Coll.node(w, n) match
+def K.watchers(w: Coll.IMap[Coll.List[K.Fd]], n: I64): Coll.List[K.Fd] = Coll.node(w, n) match
   case Coll.Tip => Coll.Nil
   case Coll.Bin(_, _, cs, _, _) => cs
 
-def K.watchIn {r: Region} (s: Coll.IMap[K.Term], w: Coll.IMap[Coll.List[K.Fd]], c: K.Fd, ts: Coll.List[K.Term]): Coll.IMap[Coll.List[K.Fd]] = ts match
+def K.watchIn(s: Coll.IMap[K.Term], w: Coll.IMap[Coll.List[K.Fd]], c: K.Fd, ts: Coll.List[K.Term]): Coll.IMap[Coll.List[K.Fd]] = ts match
   case Coll.Nil => w
   case Coll.Cons(t, rest) => K.walk(s, t) match
     case K.Var(n) => K.watchIn(s, Coll.insert(w, n, Coll.Cons(c, K.watchers(w, n))), c, rest)
     case _ => K.watchIn(s, w, c, rest)
 
 // c registered under the variables it reads (under s): =/= in the fix index, the others in the any index
-def K.watch {r: Region} (s: Coll.IMap[K.Term], ps: K.Props, c: K.Fd): K.Props =
+def K.watch(s: Coll.IMap[K.Term], ps: K.Props, c: K.Fd): K.Props =
   val K.Props(fx, an, evs) = ps
   if K.isNe(c) then K.Props(K.watchIn(s, fx, c, K.fdTerms(c)), an, evs) else K.Props(fx, K.watchIn(s, an, c, K.fdTerms(c)), evs)
 
@@ -203,7 +203,7 @@ def K.isNe(c: K.Fd): Bool = c match
   case K.FPlus(_, _, _) => false
 
 // the propagators each event wakes, onto agenda
-def K.wakeAll {r: Region} (ps: K.Props, evs: Coll.List[K.Ev], agenda: Coll.List[K.Fd]): Coll.List[K.Fd] = evs match
+def K.wakeAll(ps: K.Props, evs: Coll.List[K.Ev], agenda: Coll.List[K.Fd]): Coll.List[K.Fd] = evs match
   case Coll.Nil => agenda
   case Coll.Cons(e, rest) =>
     val K.Ev(n, change) = e
@@ -215,7 +215,7 @@ def K.wakeAll {r: Region} (ps: K.Props, evs: Coll.List[K.Ev], agenda: Coll.List[
     K.wakeAll(ps, rest, a2)
 
 // fire the agenda; when it is empty, wake the events the fires left; done when both are empty
-def K.prop {r: Region} (st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = agenda match
+def K.prop(st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = agenda match
   case Coll.Cons(c, rest) => K.fire(st, c) match
     case Coll.None => Coll.None
     case Coll.Some(st2) => K.prop(st2, rest)
@@ -227,7 +227,7 @@ def K.prop {r: Region} (st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.Sta
       case Coll.Cons(_, _) => K.prop(K.State(s, ns, ds, K.Props(fx, an, Coll.Nil), nx), K.wakeAll(ps, evs, Coll.Nil))
 
 // propagate, then check the disequality store
-def K.settleFrom {r: Region} (st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = K.prop(st, agenda) match
+def K.settleFrom(st: K.State, agenda: Coll.List[K.Fd]): Coll.Option[K.State] = K.prop(st, agenda) match
   case Coll.None => Coll.None
   case Coll.Some(st2) =>
     val K.State(s, ns, ds, ps, nx) = st2
@@ -236,19 +236,19 @@ def K.settleFrom {r: Region} (st: K.State, agenda: Coll.List[K.Fd]): Coll.Option
       case Coll.Some(ns2) => Coll.Some(K.State(s, ns2, ds, ps, nx))
 
 // the variables of t (not walked)
-def K.varsOf {r: Region} (t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = t match
+def K.varsOf(t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = t match
   case K.Var(n) => Coll.Cons(n, acc)
   case K.Int(_) => acc
   case K.Con(_, args) => K.varsOfAll(args, acc)
 
-def K.varsOfAll {r: Region} (ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
+def K.varsOfAll(ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.varsOfAll(t, K.varsOf(h, acc))
 
 // after unify (old substitution s0, the new one in st): a variable m that stood for itself under s0 and is bound now:
 // bound to a variable k, its watchers move to k, its domain meets k's, and k's watchers wake; bound to a value, the
 // value must be in its domain, and its watchers wake (a fix event)
-def K.bound {r: Region} (s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State): Coll.Option[K.State] = ms match
+def K.bound(s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State): Coll.Option[K.State] = ms match
   case Coll.Nil => Coll.Some(st)
   case Coll.Cons(v, rest) =>
     val K.State(s, ns, ds, ps, nx) = st
@@ -277,7 +277,7 @@ def K.bound {r: Region} (s0: Coll.IMap[K.Term], ms: Coll.List[I64], st: K.State)
       case _ => K.bound(s0, rest, st)
 
 // the state after unify of the terms ts gave u: dead on None, else the changed variables settle
-def K.post {r: Region} (st: K.State, ts: Coll.List[K.Term], u: Coll.Option[Coll.IMap[K.Term]]): Coll.Option[K.State] = u match
+def K.post(st: K.State, ts: Coll.List[K.Term], u: Coll.Option[Coll.IMap[K.Term]]): Coll.Option[K.State] = u match
   case Coll.None => Coll.None
   case Coll.Some(s2) =>
     val K.State(s, ns, ds, ps, nx) = st
@@ -287,7 +287,7 @@ def K.post {r: Region} (st: K.State, ts: Coll.List[K.Term], u: Coll.Option[Coll.
       case Coll.Some(st2) => K.settleFrom(st2, Coll.Nil)
 
 // the store under s: a pair that can never unify is dropped; one that already is equal (unify adds no binding) fails
-def K.recheck {r: Region} (s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
+def K.recheck(s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
   case Coll.Nil => Coll.Some(Coll.rev(kept))
   case Coll.Cons(h, t) =>
     val K.Neq(a, b) = h
@@ -295,7 +295,7 @@ def K.recheck {r: Region} (s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Col
       case Coll.None => K.recheck(s, t, kept)
       case Coll.Some(s2) => if Coll.size(s2) == Coll.size(s) then Coll.None else K.recheck(s, t, Coll.Cons(h, kept))
 
-def K.addNeq {r: Region} (st: K.State, a: K.Term, b: K.Term): Coll.Option[K.State] =
+def K.addNeq(st: K.State, a: K.Term, b: K.Term): Coll.Option[K.State] =
   val K.State(s, ns, ds, fs, nx) = st
   K.unify(s, a, b) match
     case Coll.None => Coll.Some(st)
@@ -306,7 +306,7 @@ enum K.Pick:
   case K.NoPick
   case K.Pick(t: K.Term, d: K.Dom)
 
-def K.pickVar {r: Region} (st: K.State, xs: Coll.List[K.Term], best: K.Pick): K.Pick = xs match
+def K.pickVar(st: K.State, xs: Coll.List[K.Term], best: K.Pick): K.Pick = xs match
   case Coll.Nil => best
   case Coll.Cons(h, t) => K.domOf(st, h) match
     case K.Has(d) => if K.domSize(d) > 1 && K.smaller(d, best) then K.pickVar(st, t, K.Pick(h, d)) else K.pickVar(st, t, best)
@@ -318,15 +318,15 @@ def K.smaller(d: K.Dom, best: K.Pick): Bool = best match
   case K.Pick(_, e) => K.domSize(d) < K.domSize(e)
 
 // one branch per value, in order; the goals after keep the label goal, so the next variable is labeled
-def K.labelBranches {r: Region} (st: K.State, t: K.Term, vs: Coll.List[I64], gs: Coll.List[K.Goal], acc: Coll.List[K.Branch]): Coll.List[K.Branch] = vs match
+def K.labelBranches(st: K.State, t: K.Term, vs: Coll.List[I64], gs: Coll.List[K.Goal], acc: Coll.List[K.Branch]): Coll.List[K.Branch] = vs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(v, more) => K.labelBranches(st, t, more, gs, Coll.Cons(K.Branch(st, Coll.Cons(K.Eq(t, K.Int(v)), gs)), acc))
 
 // every two of xs differ
-def K.distinct {r: Region} (xs: Coll.List[K.Term]): K.Goal = xs match
+def K.distinct(xs: Coll.List[K.Term]): K.Goal = xs match
   case Coll.Nil => K.True
   case Coll.Cons(h, t) => K.Conj(K.neEach(h, t), K.distinct(t))
 
-def K.neEach {r: Region} (x: K.Term, ys: Coll.List[K.Term]): K.Goal = ys match
+def K.neEach(x: K.Term, ys: Coll.List[K.Term]): K.Goal = ys match
   case Coll.Nil => K.True
   case Coll.Cons(y, t) => K.Conj(K.Post(K.FBin(K.Ne, x, y)), K.neEach(x, t))

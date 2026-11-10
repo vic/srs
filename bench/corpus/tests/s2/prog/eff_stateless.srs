@@ -1,0 +1,23 @@
+// pass: E5 stateless handler (vic 2026-11-09): no init, no self; the handler keeps no state
+capability Tally:
+  state Live
+  start Live
+  stop Live
+  def add(a: I64, b: I64): I64
+
+handler Plain for Tally:
+  def add(a: I64, b: I64): I64 = a + b
+
+handler Twice for Tally:
+  def add(a: I64, b: I64): I64 = 2 * (a + b)
+
+def sum3(x: I64): I64 = Tally.add(Tally.add(x, x), x)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle p = Plain()
+  Console.printI64(sum3(1))
+  handle t = Twice()
+  Console.printI64(sum3(1))
+  Console.print("\n")
+  0

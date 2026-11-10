@@ -1,0 +1,37 @@
+// pass: E1 innermost handler answers (vic 2026-11-09): a request, and a call whose row has the protocol, take the
+// innermost handler of it in scope
+capability Log:
+  state Live
+  start Live
+  stop Live
+  def say(n: I64): Unit
+
+handler Loud for Log:
+  def say(n: I64): Unit =
+    Console.print("loud ")
+    Console.printI64(n)
+    Console.print("\n")
+
+handler Soft for Log:
+  def say(n: I64): Unit =
+    Console.print("soft ")
+    Console.printI64(n)
+    Console.print("\n")
+
+def tell(n: I64): Unit = Log.say(n)
+
+// its own Soft is innermost for the tell inside
+def inner(n: I64): Unit =
+  handle s = Soft()
+  tell(n)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle l = Loud()
+  tell(1)
+  inner(2)
+  tell(3)
+  handle s = Soft()
+  tell(4)
+  Log.say(5)
+  0

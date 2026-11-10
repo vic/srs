@@ -1,0 +1,36 @@
+// pass: multi-shot, a cut in last position (bead vic-tecg): the site rest ends in a CPS call (addTo), a CPS fn ends in an
+// op (flip, a block) or in a CPS call; each resumes into the next segment. leaves x*10 + y: 11 12 21 22
+capability NonDet:
+  def choose(): Bool
+enum Bag [A: Type]:
+  case Leaf(x: A)
+  case Two(l: Bag[A], r: Bag[A])
+handler All [A: Type] for NonDet:
+  def done(x: A): Bag[A] = Leaf(x)
+  def choose(k): Bag[A] = Two(resume k(true), resume k(false))
+def flip(): Bool =
+  val u = 0
+  NonDet.choose()
+def pickL(): I64 =
+  val c = flip()
+  if c then 1 else 2
+def addTo(x: I64): I64 =
+  val y = pickL()
+  x * 10 + y
+def leaves(b: Bag[I64]): Unit = b match
+  case Leaf(x) =>
+    Console.printI64(x)
+    Console.print(" ")
+  case Two(l, r) =>
+    leaves(l)
+    leaves(r)
+def tree(): Bag[I64] =
+  handle nd = All()
+  val x = pickL()
+  addTo(x)
+def main(): I64 =
+  handle r = Srs.Arena()
+  handle io = Srs.Console()
+  leaves(tree())
+  Console.print("\n")
+  0

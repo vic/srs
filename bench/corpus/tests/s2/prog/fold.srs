@@ -16,18 +16,19 @@ given Ho.Fold[Ho.Sum, I64, I64]:
   def step(acc: I64, x: I64): I64 = acc + x
 
 given Ho.Fold[Ho.Longest, Str, I64]:
-  def step(acc: I64, x: Str): I64 = if rt_str_len(x) > acc then rt_str_len(x) else acc
+  def step(acc: I64, x: Str): I64 = if Str.len(x) > acc then Str.len(x) else acc
 
 def Ho.fold [F: Type] [A: Type] [B: Type] {f: Ho.Fold[F, A, B]} (xs: Ho.List[A], acc: B): B = xs match
   case Ho.Nil => acc
   case Ho.Cons(h, t) => Ho.fold[F, A, B](t, f.step(acc, h))
 
 def main(): I64 =
-  handle r = Arena()
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
   val ns: Ho.List[I64] = Ho.Cons(1, Ho.Cons(2, Ho.Cons(3, Ho.Nil)))
-  rt_print_i64(Ho.fold[Ho.Sum, I64, I64](ns, 0))
-  rt_print("\n")
+  Console.printI64(Ho.fold[Ho.Sum, I64, I64](ns, 0))
+  Console.print("\n")
   val ws: Ho.List[Str] = Ho.Cons("a", Ho.Cons("abcd", Ho.Cons("ab", Ho.Nil)))
-  rt_print_i64(Ho.fold[Ho.Longest, Str, I64](ws, 0))
-  rt_print("\n")
+  Console.printI64(Ho.fold[Ho.Longest, Str, I64](ws, 0))
+  Console.print("\n")
   0

@@ -1,0 +1,33 @@
+// pass: repetition and order as a capability (no regex: the states count): a b{1,2} a c
+// S0 -a-> S1 -b-> S2 (-b-> S3) -a-> S4 -c-> Done
+capability Seq:
+  state S0, S1, S2, S3, S4, Done
+  start S0
+  stop Done
+  transition as S0 -> S1, S2 -> S4, S3 -> S4
+  transition bs S1 -> S2, S2 -> S3
+  transition cs S4 -> Done
+  def a <s as t> (): Unit <t>
+  def b <s bs t> (): Unit <t>
+  def c <s cs t> (): Unit <t>
+
+handler HSeq for Seq:
+  def a(): Unit = ()
+  def b(): Unit = ()
+  def c(): Unit = ()
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle x = HSeq()
+  x.a()
+  x.b()
+  x.a()
+  x.c()
+  handle y = HSeq()
+  y.a()
+  y.b()
+  y.b()
+  y.a()
+  y.c()
+  Console.print("ok\n")
+  0

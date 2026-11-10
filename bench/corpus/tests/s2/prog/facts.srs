@@ -1,12 +1,13 @@
-// pass: BD5a <> facts (vic-9l7.8): <at(f, S)> before the params = the entry state, after the result = the exit state
-def readOnce {f: File} <at(f, Opened)> (): I64 <at(f, Read1)> = f.read()
+// pass: BD5a <> facts (vic-9l7.8): <f: S> before the params = the entry state, after the result = the exit state
+def readOnce {f: File} <f: Opened> (): I64 <f: Read1> = f.read()
 
-def closeAfter {f: File} <at(f, Read1)> (): Unit <at(f, Closed)> = f.close()
+def closeAfter {f: File} <f: Read1> (): Unit <f: Closed> = f.close()
 
 def main(): I64 =
+  handle io = Srs.Console()
   handle f = CFile()
   val a = readOnce()
   closeAfter()
-  rt_print_i64(a)
-  rt_print("\n")
+  Console.printI64(a)
+  Console.print("\n")
   0

@@ -1,11 +1,12 @@
-protocol File:
+capability File:
   state Opened, Read1, Read2, Closed
   start Opened
-  end Closed
-  op read(): I64 : Opened -> Read1, Read1 -> Read2
-  op close(): Unit : Read1 -> Closed, Read2 -> Closed
+  stop Closed
+  transition reads Opened -> Read1, Read1 -> Read2
+  def read <s reads t> (): I64 <t>
+  transition closes Read1 -> Closed, Read2 -> Closed
+  def close <s closes t> (): Unit <t>
 
 handler CFile for File:
-  def init(): Ptr = rt_arena_new()
-  def read(self: Ptr): I64 = 7
-  def close(self: Ptr): Unit = rt_arena_free(self)
+  def read(): I64 = 7
+  def close(): Unit = ()
