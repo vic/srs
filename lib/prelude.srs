@@ -310,3 +310,19 @@ def strHash(s: Str): I64 =
     h = ((h + Str.at(s, i)) * 16777619) % 4294967296
     i = i + 1
   h
+
+// A1 arrays (vic/c/array-design.md; s2/types.srs Ty.atCall, Ty.tabulate): xs.at(i) is Ok(xs(i)) or Out(i), never a
+// crash; Array.tabulate[F](n) fills element i with the given Array.Gen[F, A]'s at(i)
+enum Array.Index [A: Type]:
+  case Array.Ok(v: A)
+  case Array.Out(i: I64)
+
+trait Array.Gen [F: Type] [A: Type]:
+  def at(i: I64): A
+
+// A1 Cell[A] (s2/types.srs Ty.cellPut): Cell.put(c, v) is a request on Mut, so a fn that writes a cell has Mut in its row
+capability Mut:
+  def write(): Unit
+
+handler Srs.Mut for Mut:
+  def write(): Unit = ()

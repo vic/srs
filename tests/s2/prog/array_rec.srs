@@ -1,0 +1,20 @@
+// pass: A1 arrays in a record with its length field (the length lives in the value that owns the array), and a
+// generic element type at two instantiations
+enum Vec [A: Type]:
+  case Vec.Mk(n: I64, xs: Array[A](n))
+
+def Vec.get [A: Type] (v: Vec[A], i: I64, d: A): A = v match
+  case Vec.Mk(k, ys) => if 0 <= i && i < k then ys(i) else d
+
+def Vec.of [A: Type] (n: I64, x: A): Vec[A] = Vec.Mk(n, Array.fill(n, x))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = Vec.of(3, 40)
+  Console.printI64(Vec.get(a, 2, 0) + Vec.get(a, 3, 2))
+  Console.print("\n")
+  val b = Vec.of(2, "hi")
+  Console.print(Vec.get(b, 1, "no"))
+  Console.print(Vec.get(b, 2, " no\n"))
+  0

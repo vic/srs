@@ -260,8 +260,12 @@ def Tl.ty(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], t: Ast.Ty, fue
     Tl.btLookup(sub, n) match
       case Coll.Some(b) => Tl.W(b, es2)
       case Coll.None => Coll.sLookup(tds, n) match
-        case Coll.None => Tl.W(Ast.Ty(line, n, args2, caps, vals), if Coll.length(vals) == 0 then es2 else Coll.Cons(Tl.NoVals(line, n), es2))
+        // Array[A](n) keeps its value arg: a run-time length that Ty names by the local's identity (A1)
+        case Coll.None => Tl.W(Ast.Ty(line, n, args2, caps, vals), if Str.eq(Sym.str(n), "Array") then Tl.arrayArity(line, n, args2, vals, es2) else if Coll.length(vals) == 0 then es2 else Coll.Cons(Tl.NoVals(line, n), es2))
         case Coll.Some(td) => if Tl.nominal(td) then Tl.W(Ast.Ty(line, n, args2, caps, vals), es2) else Tl.apply(cx, cv, td, line, args2, caps, vals, fuel, es2)
+
+// Array[A](n): one type arg, one length
+def Tl.arrayArity(line: I64, n: Sym.Sym, args: Coll.List[Ast.Ty], vals: Coll.List[Ast.Expr], es: Coll.List[Tl.Err]): Coll.List[Tl.Err] = if Coll.length(args) == 1 && Coll.length(vals) == 1 then es else Coll.Cons(Tl.Arity(line, n), es)
 
 def Tl.tyArgs(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], ts: Coll.List[Ast.Ty], fuel: I64, acc: Coll.List[Ast.Ty], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Ty]] = ts match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)

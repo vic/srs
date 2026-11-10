@@ -1,0 +1,57 @@
+// pass: A1 typed arrays (vic/c/array-design.md): Array[A](n) with the length n a value binder (no header), created
+// initialised (fill, tabulate with a given), xs(i) only where an if condition proves 0 <= i < n (C p[i], no check),
+// xs.at(j) an Array.Index value (Ok or Out, never a crash), Array.slice a view in proved bounds
+enum Ar.Sq:
+  case Ar.Sq
+
+given Array.Gen[Ar.Sq, I64]:
+  def at(i: I64): I64 = i * i
+
+// a self tail call (a C loop); the condition gives i in [0, n) in the then-arm
+def Ar.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if i >= 0 && i < n then Ar.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def Ar.show(r: Array.Index[I64]): Unit = r match
+  case Array.Ok(v) =>
+    Console.print("ok ")
+    Console.printI64(v)
+    Console.print("\n")
+  case Array.Out(j) =>
+    Console.print("out ")
+    Console.printI64(j)
+    Console.print("\n")
+
+// the slice of m elements from off, summed by its own length m
+def Ar.mid(n: I64, xs: Array[I64](n), off: I64, m: I64): I64 =
+  if 0 <= off && 0 <= m && m <= n && off <= n - m then
+    val ys = Array.slice(xs, off, m)
+    Ar.sum(m, ys, 0, 0)
+  else 0 - 1
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val n = 5
+  val ones = Array.fill(n, 1)
+  Console.printI64(Ar.sum(n, ones, 0, 0))
+  Console.print("\n")
+  val sq: Array[I64](n) = Array.tabulate[Ar.Sq](n)
+  Console.printI64(Ar.sum(n, sq, 0, 0))
+  Console.print("\n")
+  Ar.show(sq.at(3))
+  Ar.show(sq.at(5))
+  Ar.show(sq.at(0 - 1))
+  val two = 2
+  val three = 3
+  Console.printI64(Ar.mid(n, sq, 1, three))
+  Console.print("\n")
+  Console.printI64(Ar.mid(n, sq, three, three))
+  Console.print("\n")
+  val z = 0
+  val e = Array.fill(z, 7)
+  Console.printI64(Ar.sum(z, e, 0, 0))
+  Console.print("\n")
+  Ar.show(e.at(0))
+  Console.printI64(two)
+  Console.print("\n")
+  0

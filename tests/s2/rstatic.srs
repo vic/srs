@@ -23,7 +23,7 @@ def RS.regions(sts: Coll.List[Emit.Static], n: I64): I64 = sts match
 
 def RS.probe(name: Str, src: Str, lib: Coll.List[Ast.Decl]): Unit =
   val ds = Coll.revOnto(Coll.rev(RS.src(src)), lib)
-  val res = RS.checked(Ty.typed(ds))
+  val res = RS.checked(Ty.typed(ds, Names.UsesArrays))
   val Ty.Result(cs, _, s, fs, _, _) = res
   val cx = Emit.cxOf(ds, s, fs, Coll.Nil)
   Console.print(name)

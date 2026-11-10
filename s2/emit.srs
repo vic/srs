@@ -212,6 +212,8 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.eq(x, "Ptr") then Console.print("void*")
     else if Str.eq(x, "U32") then Console.print("uint32_t")
     else if Str.eq(x, "U64") then Console.print("uint64_t")
+    // A1: Array[A](n) is one pointer to its elements (no header); Cell[A] a pointer to its word
+    else if Str.eq(x, "Array") || Str.eq(x, "Cell") then Emit.arrayC(cx, args)
     else if Emit.isProto(cx, n) then Console.print("srs_cap*")
     else Emit.nominalOf(cx, n) match
       case Coll.Some(b) => Emit.ctype(cx, b)
@@ -220,6 +222,12 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
         Emit.enumName(n, args)
         Console.print("*")
   case _ => Console.print("int64_t")
+
+def Emit.arrayC(cx: Emit.Cx, args: Coll.List[K.Term]): Unit = args match
+  case Coll.Cons(a, _) =>
+    Emit.ctype(cx, a)
+    Console.print("*")
+  case Coll.Nil => Console.print("void*")
 
 def Emit.nominalOf(cx: Emit.Cx, n: Sym.Sym): Coll.Option[K.Term] =
   val Emit.Cx(_, _, _, _, _, _, _, nm, _) = cx
@@ -326,7 +334,99 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print(" = (")
     Emit.ex(cx, fi, env, Emit.Inner, v)
     Console.print("), (int64_t)0)")
+  case El.Fill(_, reg, n, x, a) => Emit.newArray(cx, fi, env, reg, n, Emit.gr(cx, fi, a), Sym.of("fill.i"), x, true)
+  case El.Tab(_, reg, n, a, i, g) => Emit.newArray(cx, fi, env, reg, n, Emit.gr(cx, fi, a), i, g, false)
+  // A1 Cell[A]: a pointer to one word
+  case El.CellNew(_, reg, v, a) =>
+    val t = Emit.gr(cx, fi, a)
+    Console.print("({ ")
+    Emit.ctype(cx, t)
+    Console.print("* cp_ = (")
+    Emit.ctype(cx, t)
+    Console.print("*)")
+    Emit.allocOpen(cx, env, reg)
+    Console.print("(int64_t)sizeof(")
+    Emit.ctype(cx, t)
+    Console.print(")); *cp_ = (")
+    Emit.ex(cx, fi, env, Emit.Inner, v)
+    Console.print("); cp_; })")
+  case El.CellGet(_, c) =>
+    Console.print("(*(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print("))")
+  case El.CellPut(_, c, v) =>
+    Console.print("(*(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(") = (")
+    Emit.ex(cx, fi, env, Emit.Inner, v)
+    Console.print("), (int64_t)0)")
+  // A1: the index is proved in range (Ty.index): a plain load, no branch
+  case El.Index(_, x, i) =>
+    Emit.local(Emit.vs(env), x)
+    Console.print("[")
+    Emit.ex(cx, fi, env, Emit.Inner, i)
+    Console.print("]")
+  case El.Slice(_, x, o) =>
+    Console.print("(")
+    Emit.ex(cx, fi, env, Emit.Inner, x)
+    Console.print(" + ")
+    Emit.ex(cx, fi, env, Emit.Inner, o)
+    Console.print(")")
   case El.Bad(_) => Console.print("0")
+
+// A1 Array.fill / Array.tabulate: n elements of C type a in region reg, every one written before the array is seen
+// (once: x evaluated once for fill; per index i: g for tabulate). n <= 0 gives no element; a byte count past 2^62
+// saturates, so the region fails with out of memory instead of a short block
+def Emit.newArray(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, reg: Sym.Sym, n: El.Expr, a: K.Term, i: Sym.Sym, g: El.Expr, once: Bool): Unit =
+  Console.print("({ int64_t an_ = (")
+  Emit.ex(cx, fi, env, Emit.Inner, n)
+  Console.print("); ")
+  if once then
+    Emit.ctype(cx, a)
+    Console.print(" ax_ = (")
+    Emit.ex(cx, fi, env, Emit.Inner, g)
+    Console.print("); ")
+  else ()
+  Emit.ctype(cx, a)
+  Console.print("* ap_ = (")
+  Emit.ctype(cx, a)
+  Console.print("*)")
+  Emit.allocOpen(cx, env, reg)
+  Console.print("an_ <= 0 ? 0 : an_ >(int64_t)(((int64_t)1 << 62) / sizeof(")
+  Emit.ctype(cx, a)
+  Console.print(")) ? ((int64_t)1 << 62) : an_ * (int64_t)sizeof(")
+  Emit.ctype(cx, a)
+  Console.print(")); ")
+  val env2 = Emit.bind(env, i)
+  Console.print("for (int64_t ")
+  Emit.local(Emit.vs(env2), i)
+  Console.print(" = 0; ")
+  Emit.local(Emit.vs(env2), i)
+  Console.print(" < an_; ")
+  Emit.local(Emit.vs(env2), i)
+  Console.print("++) ap_[")
+  Emit.local(Emit.vs(env2), i)
+  Console.print("] = ")
+  if once then Console.print("ax_") else Emit.ex(cx, fi, env2, Emit.Inner, g)
+  Console.print("; ap_; })")
+
+// the start of an allocation call in region reg, up to the size arg (as Emit.ctor: the inline bump when Srs.Arena is in
+// the program, else the region's alloc op)
+def Emit.allocOpen(cx: Emit.Cx, env: Emit.Env, reg: Sym.Sym): Unit =
+  val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
+  al match
+    case Emit.Inline =>
+      Console.print("srs_alloc(")
+      Emit.local(Emit.vs(env), reg)
+      Console.print(", ")
+    case Emit.VTable =>
+      Console.print("((void*(*)(void*, int64_t))(")
+      Emit.local(Emit.vs(env), reg)
+      Console.print("->vt[")
+      Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
+      Console.print("]))(")
+      Emit.local(Emit.vs(env), reg)
+      Console.print("->self, ")
 
 def Emit.binOp(op: Ast.BinOp): Str = op match
   case Ast.Add => " + "
@@ -915,6 +1015,13 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.Block(_, ss, last) => Emit.exTys(cx, fi, last, Emit.stmtsTys(cx, fi, ss, acc))
   case El.While(_, c, b) => Emit.exTys(cx, fi, b, Emit.exTys(cx, fi, c, acc))
   case El.Assign(_, _, x) => Emit.exTys(cx, fi, x, acc)
+  case El.Index(_, _, i) => Emit.exTys(cx, fi, i, acc)
+  case El.Slice(_, x, o) => Emit.exTys(cx, fi, o, Emit.exTys(cx, fi, x, acc))
+  case El.Fill(_, _, n, x, a) => Emit.exTys(cx, fi, x, Emit.exTys(cx, fi, n, Coll.Cons(Emit.gr(cx, fi, a), acc)))
+  case El.Tab(_, _, n, a, _, g) => Emit.exTys(cx, fi, g, Emit.exTys(cx, fi, n, Coll.Cons(Emit.gr(cx, fi, a), acc)))
+  case El.CellNew(_, _, v, a) => Emit.exTys(cx, fi, v, Coll.Cons(Emit.gr(cx, fi, a), acc))
+  case El.CellGet(_, c) => Emit.exTys(cx, fi, c, acc)
+  case El.CellPut(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case _ => acc
 
 def Emit.exsTys(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
@@ -2131,6 +2238,13 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.Block(_, ss, last) => Emit.seenE(cx, last, Emit.seenSs(cx, ss, s))
   case El.While(_, c, b) => Emit.seenE(cx, b, Emit.seenE(cx, c, s))
   case El.Assign(_, _, x) => Emit.seenE(cx, x, s)
+  case El.Index(_, _, i) => Emit.seenE(cx, i, s)
+  case El.Slice(_, x, o) => Emit.seenE(cx, o, Emit.seenE(cx, x, s))
+  case El.Fill(_, _, n, x, _) => Emit.seenE(cx, x, Emit.seenE(cx, n, s))
+  case El.Tab(_, _, n, _, _, g) => Emit.seenE(cx, g, Emit.seenE(cx, n, s))
+  case El.CellNew(_, _, v, _) => Emit.seenE(cx, v, s)
+  case El.CellGet(_, c) => Emit.seenE(cx, c, s)
+  case El.CellPut(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case _ => s
 
 def Emit.seenEs(cx: Emit.Cx, xs: Coll.List[El.Expr], s: Emit.Seen): Emit.Seen = xs match
@@ -2231,6 +2345,13 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.Block(l, ss, last) => El.Block(l, Emit.dropSs(m, xs, ss), Emit.dropE(m, xs, last))
   case El.While(l, c, b) => El.While(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, b))
   case El.Assign(l, x, v) => El.Assign(l, x, Emit.dropE(m, xs, v))
+  case El.Index(l, x, i) => El.Index(l, x, Emit.dropE(m, xs, i))
+  case El.Slice(l, x, o) => El.Slice(l, Emit.dropE(m, xs, x), Emit.dropE(m, xs, o))
+  case El.Fill(l, r, n, x, a) => El.Fill(l, r, Emit.dropE(m, xs, n), Emit.dropE(m, xs, x), a)
+  case El.Tab(l, r, n, a, i, g) => El.Tab(l, r, Emit.dropE(m, xs, n), a, i, Emit.dropE(m, xs, g))
+  case El.CellNew(l, r, v, a) => El.CellNew(l, r, Emit.dropE(m, xs, v), a)
+  case El.CellGet(l, c) => El.CellGet(l, Emit.dropE(m, xs, c))
+  case El.CellPut(l, c, v) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
   case _ => e
 
 def Emit.dropEs(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match

@@ -38,6 +38,17 @@ enum El.Expr:
   case El.Block(line: I64, stmts: Coll.List[El.Stmt], last: El.Expr)
   case El.While(line: I64, c: El.Expr, body: El.Expr)
   case El.Assign(line: I64, x: Sym.Sym, e: El.Expr)
+  // A1 arrays: xs(i) with i proved in range (C p[i], no check); Array.slice(xs, off, m) (C xs + off)
+  case El.Index(line: I64, xs: Sym.Sym, i: El.Expr)
+  case El.Slice(line: I64, xs: El.Expr, off: El.Expr)
+  // Array.fill(n, x) and Array.tabulate[F](n) in region reg: n elements of type elem, each x, or gen with the local i
+  // bound to the element's index (gen calls the given's at)
+  case El.Fill(line: I64, reg: Sym.Sym, n: El.Expr, x: El.Expr, elem: K.Term)
+  case El.Tab(line: I64, reg: Sym.Sym, n: El.Expr, elem: K.Term, i: Sym.Sym, gen: El.Expr)
+  // A1 Cell[A]: a new cell holding v (one word in reg); Cell.get(c); Cell.put(c, v)
+  case El.CellNew(line: I64, reg: Sym.Sym, v: El.Expr, elem: K.Term)
+  case El.CellGet(line: I64, c: El.Expr)
+  case El.CellPut(line: I64, c: El.Expr, v: El.Expr)
   // an expression that did not type (its clash is in the result): emit never runs on a program with clashes
   case El.Bad(line: I64)
 

@@ -59,6 +59,10 @@ def TT.show(c: Ty.Clash): Unit = c match
   case Ty.RtOutsideSrs(l, f) => TT.sayN("rtoutside", l, f)
   case Ty.ValAtRunTime(l, x) => TT.sayN("valrun", l, x)
   case Ty.IntRange(l, _) => TT.say("intrange", l)
+  case Ty.AssignVal(l, x) => TT.sayN("assignval", l, x)
+  case Ty.IndexUnproved(l, x) => TT.sayN("indexunproved", l, x)
+  case Ty.SliceUnproved(l, f) => TT.sayN("sliceunproved", l, f)
+  case Ty.LenUnnamed(l, x) => TT.sayN("lenunnamed", l, x)
 
 def TT.say(k: Str, l: I64): Unit =
   Console.print(" ")
@@ -77,7 +81,9 @@ def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
     TT.show(c)
     TT.showAll(rest)
 
-def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, TT.checked(Ty.typed(ds)))
+def TT.typed(ds: Coll.List[Ast.Decl]): Ty.Typed = Ty.typed(ds, Names.UsesArrays)
+
+def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, TT.checked(TT.typed(ds)))
 
 // a check that stopped before types prints why; an empty result follows so the report stays one line
 def TT.checked(t: Ty.Typed): Ty.Result = t match
@@ -106,7 +112,7 @@ def main(): I64 =
   handle fs = Srs.Files()
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
   // the whole self check once: its clashes, instances, defs and mono
-  val self = TT.checked(Ty.typed(lib))
+  val self = TT.checked(TT.typed(lib))
   TT.report("self", self)
   val Ty.Result(_, is, _, sfs, _, _) = self
   val mi = Mono.run(self)
@@ -131,7 +137,7 @@ def main(): I64 =
   Console.print("elab usem:\n")
   TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef rv [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.rev(xs)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  handle b = Srs.Heap()\n  val xs = mk{b}(3)\n  Coll.length(rv{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", small, "usem")
   Console.print("mono usem:\n")
-  TT.insts(Mono.run(TT.checked(Ty.typed(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil))))))
+  TT.insts(Mono.run(TT.checked(TT.typed(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil))))))
   0
 
 // ── T3: the elaborated calls of one def: instance, type args (reified), caps; constructors with their region ──
@@ -229,7 +235,7 @@ def TT.stmts {r: Region} (s: K.Subst, ss: Coll.List[El.Stmt]): Unit = ss match
     TT.stmts(s, rest)
 
 def TT.elab {r: Region} (src: Str, lib: Coll.List[Ast.Decl], name: Str): Unit =
-  val Ty.Result(cs, _, s, fs, _, _) = TT.checked(Ty.typed(Coll.revOnto(Coll.rev(TT.src(src)), lib)))
+  val Ty.Result(cs, _, s, fs, _, _) = TT.checked(TT.typed(Coll.revOnto(Coll.rev(TT.src(src)), lib)))
   TT.showAll(cs)
   TT.fnCalls(s, fs, Sym.of(name))
 
@@ -323,9 +329,10 @@ def TT.openCount(is: Coll.List[Mono.Inst], n: I64): I64 = is match
 
 def TT.openSub(sub: Coll.List[Ty.Bind]): I64 = sub match
   case Coll.Nil => 0
-  case Coll.Cons(b, rest) =>
-    val Ty.Bind(_, t) = b
-    (if Ty.groundT(t) then 0 else 1) + TT.openSub(rest)
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(_, t) => (if Ty.groundT(t) then 0 else 1) + TT.openSub(rest)
+    // a mono sub binds [] binders only (Ty.Bind); the A1 cases are locals
+    case _ => TT.openSub(rest)
 
 def TT.alloc(a: El.Alloc): Unit = a match
   case El.In(reg) => Console.print(Sym.str(reg))

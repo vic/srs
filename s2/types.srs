@@ -62,6 +62,12 @@ enum Ty.Clash:
   case Ty.ValAtRunTime(line: I64, x: Sym.Sym)
   // an int literal outside its type t (a U32 above 2^32 - 1)
   case Ty.IntRange(line: I64, t: K.Term)
+  // A1 arrays: an assignment to a local with an identity; xs(i) with i not proved in [0, n); a slice whose bounds are
+  // not proved; xs.at(i) where no local in scope holds the length
+  case Ty.AssignVal(line: I64, x: Sym.Sym)
+  case Ty.IndexUnproved(line: I64, xs: Sym.Sym)
+  case Ty.SliceUnproved(line: I64, f: Sym.Sym)
+  case Ty.LenUnnamed(line: I64, xs: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -74,10 +80,26 @@ enum Ty.Inst:
 
 enum Ty.Bind:
   case Ty.Bind(x: Sym.Sym, t: K.Term)
+  // A1 (vic/c/array-design.md): an immutable I64 local (a param, a val) and its identity id, unique in the program.
+  // an Array length and a fact name the identity, not the name: a shadowing local or a type that leaves its block
+  // cannot make two values one. a binding runs at most once per call outside loops, so one id is one value per call
+  case Ty.Val(x: Sym.Sym, t: K.Term, id: I64)
+  // a fact of an if condition on identities, true in its then-arm (Ty.facts)
+  case Ty.Fact(a: Ty.Atom)
+  // inside a while body or the rest of a multi-shot handle a binding runs more than once per call: no new identity
+  case Ty.Loop
+
+// the facts an if condition gives (signed I64 compares of immutable locals, no arithmetic but b - c): 0 <= a; a < b;
+// a <= b; a <= b - c
+enum Ty.Atom:
+  case Ty.Lo(a: I64)
+  case Ty.Lt(a: I64, b: I64)
+  case Ty.Le(a: I64, b: I64)
+  case Ty.LeSub(a: I64, b: I64, c: I64)
 
 // the declarations the inference reads; rows: each def's implicit capabilities (s2/eff.srs)
 enum Ty.Cx:
-  case Ty.Cx(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], mode: Ty.Mode, impure: Coll.SMap[Bool], rows: Eff.Rows, vals: Coll.SMap[Bool], idx: Ty.Idx)
+  case Ty.Cx(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], mode: Ty.Mode, impure: Coll.SMap[Bool], rows: Eff.Rows, vals: Coll.SMap[Bool], arr: Names.Arrays, idx: Ty.Idx)
 
 // a body that runs (a constructor allocates in a Region) or a top-level val body, evaluated at compile time (no Region, vic Q-U4)
 enum Ty.Mode:
@@ -145,18 +167,97 @@ def Ty.expectOpt(st: Ty.St, line: I64, got: K.Term, want: Coll.Option[K.Term]): 
 
 def Ty.lookup(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs match
   case Coll.Nil => Coll.None
-  case Coll.Cons(b, rest) =>
-    val Ty.Bind(y, t) = b
-    if Sym.eq(x, y) then Coll.Some(t) else Ty.lookup(rest, x)
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(y, t) => if Sym.eq(x, y) then Coll.Some(t) else Ty.lookup(rest, x)
+    case Ty.Val(y, t, _) => if Sym.eq(x, y) then Coll.Some(t) else Ty.lookup(rest, x)
+    case Ty.Fact(_) => Ty.lookup(rest, x)
+    case Ty.Loop => Ty.lookup(rest, x)
 
-// ── Ast.Ty as a term: a name bound in tv (a [] binder: a var at a call, a rigid con in a body) is its term ──
+// a [] binder in tv (a type name: never a value's identity)
+def Ty.lookupTy(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(y, t) => if Sym.eq(x, y) then Coll.Some(t) else Ty.lookupTy(rest, x)
+    case _ => Ty.lookupTy(rest, x)
+
+// the identity of the innermost local x: none when it is mutable, not I64, or shadowed by such a local (A1)
+def Ty.idOf(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[I64] = bs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(y, _) => if Sym.eq(x, y) then Coll.None else Ty.idOf(rest, x)
+    case Ty.Val(y, _, id) => if Sym.eq(x, y) then Coll.Some(id) else Ty.idOf(rest, x)
+    case _ => Ty.idOf(rest, x)
+
+// the innermost local whose identity is id, still reachable by its name (A1: a length read at run time)
+def Ty.nameOfId(bs: Coll.List[Ty.Bind], id: I64, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(y, _) => Ty.nameOfId(rest, id, Coll.Cons(y, seen))
+    case Ty.Val(y, _, j) => if j == id && !Ty.memberSym(y, seen) then Coll.Some(y) else Ty.nameOfId(rest, id, Coll.Cons(y, seen))
+    case _ => Ty.nameOfId(rest, id, seen)
+
+def Ty.holds(bs: Coll.List[Ty.Bind], a: Ty.Atom): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) => b match
+    case Ty.Fact(f) => if Ty.atomEq(f, a) then true else Ty.holds(rest, a)
+    case _ => Ty.holds(rest, a)
+
+def Ty.atomEq(f: Ty.Atom, a: Ty.Atom): Bool = f match
+  case Ty.Lo(x) => a match
+    case Ty.Lo(y) => x == y
+    case _ => false
+  case Ty.Lt(x, y) => a match
+    case Ty.Lt(u, v) => x == u && y == v
+    case _ => false
+  case Ty.Le(x, y) => a match
+    case Ty.Le(u, v) => x == u && y == v
+    case _ => false
+  case Ty.LeSub(x, y, z) => a match
+    case Ty.LeSub(u, v, w) => x == u && y == v && z == w
+    case _ => false
+
+def Ty.inLoop(bs: Coll.List[Ty.Bind]): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) => b match
+    case Ty.Loop => true
+    case _ => Ty.inLoop(rest)
+
+// ── Ast.Ty as a term: a name bound in tv (a [] binder: a var at a call, a rigid con in a body) is its term; a value
+// arg (the n of Array[A](n), A1) is the identity of the local n in tv, the last type arg ──
 def Ty.term(t: Ast.Ty, tv: Coll.List[Ty.Bind]): K.Term =
-  val Ast.Ty(_, n, args, _, _) = t
+  val Ast.Ty(_, n, args, _, vals) = t
   args match
-    case Coll.Nil => Ty.lookup(tv, n) match
+    case Coll.Nil => Ty.lookupTy(tv, n) match
       case Coll.Some(x) => x
       case Coll.None => K.Con(n, Coll.Nil)
-    case Coll.Cons(_, _) => K.Con(n, Ty.terms(args, tv, Coll.Nil))
+    case Coll.Cons(_, _) => vals match
+      case Coll.Nil => K.Con(n, Ty.terms(args, tv, Coll.Nil))
+      case Coll.Cons(v, _) => K.Con(n, Coll.revOnto(Coll.rev(Ty.terms(args, tv, Coll.Nil)), Coll.Cons(Ty.lenTerm(tv, v), Coll.Nil)))
+
+// a length: K.Int of the local's identity; anything else is a length no local names (no fact or read can reach it)
+def Ty.lenTerm(tv: Coll.List[Ty.Bind], v: Ast.Expr): K.Term = v match
+  case Ast.Name(_, x) => Ty.idOf(tv, x) match
+    case Coll.Some(id) => K.Int(id)
+    case Coll.None => Ty.con("Array.unnamed")
+  case _ => Ty.con("Array.unnamed")
+
+// a type with a value arg anywhere in it
+def Ty.hasVals(t: Ast.Ty): Bool =
+  val Ast.Ty(_, _, args, _, vals) = t
+  Coll.length(vals) > 0 || Ty.anyVals(args)
+
+def Ty.anyVals(ts: Coll.List[Ast.Ty]): Bool = ts match
+  case Coll.Nil => false
+  case Coll.Cons(t, rest) => if Ty.hasVals(t) then true else Ty.anyVals(rest)
+
+// the identities in bs, for a type written in a body (a val annotation): its lengths name locals
+// (the reachable ones: seen = the names of inner locals)
+def Ty.idsOnly(bs: Coll.List[Ty.Bind], seen: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) => b match
+    case Ty.Val(y, _, _) => Ty.idsOnly(rest, Coll.Cons(y, seen), if Ty.memberSym(y, seen) then acc else Coll.Cons(b, acc))
+    case Ty.Bind(y, _) => Ty.idsOnly(rest, Coll.Cons(y, seen), acc)
+    case _ => Ty.idsOnly(rest, seen, acc)
 
 def Ty.terms(ts: Coll.List[Ast.Ty], tv: Coll.List[Ty.Bind], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
@@ -247,12 +348,12 @@ def Ty.sFirst [V: Type] (m: Coll.SMap[V], s: Sym.Sym, v: V): Coll.SMap[V] = Coll
   case Coll.None => Coll.sInsert(m, s, v)
 
 def Ty.fnOf(cx: Ty.Cx, f: Sym.Sym): Coll.Option[Ast.Fn] =
-  val Ty.Cx(_, _, _, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
   val Ty.Idx(fs, _) = idx
   Coll.sLookup(fs, f)
 
 def Ty.caseOf(cx: Ty.Cx, f: Sym.Sym): Coll.Option[Ty.CaseOf] =
-  val Ty.Cx(_, _, _, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
   val Ty.Idx(_, cs) = idx
   Coll.sLookup(cs, f)
 
@@ -290,9 +391,10 @@ def Ty.expr(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Col
       val t = Ty.con(Ty.unTy(op))
       val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.Some(t))
       Ty.lit(st1, line, t, want, El.Un(line, op, ex))
+  // the then-arm knows the facts of the condition (A1)
   case Ast.If(line, c, t, x) =>
     val Ty.Ex(st1, _, ec) = Ty.expr(cx, st, bs, c, Coll.Some(Ty.con("Bool")))
-    val Ty.Ex(st2, tt, et) = Ty.expr(cx, st1, bs, t, want)
+    val Ty.Ex(st2, tt, et) = Ty.expr(cx, st1, Ty.thenBs(cx, bs, c), t, want)
     val Ty.Ex(st3, _, ex) = Ty.expr(cx, st2, bs, x, Coll.Some(tt))
     Ty.Ex(st3, tt, El.If(line, ec, et, ex))
   case Ast.Match(line, s, arms) =>
@@ -300,18 +402,90 @@ def Ty.expr(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], e: Ast.Expr, want: Col
     Ty.arms(cx, st1, bs, line, ts, es, arms, want)
   case Ast.Block(line, ss, last) => Ty.block(cx, st, bs, line, ss, last, want, Coll.Nil)
   case Ast.While(line, c, b) =>
-    val Ty.Ex(st1, _, ec) = Ty.expr(cx, st, bs, c, Coll.Some(Ty.con("Bool")))
-    val Ty.Ex(st2, _, eb) = Ty.expr(cx, st1, bs, b, Coll.None)
+    val bl = Ty.loopBs(cx, bs)
+    val Ty.Ex(st1, _, ec) = Ty.expr(cx, st, bl, c, Coll.Some(Ty.con("Bool")))
+    val Ty.Ex(st2, _, eb) = Ty.expr(cx, st1, bl, b, Coll.None)
     Ty.lit(st2, line, Ty.con("Unit"), want, El.While(line, ec, eb))
   case Ast.Assign(line, x, v) => Ty.lookup(bs, x) match
     case Coll.None => Ty.Ex(Ty.clash(st, Ty.Unknown(line, x)), Ty.con("Unit"), El.Bad(line))
     case Coll.Some(tx) =>
-      val Ty.Ex(st1, _, ev) = Ty.expr(cx, st, bs, v, Coll.Some(tx))
+      // a local with an identity (A1) is immutable: a length or a fact names its one value
+      val st0: Ty.St = Ty.idOf(bs, x) match
+        case Coll.Some(_) => Ty.clash(st, Ty.AssignVal(line, x))
+        case Coll.None => st
+      val Ty.Ex(st1, _, ev) = Ty.expr(cx, st0, bs, v, Coll.Some(tx))
       Ty.lit(st1, line, Ty.con("Unit"), want, El.Assign(line, x, ev))
   // a quantifier is a contract: checked, erased (no C)
   case Ast.Quant(line, _, x, t, b) =>
     val Ty.Ex(st1, _, _) = Ty.expr(cx, st, Coll.Cons(Ty.Bind(x, Ty.term(t, Coll.Nil)), bs), b, Coll.Some(Ty.con("Bool")))
     Ty.lit(st1, line, Ty.con("Bool"), want, El.Bool(line, true))
+
+// ── A1 facts (vic/c/array-design.md): the conjuncts of an if condition that compare immutable I64 locals (Ty.Val) hold in
+// the then-arm. each is an atom on identities, so it stays true however the arm shadows names; only && is split (an ||
+// or a ! gives nothing); a compare of a mutable local, or of any other expression, gives nothing ──
+def Ty.thenBs(cx: Ty.Cx, bs: Coll.List[Ty.Bind], c: Ast.Expr): Coll.List[Ty.Bind] =
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
+  arr match
+    case Names.NoArrays => bs
+    case Names.UsesArrays => Ty.facts(bs, c, bs)
+
+def Ty.loopBs(cx: Ty.Cx, bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] =
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
+  arr match
+    case Names.NoArrays => bs
+    case Names.UsesArrays => Coll.Cons(Ty.Loop, bs)
+
+def Ty.facts(bs: Coll.List[Ty.Bind], c: Ast.Expr, acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = c match
+  case Ast.Bin(_, op, l, r) => op match
+    case Ast.And => Ty.facts(bs, r, Ty.facts(bs, l, acc))
+    case Ast.Le => Ty.factLe(bs, l, r, acc)
+    case Ast.Ge => Ty.factLe(bs, r, l, acc)
+    case Ast.Lt => Ty.fact2(Ty.idE(bs, l), Ty.idE(bs, r), acc)
+    case Ast.Gt => Ty.fact2(Ty.idE(bs, r), Ty.idE(bs, l), acc)
+    case _ => acc
+  case _ => acc
+
+// a < b
+def Ty.fact2(a: Coll.Option[I64], b: Coll.Option[I64], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = a match
+  case Coll.Some(x) => b match
+    case Coll.Some(y) => Coll.Cons(Ty.Fact(Ty.Lt(x, y)), acc)
+    case Coll.None => acc
+  case Coll.None => acc
+
+// l <= r: 0 <= a, a <= b, a <= b - c
+def Ty.factLe(bs: Coll.List[Ty.Bind], l: Ast.Expr, r: Ast.Expr, acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = Ty.idE(bs, l) match
+  case Coll.None => l match
+    case Ast.Int(_, v) => if v == 0 then Ty.factLo(Ty.idE(bs, r), acc) else acc
+    case _ => acc
+  case Coll.Some(a) => r match
+    case Ast.Bin(_, op, b, c) => op match
+      case Ast.Sub => Ty.factSub(a, Ty.idE(bs, b), Ty.idE(bs, c), acc)
+      case _ => acc
+    case _ => Ty.idE(bs, r) match
+      case Coll.Some(b) => Coll.Cons(Ty.Fact(Ty.Le(a, b)), acc)
+      case Coll.None => acc
+
+def Ty.factLo(a: Coll.Option[I64], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = a match
+  case Coll.Some(x) => Coll.Cons(Ty.Fact(Ty.Lo(x)), acc)
+  case Coll.None => acc
+
+def Ty.factSub(a: I64, b: Coll.Option[I64], c: Coll.Option[I64], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = b match
+  case Coll.Some(y) => c match
+    case Coll.Some(z) => Coll.Cons(Ty.Fact(Ty.LeSub(a, y, z)), acc)
+    case Coll.None => acc
+  case Coll.None => acc
+
+// the identity of a name expression
+def Ty.idE(bs: Coll.List[Ty.Bind], e: Ast.Expr): Coll.Option[I64] = e match
+  case Ast.Name(_, x) => Ty.idOf(bs, x)
+  case _ => Coll.None
+
+// i in [0, n): xs(i) needs no check
+def Ty.inBounds(bs: Coll.List[Ty.Bind], i: I64, n: I64): Bool = Ty.holds(bs, Ty.Lo(i)) && Ty.holds(bs, Ty.Lt(i, n))
+
+// [off, off + m) in [0, n), written without an add that could wrap: 0 <= off, 0 <= m, m <= n, off <= n - m (n - m
+// cannot wrap when 0 <= m <= n)
+def Ty.sliceIn(bs: Coll.List[Ty.Bind], off: I64, m: I64, n: I64): Bool = Ty.holds(bs, Ty.Lo(off)) && Ty.holds(bs, Ty.Lo(m)) && Ty.holds(bs, Ty.Le(m, n)) && Ty.holds(bs, Ty.LeSub(off, n, m))
 
 // a type that is known: checked against want
 def Ty.lit(st: Ty.St, line: I64, t: K.Term, want: Coll.Option[K.Term], e: El.Expr): Ty.Ex = Ty.Ex(Ty.expectOpt(st, line, t, want), t, e)
@@ -323,14 +497,234 @@ def Ty.bad(st: Ty.St, line: I64): Ty.Ex =
 
 // ── calls: a def or a constructor (a name with no args is a nullary case) ──
 def Ty.call(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
-  val Ty.Cx(fns, es, ps, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(fns, es, ps, _, _, _, _, _, _, _, idx) = cx
   Ty.fnOf(cx, f) match
     case Coll.Some(g) => Ty.callFn(cx, Ty.valCall(cx, Ty.rtCall(cx, Ty.pureCall(cx, st, line, f), line, g), line, f), bs, line, g, targs, chosen, xs, want)
     case Coll.None => Ty.caseOf(cx, f) match
       case Coll.Some(co) => Ty.callCase(cx, st, bs, line, co, xs, want)
       case Coll.None => Eff.reqOf(ps, f) match
         case Coll.Some(q) => Ty.request(cx, st, bs, line, q, xs, want)
-        case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+        case Coll.None => Ty.arrayCall(cx, st, bs, line, f, targs, xs, want)
+
+// ── A1 arrays (vic/c/array-design.md): Array[A](n) is K.Con(Array, [A, K.Int(id of n)]), one pointer to n elements ──
+enum Ty.ArrT:
+  case Ty.ArrT(elem: K.Term, len: K.Term)
+
+def Ty.arrayOf(s: Coll.IMap[K.Term], t: K.Term): Coll.Option[Ty.ArrT] = K.walk(s, t) match
+  case K.Con(n, args) => if Str.eq(Sym.str(n), "Array") then Ty.arrParts(args) else Coll.None
+  case _ => Coll.None
+
+def Ty.arrParts(args: Coll.List[K.Term]): Coll.Option[Ty.ArrT] = args match
+  case Coll.Cons(a, rest) => rest match
+    case Coll.Cons(n, _) => Coll.Some(Ty.ArrT(a, n))
+    case Coll.Nil => Coll.None
+  case Coll.Nil => Coll.None
+
+// the length's identity (none: a length no local names)
+def Ty.lenId(t: K.Term): Coll.Option[I64] = t match
+  case K.Int(id) => Coll.Some(id)
+  case _ => Coll.None
+
+// a call that is no def, case or request: xs(i) on a local array, or an Array builtin; else an unknown name
+def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = Ty.lookup(bs, f) match
+  case Coll.Some(t) => Ty.arrayOf(Ty.subst(st), t) match
+    case Coll.Some(at) => xs match
+      case Coll.Cons(ix, more) => more match
+        case Coll.Nil => Ty.index(cx, st, bs, line, f, at, ix, want)
+        case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+  case Coll.None =>
+    val fs = Sym.str(f)
+    if Str.eq(fs, "Array.slice") then Ty.slice(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Array.fill") then Ty.fill(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Array.tabulate") then Ty.tabulate(cx, st, bs, line, f, targs, xs, want)
+    else if Str.eq(fs, "Cell.new") then Ty.cellNew(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
+    else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+
+// ── A1 Cell[A]: one word in the innermost Region, Cell.get(c) reads it, Cell.put(c, v) writes it, a request on Mut (a
+// write is an effect in the row). shortcut: A is a scalar (I64, Bool, U32, U64): a cell of region data needs a flow
+// rule that v outlives the cell; upgrade with that rule ──
+def Ty.isScalar(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
+  case K.Con(n, args) =>
+    val x = Sym.str(n)
+    Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64"))
+  case _ => false
+
+def Ty.cellNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ev, r1) => r1 match
+    case Coll.Nil =>
+      val wa: Coll.Option[K.Term] = want match
+        case Coll.Some(w) => K.walk(Ty.subst(st), w) match
+          case K.Con(wn, wargs) => if Str.eq(Sym.str(wn), "Cell") then Coll.headOpt(wargs) else Coll.None
+          case _ => Coll.None
+        case Coll.None => Coll.None
+      val Ty.Ex(st1, ta, eV) = Ty.expr(cx, st, bs, ev, wa)
+      val st2 = if Ty.isScalar(Ty.subst(st1), ta) then st1 else Ty.clash(st1, Ty.Mismatch(line, ta, Ty.con("I64")))
+      val Ty.RegAt(st3, reg) = Ty.regionAt(cx, st2, bs, line)
+      Ty.lit(st3, line, K.Con(Sym.of("Cell"), Coll.Cons(ta, Coll.Nil)), want, El.CellNew(line, reg, eV, ta))
+    case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// the cell arg c: Cell[a] at a fresh a
+def Ty.cellArg(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ec: Ast.Expr): Ty.Ex =
+  val Ty.At(st0, a) = Ty.fresh(st)
+  val Ty.Ex(st1, _, eC) = Ty.expr(cx, st0, bs, ec, Coll.Some(K.Con(Sym.of("Cell"), Coll.Cons(a, Coll.Nil))))
+  Ty.Ex(st1, a, eC)
+
+// Cell.get(c): the word
+def Ty.cellGet(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ec, r1) => r1 match
+    case Coll.Nil =>
+      val Ty.Ex(st1, a, eC) = Ty.cellArg(cx, st, bs, ec)
+      Ty.lit(st1, line, a, want, El.CellGet(line, eC))
+    case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// Cell.put(c, v): a write, a request on Mut (its handler in scope, else unhandled-effect)
+def Ty.cellPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ec, r1) => r1 match
+    case Coll.Cons(ev, r2) => r2 match
+      case Coll.Nil =>
+        val Ty.Ex(st1, a, eC) = Ty.cellArg(cx, st, bs, ec)
+        val Ty.Ex(st2, _, eV) = Ty.expr(cx, st1, bs, ev, Coll.Some(a))
+        val mut = Sym.of("Mut")
+        val st3: Ty.St = Ty.innermost(Ty.subst(st2), bs, mut) match
+          case Coll.Some(_) => st2
+          case Coll.None => Ty.clash(st2, Ty.unhandled(cx, line, mut))
+        Ty.lit(st3, line, Ty.con("Unit"), want, El.CellPut(line, eC, eV))
+      case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// the innermost Region in scope, where a new array lives (a constructor's rule, Ty.callCase); none at compile time
+enum Ty.RegAt:
+  case Ty.RegAt(st: Ty.St, reg: Sym.Sym)
+
+def Ty.regionAt(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64): Ty.RegAt =
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
+  val region = Sym.of("Region")
+  mode match
+    case Ty.Comptime => Ty.RegAt(Ty.clash(st, Ty.Impure(line, region)), region)
+    case Ty.Run(_) => Ty.innermost(Ty.subst(st), bs, region) match
+      case Coll.Some(reg) => Ty.RegAt(st, reg)
+      case Coll.None => Ty.RegAt(Ty.clash(st, Ty.unhandled(cx, line, region)), region)
+
+// the length of a new array: the identity of the local n (a length no local names could never be read)
+def Ty.newLen(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, en: Ast.Expr): Ty.At = Ty.idE(bs, en) match
+  case Coll.Some(id) => Ty.At(st, K.Int(id))
+  case Coll.None => Ty.At(Ty.clash(st, Ty.LenUnnamed(line, f)), Ty.con("Array.unnamed"))
+
+// Array.fill(n, x): n elements, each x; created initialised (A1: no uninitialised element)
+def Ty.fill(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(en, r1) => r1 match
+    case Coll.Cons(ex, r2) => r2 match
+      case Coll.Nil =>
+        val wa: Coll.Option[K.Term] = want match
+          case Coll.Some(w) => Ty.arrayOf(Ty.subst(st), w) match
+            case Coll.Some(at) =>
+              val Ty.ArrT(a, _) = at
+              Coll.Some(a)
+            case Coll.None => Coll.None
+          case Coll.None => Coll.None
+        val Ty.Ex(st1, _, eN) = Ty.expr(cx, st, bs, en, Coll.Some(Ty.con("I64")))
+        val Ty.Ex(st2, ta, eX) = Ty.expr(cx, st1, bs, ex, wa)
+        val Ty.At(st3, len) = Ty.newLen(st2, bs, line, f, en)
+        val Ty.RegAt(st4, reg) = Ty.regionAt(cx, st3, bs, line)
+        Ty.lit(st4, line, K.Con(Sym.of("Array"), Coll.Cons(ta, Coll.Cons(len, Coll.Nil))), want, El.Fill(line, reg, eN, eX, ta))
+      case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// Array.tabulate[F](n): element i is the given Array.Gen[F, A]'s at(i), for i from 0 (a function is a given: no closures)
+def Ty.tabulate(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, targs: Coll.List[Ast.Ty], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = targs match
+  case Coll.Cons(tf, tr) => tr match
+    case Coll.Nil => xs match
+      case Coll.Cons(en, r1) => r1 match
+        case Coll.Nil =>
+          val Ty.At(st0, a) = Ty.fresh(st)
+          val Ty.Ex(st1, _, eN) = Ty.expr(cx, st0, bs, en, Coll.Some(Ty.con("I64")))
+          val Ty.At(st2, len) = Ty.newLen(st1, bs, line, f, en)
+          val Ty.RegAt(st3, reg) = Ty.regionAt(cx, st2, bs, line)
+          val goal = K.Con(Sym.of("Array.Gen"), Coll.Cons(Ty.term(tf, Coll.Nil), Coll.Cons(a, Coll.Nil)))
+          val st4 = Ty.addGoal(st3, Ty.Goal(line, goal, bs, Coll.None))
+          val i = Sym.of("tab.i")
+          Ty.lit(st4, line, K.Con(Sym.of("Array"), Coll.Cons(a, Coll.Cons(len, Coll.Nil))), want, El.Tab(line, reg, eN, a, i, El.TCall(line, goal, Sym.of("at"), Coll.Nil, Coll.Cons(El.Local(line, i), Coll.Nil))))
+        case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// xs.at(j): Array.Ok(xs(j)) when 0 <= j < n, else Array.Out(j), never a crash. checked by the same fact rule as any
+// xs(i): j is bound once to a local with an identity (the compare and the read see one value), n is the local that
+// holds the length (none in scope: LenUnnamed)
+def Ty.atCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, at: Ty.ArrT, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
+  val Ty.ArrT(_, n) = at
+  xs match
+    case Coll.Cons(ej, r1) => r1 match
+      case Coll.Nil =>
+        val nn: Coll.Option[Sym.Sym] = Ty.lenId(K.walk(Ty.subst(st), n)) match
+          case Coll.Some(nid) => Ty.nameOfId(bs, nid, Coll.Nil)
+          case Coll.None => Coll.None
+        nn match
+          case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.LenUnnamed(line, recv)), bs, xs), line)
+          case Coll.Some(nx) =>
+            val Ty.Ex(st1, _, eJ) = Ty.expr(cx, st, bs, ej, Coll.Some(Ty.con("I64")))
+            val j = Sym.of("at.j")
+            val jn = Ast.Name(line, j)
+            val c = Ast.Bin(line, Ast.And, Ast.Bin(line, Ast.Le, Ast.Int(line, 0), jn), Ast.Bin(line, Ast.Lt, jn, Ast.Name(line, nx)))
+            val ok = Ast.Call(line, Sym.of("Array.Ok"), Coll.Nil, Coll.Nil, Coll.Cons(Ast.Call(line, recv, Coll.Nil, Coll.Nil, Coll.Cons(jn, Coll.Nil)), Coll.Nil))
+            val out = Ast.Call(line, Sym.of("Array.Out"), Coll.Nil, Coll.Nil, Coll.Cons(jn, Coll.Nil))
+            // at.j lives only in this expression and no value carries its identity out: a fresh one is sound in a loop too
+            val bj = Coll.Cons(Ty.Val(j, Ty.con("I64"), Ty.nextId(st1)), bs)
+            val Ty.Ex(st2, t, eI) = Ty.expr(cx, Ty.stamped(st1), bj, Ast.If(line, c, ok, out), want)
+            Ty.Ex(st2, t, El.Block(line, Coll.Cons(El.Val(line, j, Ty.con("I64"), false, eJ), Coll.Nil), eI))
+      case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, recv)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, recv)), bs, xs), line)
+
+// xs(i): i a local proved in [0, n) by the facts in scope: p[i], no check (else IndexUnproved: use xs.at(i))
+def Ty.index(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, x: Sym.Sym, at: Ty.ArrT, ix: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
+  val Ty.ArrT(a, n) = at
+  val Ty.Ex(st1, _, ei) = Ty.expr(cx, st, bs, ix, Coll.Some(Ty.con("I64")))
+  val ok: Bool = Ty.idE(bs, ix) match
+    case Coll.Some(i) => Ty.lenId(K.walk(Ty.subst(st1), n)) match
+      case Coll.Some(nid) => Ty.inBounds(bs, i, nid)
+      case Coll.None => false
+    case Coll.None => false
+  Ty.lit(if ok then st1 else Ty.clash(st1, Ty.IndexUnproved(line, x)), line, a, want, El.Index(line, x, ei))
+
+// Array.slice(xs, off, m): a view of m elements from off, of type Array[A](m); off and m locals proved in range
+def Ty.slice(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ea, r1) => r1 match
+    case Coll.Cons(eo, r2) => r2 match
+      case Coll.Cons(em, r3) => r3 match
+        case Coll.Nil =>
+          val Ty.Ex(st1, ta, exa) = Ty.expr(cx, st, bs, ea, Coll.None)
+          val Ty.Ex(st2, _, exo) = Ty.expr(cx, st1, bs, eo, Coll.Some(Ty.con("I64")))
+          val Ty.Ex(st3, _, _) = Ty.expr(cx, st2, bs, em, Coll.Some(Ty.con("I64")))
+          Ty.arrayOf(Ty.subst(st3), ta) match
+            case Coll.Some(at) =>
+              val Ty.ArrT(a, n) = at
+              val ok: Bool = Ty.sliceOk(bs, Ty.idE(bs, eo), Ty.idE(bs, em), Ty.lenId(K.walk(Ty.subst(st3), n)))
+              val tm: K.Term = Ty.idE(bs, em) match
+                case Coll.Some(m) => K.Int(m)
+                case Coll.None => Ty.con("Array.unnamed")
+              Ty.lit(if ok then st3 else Ty.clash(st3, Ty.SliceUnproved(line, f)), line, K.Con(Sym.of("Array"), Coll.Cons(a, Coll.Cons(tm, Coll.Nil))), want, El.Slice(line, exa, exo))
+            case Coll.None => Ty.bad(Ty.clash(st3, Ty.Mismatch(line, ta, K.Con(Sym.of("Array"), Coll.Nil))), line)
+        case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+def Ty.sliceOk(bs: Coll.List[Ty.Bind], off: Coll.Option[I64], m: Coll.Option[I64], n: Coll.Option[I64]): Bool = off match
+  case Coll.Some(o) => m match
+    case Coll.Some(mm) => n match
+      case Coll.Some(nn) => Ty.sliceIn(bs, o, mm, nn)
+      case Coll.None => false
+    case Coll.None => false
+  case Coll.None => false
 
 // P.op(args): the op on the innermost capability of P in scope (vic 2026-11-09: the innermost handler answers)
 def Ty.request(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, q: Eff.Req, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
@@ -341,7 +735,7 @@ def Ty.request(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, q: Eff.R
 
 // no capability of p in scope: in a given's fn, its trait method does not declare p; elsewhere nothing handles p
 def Ty.unhandled(cx: Ty.Cx, line: I64, p: Sym.Sym): Ty.Clash =
-  val Ty.Cx(_, _, _, _, _, mode, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
   mode match
     case Ty.Run(by) => by match
       case Ty.Given => Ty.GivenRow(line, p)
@@ -354,12 +748,15 @@ def Ty.innermost(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sy
 // seen: the names of the inner locals; a capability whose name an inner local shadows is out of reach by its name
 def Ty.innermostFrom(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
   case Coll.Nil => Coll.None
-  case Coll.Cons(b, rest) =>
-    val Ty.Bind(x, t) = b
-    val isP: Bool = K.walk(s, t) match
-      case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
-      case _ => false
-    if isP && !Ty.memberSym(x, seen) then Coll.Some(x) else Ty.innermostFrom(s, rest, p, Coll.Cons(x, seen))
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(x, t) =>
+      val isP: Bool = K.walk(s, t) match
+        case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
+        case _ => false
+      if isP && !Ty.memberSym(x, seen) then Coll.Some(x) else Ty.innermostFrom(s, rest, p, Coll.Cons(x, seen))
+    // an I64 local is never a capability, but it shadows one of its name
+    case Ty.Val(x, _, _) => Ty.innermostFrom(s, rest, p, Coll.Cons(x, seen))
+    case _ => Ty.innermostFrom(s, rest, p, seen)
 
 // the callee's row: for each implicit capability, the caller's innermost of its protocol
 def Ty.rowCaps(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, cs: Coll.List[Eff.Cap], acc: Coll.List[Sym.Sym]): Ty.Caps = cs match
@@ -382,7 +779,13 @@ def Ty.args(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr
 def Ty.callFn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ast.Fn(_, name, gs, ps, ret, _, _) = g
   val tps = Ty.tparams(gs, Coll.Nil)
-  val Ty.Open(st1, tv, vars) = Ty.open(st, tps, Coll.Nil, Coll.Nil)
+  val Ty.Open(st1a, tv0, vars) = Ty.open(st, tps, Coll.Nil, Coll.Nil)
+  // A1: a length in the signature names an I64 param: at the call it is the identity of the arg (a fresh one when the
+  // arg is not a local with one: no fact or value of the caller has it)
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
+  val Ty.Ids(st1, tv) = arr match
+    case Names.NoArrays => Ty.Ids(st1a, tv0)
+    case Names.UsesArrays => if Ty.sigVals(ps, ret) then Ty.argIds(st1a, bs, ps, xs, tv0) else Ty.Ids(st1a, tv0)
   val st2 = Ty.explicit(st1, line, vars, Ty.terms(targs, Coll.Nil, Coll.Nil))
   val rt = Ty.term(ret, tv)
   val st3 = Ty.expectOpt(st2, line, rt, want)
@@ -392,9 +795,31 @@ def Ty.callFn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn
     val ev = Ty.evidence(gs, Coll.Nil)
     val st4b = if Coll.length(chosen) > 0 && Coll.length(chosen) != Coll.length(ev) then Ty.clash(st4, Ty.ChosenCount(line, name)) else st4
     val Ty.Caps(st5, caps) = Ty.capArgs(cx, st4b, bs, line, tv, ev, chosen, 0, Coll.Nil)
-    val Ty.Cx(_, _, _, _, _, _, _, rows, _, idx) = cx
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
     val Ty.Caps(st6, icaps) = Ty.rowCaps(cx, st5, bs, line, Ty.runRow(cx, Eff.row(rows, name)), Coll.Nil)
     Ty.Ex(Ty.inst(st6, line, name, vars), rt, El.CallFn(line, name, vars, Coll.revOnto(Coll.rev(caps), icaps), eargs))
+
+// a signature with a value arg in a param type or the result (A1)
+def Ty.sigVals(ps: Coll.List[Ast.Binder], ret: Ast.Ty): Bool = if Ty.hasVals(ret) then true else Ty.paramVals(ps)
+
+def Ty.paramVals(ps: Coll.List[Ast.Binder]): Bool = ps match
+  case Coll.Nil => false
+  case Coll.Cons(p, rest) =>
+    val Ast.Binder(_, _, t) = p
+    if Ty.hasVals(t) then true else Ty.paramVals(rest)
+
+// each I64 param gets the identity of its arg (same value), else a fresh one that no local has: a length of that
+// identity is never indexed, sliced or read (so a call in a loop may share it)
+def Ty.argIds(st: Ty.St, bs: Coll.List[Ty.Bind], ps: Coll.List[Ast.Binder], xs: Coll.List[Ast.Expr], tv: Coll.List[Ty.Bind]): Ty.Ids = ps match
+  case Coll.Nil => Ty.Ids(st, tv)
+  case Coll.Cons(p, prest) => xs match
+    case Coll.Nil => Ty.Ids(st, tv)
+    case Coll.Cons(x, xrest) =>
+      val Ast.Binder(_, px, pt) = p
+      if Ty.isI64(pt) then Ty.idE(bs, x) match
+        case Coll.Some(id) => Ty.argIds(st, bs, prest, xrest, Coll.Cons(Ty.Val(px, Ty.con("I64"), id), tv))
+        case Coll.None => Ty.argIds(Ty.stamped(st), bs, prest, xrest, Coll.Cons(Ty.Val(px, Ty.con("I64"), Ty.nextId(st)), tv))
+      else Ty.argIds(st, bs, prest, xrest, tv)
 
 // record a generic instance (no binders: nothing to instantiate)
 def Ty.inst(st: Ty.St, line: I64, name: Sym.Sym, vars: Coll.List[K.Term]): Ty.St = vars match
@@ -430,7 +855,7 @@ def Ty.capArgs(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, tv: Coll
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, _, t) = b
     val Ast.Ty(_, pn, _, _, _) = t
-    val Ty.Cx(_, _, ps, _, _, mode, _, _, _, idx) = cx
+    val Ty.Cx(_, _, ps, _, _, mode, _, _, _, _, idx) = cx
     val compilerRegion: Bool = mode match
       case Ty.Comptime => Pure.isRegion(pn)
       case Ty.Run(_) => false
@@ -454,12 +879,13 @@ def Ty.capFor(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.Sym, chosen: 
 // the distinct local names of type p (a shadowed name counts once)
 def Ty.capsOf(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
-  case Coll.Cons(b, rest) =>
-    val Ty.Bind(x, t) = b
-    val isP: Bool = K.walk(s, t) match
-      case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
-      case _ => false
-    if isP && !Ty.memberSym(x, acc) then Ty.capsOf(s, rest, p, Coll.Cons(x, acc)) else Ty.capsOf(s, rest, p, acc)
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(x, t) =>
+      val isP: Bool = K.walk(s, t) match
+        case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
+        case _ => false
+      if isP && !Ty.memberSym(x, acc) then Ty.capsOf(s, rest, p, Coll.Cons(x, acc)) else Ty.capsOf(s, rest, p, acc)
+    case _ => Ty.capsOf(s, rest, p, acc)
 
 def Ty.memberSym(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
   case Coll.Nil => false
@@ -490,8 +916,13 @@ def Ty.callCase(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.
     fields match
       case Coll.Nil => Ty.Ex(st3, et, El.Nullary(line, en, vars, name))
       case Coll.Cons(_, _) =>
-        val Ty.Es(st4, eargs) = Ty.params(cx, st3, bs, line, fields, tv, xs, Coll.Nil)
-        val Ty.Cx(_, _, _, _, _, mode, _, _, _, idx) = cx
+        // A1: a length in a field type names an I64 field: the identity of its arg
+        val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
+        val Ty.Ids(st3b, tvf) = arr match
+          case Names.NoArrays => Ty.Ids(st3, tv)
+          case Names.UsesArrays => if Ty.paramVals(fields) then Ty.argIds(st3, bs, fields, xs, tv) else Ty.Ids(st3, tv)
+        val Ty.Es(st4, eargs) = Ty.params(cx, st3b, bs, line, fields, tvf, xs, Coll.Nil)
+        val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
         mode match
           case Ty.Comptime => Ty.Ex(st4, et, El.New(line, en, vars, name, El.Comptime, eargs))
           case Ty.Run(_) => Ty.innermost(Ty.subst(st4), bs, Sym.of("Region")) match
@@ -501,7 +932,7 @@ def Ty.callCase(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.
 // recv.op(args): recv is a capability (op of its protocol) or {} evidence of a trait (the trait method, trait args
 // bound from the evidence type)
 def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
-  val Ty.Cx(_, _, ps, _, trs, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, ps, _, trs, _, _, _, _, _, idx) = cx
   Ty.lookup(bs, recv) match
     case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, recv)), bs, xs), line)
     case Coll.Some(rt) => K.walk(Ty.subst(st), rt) match
@@ -516,7 +947,10 @@ def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym
             val Ast.Fn(_, _, _, mps, mret, _, _) = m
             val Ty.Caps(st1, caps) = Ty.rowCaps(cx, st, bs, line, Ty.methodCaps(ps, trs, tn, op), Coll.Nil)
             Ty.callSig(cx, st1, bs, line, Ty.TraitOp(caps), rt, op, mps, mret, Ty.zipBind(Ty.tparams(tgs, Coll.Nil), targs, Coll.Nil), xs, want)
-          case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
+          // xs.at(j) on an array (A1)
+          case Coll.None => Ty.arrayOf(Ty.subst(st), rt) match
+            case Coll.Some(at) => if Str.eq(Sym.str(op), "at") then Ty.atCall(cx, st, bs, line, recv, at, xs, want) else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
+            case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
       case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
 
 def Ty.subst(st: Ty.St): K.Subst =
@@ -700,7 +1134,7 @@ def Ty.eqOp(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, op: Ast.Bin
 def Ty.arms(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.Term, es: El.Expr, as: Coll.List[Ast.Arm], want: Coll.Option[K.Term]): Ty.Ex = as match
   case Coll.Nil => Ty.bad(st, line)
   case Coll.Cons(a, rest) =>
-    val Ty.Cx(_, enums, _, _, _, _, _, _, _, idx) = cx
+    val Ty.Cx(_, enums, _, _, _, _, _, _, _, _, idx) = cx
     val st0 = Ty.missingCase(cx, as) match
       case Coll.Some(c) => Ty.clash(st, Ty.NotExhaustive(line, c))
       case Coll.None => st
@@ -720,7 +1154,7 @@ enum Ty.AEx:
 
 def Ty.arm(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm, want: Coll.Option[K.Term]): Ty.AEx =
   val Ast.Arm(line, p, b) = a
-  val Ty.Cx(_, es, _, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, es, _, _, _, _, _, _, _, _, idx) = cx
   val Ty.Ex(st9, t9, e9) = p match
     case Ast.PAny => Ty.expr(cx, st, bs, b, want)
     case Ast.PCase(c, binds) => Ty.caseOf(cx, c) match
@@ -731,8 +1165,34 @@ def Ty.arm(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm,
         val Ty.Open(st1, tv, vars) = Ty.openEnum(st, e)
         val st1b = if Coll.length(binds) == Coll.length(fields) then st1 else Ty.clash(st1, Ty.PatArity(line, c))
         val st2 = Ty.expect(st1b, line, ts, Ty.enumTerm(e, vars))
-        Ty.expr(cx, st2, Ty.bindFields(binds, fields, tv, bs), b, want)
+        // A1: each I64 field binder has an identity (not in a loop), and the field types name lengths by it
+        val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
+        val Ty.FieldBs(st3, bs3) = arr match
+          case Names.NoArrays => Ty.FieldBs(st2, Ty.bindFields(binds, fields, tv, bs))
+          case Names.UsesArrays => if Ty.paramVals(fields) then Ty.fieldIds(st2, binds, fields, tv, bs) else Ty.FieldBs(st2, Ty.bindFields(binds, fields, tv, bs))
+        Ty.expr(cx, st3, bs3, b, want)
   Ty.AEx(st9, t9, El.Arm(line, p, e9))
+
+enum Ty.FieldBs:
+  case Ty.FieldBs(st: Ty.St, bs: Coll.List[Ty.Bind])
+
+// A1 record with a length field: the I64 fields get identities (none in a loop), the field types name them, and a
+// binder of an I64 field has its field's identity
+def Ty.fieldIds(st: Ty.St, binds: Coll.List[Sym.Sym], fields: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], bs: Coll.List[Ty.Bind]): Ty.FieldBs =
+  val Ty.Ids(st1, tvf) = if Ty.inLoop(bs) then Ty.Ids(st, tv) else Ty.paramIds(st, fields, tv)
+  Ty.FieldBs(st1, Ty.bindFieldsV(binds, fields, tvf, bs))
+
+def Ty.bindFieldsV(xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
+  case Coll.Nil => bs
+  case Coll.Cons(x, rest) => fs match
+    case Coll.Nil => bs
+    case Coll.Cons(f, frest) =>
+      val Ast.Binder(_, fx, ft) = f
+      val tx = Ty.term(ft, tv)
+      val b: Ty.Bind = Ty.idOf(tv, fx) match
+        case Coll.Some(id) => Ty.Val(x, tx, id)
+        case Coll.None => Ty.Bind(x, tx)
+      Ty.bindFieldsV(rest, frest, tv, if Str.eq(Sym.str(x), "_") then bs else Coll.Cons(b, bs))
 
 def Ty.bindFields(xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = xs match
   case Coll.Nil => bs
@@ -753,7 +1213,7 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
     case Ast.Var(sl, x, ann, e) => Ty.bindStmt(cx, st, bs, line, sl, x, ann, e, true, rest, last, want, acc)
     // the handler's row takes the innermost capabilities outside this handle (E1b)
     case Ast.Handle(sl, x, h, xs) =>
-      val Ty.Cx(_, _, _, hs, _, mode, _, rows, _, idx) = cx
+      val Ty.Cx(_, _, _, hs, _, mode, _, rows, _, _, idx) = cx
       val mp = Ty.protoOf(hs, h)
       val st0 = if Ty.isMultiShot(hs, h) then Ty.shapeFns(cx, Ty.shape(cx, st, x, mp, rest, last), mp, Ty.cpsCallsE(cx, mp, last, Ty.cpsCalls(cx, mp, rest, Coll.Nil)), Coll.Nil) else st
       val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
@@ -764,7 +1224,8 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
         // multi-shot (vic-hm63 Q-M2, Q-M3): the rest of the block is its own block of type a; the whole is the answer R[A := a]
         case Coll.Some(ma) =>
           val Ty.MA(av, ans) = ma
-          val Ty.Ex(st3, a, er) = Ty.block(cx, st2, bs2, line, rest, last, Coll.None, Coll.Nil)
+          // the rest runs once per resume: a loop for identities (A1)
+          val Ty.Ex(st3, a, er) = Ty.block(cx, st2, Ty.loopBs(cx, bs2), line, rest, last, Coll.None, Coll.Nil)
           val rt = Ty.term(ans, Coll.Cons(Ty.Bind(av, a), Coll.Nil))
           val Ty.Ex(st4, t, ev) = Ty.lit(st3, sl, rt, want, El.MHandled(sl, x, h, caps, eargs, er, a, rt))
           Ty.Ex(st4, t, El.Block(line, Coll.rev(acc), ev))
@@ -786,14 +1247,42 @@ def Ty.exprs(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Exp
     Ty.exprs(cx, st1, bs, rest, Coll.Cons(ex, acc))
 
 def Ty.bindStmt(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, sl: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr, mut: Bool, rest: Coll.List[Ast.Stmt], last: Ast.Expr, want: Coll.Option[K.Term], acc: Coll.List[El.Stmt]): Ty.Ex =
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx
   val wa: Coll.Option[K.Term] = ann match
     case Coll.None => Coll.None
-    case Coll.Some(t) => Coll.Some(Ty.term(t, Coll.Nil))
+    case Coll.Some(t) => Coll.Some(Ty.term(t, Ty.annIds(arr, t, bs)))
   val Ty.Ex(st1, te, ee) = Ty.expr(cx, st, bs, e, wa)
   val tx = wa match
     case Coll.None => te
     case Coll.Some(w) => w
-  Ty.block(cx, st1, Coll.Cons(Ty.Bind(x, tx), bs), line, rest, last, want, Coll.Cons(El.Val(sl, x, tx, mut, ee), acc))
+  val Ty.Bound(st2, b) = Ty.bindVal(arr, st1, bs, x, tx, mut, e)
+  Ty.block(cx, st2, Coll.Cons(b, bs), line, rest, last, want, Coll.Cons(El.Val(sl, x, tx, mut, ee), acc))
+
+enum Ty.Bound:
+  case Ty.Bound(st: Ty.St, b: Ty.Bind)
+
+// A1: an immutable I64 val gets an identity: the one of the local it copies (val j = i: same value), else a fresh one,
+// never inside a loop (Ty.Loop: one identity would be many values)
+def Ty.annIds(arr: Names.Arrays, t: Ast.Ty, bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = arr match
+  case Names.NoArrays => Coll.Nil
+  case Names.UsesArrays => if Ty.hasVals(t) then Ty.idsOnly(bs, Coll.Nil, Coll.Nil) else Coll.Nil
+
+def Ty.bindVal(arr: Names.Arrays, st: Ty.St, bs: Coll.List[Ty.Bind], x: Sym.Sym, tx: K.Term, mut: Bool, e: Ast.Expr): Ty.Bound = arr match
+  case Names.NoArrays => Ty.Bound(st, Ty.Bind(x, tx))
+  case Names.UsesArrays => Ty.bindValArr(st, bs, x, tx, mut, e)
+
+def Ty.bindValArr(st: Ty.St, bs: Coll.List[Ty.Bind], x: Sym.Sym, tx: K.Term, mut: Bool, e: Ast.Expr): Ty.Bound =
+  val isI64: Bool = K.walk(Ty.subst(st), tx) match
+    case K.Con(n, args) => Coll.length(args) == 0 && Str.eq(Sym.str(n), "I64")
+    case _ => false
+  if mut || !isI64 then Ty.Bound(st, Ty.Bind(x, tx))
+  else
+    val alias: Coll.Option[I64] = e match
+      case Ast.Name(_, y) => Ty.idOf(bs, y)
+      case _ => Coll.None
+    alias match
+      case Coll.Some(id) => Ty.Bound(st, Ty.Val(x, tx, id))
+      case Coll.None => if Ty.inLoop(bs) then Ty.Bound(st, Ty.Bind(x, tx)) else Ty.Bound(Ty.stamped(st), Ty.Val(x, tx, Ty.nextId(st)))
 
 def Ty.protoOf(hs: Coll.List[Ast.Handler], h: Sym.Sym): Sym.Sym = hs match
   case Coll.Nil => h
@@ -808,15 +1297,18 @@ enum Ty.FnEx:
 // row: the implicit capabilities (s2/eff.srs), outermost locals, C params after the written ones
 def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val Ast.Fn(line, name, gs, ps, ret, _, body) = f
-  val Ty.Cx(_, _, protos, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, protos, _, _, _, _, _, _, arr, idx) = cx
   val tps = Ty.tparams(gs, Coll.Nil)
-  val tv = Ty.rigid(tps, Coll.Nil)
+  // A1: each I64 param has an identity; the param types and the result name lengths by it
+  val Ty.Ids(st0b, tv) = arr match
+    case Names.NoArrays => Ty.Ids(st0, Ty.rigid(tps, Coll.Nil))
+    case Names.UsesArrays => Ty.paramIds(st0, ps, Ty.rigid(tps, Coll.Nil))
   val ev = Ty.evidence(gs, Coll.Nil)
   val bs = Ty.binds(ps, tv, Ty.binds(ev, tv, Ty.rowBinds(row, Coll.Nil)))
   val rt = Ty.term(ret, tv)
   val caps = Coll.revOnto(Coll.rev(Ty.capNames(protos, ev, Coll.Nil)), Ty.rowNames(row))
   val eps = Ty.elParams(ps, tv, Coll.Nil)
-  val st = Ty.fnShape(cx, st0, line, tps, ps, ret)
+  val st = Ty.fnShape(cx, st0b, line, tps, ps, ret)
   body match
     case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern))
     case Ast.Def(_, e) =>
@@ -853,7 +1345,34 @@ def Ty.binds(ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[T
   case Coll.Nil => acc
   case Coll.Cons(p, rest) =>
     val Ast.Binder(_, x, t) = p
-    Ty.binds(rest, tv, Coll.Cons(Ty.Bind(x, Ty.term(t, tv)), acc))
+    val tx = Ty.term(t, tv)
+    val b: Ty.Bind = Ty.idOf(tv, x) match
+      case Coll.Some(id) => Ty.Val(x, tx, id)
+      case Coll.None => Ty.Bind(x, tx)
+    Ty.binds(rest, tv, Coll.Cons(b, acc))
+
+// A1: an identity for each I64 param, in tv (Ty.term names a length by it)
+enum Ty.Ids:
+  case Ty.Ids(st: Ty.St, tv: Coll.List[Ty.Bind])
+
+def Ty.paramIds(st: Ty.St, ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind]): Ty.Ids = ps match
+  case Coll.Nil => Ty.Ids(st, tv)
+  case Coll.Cons(p, rest) =>
+    val Ast.Binder(_, x, t) = p
+    if Ty.isI64(t) then Ty.paramIds(Ty.stamped(st), rest, Coll.Cons(Ty.Val(x, Ty.con("I64"), Ty.nextId(st)), tv)) else Ty.paramIds(st, rest, tv)
+
+// a fresh identity is the next fresh var's number (one counter: unique in the program)
+def Ty.nextId(st: Ty.St): I64 =
+  val Ty.St(_, n, _, _, _, _) = st
+  n
+
+def Ty.stamped(st: Ty.St): Ty.St =
+  val Ty.St(s, n, cs, is, gs, nm) = st
+  Ty.St(s, n + 1, cs, is, gs, nm)
+
+def Ty.isI64(t: Ast.Ty): Bool =
+  val Ast.Ty(_, n, args, _, _) = t
+  Coll.length(args) == 0 && Str.eq(Sym.str(n), "I64")
 
 def Ty.evidence(gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = gs match
   case Coll.Nil => acc
@@ -867,7 +1386,7 @@ enum Ty.Result:
   case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: K.Subst, fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], vals: Coll.SMap[Bool]): Ty.Cx = ds match
-  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none(), vals, Ty.idxOf(fns, es))
+  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none(), vals, Names.NoArrays, Ty.idxOf(fns, es))
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs, vals)
     case Ast.DVal(f) =>
@@ -886,18 +1405,18 @@ enum Ty.Typed:
   case Ty.RowsBad(rel: Sym.Sym)
   case Ty.Checked(xds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result)
 
-def Ty.typed(ds: Coll.List[Ast.Decl]): Ty.Typed =
+def Ty.typed(ds: Coll.List[Ast.Decl], arr: Names.Arrays): Ty.Typed =
   val Tl.W(xds, tes) = Tl.expand(ds)
   tes match
     case Coll.Cons(_, _) => Ty.TlBad(tes)
     case Coll.Nil => Eff.rows(xds) match
       case Eff.RulesBad(rel) => Ty.RowsBad(rel)
-      case Eff.Got(rows) => Ty.Checked(xds, rows, Ty.checkWith(xds, Tl.typeGoals(ds), rows))
+      case Eff.Got(rows) => Ty.Checked(xds, rows, Ty.checkWith(xds, Tl.typeGoals(ds), rows, arr))
 
 // the fns with effects first (s2/pure.srs): a top-level val may call none of them
 // tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls; rows: Eff.rows(ds)
-def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows): Ty.Result =
-  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _, vals0, idx) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.sEmpty())
+def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows, arr: Names.Arrays): Ty.Result =
+  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _, vals0, _, idx) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.sEmpty())
   val nom = Ty.nominals(ds, Coll.sEmpty())
   val pr = if Ty.hasVal(ds) then Pure.impure(ds, rows) else Pure.Got(Coll.sEmpty())
   val imp: Coll.SMap[Bool] = pr match
@@ -906,7 +1425,7 @@ def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Row
   val st0 = pr match
     case Pure.Got(_) => Ty.St(Coll.Tip, 0, Coll.Nil, Coll.Nil, Coll.Nil, nom)
     case Pure.RulesBad(rel) => Ty.St(Coll.Tip, 0, Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Nil, nom)
-  val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp, rows, vals0, idx)
+  val cx = Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, imp, rows, vals0, arr, idx)
   val Ty.Fns(st1, fs, hs, gvs) = Ty.decls(cx, st0, ds, Coll.Nil, Coll.Nil, Coll.Nil)
   val Ty.St(s, _, cs, is, gs, _) = st1
   val allGoals = Ty.typeGoals(fns0, tgs, Coll.rev(gs))
@@ -923,7 +1442,7 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Ast.Fn(_, fname, _, _, _, _, _) = f
-      val Ty.Cx(_, _, _, _, _, _, _, rows, _, idx) = cx
+      val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
       val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Eff.row(rows, fname))
       Ty.decls(cx, st1, rest, Coll.Cons(ef, acc), hacc, gacc)
     // a top-level val is checked as a compile-time body (no row: only Region, the compiler's); no C (vic 2026-11-09)
@@ -933,7 +1452,7 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
     // every fn of a handler takes the handler's row (E1b): the capabilities its handle site keeps
     case Ast.DHandler(h) =>
       val Ast.Handler(hl, hn, p, fs, shots) = h
-      val Ty.Cx(_, _, ps, _, _, _, _, rows, _, idx) = cx
+      val Ty.Cx(_, _, ps, _, _, _, _, rows, _, _, idx) = cx
       shots match
         case Ast.OneShot =>
           val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
@@ -1047,10 +1566,10 @@ def Ty.lineOf(e: Ast.Expr): I64 = e match
 
 // the fns of a handler named Srs.* run as Ty.Srs: the runtime's own bodies, the only callers of rt_*
 def Ty.byHandler(cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
-  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, idx) = cx
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, arr, idx) = cx
   val s = Sym.str(h)
   val by: Ty.By = if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Ty.Srs else Ty.User
-  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(by), imp, rows, vals, idx)
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(by), imp, rows, vals, arr, idx)
 
 // ── the shape a multi-shot handle compiles today (vic-hm63 C3, interim error[multishot-shape]): in the rest of its
 // block, an op of its capability p only as the whole value of a val or a statement; no call of a fn whose row holds p ──
@@ -1091,7 +1610,7 @@ def Ty.shape(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, ss: Coll.List[Ast.Stm
 def Ty.shapeTop(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
   case Ast.Method(_, recv, _, xs) => if Sym.eq(recv, x) then Ty.shapeAll(cx, st, x, p, xs) else Ty.shapeIn(cx, st, x, p, e)
   case Ast.Call(_, f, _, _, xs) =>
-    val Ty.Cx(_, _, _, _, _, _, _, rows, _, idx) = cx
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
     if Ty.isReqOf(cx, f, p) then Ty.shapeAll(cx, st, x, p, xs)
     // a fn whose row holds p (C3.4): compiled in CPS for this site (its body: Ty.shapeFns)
     else if Eff.has(rows, f, p) then Ty.shapeAll(cx, st, x, p, xs)
@@ -1112,7 +1631,7 @@ def Ty.shapeFns(cx: Ty.Cx, st: Ty.St, p: Sym.Sym, todo: Coll.List[Sym.Sym], seen
   case Coll.Cons(f, rest) =>
     if Ty.memberSym(f, seen) then Ty.shapeFns(cx, st, p, rest, seen)
     else
-      val Ty.Cx(fns, _, _, _, _, _, _, _, _, idx) = cx
+      val Ty.Cx(fns, _, _, _, _, _, _, _, _, _, idx) = cx
       Ty.fnOf(cx, f) match
         case Coll.None => Ty.shapeFns(cx, st, p, rest, Coll.Cons(f, seen))
         case Coll.Some(g) =>
@@ -1142,14 +1661,14 @@ def Ty.cpsCallsB(cx: Ty.Cx, p: Sym.Sym, b: Ast.Body, acc: Coll.List[Sym.Sym]): C
 // the CPS fns e calls in a cut position: whole, the arms of an if, a block's statements and last (bead vic-tecg: last too)
 def Ty.cpsCallsE(cx: Ty.Cx, p: Sym.Sym, e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
   case Ast.Call(_, f, _, _, _) =>
-    val Ty.Cx(_, _, _, _, _, _, _, rows, _, idx) = cx
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
     if Eff.has(rows, f, p) && !Ty.isReqOf(cx, f, p) then Coll.Cons(f, acc) else acc
   case Ast.If(_, _, t, f) => Ty.cpsCallsE(cx, p, f, Ty.cpsCallsE(cx, p, t, acc))
   case Ast.Block(_, ss, last) => Ty.cpsCallsE(cx, p, last, Ty.cpsCalls(cx, p, ss, acc))
   case _ => acc
 
 def Ty.isReqOf(cx: Ty.Cx, f: Sym.Sym, p: Sym.Sym): Bool =
-  val Ty.Cx(_, _, ps, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, ps, _, _, _, _, _, _, _, idx) = cx
   Eff.reqOf(ps, f) match
     case Coll.Some(q) =>
       val Eff.Req(qp, _) = q
@@ -1164,7 +1683,7 @@ def Ty.shapeAll(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, es: Coll.List[Ast.
 def Ty.shapeIn(cx: Ty.Cx, st: Ty.St, x: Sym.Sym, p: Sym.Sym, e: Ast.Expr): Ty.St = e match
   case Ast.Method(line, recv, _, xs) => Ty.shapeAll(cx, if Sym.eq(recv, x) then Ty.clash(st, Ty.MultishotShape(line, p)) else st, x, p, xs)
   case Ast.Call(line, f, _, _, xs) =>
-    val Ty.Cx(_, _, _, _, _, _, _, rows, _, idx) = cx
+    val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
     val bad = Ty.isReqOf(cx, f, p) || Eff.has(rows, f, p)
     Ty.shapeAll(cx, if bad then Ty.clash(st, Ty.MultishotShape(line, p)) else st, x, p, xs)
   case Ast.Resume(_, _, a) => Ty.shapeIn(cx, st, x, p, a)
@@ -1209,7 +1728,7 @@ def Ty.multiFns(cx: Ty.Cx, st: Ty.St, hn: Sym.Sym, p: Sym.Sym, ans: Ast.Ty, ks: 
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
     val Ast.Fn(line, n, _, _, ret, _, _) = f
-    val Ty.Cx(_, _, ps, _, _, _, _, _, _, idx) = cx
+    val Ty.Cx(_, _, ps, _, _, _, _, _, _, _, idx) = cx
     val rt = Ty.term(ans, Coll.Nil)
     val fx: Ty.FnEx = Ast.kOf(ks, n) match
       case Coll.None => Ty.fn(Ty.byHandler(cx, hn), st, f, row)
@@ -1271,6 +1790,13 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.Block(_, ss, l) => Ty.mhNone(Ty.mhStmts(st, ss), Coll.Cons(l, Coll.Nil))
       case El.While(_, c, b) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(b, Coll.Nil)))
       case El.Assign(_, _, x) => Ty.mhNone(st, Coll.Cons(x, Coll.Nil))
+      case El.Index(_, _, i) => Ty.mhNone(st, Coll.Cons(i, Coll.Nil))
+      case El.Slice(_, x, o) => Ty.mhNone(st, Coll.Cons(x, Coll.Cons(o, Coll.Nil)))
+      case El.Fill(_, _, n, x, _) => Ty.mhNone(st, Coll.Cons(n, Coll.Cons(x, Coll.Nil)))
+      case El.Tab(_, _, n, _, _, g) => Ty.mhNone(st, Coll.Cons(n, Coll.Cons(g, Coll.Nil)))
+      case El.CellNew(_, _, v, _) => Ty.mhNone(st, Coll.Cons(v, Coll.Nil))
+      case El.CellGet(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
+      case El.CellPut(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case _ => st
     Ty.mhNone(st1, rest)
 
@@ -1281,12 +1807,12 @@ def Ty.mhArms(st: Ty.St, as: Coll.List[El.Arm]): Ty.St = as match
     Ty.mhArms(Ty.mhNone(st, Coll.Cons(b, Coll.Nil)), rest)
 
 def Ty.byMulti(cx: Ty.Cx, k: Sym.Sym, v: K.Term, ans: K.Term): Ty.Cx =
-  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, idx) = cx
-  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.MultiOp(k, v, ans)), imp, rows, vals, idx)
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, arr, idx) = cx
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.MultiOp(k, v, ans)), imp, rows, vals, arr, idx)
 
 // resume k(x): only the op's own k; x against v; the value is the answer
 def Ty.resume(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, k: Sym.Sym, x: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
-  val Ty.Cx(_, _, _, _, _, mode, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
   val kva: Coll.Option[Ty.KVA] = mode match
     case Ty.Run(by) => by match
       case Ty.MultiOp(k2, v, ans) => if Sym.eq(k, k2) then Coll.Some(Ty.KVA(v, ans)) else Coll.None
@@ -1303,14 +1829,14 @@ enum Ty.KVA:
   case Ty.KVA(v: K.Term, ans: K.Term)
 
 def Ty.byGiven(cx: Ty.Cx): Ty.Cx =
-  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, idx) = cx
-  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.Given), imp, rows, vals, idx)
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, arr, idx) = cx
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.Given), imp, rows, vals, arr, idx)
 
 // the fns of a given of trait tn: each one's row is its trait method's {} capabilities (vic Q2; inferred, never written)
 def Ty.givenFns(cx: Ty.Cx, st: Ty.St, tn: Sym.Sym, fs: Coll.List[Ast.Fn], acc: Coll.List[El.Fn]): Ty.Fns = fs match
   case Coll.Nil => Ty.Fns(st, Coll.rev(acc), Coll.Nil, Coll.Nil)
   case Coll.Cons(f, rest) =>
-    val Ty.Cx(_, _, ps, _, trs, _, _, _, _, idx) = cx
+    val Ty.Cx(_, _, ps, _, trs, _, _, _, _, _, idx) = cx
     val Ast.Fn(_, n, _, _, _, _, _) = f
     val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Ty.methodCaps(ps, trs, tn, n))
     Ty.givenFns(cx, st1, tn, rest, Coll.Cons(ef, acc))
@@ -1332,7 +1858,7 @@ def Ty.protoCaps(ps: Coll.List[Ast.Proto], bs: Coll.List[Ast.Binder], acc: Coll.
 
 // a call of an rt_* extern anywhere but a Srs.* handler body
 def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
-  val Ty.Cx(_, _, _, _, _, mode, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
   val Ast.Fn(_, n, _, _, _, _, body) = g
   val s = Sym.str(n)
   val rt: Bool = body match
@@ -1346,7 +1872,7 @@ def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
 
 // a callee's row as this body passes it: at compile time the compiler owns Region (vic Q-U4), so no capability for it
 def Ty.runRow(cx: Ty.Cx, cs: Coll.List[Eff.Cap]): Coll.List[Eff.Cap] =
-  val Ty.Cx(_, _, _, _, _, mode, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
   mode match
     case Ty.Comptime => Ty.notRegion(cs)
     case Ty.Run(_) => cs
@@ -1359,7 +1885,7 @@ def Ty.notRegion(cs: Coll.List[Eff.Cap]): Coll.List[Eff.Cap] = cs match
 
 // run-time code may not name a top-level val yet (its C static data is a later rung)
 def Ty.valCall(cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
-  val Ty.Cx(_, _, _, _, _, mode, _, _, vals, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, _, _, vals, _, idx) = cx
   mode match
     case Ty.Comptime => st
     case Ty.Run(_) => Coll.sLookup(vals, f) match
@@ -1367,12 +1893,12 @@ def Ty.valCall(cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
       case Coll.None => st
 
 def Ty.comptime(cx: Ty.Cx): Ty.Cx =
-  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, idx) = cx
-  Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp, rows, vals, idx)
+  val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, arr, idx) = cx
+  Ty.Cx(fns, es, ps, hs, trs, Ty.Comptime, imp, rows, vals, arr, idx)
 
 // in a compile-time body (vic Q-U4) a call of a fn with effects, and any handle, is a clash
 def Ty.pureCall(cx: Ty.Cx, st: Ty.St, line: I64, f: Sym.Sym): Ty.St =
-  val Ty.Cx(_, _, _, _, _, mode, imp, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, _, mode, imp, _, _, _, idx) = cx
   mode match
     case Ty.Run(_) => st
     case Ty.Comptime => if Pure.has(imp, f) then Ty.clash(st, Ty.Impure(line, f)) else st
@@ -1495,9 +2021,10 @@ def Ty.resolve(cands: Coll.List[Ty.Cand], s: K.Subst, locals: Coll.List[Ty.Bind]
 // the distinct local names whose type is t (a shadowed name counts once)
 def Ty.localsOf(s: K.Subst, bs: Coll.List[Ty.Bind], t: K.Term, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
-  case Coll.Cons(b, rest) =>
-    val Ty.Bind(x, u) = b
-    if !Ty.memberSym(x, acc) && Mono.termEq(K.reify(s, u), t) then Ty.localsOf(s, rest, t, Coll.Cons(x, acc)) else Ty.localsOf(s, rest, t, acc)
+  case Coll.Cons(b, rest) => b match
+    case Ty.Bind(x, u) => if !Ty.memberSym(x, acc) && Mono.termEq(K.reify(s, u), t) then Ty.localsOf(s, rest, t, Coll.Cons(x, acc)) else Ty.localsOf(s, rest, t, acc)
+    // an I64 local is no evidence
+    case _ => Ty.localsOf(s, rest, t, acc)
 
 enum Ty.Vs:
   case Ty.Viable(cs: Coll.List[Ty.Cand])
@@ -1549,7 +2076,7 @@ def Ty.better(a: Ty.Cand, b: Ty.Cand): Bool =
 // ── shapes (s1/check.srs, s1/given.srs): what a use of a name, a def's binders and a given must look like ──
 // evidence is only a method receiver, a capability only a {} arg: neither is a value
 def Ty.nameUse(cx: Ty.Cx, st: Ty.St, line: I64, x: Sym.Sym, t: K.Term): Ty.St =
-  val Ty.Cx(_, _, ps, _, trs, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, ps, _, trs, _, _, _, _, _, idx) = cx
   K.walk(Ty.subst(st), t) match
     case K.Con(n, _) =>
       if Ty.isProto(ps, n) then Ty.clash(st, Ty.CapValue(line, x))
@@ -1588,7 +2115,7 @@ def Ty.fnShape(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym], ps: Col
 // a value type that names a capability, at any depth: error[capability-erased]
 def Ty.erased(cx: Ty.Cx, st: Ty.St, t: Ast.Ty): Ty.St =
   val Ast.Ty(line, n, args, _, _) = t
-  val Ty.Cx(_, _, protos, _, _, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, protos, _, _, _, _, _, _, _, idx) = cx
   Ty.erasedAll(cx, if Ty.isProto(protos, n) then Ty.clash(st, Ty.CapErased(line, n)) else st, args)
 
 def Ty.erasedAll(cx: Ty.Cx, st: Ty.St, ts: Coll.List[Ast.Ty]): Ty.St = ts match
@@ -1610,7 +2137,7 @@ def Ty.binderTys(bs: Coll.List[Ast.Binder]): Coll.List[Ast.Ty] = bs match
 def Ty.hides(cx: Ty.Cx, st: Ty.St, line: I64, tps: Coll.List[Sym.Sym]): Ty.St = tps match
   case Coll.Nil => st
   case Coll.Cons(x, rest) =>
-    val Ty.Cx(_, es, ps, _, trs, _, _, _, _, idx) = cx
+    val Ty.Cx(_, es, ps, _, trs, _, _, _, _, _, idx) = cx
     val known = Ty.isBuiltin(x) || Ty.isEnum(es, x) || Ty.isProto(ps, x) || Ty.isTrait(trs, x)
     Ty.hides(cx, if known then Ty.clash(st, Ty.BinderHides(line, x)) else st, line, rest)
 
@@ -1619,7 +2146,7 @@ def Ty.capParams(cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): Ty.St = ps ma
   case Coll.Cons(b, rest) =>
     val Ast.Binder(line, x, t) = b
     val Ast.Ty(_, n, _, _, _) = t
-    val Ty.Cx(_, _, protos, _, _, _, _, _, _, idx) = cx
+    val Ty.Cx(_, _, protos, _, _, _, _, _, _, _, idx) = cx
     Ty.capParams(cx, if Ty.isProto(protos, n) then Ty.clash(st, Ty.CapParam(line, x)) else st, rest)
 
 // a given: its head names a trait with that many args; its fns are exactly the trait's methods, each with the trait's
@@ -1627,7 +2154,7 @@ def Ty.capParams(cx: Ty.Cx, st: Ty.St, ps: Coll.List[Ast.Binder]): Ty.St = ps ma
 def Ty.givenShape(cx: Ty.Cx, st: Ty.St, g: Ast.Given): Ty.St =
   val Ast.Given(line, gs, head, fs) = g
   val Ast.Ty(_, tn, targs, _, _) = head
-  val Ty.Cx(_, _, _, _, trs, _, _, _, _, idx) = cx
+  val Ty.Cx(_, _, _, _, trs, _, _, _, _, _, idx) = cx
   val st1 = Ty.inHead(st, line, Ty.tparams(gs, Coll.Nil), head)
   Ty.traitNamed(trs, tn) match
     case Coll.None => Ty.clash(st1, Ty.NotTrait(line, tn))

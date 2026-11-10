@@ -27,10 +27,22 @@ enum Flow.St:
 // what the walk reads: the protocols, the handlers, the defs (a call reads its callee's signature), the enums (a
 // constructor call allocates in the innermost Region), the type decls, the effect rows (s2/eff.srs)
 enum Flow.Cx:
-  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl], rows: Eff.Rows)
+  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl], rows: Eff.Rows, ss: Eff.Syms)
+
+def Flow.keyAt(cx: Flow.Cx): Sym.Sym =
+  val Flow.Cx(_, _, _, _, _, _, ss) = cx
+  val Eff.Syms(_, _, _, _, _, ks, _) = ss
+  val Names.Keys(_, _, _, at) = ks
+  at
+
+def Flow.keyArr(cx: Flow.Cx): Sym.Sym =
+  val Flow.Cx(_, _, _, _, _, _, ss) = cx
+  val Eff.Syms(_, _, _, _, _, ks, _) = ss
+  val Names.Keys(arr, _, _, _) = ks
+  arr
 
 def Flow.cxHs(cx: Flow.Cx): Coll.List[Ast.Handler] =
-  val Flow.Cx(_, hs, _, _, _, _) = cx
+  val Flow.Cx(_, hs, _, _, _, _, _) = cx
   hs
 
 // the walk after a step: its state and the point where control is now
@@ -330,7 +342,7 @@ def Flow.protoOf(hs: Coll.List[Ast.Handler], h: Sym.Sym): Coll.Option[Sym.Sym] =
 def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
   case Ast.Call(line, f, _, chosen, xs) =>
     val Flow.Evs(st2, pa, svs) = Flow.exprs(cx, st, p, xs, Coll.Nil)
-    val Flow.Cx(ps, _, fns, es, _, _) = cx
+    val Flow.Cx(ps, _, fns, es, _, _, ess) = cx
     val Flow.St(_, _, cs, _, _) = st2
     Flow.fnNamed(fns, f) match
       case Coll.Some(g) =>
@@ -338,13 +350,22 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
         val Flow.At(st4, q) = Flow.call(ps, st3, pb, g, chosen, line)
         Flow.Ev(st4, q, Flow.callSrcs(cx, cs, f, g, chosen, svs))
       case Coll.None =>
-        if Flow.isCtor(es, f) then
+        // A1: Array.fill / tabulate allocate as a constructor; xs(i) (no def, case or request) reads the local xs
+        if Flow.isCtor(es, f) || Eff.isArrayNew(ess, f) then
           val Flow.At(st3, q) = Flow.alloc(st2, pa, line)
           Flow.Ev(st3, q, Flow.union(svs, Flow.inRegion(cs, Coll.Nil)))
         else
           val rq = Eff.reqOf(ps, f)
-          val Flow.At(st3, q) = Flow.request(st2, pa, rq, line)
-          Flow.Ev(st3, q, Flow.reqSrcs(cx, cs, rq, Flow.union(svs, Coll.Nil)))
+          rq match
+            case Coll.Some(_) =>
+              val Flow.At(st3, q) = Flow.request(st2, pa, rq, line)
+              Flow.Ev(st3, q, Flow.reqSrcs(cx, cs, rq, Flow.union(svs, Coll.Nil)))
+            // a read of xs: its result holds what xs holds
+            case Coll.None => Flow.bindingOf(st2, f) match
+              case Coll.None => Flow.Ev(st2, pa, Flow.union(svs, Coll.Nil))
+              case Coll.Some(b) =>
+                val Flow.Bnd(_, id, _) = b
+                Flow.Ev(Flow.add(st2, Flow.fReadAt(pa, id, line, f)), pa, Coll.Cons(Flow.SVar(id), Flow.union(svs, Coll.Nil)))
   // an op on a capability, or a method of {} evidence (a given turns an A into a B): its result keeps its args' regions;
   // an op's result lives where its decl says (Flow.opSrcs)
   case Ast.Method(line, recv, op, xs) =>
@@ -352,7 +373,8 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
     val Flow.St(_, _, cs, _, _) = st2
     val sv = Flow.union(svs, Coll.Nil)
     Flow.capNamed(cs, recv) match
-      case Coll.None => Flow.Ev(st2, pa, sv)
+      // A1: xs.at(i) reads the array xs and builds its result in the innermost Region
+      case Coll.None => if Sym.eq(op, Flow.keyAt(cx)) then Flow.atRead(st2, pa, recv, line, cs, sv) else Flow.Ev(st2, pa, sv)
       case Coll.Some(c) =>
         val Flow.At(st3, q) = Flow.step(st2, pa, c, op, line)
         Flow.Ev(st3, q, Flow.opSrcs(cx, c, op, sv))
@@ -392,6 +414,16 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
       val Flow.Bnd(_, id, _) = b
       Flow.Ev(Flow.add(st, Flow.fReadAt(p, id, line, x)), p, Coll.Cons(Flow.SVar(id), Coll.Nil))
   case _ => Flow.Ev(st, p, Coll.Nil)
+
+// xs.at(i): a read of the array xs; the result is built in the innermost Region and holds what xs holds
+def Flow.atRead(st: Flow.St, p: I64, xs: Sym.Sym, line: I64, cs: Coll.List[Flow.Cap], sv: Coll.List[Flow.Src]): Flow.Ev = Flow.bindingOf(st, xs) match
+  case Coll.None =>
+    val Flow.At(st2, q) = Flow.alloc(st, p, line)
+    Flow.Ev(st2, q, Flow.inRegion(cs, sv))
+  case Coll.Some(b) =>
+    val Flow.Bnd(_, id, _) = b
+    val Flow.At(st2, q) = Flow.alloc(Flow.add(st, Flow.fReadAt(p, id, line, xs)), p, line)
+    Flow.Ev(st2, q, Coll.Cons(Flow.SVar(id), Flow.inRegion(cs, sv)))
 
 // the union of the sources of args
 def Flow.union(svs: Coll.List[Coll.List[Flow.Src]], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = svs match
@@ -460,7 +492,7 @@ enum Flow.Src:
 
 // the result of a call of g, args' sources svs
 def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]]): Coll.List[Flow.Src] =
-  val Flow.Cx(ps, _, _, es, _, _) = cx
+  val Flow.Cx(ps, _, _, es, _, _, _) = cx
   val Ast.Fn(_, _, gs, _, ret, _, _) = g
   val Ast.Ty(_, rn, _, rcaps, _) = ret
   // a result of a type with facts is bound to the caller capability g's binder of the fact's protocol takes (an arg of
@@ -468,7 +500,7 @@ def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, c
   val ns = Flow.typeNeeds(cx, rn)
   // a [] binder result may be any arg (pick) or made from one (a given's method): it lives in every arg's region too
   // (vic-m5r.15)
-  val data = Flow.isEnumName(es, rn) || Ty.memberSym(rn, Ty.tparams(gs, Coll.Nil))
+  val data = Flow.isEnumName(es, rn) || Ty.memberSym(rn, Ty.tparams(gs, Coll.Nil)) || Sym.eq(rn, Flow.keyArr(cx))
   val base = if data then Flow.dataSrcs(cx, cs, f, gs, chosen, svs, ns) else Flow.factSrcs(cx, cs, chosen, gs, ns, Coll.Nil)
   // a result T^<rs> lives in the caller capabilities rs's binders take, whatever T is: a Str or Ptr result too (g's body
   // is checked to keep it there, Flow.def)
@@ -480,7 +512,7 @@ def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, c
 // a data result of f: the capabilities its type's facts bind it to, the innermost Region when f's row has Region, the
 // caller capabilities its region binders take, its args' sources
 def Flow.dataSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, gs: Coll.List[Ast.Group], chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]], ns: Coll.List[Flow.Need]): Coll.List[Flow.Src] =
-  val Flow.Cx(ps, _, _, _, _, rows) = cx
+  val Flow.Cx(ps, _, _, _, _, rows, _) = cx
   val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
   val acc1 = Flow.needSrcs(cs, chosen, bs, ns, Coll.Nil)
   val acc2 = if Eff.has(rows, f, Sym.of("Region")) then Flow.inRegion(cs, acc1) else acc1
@@ -490,7 +522,7 @@ def Flow.dataSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, gs: Coll.Lis
 def Flow.factSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], chosen: Coll.List[Sym.Sym], gs: Coll.List[Ast.Group], ns: Coll.List[Flow.Need], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = ns match
   case Coll.Nil => acc
   case Coll.Cons(_, _) =>
-    val Flow.Cx(ps, _, _, _, _, _) = cx
+    val Flow.Cx(ps, _, _, _, _, _, _) = cx
     Flow.needSrcs(cs, chosen, Flow.capBs(ps, gs, 0, Coll.Nil), ns, acc)
 
 def Flow.isEnumName(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool = es match
@@ -624,7 +656,7 @@ def Flow.argBounds(cx: Flow.Cx, st: Flow.St, p: I64, g: Ast.Fn, chosen: Coll.Lis
 def Flow.argBoundsAt(cx: Flow.Cx, at: Flow.At, g: Ast.Fn, chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]], line: I64): Flow.At =
   val Flow.At(st, a) = at
   val Ast.Fn(_, _, gs, params, _, _, _) = g
-  val Flow.Cx(ps, _, _, _, _, _) = cx
+  val Flow.Cx(ps, _, _, _, _, _, _) = cx
   val Flow.St(_, _, cs, _, _) = st
   Flow.At(Flow.argBs(cx, st, a, cs, chosen, Flow.capBs(ps, gs, 0, Coll.Nil), params, svs, line), a)
 
@@ -705,7 +737,7 @@ enum Flow.Need:
   case Flow.Need(proto: Sym.Sym, s: Sym.Sym)
 
 def Flow.typeNeeds(cx: Flow.Cx, tn: Sym.Sym): Coll.List[Flow.Need] =
-  val Flow.Cx(_, _, _, _, ts, _) = cx
+  val Flow.Cx(_, _, _, _, ts, _, _) = cx
   Flow.typeDecl(ts, tn) match
     case Coll.None => Coll.Nil
     case Coll.Some(td) =>
@@ -749,7 +781,7 @@ def Flow.paramSrcs(cx: Flow.Cx, st: Flow.St, p: I64, gs: Coll.List[Ast.Group], b
     val Ast.Binder(_, x, ty) = b
     val Ast.Ty(_, tn, _, caps, _) = ty
     val Flow.St(_, _, cs, _, _) = st
-    val Flow.Cx(_, _, _, es, _, _) = cx
+    val Flow.Cx(_, _, _, es, _, _, _) = cx
     val bd: Coll.Option[Coll.List[I64]] = caps match
       case Ast.Stated(rs) => Coll.Some(Flow.capIds(cs, rs, Coll.Nil))
       case _ => Coll.None
@@ -815,7 +847,7 @@ def Flow.request(st: Flow.St, p: I64, q: Coll.Option[Eff.Req], line: I64): Flow.
 // knows of (Fx: an op result names no capability but self)
 def Flow.opSrcs(cx: Flow.Cx, c: Flow.Cap, op: Sym.Sym, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] =
   val Flow.Cap(_, id, proto, _) = c
-  val Flow.Cx(ps, _, _, _, _, _) = cx
+  val Flow.Cx(ps, _, _, _, _, _, _) = cx
   Flow.opRet(ps, proto, op) match
     case Coll.None => acc
     case Coll.Some(t) =>
@@ -866,7 +898,7 @@ def Flow.reqSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], q: Coll.Option[Eff.Req], 
 // the args' regions ──
 def Flow.checkHandler(p: Flow.Plans, cx: Flow.Cx, h: Ast.Handler): Flow.Verdict =
   val Ast.Handler(line, hn, pr, fs, shots) = h
-  val Flow.Cx(_, _, _, _, _, rows) = cx
+  val Flow.Cx(_, _, _, _, _, rows, _) = cx
   shots match
     case Ast.OneShot => Flow.checkOps(p, cx, pr, Flow.rowBinders(Eff.row(rows, hn), line, Coll.Nil), fs, Coll.Nil)
     // a multi-shot op's result is resume's arg (Ty.byMulti); its C is a later rung
@@ -890,7 +922,7 @@ def Flow.checkOps(p: Flow.Plans, cx: Flow.Cx, pr: Sym.Sym, row: Coll.List[Ast.Bi
 def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
   val Ast.Fn(line, n, gs, params, ret, exit, body) = f
   val Ast.Ty(rl, rn, ras, _, rvs) = ret
-  val Flow.Cx(ps, _, _, _, _, _) = cx
+  val Flow.Cx(ps, _, _, _, _, _, _) = cx
   val g = Ast.Fn(line, n, gs, params, Ast.Ty(rl, rn, ras, Ast.Stated(Coll.Nil), rvs), exit, body)
   Flow.opRet(ps, pr, n) match
     case Coll.None => Coll.None
@@ -1398,7 +1430,7 @@ def Flow.msOpLine(cx: Flow.Cx, x: Sym.Sym, mp: Sym.Sym, s: Ast.Stmt): Coll.Optio
 def Flow.msOpE(cx: Flow.Cx, x: Sym.Sym, mp: Sym.Sym, e: Ast.Expr): Coll.Option[I64] = e match
   case Ast.Method(l, recv, _, _) => if Sym.eq(recv, x) then Coll.Some(l) else Coll.None
   case Ast.Call(l, f, _, _, _) =>
-    val Flow.Cx(ps, _, _, _, _, _) = cx
+    val Flow.Cx(ps, _, _, _, _, _, _) = cx
     val mine: Bool = Eff.reqOf(ps, f) match
       case Coll.Some(q) =>
         val Eff.Req(qp, _) = q
@@ -1570,7 +1602,7 @@ def Flow.callRules(): Coll.List[D.Rule] =
 // row: capabilities in scope from point 0 in no known state (a handler's row, Flow.checkHandler): their own facts only
 def Flow.facts(cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Coll.List[D.Fact] =
   val Ast.Fn(line, name, gs, params, ret, exit, body) = f
-  val Flow.Cx(ps, _, _, _, _, _) = cx
+  val Flow.Cx(ps, _, _, _, _, _, _) = cx
   val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
   val atoms = Flow.entryAtoms(gs, Coll.Nil)
   val as: Coll.List[Coll.List[Flow.VS]] = bs match

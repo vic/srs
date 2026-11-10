@@ -139,13 +139,13 @@ enum Eff.Callee:
 
 // the relation and Region symbols, made once per program (not per fact)
 enum Eff.Syms:
-  case Eff.Syms(req: Sym.Sym, decl: Sym.Sym, calls: Sym.Sym, hd: Sym.Sym, region: Sym.Sym)
+  case Eff.Syms(req: Sym.Sym, decl: Sym.Sym, calls: Sym.Sym, hd: Sym.Sym, region: Sym.Sym, ks: Names.Keys, cell: Sym.Sym)
 
 // the protocols, handler -> protocol, the callees, the cases with fields (a call of one allocates), the symbols, the traits
 enum Eff.Cx:
   case Eff.Cx(ps: Coll.List[Ast.Proto], hp: Coll.SMap[Sym.Sym], fns: Coll.SMap[Eff.Callee], ctors: Coll.SMap[Bool], ss: Eff.Syms, trs: Coll.List[Ast.Trait])
 
-def Eff.syms(): Eff.Syms = Eff.Syms(Eff.relSym(Eff.RReq), Eff.relSym(Eff.RDecl), Eff.relSym(Eff.RCalls), Eff.relSym(Eff.RHd), Sym.of("Region"))
+def Eff.syms(): Eff.Syms = Eff.Syms(Eff.relSym(Eff.RReq), Eff.relSym(Eff.RDecl), Eff.relSym(Eff.RCalls), Eff.relSym(Eff.RHd), Sym.of("Region"), Names.keys(), Sym.of("Cell.new"))
 
 def Eff.cxOf(ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds match
   case Coll.Nil => cx
@@ -201,6 +201,12 @@ def Eff.isIn(m: Coll.SMap[Bool], x: Sym.Sym): Bool = Coll.sLookup(m, x) match
   case Coll.Some(_) => true
   case Coll.None => false
 
+// A1: the builtins that allocate a new array (in the innermost Region, as a constructor)
+def Eff.isArrayNew(ss: Eff.Syms, g: Sym.Sym): Bool =
+  val Eff.Syms(_, _, _, _, _, ks, c) = ss
+  val Names.Keys(_, f, t, _) = ks
+  Sym.eq(g, f) || Sym.eq(g, t) || Sym.eq(g, c)
+
 def Eff.decls(cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.List[D.Fact] = ds match
   case Coll.Nil =>
     val Eff.W(_, fs, _, _) = w
@@ -237,7 +243,7 @@ def Eff.declsOf(cx: Eff.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], w: Eff.W): Ef
     val Ast.Binder(_, _, t) = b
     val Ast.Ty(_, tn, _, _, _) = t
     val Eff.Cx(ps, hp, _, _, ss, _) = cx
-    val Eff.Syms(req, decl, _, _, _) = ss
+    val Eff.Syms(req, decl, _, _, _, _, _) = ss
     // a {} binder of a handler fn is a row entry of its handler (req, not decl): the w_ wrapper then supplies the cap
     val rel = Coll.sLookup(hp, f) match
       case Coll.Some(_) => req
@@ -250,7 +256,7 @@ def Eff.req(cx: Eff.Cx, at: Eff.At, p: Sym.Sym, w: Eff.W): Eff.W =
   if Ty.memberSym(p, hd) || Ty.memberSym(p, rq) then w
   else
     val Eff.Cx(_, _, _, _, ss, _) = cx
-    val Eff.Syms(req, _, _, _, _) = ss
+    val Eff.Syms(req, _, _, _, _, _, _) = ss
     Eff.W(n, Coll.Cons(D.Fact(req, Eff.v2(D.VSym(f), D.VSym(p))), fs), Coll.Cons(p, rq), cs)
 
 // calls(F, G, S): a leaf, F itself, or a pair already called adds nothing
@@ -268,7 +274,7 @@ def Eff.call(cx: Eff.Cx, at: Eff.At, g: Sym.Sym, w: Eff.W): Eff.W =
     case Coll.None => true
   if leaf || Sym.eq(f, g) || Eff.memberI(s, seen) then w
   else
-    val Eff.Syms(_, _, calls, _, _) = ss
+    val Eff.Syms(_, _, calls, _, _, _, _) = ss
     Eff.W(n, Coll.Cons(D.Fact(calls, Coll.Cons(D.VSym(f), Eff.v2(D.VSym(g), D.VInt(s)))), fs), rq, Coll.sInsert(cs, g, Coll.Cons(s, seen)))
 
 def Eff.memberI(x: I64, xs: Coll.List[I64]): Bool = xs match
@@ -310,18 +316,21 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
   case Ast.Call(_, g, _, _, xs) =>
     val w1 = Eff.exprs(cx, at, xs, w)
     val Eff.Cx(ps, _, fns, ctors, ss, _) = cx
-    val Eff.Syms(_, _, _, _, region) = ss
+    val Eff.Syms(_, _, _, _, region, _, _) = ss
     if Eff.isFn(fns, g) then Eff.call(cx, at, g, w1)
-    else if Eff.isIn(ctors, g) then Eff.req(cx, at, region, w1)
+    else if Eff.isIn(ctors, g) || Eff.isArrayNew(ss, g) then Eff.req(cx, at, region, w1)
+    // Cell.put(c, v) writes (A1): a request on Mut, so a fn that writes has Mut in its row
+    else if Str.eq(Sym.str(g), "Cell.put") then Eff.req(cx, at, Sym.of("Mut"), w1)
     else Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1)
-  // a trait method on {} evidence requests the capabilities the method declares (vic Q2)
+  // a trait method on {} evidence requests the capabilities the method declares (vic Q2); xs.at(i) on a local (an
+  // array, A1) builds an Array.Index in the innermost Region
   case Ast.Method(_, recv, op, xs) =>
     val Eff.At(_, _, _, _, ev) = at
-    val Eff.Cx(ps, _, _, _, _, trs) = cx
-    val caps: Coll.List[Eff.Cap] = Eff.binderTy(ev, recv) match
-      case Coll.Some(tn) => Ty.methodCaps(ps, trs, tn, op)
-      case Coll.None => Coll.Nil
-    Eff.capReqs(cx, at, caps, Eff.exprs(cx, at, xs, w))
+    val Eff.Cx(ps, _, _, _, ss, trs) = cx
+    val Eff.Syms(_, _, _, _, region, _, _) = ss
+    Eff.binderTy(ev, recv) match
+      case Coll.Some(tn) => Eff.capReqs(cx, at, Ty.methodCaps(ps, trs, tn, op), Eff.exprs(cx, at, xs, w))
+      case Coll.None => if Str.eq(Sym.str(op), "at") then Eff.req(cx, at, region, Eff.exprs(cx, at, xs, w)) else Eff.exprs(cx, at, xs, w)
   // what the rest of the block requests is the handle site's, not the op's
   case Ast.Resume(_, _, x) => Eff.expr(cx, at, x, w)
   case Ast.Bin(_, _, l, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, l, w))
@@ -357,7 +366,7 @@ def Eff.stmts(cx: Eff.Cx, at: Eff.At, ss: Coll.List[Ast.Stmt], last: Ast.Expr, w
     case Ast.Handle(_, x, h, xs) =>
       val Eff.W(n, fs, rq, cs) = Eff.call(cx, at, h, Eff.exprs(cx, at, xs, w))
       val Eff.Cx(_, hp, _, _, ss, _) = cx
-      val Eff.Syms(_, _, _, hdRel, _) = ss
+      val Eff.Syms(_, _, _, hdRel, _, _, _) = ss
       val Eff.At(f, _, hd, ls, ev) = at
       val hd2: Coll.List[Sym.Sym] = Coll.sLookup(hp, h) match
         case Coll.Some(p) => Coll.Cons(p, hd)

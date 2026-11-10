@@ -213,6 +213,13 @@ def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[M
   case El.Block(_, ss, last) => Mono.calls(s, sub, last, Mono.stmtCalls(s, sub, ss, acc))
   case El.While(_, c, b) => Mono.calls(s, sub, b, Mono.calls(s, sub, c, acc))
   case El.Assign(_, _, x) => Mono.calls(s, sub, x, acc)
+  case El.Index(_, _, i) => Mono.calls(s, sub, i, acc)
+  case El.Slice(_, x, o) => Mono.calls(s, sub, o, Mono.calls(s, sub, x, acc))
+  case El.Fill(_, _, n, x, _) => Mono.calls(s, sub, x, Mono.calls(s, sub, n, acc))
+  case El.Tab(_, _, n, _, _, g) => Mono.calls(s, sub, g, Mono.calls(s, sub, n, acc))
+  case El.CellNew(_, _, v, _) => Mono.calls(s, sub, v, acc)
+  case El.CellGet(_, c) => Mono.calls(s, sub, c, acc)
+  case El.CellPut(_, c, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, c, acc))
   case _ => acc
 
 def Mono.callsAll(s: K.Subst, sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
