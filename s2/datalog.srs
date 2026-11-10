@@ -435,32 +435,57 @@ def D.stOf(st: Coll.IMap[I64], id: I64): I64 = Coll.node(st, id) match
   case Coll.Tip => 0
   case Coll.Bin(_, _, s, _, _) => s
 
-def D.maxSt(st: Coll.IMap[I64], as: Coll.List[D.CAtom], plus: I64, m: I64): I64 = as match
+def D.maxSt(st: Coll.IMap[I64], as: Coll.List[D.CAtom], m: I64): I64 = as match
   case Coll.Nil => m
   case Coll.Cons(a, rest) =>
     val D.CAtom(relRef, _) = a
-    val rel = D.idOfRef(relRef)
-    val s = D.stOf(st, rel) + plus
-    D.maxSt(st, rest, plus, if s > m then s else m)
+    val s = D.stOf(st, D.idOfRef(relRef))
+    D.maxSt(st, rest, if s > m then s else m)
+
+// a negated edge: a rule with head `head` negates `neg`, a relation whose stratum is k, so the head needs k + 1 > k.
+// a stratification has at most k strata (k relations), so such an edge exists only when a cycle through negation does
+enum D.NegEdge:
+  case D.NegEdge(head: D.RelRef, neg: D.RelRef)
 
 enum D.Raised:
   case D.Raised(st: Coll.IMap[I64], changed: Bool)
+  case D.Over(w: D.NegEdge)
 
-def D.raiseAll(rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool): D.Raised = rs match
+// the head hRef over its negated atoms ns, each stratum one above the negated relation's; the stratum k is never
+// passed: the edge that would pass it is the failure
+def D.raiseNeg(hRef: D.RelRef, ns: Coll.List[D.CAtom], st: Coll.IMap[I64], changed: Bool, k: I64): D.Raised = ns match
+  case Coll.Nil => D.Raised(st, changed)
+  case Coll.Cons(a, rest) =>
+    val D.CAtom(nRef, _) = a
+    val m = D.stOf(st, D.idOfRef(nRef)) + 1
+    val hr = D.idOfRef(hRef)
+    if m > k then D.Over(D.NegEdge(hRef, nRef))
+    else if m > D.stOf(st, hr) then D.raiseNeg(hRef, rest, Coll.insert(st, hr, m), true, k)
+    else D.raiseNeg(hRef, rest, st, changed, k)
+
+def D.raiseAll(rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool, k: I64): D.Raised = rs match
   case Coll.Nil => D.Raised(st, changed)
   case Coll.Cons(rl, rest) =>
     val D.CRule(h, body, neg, _, _) = rl
     val D.CAtom(hrRef, _) = h
     val hr = D.idOfRef(hrRef)
-    val m = D.maxSt(st, neg, 1, D.maxSt(st, body, 0, 0))
-    if m > D.stOf(st, hr) then D.raiseAll(rest, Coll.insert(st, hr, m), true) else D.raiseAll(rest, st, changed)
+    val m = D.maxSt(st, body, 0)
+    val raised: D.Raised = if m > D.stOf(st, hr) then D.raiseNeg(hrRef, neg, Coll.insert(st, hr, m), true, k) else D.raiseNeg(hrRef, neg, st, changed, k)
+    raised match
+      case D.Over(w) => D.Over(w)
+      case D.Raised(st2, ch2) => D.raiseAll(rest, st2, ch2, k)
 
 def D.topOf(st: Coll.IMap[I64], id: I64, k: I64, m: I64): I64 = if id == k then m else D.topOf(st, id + 1, k, if D.stOf(st, id) > m then D.stOf(st, id) else m)
 
-// raise until no stratum changes, or one passes k (a cycle through negation: a stratification has at most k strata)
-def D.strata(rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64): Coll.IMap[I64] =
-  val D.Raised(st2, changed) = D.raiseAll(rs, st, false)
-  if !changed || D.topOf(st2, 0, k, 0) > k then st2 else D.strata(rs, st2, k)
+// the stratification of a program: every relation's stratum, or the negated edge that passed k (a cycle through negation)
+enum D.Strat:
+  case D.Layered(st: Coll.IMap[I64])
+  case D.Looped(w: D.NegEdge)
+
+// raise until no stratum changes, or a negated edge would pass k
+def D.strata(rs: Coll.List[D.CRule], st: Coll.IMap[I64], k: I64): D.Strat = D.raiseAll(rs, st, false, k) match
+  case D.Over(w) => D.Looped(w)
+  case D.Raised(st2, changed) => if changed then D.strata(rs, st2, k) else D.Layered(st2)
 
 // ── the negation cycle a program reports (vic-kpev): a relation x depends on each relation in the body of a rule with
 // head x, through a positive or a negated atom. a relation is ON A CYCLE THROUGH NEGATION when some rule with head h
@@ -494,39 +519,52 @@ def D.reach(rs: Coll.List[D.CRule], todo: Coll.List[D.RelRef], seen: Coll.List[D
 
 def D.reachOf(rs: Coll.List[D.CRule], x: D.RelRef): Coll.List[D.RelRef] = D.reach(rs, Coll.Cons(x, Coll.Nil), Coll.Nil)
 
-def D.smaller(x: D.RelRef, best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = best match
-  case Coll.None => Coll.Some(x)
-  case Coll.Some(b) => if D.idOfRef(x) < D.idOfRef(b) then Coll.Some(x) else best
+// a group of relations that is never empty: its head and the rest
+enum D.Cycle:
+  case D.Cycle(head: D.RelRef, tail: Coll.List[D.RelRef])
+
+// the relations a witness's negation cycle lies among: the negated relation n and everything n reaches. the stratum
+// of n is k: a chain of k negations below n holds k + 1 relations and only k exist, so one repeats: a cycle through negation
+def D.cycleOf(rs: Coll.List[D.CRule], w: D.NegEdge): D.Cycle =
+  val D.NegEdge(_, n) = w
+  D.Cycle(n, D.reachOf(rs, n))
+
+def D.largerOf(xs: Coll.List[D.RelRef], best: D.RelRef): D.RelRef = xs match
+  case Coll.Nil => best
+  case Coll.Cons(x, rest) => D.largerOf(rest, if D.idOfRef(x) > D.idOfRef(best) then x else best)
+
+// the relation of the group with the largest id
+def D.largest(c: D.Cycle): D.RelRef =
+  val D.Cycle(head, tail) = c
+  D.largerOf(tail, head)
+
+def D.smaller(x: D.RelRef, best: D.RelRef): D.RelRef = if D.idOfRef(x) < D.idOfRef(best) then x else best
 
 // the relations x of from (reached from n) that reach h, folded into best
-def D.onCycle(rs: Coll.List[D.CRule], h: I64, from: Coll.List[D.RelRef], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = from match
+def D.onCycle(rs: Coll.List[D.CRule], h: I64, from: Coll.List[D.RelRef], best: D.RelRef): D.RelRef = from match
   case Coll.Nil => best
   case Coll.Cons(x, rest) =>
     if D.memberR(h, D.reachOf(rs, x)) then D.onCycle(rs, h, rest, D.smaller(x, best)) else D.onCycle(rs, h, rest, best)
 
 // the negated atoms ns of a rule with head h
-def D.negEdges(rs: Coll.List[D.CRule], h: I64, ns: Coll.List[D.CAtom], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = ns match
+def D.negEdges(rs: Coll.List[D.CRule], h: I64, ns: Coll.List[D.CAtom], best: D.RelRef): D.RelRef = ns match
   case Coll.Nil => best
   case Coll.Cons(a, rest) =>
     val D.CAtom(nRef, _) = a
     val from = D.reachOf(rs, nRef)
     if D.memberR(h, from) then D.negEdges(rs, h, rest, D.onCycle(rs, h, from, best)) else D.negEdges(rs, h, rest, best)
 
-// the relation on a cycle through negation with the smallest id, or None: no cycle
-def D.negCycle(all: Coll.List[D.CRule], todo: Coll.List[D.CRule], best: Coll.Option[D.RelRef]): Coll.Option[D.RelRef] = todo match
+// the relation on a cycle through negation with the smallest id, or best: it is the largest of the witness's group,
+// so a relation on a cycle (all lie in the group) is never above it
+def D.negCycle(all: Coll.List[D.CRule], todo: Coll.List[D.CRule], best: D.RelRef): D.RelRef = todo match
   case Coll.Nil => best
   case Coll.Cons(rl, rest) =>
     val D.CRule(h, _, neg, _, _) = rl
     val D.CAtom(hRef, _) = h
     D.negCycle(all, rest, D.negEdges(all, D.idOfRef(hRef), neg, best))
 
-def D.nameOpt(x: Coll.Option[D.RelRef]): Coll.Option[Sym.Sym] = x match
-  case Coll.None => Coll.None
-  case Coll.Some(r) => Coll.Some(D.nameOfRef(r))
-
-// the report when the strata passed k (over): the cycle's relation. a stratification fails only for a cycle through
-// negation, so a None here can not happen; it is no cycle
-def D.cycleOf(rs: Coll.List[D.CRule], over: Bool): Coll.Option[Sym.Sym] = if over then D.nameOpt(D.negCycle(rs, rs, Coll.None)) else Coll.None
+// the report of a failed stratification: the name of the relation on a cycle through negation with the smallest id
+def D.report(rs: Coll.List[D.CRule], w: D.NegEdge): Sym.Sym = D.nameOfRef(D.negCycle(rs, rs, D.largest(D.cycleOf(rs, w))))
 
 def D.rulesAt(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
@@ -677,10 +715,9 @@ def D.compile(rules: Coll.List[D.Rule]): D.Compiled =
     case Coll.Some(bad) => D.UnsafeRule(bad)
     case Coll.None =>
       val k = Coll.length(tab)
-      val st = D.strata(crs, Coll.Tip, k)
-      D.cycleOf(crs, D.topOf(st, 0, k, 0) > k) match
-        case Coll.Some(cyc) => D.NegLoop(cyc)
-        case Coll.None => D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
+      D.strata(crs, Coll.Tip, k) match
+        case D.Looped(w) => D.NegLoop(D.report(crs, w))
+        case D.Layered(st) => D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
 
 // the model of a compiled program over facts: strata in order, each to its fixpoint. ids: the rules' names in written
 // order, then the names only facts use

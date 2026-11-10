@@ -1,0 +1,45 @@
+// s2 component 6 (Datalog), the stratifier's failure value: the negated edge that passed k is the witness of the
+// negation cycle the report names. the report is the relation on a cycle through negation with the smallest id, however
+// the witness lies: the witness edge may sit downstream of the cycle, and other cycles may lie out of its reach
+def W.v {r: Region} (n: I64): D.Arg = D.AVar(n)
+def W.a1 {r: Region} (rel: Str, x: D.Arg): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(x, Coll.Nil))
+def W.node {r: Region} (x: D.Arg): D.Lit = D.Pos(W.a1("node", x))
+def W.pos {r: Region} (rel: Str, x: D.Arg): Coll.List[D.Lit] = Coll.Cons(D.Pos(W.a1(rel, x)), Coll.Nil)
+// rel(X) :- node(X), not other(X)
+def W.neg {r: Region} (rel: Str, other: Str): D.Rule =
+  val x = W.v(0)
+  D.Rule(W.a1(rel, x), Coll.Cons(W.node(x), Coll.Cons(D.Neg(W.a1(other, x)), Coll.Nil)))
+// rel(X) :- from(X)
+def W.reads {r: Region} (rel: Str, from: Str): D.Rule = D.Rule(W.a1(rel, W.v(0)), W.pos(from, W.v(0)))
+
+def W.show {r: Region} (rules: Coll.List[D.Rule]): Unit =
+  val res = D.solve(rules, Coll.Nil)
+  res match
+    case D.NegCycle(p) => Console.print(Sym.str(p))
+    case D.Unsafe(p) => Console.print("unsafe")
+    case D.Solved(_) => Console.print("solved")
+  Console.print("\n")
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val nil: Coll.List[D.Rule] = Coll.Nil
+  // a and b negate each other (ids a 0, node 1, b 2, n 3, h 4: k = 5). the strata of a and b reach 5 at a, then n and h
+  // follow in the same round: the first negated edge to pass k is h -> n, whose head is on no cycle. the answer is a
+  val downstream = Coll.Cons(W.neg("a", "b"), Coll.Cons(W.reads("n", "a"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("b", "a"), nil))))
+  W.show(downstream)
+  // the same cycle named from the other side: b first, so b has the smaller id
+  val flipped = Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil))))
+  W.show(flipped)
+  // two cycles out of each other's reach: the report is the smaller id of both, u (written first) or p
+  val two = Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), nil))))
+  W.show(two)
+  val twoRev = Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), nil))))
+  W.show(twoRev)
+  // n is met first (n 0, node 1, b 2, a 3, h 4) and its second rule reads b; the strata climb b 1 3 5, n 1 3 5, h 2 4 6: h -> n passes k = 5 before a -> b. n is on no cycle, so the
+  // answer is b, never n: the fold is seeded by the group's largest id, not by the witness's head n
+  val early = Coll.Cons(W.reads("n", "node"), Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil)))))
+  W.show(early)
+  val self = Coll.Cons(W.neg("p", "p"), nil)
+  W.show(self)
+  0
