@@ -1,0 +1,25 @@
+// pass: a second Region handle in a nested scope (a sub-region opened and freed in scratch, below main's Arena): two
+// instances over the run, so Region is not static and every row keeps its Region param (tests/run.sh greps the C).
+// scratch's list lives in the inner Arena, the result is a number that outlives it
+enum Cd.L:
+  case Cd.Nil
+  case Cd.Cons(h: I64, t: Cd.L)
+
+def Cd.build(i: I64, acc: Cd.L): Cd.L = if i == 0 then acc else Cd.build(i - 1, Cd.Cons(i, acc))
+
+def Cd.sum(l: Cd.L, a: I64): I64 = l match
+  case Cd.Nil => a
+  case Cd.Cons(h, t) => Cd.sum(t, a + h)
+
+def Cd.scratch(n: I64): I64 =
+  handle s = Srs.Arena()
+  Cd.sum(Cd.build(n, Cd.Nil), 0)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val a = Cd.sum(Cd.build(100, Cd.Nil), 0)
+  val b = Cd.scratch(1000)
+  Console.printI64(a + b)
+  Console.printChar(10)
+  0

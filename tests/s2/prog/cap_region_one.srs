@@ -1,0 +1,30 @@
+// pass: main opens the program's one Arena (the only Region handle, top level in main, no written {r: Region}, no call
+// of main): the Region is static (s2/emit.srs Emit.staticsOf), so no row takes a Region param (tests/run.sh greps the
+// C). The list is built past several 1 MiB chunks (the inline bump's slow path on the static's own cur and end), an
+// explicit r.alloc of 1.5 MB comes first, and size's Files.readAll reaches the Region main's Files handle keeps
+enum Cr.L:
+  case Cr.Nil
+  case Cr.Cons(h: I64, t: Cr.L)
+
+def Cr.build(i: I64, acc: Cr.L): Cr.L = if i == 0 then acc else Cr.build(i - 1, Cr.Cons(i, acc))
+
+def Cr.sum(l: Cr.L, a: I64): I64 = l match
+  case Cr.Nil => a
+  case Cr.Cons(h, t) => Cr.sum(t, a + h)
+
+def Cr.size(p: Str): I64 = Files.readAll(p) match
+  case Os.Ok(s) => Str.len(s)
+  case Os.Fail(_) => 0 - 1
+
+def Cr.show(n: I64): Unit =
+  Console.printI64(n)
+  Console.printChar(10)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle f = Srs.Files()
+  val big = r.alloc(1500000)
+  Cr.show(Cr.sum(Cr.build(300000, Cr.Nil), 0))
+  Cr.show(Cr.size("tests/s2/fs/a.txt"))
+  0

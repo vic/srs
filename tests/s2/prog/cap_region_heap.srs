@@ -1,0 +1,19 @@
+// pass: the one Region is a Heap (Srs.Heap, no inline bump: every alloc takes the vtable) freed by hand at the end:
+// static as well, and r.free() reaches the same instance the rows allocated in
+enum Ch.L:
+  case Ch.Nil
+  case Ch.Cons(h: I64, t: Ch.L)
+
+def Ch.build(i: I64, acc: Ch.L): Ch.L = if i == 0 then acc else Ch.build(i - 1, Ch.Cons(i, acc))
+
+def Ch.sum(l: Ch.L, a: I64): I64 = l match
+  case Ch.Nil => a
+  case Ch.Cons(h, t) => Ch.sum(t, a + h)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Heap()
+  Console.printI64(Ch.sum(Ch.build(1000, Ch.Nil), 0))
+  Console.printChar(10)
+  r.free()
+  0

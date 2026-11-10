@@ -121,4 +121,18 @@ timeout 60 $CC -fsanitize=shift,signed-integer-overflow -fsanitize-trap=shift,si
 if ! grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_static.c" && grep -q '^static srs_cap s_eff__Console = ' "$B/s2c1_cap_static.c"; then echo "ok s2c static Console: no param"; else echo "FAIL s2c static Console: param kept"; fail=1; fi
 if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_nested.c" && ! grep -q 's_eff__Console' "$B/s2c1_cap_nested.c"; then echo "ok s2c nested Console: param kept"; else echo "FAIL s2c nested Console: made static"; fail=1; fi
 if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_main_call.c" && ! grep -q 's_eff__Console' "$B/s2c1_cap_main_call.c"; then echo "ok s2c main called: param kept"; else echo "FAIL s2c main called: made static"; fail=1; fi
+# Region (Srs.Arena or Srs.Heap) is static when it has one handle in main and no written {r: Region} binder: no row takes a
+# Region param. two Arenas, a named region f{r}(x), or a nested sub-region keep the param in every row. (handler fns keep
+# their params, so the grep is on the rows f_*). compiled with the prelude alone: tests/s2/prog/list.lib writes a {r: Region}
+# binder, which keeps the param in every program that loads it. each is also run: its output must be its .out
+rowreg='f_[A-Za-z0-9_]*(srs_cap\* p_eff__Region'
+for n in one heap two named nested; do
+  t=tests/s2/prog/cap_region_$n; c="$B/s2c_rg_$n.c"
+  if timeout 5 "$B/s2c1" lib/prelude.srs "$t.srs" > "$c" && timeout 60 $CC -o "$B/s2c_rg_$n" "$c" rt/srs_rt.c && [ "$(timeout 1 "$B/s2c_rg_$n")" = "$(cat "$t.out")" ]; then
+    case $n in
+      one|heap) if ! grep -q "$rowreg" "$c" && grep -q '^static srs_cap s_eff__Region = ' "$c"; then echo "ok s2c static Region $n: no param"; else echo "FAIL s2c static Region $n: param kept"; fail=1; fi;;
+      *) if grep -q "$rowreg" "$c" && ! grep -q 's_eff__Region' "$c"; then echo "ok s2c Region $n: param kept"; else echo "FAIL s2c Region $n: made static"; fail=1; fi;;
+    esac
+  else echo "FAIL s2c Region $n (build or output)"; fail=1; fi
+done
 exit $fail

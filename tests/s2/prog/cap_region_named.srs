@@ -1,0 +1,21 @@
+// pass: one Arena in main, but a call names its region: grow{r}(x). A written {r: Region} binder is a named region, so
+// Region is not static and every row keeps its Region param, program-wide (tests/run.sh greps the C)
+enum Cn.L:
+  case Cn.Nil
+  case Cn.Cons(h: I64, t: Cn.L)
+
+def Cn.one {r: Region} (h: I64, t: Cn.L): Cn.L = Cn.Cons(h, t)
+
+def Cn.build(i: I64, acc: Cn.L): Cn.L = if i == 0 then acc else Cn.build(i - 1, Cn.Cons(i, acc))
+
+def Cn.sum(l: Cn.L, a: I64): I64 = l match
+  case Cn.Nil => a
+  case Cn.Cons(h, t) => Cn.sum(t, a + h)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle a = Srs.Arena()
+  val xs = Cn.one{a}(5, Cn.build(1000, Cn.Nil))
+  Console.printI64(Cn.sum(xs, 0))
+  Console.printChar(10)
+  0

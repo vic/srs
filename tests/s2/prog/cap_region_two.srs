@@ -1,0 +1,20 @@
+// pass: two Arenas in main: two Region instances live at once, so Region is not static and every row keeps its Region
+// param, program-wide (tests/run.sh greps the C). An op on b sees b, an op on a sees a: a row given the wrong one
+// would put the cons cells in the other arena (alloc_chunks fills both past their chunks)
+enum Ct.L:
+  case Ct.Nil
+  case Ct.Cons(h: I64, t: Ct.L)
+
+def Ct.build(i: I64, acc: Ct.L): Ct.L = if i == 0 then acc else Ct.build(i - 1, Ct.Cons(i, acc))
+
+def Ct.sum(l: Ct.L, a: I64): I64 = l match
+  case Ct.Nil => a
+  case Ct.Cons(h, t) => Ct.sum(t, a + h)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle a = Srs.Arena()
+  handle b = Srs.Arena()
+  Console.printI64(Ct.sum(Ct.build(1000, Ct.Nil), 0))
+  Console.printChar(10)
+  0

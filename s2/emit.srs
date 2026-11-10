@@ -1992,8 +1992,10 @@ def Emit.hasMain(cx: Emit.Cx): Bool =
 // while the program runs, and every srs_cap* of P a fn receives is that instance: a capability is erased
 // (error[capability-erased]), it reaches a fn only as a capability argument or a handler's kept capability. The defs
 // then read it from the file-static eff__P instead of a C param for their row binder eff.P, and their calls stop
-// passing it: constant propagation of a single-valued param. Region keeps its param (not in this rule): an Arena's
-// bump lives in its capability and programs open arenas per scope.
+// passing it: constant propagation of a single-valued param. Region (Srs.Arena or Srs.Heap) follows the same rule when
+// the program also writes no Region binder {r: Region} (a call f{r}(x) names a region: Emit.namesRegion); a second Region
+// handle anywhere, a sub-region or a named region keeps the Region param in every def. An Arena's bump (cur, end) lives
+// in its capability, so the static instance holds it.
 enum Emit.Static:
   case Emit.Static(proto: Sym.Sym, h: Sym.Sym, x: Sym.Sym)
 
@@ -2011,10 +2013,51 @@ def Emit.staticIn(st: Coll.List[Emit.Static], p: Sym.Sym): Bool = st match
     val Emit.Static(q, _, _) = s
     if Sym.eq(q, p) then true else Emit.staticIn(rest, p)
 
-def Emit.staticsOf(cx: Emit.Cx, res: Ty.Result): Coll.List[Emit.Static] =
+def Emit.staticsOf(cx: Emit.Cx, ds: Coll.List[Ast.Decl], res: Ty.Result): Coll.List[Emit.Static] =
   val Ty.Result(_, _, _, fs, hs, gvs) = res
   val Emit.Seen(ps, called) = Emit.seenGvs(cx, gvs, Emit.seenHs(cx, hs, Emit.seenFns(cx, fs, Emit.Seen(Coll.Nil, false))))
-  if called then Coll.Nil else Emit.mainStatics(cx, ps, Emit.mainStmts(fs), Coll.Nil)
+  if called then Coll.Nil else Emit.mainStatics(cx, ps, Emit.namesRegion(ds), Emit.mainStmts(fs), Coll.Nil)
+
+// the program writes a Region binder {r: Region}: a def, a handler fn, a given fn or a trait method takes a named
+// region, so a call can name one (f{r}(x)) and Region stays a param (Emit.mainStatics)
+def Emit.namesRegion(ds: Coll.List[Ast.Decl]): Bool = ds match
+  case Coll.Nil => false
+  case Coll.Cons(d, rest) =>
+    val named = d match
+      case Ast.DFn(f) => Emit.fnNamesRegion(f)
+      case Ast.DVal(f) => Emit.fnNamesRegion(f)
+      case Ast.DHandler(h) =>
+        val Ast.Handler(_, _, _, fns, _) = h
+        Emit.fnsNameRegion(fns)
+      case Ast.DTrait(t) =>
+        val Ast.Trait(_, _, gs, sigs) = t
+        Emit.groupsNameRegion(gs) || Emit.fnsNameRegion(sigs)
+      case Ast.DGiven(g) =>
+        val Ast.Given(_, gs, _, fns) = g
+        Emit.groupsNameRegion(gs) || Emit.fnsNameRegion(fns)
+      case _ => false
+    named || Emit.namesRegion(rest)
+
+def Emit.fnsNameRegion(fs: Coll.List[Ast.Fn]): Bool = fs match
+  case Coll.Nil => false
+  case Coll.Cons(f, rest) => Emit.fnNamesRegion(f) || Emit.fnsNameRegion(rest)
+
+def Emit.fnNamesRegion(f: Ast.Fn): Bool =
+  val Ast.Fn(_, _, gs, _, _, _, _) = f
+  Emit.groupsNameRegion(gs)
+
+def Emit.groupsNameRegion(gs: Coll.List[Ast.Group]): Bool = gs match
+  case Coll.Nil => false
+  case Coll.Cons(g, rest) => g match
+    case Ast.Evidence(bs) => Emit.bindersNameRegion(bs) || Emit.groupsNameRegion(rest)
+    case _ => Emit.groupsNameRegion(rest)
+
+def Emit.bindersNameRegion(bs: Coll.List[Ast.Binder]): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    val Ast.Ty(_, n, _, _, _) = t
+    Sym.eq(n, Sym.of("Region")) || Emit.bindersNameRegion(rest)
 
 def Emit.mainStmts(fs: Coll.List[El.Fn]): Coll.List[El.Stmt] = fs match
   case Coll.Nil => Coll.Nil
@@ -2027,14 +2070,16 @@ def Emit.mainStmts(fs: Coll.List[El.Fn]): Coll.List[El.Stmt] = fs match
       case El.Extern => Coll.Nil
     else Emit.mainStmts(rest)
 
-def Emit.mainStatics(cx: Emit.Cx, ps: Coll.List[Sym.Sym], ss: Coll.List[El.Stmt], acc: Coll.List[Emit.Static]): Coll.List[Emit.Static] = ss match
+// Region is static only when no region is named (named: Emit.namesRegion); its one handle (Srs.Arena or Srs.Heap) is the
+// count of 1, so a second Region handle anywhere (two in main, a sub-region in a fn) keeps the param program-wide
+def Emit.mainStatics(cx: Emit.Cx, ps: Coll.List[Sym.Sym], named: Bool, ss: Coll.List[El.Stmt], acc: Coll.List[Emit.Static]): Coll.List[Emit.Static] = ss match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(s, rest) => s match
     case El.Handle(_, _, h, _, _) =>
       val p = Emit.protoOfH(cx, h)
-      if Emit.countSym(ps, p, 0) == 1 && !Sym.eq(p, Sym.of("Region")) then Emit.mainStatics(cx, ps, rest, Coll.Cons(Emit.Static(p, h, Eff.dotted("eff", p)), acc))
-      else Emit.mainStatics(cx, ps, rest, acc)
-    case _ => Emit.mainStatics(cx, ps, rest, acc)
+      if Emit.countSym(ps, p, 0) == 1 && !(named && Sym.eq(p, Sym.of("Region"))) then Emit.mainStatics(cx, ps, named, rest, Coll.Cons(Emit.Static(p, h, Eff.dotted("eff", p)), acc))
+      else Emit.mainStatics(cx, ps, named, rest, acc)
+    case _ => Emit.mainStatics(cx, ps, named, rest, acc)
 
 def Emit.countSym(xs: Coll.List[Sym.Sym], x: Sym.Sym, n: I64): I64 = xs match
   case Coll.Nil => n
@@ -2229,7 +2274,7 @@ def Emit.staticCaps(st: Coll.List[Emit.Static]): Unit = st match
 def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   val Ty.Result(_, _, s, fs0, _, _) = res0
   val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
-  val st = Emit.staticsOf(cx0, res0)
+  val st = Emit.staticsOf(cx0, ds, res0)
   val res = Emit.withStatics(cx0, res0, st)
   val Ty.Result(_, _, _, fs, hs, _) = res
   val cx = Emit.withFns(cx0, fs, st)
