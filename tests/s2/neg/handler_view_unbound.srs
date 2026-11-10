@@ -1,0 +1,32 @@
+// expect: error[capability-bound]
+// a handler op whose decl says View{self} returns a View bound to another Pad (the one its handle site keeps): the
+// caller would take it as bound to the receiver, valid while the receiver stays Viewed
+capability Pad:
+  state Writing, Viewed, Gone
+  start Writing
+  stop Gone
+  def view <Writing> (): View{self} <Viewed>
+  transition ends Writing -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+handler HInner for Pad:
+  def view(): Ptr = Srs.noState()
+  def done(): Unit = ()
+
+handler HOuter for Pad:
+  def view(): View = Pad.view()
+  def done(): Unit = ()
+
+type View {b: Pad} <b: Viewed> = Ptr
+def hash {b: Pad} <b: Viewed> (v: View): I64 = 5
+
+def main(): I64 =
+  handle a = HInner()
+  handle b = HOuter()
+  val v = b.view()
+  a.done()
+  val n = hash{b}(v)
+  b.done()
+  n
+// expect: 'eff.Pad'
+// expect: --> tests/s2/neg/handler_view_unbound.srs:17

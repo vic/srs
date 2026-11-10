@@ -883,11 +883,11 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
     // every fn of a handler takes the handler's row (E1b): the capabilities its handle site keeps
     case Ast.DHandler(h) =>
       val Ast.Handler(hl, hn, p, fs, shots) = h
-      val Ty.Cx(_, _, _, _, _, _, _, rows, _) = cx
+      val Ty.Cx(_, _, ps, _, _, _, _, rows, _) = cx
       shots match
         case Ast.OneShot =>
           val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
-          Ty.decls(cx, st1, rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
+          Ty.decls(cx, Ty.opRets(ps, st1, p, fs), rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
         // multi-shot (vic-hm63): typed here; its C (selective CPS) is a later rung, so it stops at this phase for now
         case Ast.MultiShot(a, ks) =>
           val ans = Ty.answerOf(fs, a)
@@ -916,6 +916,33 @@ def Ty.binderNames(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.Lis
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, _) = b
     Ty.binderNames(rest, Coll.Cons(x, acc))
+
+// a one-shot handler fn returns its op's result type: the op's decl is what the caller gets (Ty.fn checked the body
+// against the fn's own result). a fn for an op T{self} may return T's body: it makes the T (its facts are the op's)
+def Ty.opRets(ps: Coll.List[Ast.Proto], st: Ty.St, p: Sym.Sym, fs: Coll.List[Ast.Fn]): Ty.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, n, _, _, ret, _, _) = f
+    val st1: Ty.St = Ty.protoOp(ps, p, n) match
+      case Coll.None => st
+      case Coll.Some(o) =>
+        val Ast.Op(_, _, _, oret, _) = o
+        Ty.expect(st, line, Ty.term(ret, Coll.Nil), Ty.opWant(st, oret))
+    Ty.opRets(ps, st1, p, rest)
+
+// the result type a handler fn must give for an op that returns t. An op T{self} also takes T's body type: sound
+// because Flow.checkHandler lets that result live in no capability the fn body names (row caps, opened caps, its own
+// binders), so a body-typed result can only live in the handler's own state = self, and self outlives every T{self}
+// a caller holds. Narrow it once a handler fn can build a T{self} itself (follow-up bead)
+def Ty.opWant(st: Ty.St, t: Ast.Ty): K.Term =
+  val Ast.Ty(_, _, _, caps, _) = t
+  val Ty.St(_, _, _, _, _, nm) = st
+  val w = Ty.term(t, Coll.Nil)
+  caps match
+    case Ast.Chosen(_) => Ty.widen(nm, w) match
+      case Coll.Some(b) => b
+      case Coll.None => w
+    case _ => w
 
 // fns of a handler or given, elaborated in order, each with row
 def Ty.fnsEl(cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap], acc: Coll.List[El.Fn]): Ty.Fns = fs match

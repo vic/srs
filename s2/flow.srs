@@ -344,7 +344,7 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
         else
           val rq = Eff.reqOf(ps, f)
           val Flow.At(st3, q) = Flow.request(st2, pa, rq, line)
-          Flow.Ev(st3, q, Flow.reqSrcs(cx, cs, rq))
+          Flow.Ev(st3, q, Flow.reqSrcs(cx, cs, rq, Flow.union(svs, Coll.Nil)))
   // an op on a capability, or a method of {} evidence (a given turns an A into a B): its result keeps its args' regions;
   // an op's result lives where its decl says (Flow.opSrcs)
   case Ast.Method(line, recv, op, xs) =>
@@ -838,14 +838,69 @@ def Flow.opRetIn(ops: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Ty] = ops
     if Sym.eq(n, op) then Coll.Some(ret) else Flow.opRetIn(rest, op)
 
 // the result of a request P.op(...): the op's result on the innermost capability of P in scope (none: the implicit one,
-// a caller's, which this def cannot end)
-def Flow.reqSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], q: Coll.Option[Eff.Req]): Coll.List[Flow.Src] = q match
+// a caller's, which this def cannot end). a result that lives in self keeps its args' regions sv too, as c.op(...)
+// does: a handler fn may return an arg (Flow.opFn)
+def Flow.reqSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], q: Coll.Option[Eff.Req], sv: Coll.List[Flow.Src]): Coll.List[Flow.Src] = q match
   case Coll.None => Coll.Nil
   case Coll.Some(rq) =>
     val Eff.Req(proto, op) = rq
     Flow.innermost(cs, proto) match
       case Coll.None => Coll.Nil
-      case Coll.Some(c) => Flow.opSrcs(cx, c, op, Coll.Nil)
+      case Coll.Some(c) =>
+        val r = Flow.opSrcs(cx, c, op, Coll.Nil)
+        r match
+          case Coll.Nil => Coll.Nil
+          case Coll.Cons(_, _) => Coll.revOnto(sv, r)
+
+// ── a handler fn returns what its op says (bead vic-de9x.15): Ty types it as the op's result; here, a fn of an op whose
+// result lives in self (T^<self>, T{self}) is checked as a def whose result lives in no capability its body names. self,
+// the receiver, is not one of them (the caller gives the result self, Flow.opSrcs); the handler's row (the capabilities
+// its handle site keeps, in no known state) is in scope, so memory of an outer region, a value bound to another
+// capability, or memory of a region the body opens is error[capability-bound]. an arg may be returned: the caller keeps
+// the args' regions ──
+def Flow.checkHandler(p: Flow.Plans, cx: Flow.Cx, h: Ast.Handler): Flow.Verdict =
+  val Ast.Handler(line, hn, pr, fs, shots) = h
+  val Flow.Cx(_, _, _, _, _, rows) = cx
+  shots match
+    case Ast.OneShot => Flow.checkOps(p, cx, pr, Flow.rowBinders(Eff.row(rows, hn), line, Coll.Nil), fs, Coll.Nil)
+    // a multi-shot op's result is resume's arg (Ty.byMulti); its C is a later rung
+    case Ast.MultiShot(_, _) => Flow.Ok
+
+def Flow.checkOps(p: Flow.Plans, cx: Flow.Cx, pr: Sym.Sym, row: Coll.List[Ast.Binder], fs: Coll.List[Ast.Fn], acc: Coll.List[Flow.Clash]): Flow.Verdict = fs match
+  case Coll.Nil => acc match
+    case Coll.Nil => Flow.Ok
+    case Coll.Cons(_, _) => Flow.Bad(Coll.rev(acc))
+  case Coll.Cons(f, rest) => Flow.opFn(cx, pr, f) match
+    case Coll.None => Flow.checkOps(p, cx, pr, row, rest, acc)
+    case Coll.Some(g) => Flow.checkIn(p, cx, g, row) match
+      case Flow.Ok => Flow.checkOps(p, cx, pr, row, rest, acc)
+      case Flow.Bad(cs) => Flow.checkOps(p, cx, pr, row, rest, Coll.revOnto(cs, acc))
+      case Flow.RulesUnsafe(rel) => Flow.RulesUnsafe(rel)
+      case Flow.RulesNegCycle(rel) => Flow.RulesNegCycle(rel)
+      case Flow.RulesIllTyped(rel) => Flow.RulesIllTyped(rel)
+
+// fn f of op n as the def Flow checks, its result ^<> (in no capability); none when op n's result names no capability
+// (it lives nowhere the op knows of)
+def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
+  val Ast.Fn(line, n, gs, params, ret, exit, body) = f
+  val Ast.Ty(rl, rn, ras, _, rvs) = ret
+  val Flow.Cx(ps, _, _, _, _, _) = cx
+  val g = Ast.Fn(line, n, gs, params, Ast.Ty(rl, rn, ras, Ast.Stated(Coll.Nil), rvs), exit, body)
+  Flow.opRet(ps, pr, n) match
+    case Coll.None => Coll.None
+    case Coll.Some(t) =>
+      val Ast.Ty(_, _, _, caps, _) = t
+      caps match
+        case Ast.Inferred => Coll.None
+        case Ast.Stated(_) => Coll.Some(g)
+        case Ast.Chosen(_) => Coll.Some(g)
+
+// each row capability (protocol p, name x: eff.p) as a binder {x: p}
+def Flow.rowBinders(row: Coll.List[Eff.Cap], line: I64, acc: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = row match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(c, rest) =>
+    val Eff.Cap(p, x) = c
+    Flow.rowBinders(rest, line, Coll.Cons(Ast.Binder(line, x, Ast.Ty(line, p, Coll.Nil, Ast.Inferred, Coll.Nil)), acc))
 
 // the innermost Region in scope as a source (none: the implicit one, a caller's)
 def Flow.inRegion(cs: Coll.List[Flow.Cap], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = Flow.innermost(cs, Sym.of("Region")) match
@@ -1506,7 +1561,8 @@ def Flow.callRules(): Coll.List[D.Rule] =
 // the facts of fn f: its walk from a first point, the protocols. each solution j of f's entry facts is world j: the
 // capability binders enter point 0 in their pre states and must leave the body in their post states (s1/check.srs:498);
 // no binders: one world. no solution: the def has none (NoSol)
-def Flow.facts(cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
+// row: capabilities in scope from point 0 in no known state (a handler's row, Flow.checkHandler): their own facts only
+def Flow.facts(cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Coll.List[D.Fact] =
   val Ast.Fn(line, name, gs, params, ret, exit, body) = f
   val Flow.Cx(ps, _, _, _, _, _) = cx
   val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
@@ -1514,7 +1570,8 @@ def Flow.facts(cx: Flow.Cx, f: Ast.Fn): Coll.List[D.Fact] =
   val as: Coll.List[Coll.List[Flow.VS]] = bs match
     case Coll.Nil => Coll.Cons(Coll.Nil, Coll.Nil)
     case Coll.Cons(_, _) => Flow.assigns(ps, Flow.ruleModels(ps, bs, Coll.Nil), bs, atoms, Flow.varsOf(atoms, Coll.Nil), Coll.Nil, Coll.Nil)
-  val st0 = Flow.binderCaps(Flow.St(1, Coll.Nil, Coll.Nil, Coll.Nil, false), bs, line)
+  // the row after the binders: Flow.worlds pairs the first caps with bs
+  val st0 = Flow.binderCaps(Flow.binderCaps(Flow.St(1, Coll.Nil, Coll.Nil, Coll.Nil, false), bs, line), Flow.capBs(ps, Coll.Cons(Ast.Evidence(row), Coll.Nil), 0, Coll.Nil), line)
   val Flow.St(_, _, caps, _, _) = st0
   val st1 = Flow.worlds(ps, st0, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Entry)
   val walked: Flow.Ev = body match
@@ -1637,9 +1694,11 @@ def Flow.verdictOf(rd: Flow.Read): Flow.Verdict = rd match
 
 def Flow.check(cx: Flow.Cx, f: Ast.Fn): Flow.Verdict = Flow.checkWith(Flow.plans(), cx, f)
 
-// f checked with the rule library compiled once (Flow.plans) for every def
-def Flow.checkWith(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn): Flow.Verdict =
-  val fs = Flow.facts(cx, f)
+def Flow.checkWith(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn): Flow.Verdict = Flow.checkIn(p, cx, f, Coll.Nil)
+
+// f checked with the rule library compiled once (Flow.plans) for every def, row in scope (Flow.facts)
+def Flow.checkIn(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Flow.Verdict =
+  val fs = Flow.facts(cx, f, row)
   D.run(Flow.planFor(p, Flow.seeds(fs)), fs) match
     case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
     case D.Unsafe(rel) => Flow.RulesUnsafe(rel)

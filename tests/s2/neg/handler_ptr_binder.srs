@@ -1,0 +1,23 @@
+// expect: error[capability-bound]
+// a handler op whose decl says Ptr^<self> returns memory of a region binder of its own fn, not of the receiver
+capability Pool:
+  state Open, Shut
+  start Open
+  stop Shut
+  def take <Open> (n: I64): Ptr^<self> <Open>
+  def shut <Open> (): Unit <Shut>
+  drop shut
+
+handler HPool for Pool:
+  def take {r: Region} (n: I64): Ptr = r.alloc(n)
+  def shut(): Unit = ()
+
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle p = HPool()
+  val x = p.take(8)
+  p.shut()
+  a.free()
+  0
+// expect: 'r'
+// expect: --> tests/s2/neg/handler_ptr_binder.srs:12

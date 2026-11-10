@@ -271,6 +271,13 @@ def S2c.flowAll(p: Flow.Plans, cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.L
           case Flow.RulesNegCycle(rel) => S2c.FlowBad(rel)
           case Flow.RulesIllTyped(rel) => S2c.FlowBad(rel)
         case _ => S2c.flowAll(p, cx, rest, acc)
+    // a handler's fns of ops whose result lives in self (Flow.checkHandler)
+    case Ast.DHandler(h) => Flow.checkHandler(p, cx, h) match
+      case Flow.Ok => S2c.flowAll(p, cx, rest, acc)
+      case Flow.Bad(cs) => S2c.flowAll(p, cx, rest, Coll.revOnto(cs, acc))
+      case Flow.RulesUnsafe(rel) => S2c.FlowBad(rel)
+      case Flow.RulesNegCycle(rel) => S2c.FlowBad(rel)
+      case Flow.RulesIllTyped(rel) => S2c.FlowBad(rel)
     case _ => S2c.flowAll(p, cx, rest, acc)
 
 def S2c.showNames(fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = cs match

@@ -1,0 +1,27 @@
+// expect: error[capability-bound]
+// a handler op whose decl says Ptr^<self> returns memory of another region (the Region its handle site keeps): the
+// caller would track it in the pool only, and read it after that region ends
+capability Pool:
+  state Open, Shut
+  start Open
+  stop Shut
+  def take <Open> (n: I64): Ptr^<self> <Open>
+  def shut <Open> (): Unit <Shut>
+  drop shut
+
+handler HPool for Pool:
+  def take(n: I64): Ptr = Region.alloc(n)
+  def shut(): Unit = ()
+
+def peek(p: Ptr): I64 = 7
+
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle p = HPool()
+  val x = p.take(8)
+  a.free()
+  val n = peek(x)
+  p.shut()
+  n
+// expect: 'eff.Region'
+// expect: --> tests/s2/neg/handler_ptr_region.srs:13

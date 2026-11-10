@@ -1,0 +1,27 @@
+// expect: error[capability-bound]
+// a handler op whose decl says Ptr^<self> returns memory of a region its body opens and frees
+capability Pool:
+  state Open, Shut
+  start Open
+  stop Shut
+  def take <Open> (n: I64): Ptr^<self> <Open>
+  def shut <Open> (): Unit <Shut>
+  drop shut
+
+handler HPool for Pool:
+  def take(n: I64): Ptr =
+    handle t = Srs.Arena()
+    val q = t.alloc(n)
+    t.free()
+    q
+  def shut(): Unit = ()
+
+def peek(p: Ptr): I64 = 7
+
+def main(): I64 =
+  handle p = HPool()
+  val n = peek(p.take(8))
+  p.shut()
+  n
+// expect: 't'
+// expect: --> tests/s2/neg/handler_ptr_local.srs:12

@@ -1,0 +1,14 @@
+// expect: error[mismatch]
+// a handler op whose result type is not the op's
+capability Tag:
+  def name(): Str
+
+handler HTag for Tag:
+  def name(): I64 = 5
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle t = HTag()
+  Console.print(t.name())
+  0
+// expect: --> tests/s2/neg/handler_result_type.srs:7

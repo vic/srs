@@ -1,0 +1,67 @@
+// pass: handler fns of ops whose result lives in self: one returns its own state, one an arg (c.op and P.op keep the
+// arg's region), one uses the Region its handle site keeps for its own work; a View{self} fn returns View's body type
+// (it makes the View)
+enum HL:
+  case HL.Nil
+  case HL.Cons(x: I64, rest: HL)
+
+def HL.mk(n: I64): HL = if n == 0 then HL.Nil else HL.Cons(n, HL.mk(n - 1))
+def HL.mkIn {r: Region} (n: I64): HL = HL.mk(n)
+def HL.sum(l: HL): I64 = l match
+  case HL.Nil => 0
+  case HL.Cons(x, rest) => x + HL.sum(rest)
+
+capability Pool:
+  state Open, Shut
+  start Open
+  stop Shut
+  def take <Open> (n: I64): Ptr^<self> <Open>
+  def keep <Open> (q: Ptr): Ptr^<self> <Open>
+  def work <Open> (n: I64): Ptr^<self> <Open>
+  def shut <Open> (): Unit <Shut>
+  drop shut
+
+handler HPool for Pool:
+  def init(): Ptr = Srs.noState()
+  def take(self: Ptr, n: I64): Ptr = self
+  def keep(self: Ptr, q: Ptr): Ptr = q
+  def work(self: Ptr, n: I64): Ptr =
+    val s = HL.sum(HL.mk(n)) + HL.sum(HL.mkIn(n))
+    if s > 0 then self else self
+  def shut(self: Ptr): Unit = ()
+
+capability Pad:
+  state Writing, Viewed, Gone
+  start Writing
+  stop Gone
+  def view <Writing> (): View{self} <Viewed>
+  transition ends Writing -> Gone, Viewed -> Gone
+  def done <s ends t> (): Unit <t>
+
+type View {b: Pad} <b: Viewed> = Ptr
+
+handler HPad for Pad:
+  def view(): Ptr = Srs.noState()
+  def done(): Unit = ()
+
+def peek(p: Ptr): I64 = 7
+def hash {b: Pad} <b: Viewed> (v: View): I64 = 5
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle p = HPool()
+  val x = p.take(8)
+  val y = p.keep(a.alloc(8))
+  val z = Pool.keep(a.alloc(8))
+  val w = p.work(3)
+  val n = peek(x) + peek(y) + peek(z) + peek(w)
+  p.shut()
+  a.free()
+  handle b = HPad()
+  val v = b.view()
+  val h = hash(v)
+  b.done()
+  Console.printI64(n + h)
+  Console.print("\n")
+  0
