@@ -233,7 +233,7 @@ def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I6
           case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
 
 def S2c.flowed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
-  S2c.flowAll(S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
+  S2c.flowAll(Flow.plans(), S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
@@ -256,20 +256,20 @@ def S2c.flowCx(ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.List[Ast.Proto]
     case _ => S2c.flowCx(rest, rows, ps, hs, fs, es, ts)
 
 // every def with a body: its flow clashes (all of them, in order)
-def S2c.flowAll(cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
+def S2c.flowAll(p: Flow.Plans, cx: Flow.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Flow.Clash]): S2c.Flowed = ds match
   case Coll.Nil => S2c.FlowOk(acc)
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Ast.Fn(_, _, _, _, _, _, body) = f
       body match
-        case Ast.Def(_, _) => Flow.check(cx, f) match
-          case Flow.Ok => S2c.flowAll(cx, rest, acc)
-          case Flow.Bad(cs) => S2c.flowAll(cx, rest, Coll.revOnto(cs, acc))
+        case Ast.Def(_, _) => Flow.checkWith(p, cx, f) match
+          case Flow.Ok => S2c.flowAll(p, cx, rest, acc)
+          case Flow.Bad(cs) => S2c.flowAll(p, cx, rest, Coll.revOnto(cs, acc))
           case Flow.RulesUnsafe(rel) => S2c.FlowBad(rel)
           case Flow.RulesNegCycle(rel) => S2c.FlowBad(rel)
           case Flow.RulesIllTyped(rel) => S2c.FlowBad(rel)
-        case _ => S2c.flowAll(cx, rest, acc)
-    case _ => S2c.flowAll(cx, rest, acc)
+        case _ => S2c.flowAll(p, cx, rest, acc)
+    case _ => S2c.flowAll(p, cx, rest, acc)
 
 def S2c.showNames(fs: Coll.List[S2c.File], cs: Coll.List[Names.Clash]): Unit = cs match
   case Coll.Nil => ()

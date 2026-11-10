@@ -493,11 +493,15 @@ def D.rulesAt(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List
     val hr = D.idOfRef(hrRef)
     D.rulesAt(rest, st, s, if D.stOf(st, hr) == s then Coll.Cons(rl, acc) else acc)
 
-def D.runStrata(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, top: I64, rels: Coll.IMap[D.Rel], rd: I64, k: I64): Coll.IMap[D.Rel] =
-  if s > top then rels
-  else
-    val D.Stage(rels2, rd2) = D.rounds(D.rulesAt(rs, st, s, Coll.Nil), rels, rd, k, D.FirstPass)
-    D.runStrata(rs, st, s + 1, top, rels2, rd2, k)
+// the rules of strata s..top, lowest first; a stratum with no rule stays in the list (it still takes a round)
+def D.byStratum(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, top: I64, acc: Coll.List[Coll.List[D.CRule]]): Coll.List[Coll.List[D.CRule]] =
+  if s > top then Coll.rev(acc) else D.byStratum(rs, st, s + 1, top, Coll.Cons(D.rulesAt(rs, st, s, Coll.Nil), acc))
+
+def D.runStrata(ss: Coll.List[Coll.List[D.CRule]], rels: Coll.IMap[D.Rel], rd: I64, k: I64): Coll.IMap[D.Rel] = ss match
+  case Coll.Nil => rels
+  case Coll.Cons(rs, rest) =>
+    val D.Stage(rels2, rd2) = D.rounds(rs, rels, rd, k, D.FirstPass)
+    D.runStrata(rest, rels2, rd2, k)
 
 // ── safety: every head variable and every variable of a negated atom occurs in a positive atom ──
 def D.allIn(vs: Coll.List[I64], bound: Coll.List[I64]): Bool = vs match
@@ -609,8 +613,46 @@ enum D.Result:
   case D.Unsafe(rel: Sym.Sym)
   case D.NegCycle(rel: Sym.Sym)
 
-// the model of rules over facts: strata in order, each to its fixpoint. ids: the rules' names in written order, then
-// the names only facts use
+// ── a program compiled once (bead vic-kpev.1): every part of a solve that depends on the rules only, so a rule
+// library solved many times pays for it once: the rules' name table, the empty relations with their probed columns,
+// the compiled rules of each stratum ──
+enum D.Prog:
+  case D.Prog(tab: Coll.List[D.RelRef], rels: Coll.IMap[D.Rel], strata: Coll.List[Coll.List[D.CRule]])
+
+// rules compiled: a program, or why they are not one (an unsafe rule, a cycle through negation)
+enum D.Compiled:
+  case D.Ready(p: D.Prog)
+  case D.UnsafeRule(rel: Sym.Sym)
+  case D.NegLoop(rel: Sym.Sym)
+
+// strata are bounded by the rules' relations (k): only heads are raised, and a stratification has fewer strata than
+// relations, so the names that only facts add can not change the strata of a program (only which head a cycle names)
+def D.compile(rules: Coll.List[D.Rule]): D.Compiled =
+  val D.With(tab, ds) = D.drafts(Coll.Nil, rules, 0, Coll.Nil)
+  val crs = D.crules(ds, D.headIds(ds, Coll.Nil), Coll.Nil)
+  D.firstUnsafe(crs) match
+    case Coll.Some(bad) => D.UnsafeRule(bad)
+    case Coll.None =>
+      val k = Coll.length(tab)
+      val st = D.strata(crs, Coll.Tip, k)
+      D.overHead(crs, st, k, Coll.None) match
+        case Coll.Some(cyc) => D.NegLoop(cyc)
+        case Coll.None => D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
+
+// the model of a compiled program over facts: strata in order, each to its fixpoint. ids: the rules' names in written
+// order, then the names only facts use
+def D.run(c: D.Compiled, facts: Coll.List[D.Fact]): D.Result = c match
+  case D.UnsafeRule(rel) => D.Unsafe(rel)
+  case D.NegLoop(rel) => D.NegCycle(rel)
+  case D.Ready(p) =>
+    val D.Prog(tab1, init, strata) = p
+    val D.With(tab, rels0) = D.load(tab1, facts, init)
+    val k = Coll.length(tab)
+    val D.Next(rels, _) = D.advance(rels0, 0, k, rels0, 0)
+    D.Solved(D.Model(tab, D.runStrata(strata, rels, D.firstRound(), k)))
+
+// the model of rules over facts, compiled for this solve. its cycle check is bounded by every relation, the facts'
+// too, so the head it names in a cycle can differ from D.compile's (bounded by the rules' relations)
 def D.solve(rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
   val D.With(tab1, ds) = D.drafts(Coll.Nil, rules, 0, Coll.Nil)
   val crs = D.crules(ds, D.headIds(ds, Coll.Nil), Coll.Nil)
@@ -624,7 +666,7 @@ def D.solve(rules: Coll.List[D.Rule], facts: Coll.List[D.Fact]): D.Result =
         case Coll.Some(cyc) => D.NegCycle(cyc)
         case Coll.None =>
           val D.Next(rels, _) = D.advance(rels0, 0, k, rels0, 0)
-          D.Solved(D.Model(tab, D.runStrata(crs, st, 0, D.topOf(st, 0, k, 0), rels, D.firstRound(), k)))
+          D.Solved(D.Model(tab, D.runStrata(D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil), rels, D.firstRound(), k)))
 
 def D.rowsOf(rows: Coll.List[D.Row], acc: Coll.List[Coll.List[D.Val]]): Coll.List[Coll.List[D.Val]] = rows match
   case Coll.Nil => acc

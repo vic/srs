@@ -1496,9 +1496,12 @@ def Flow.verdictOf(rd: Flow.Read): Flow.Verdict = rd match
     case Coll.Nil => Flow.Ok
     case Coll.Cons(_, _) => Flow.Bad(cs)
 
-def Flow.check(cx: Flow.Cx, f: Ast.Fn): Flow.Verdict =
+def Flow.check(cx: Flow.Cx, f: Ast.Fn): Flow.Verdict = Flow.checkWith(Flow.plans(), cx, f)
+
+// f checked with the rule library compiled once (Flow.plans) for every def
+def Flow.checkWith(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn): Flow.Verdict =
   val fs = Flow.facts(cx, f)
-  D.solve(Flow.rulesFor(fs), fs) match
+  D.run(Flow.planFor(p, Flow.seeds(fs)), fs) match
     case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
     case D.Unsafe(rel) => Flow.RulesUnsafe(rel)
     case D.NegCycle(rel) => Flow.RulesNegCycle(rel)
@@ -1549,7 +1552,7 @@ def Flow.boundRules(): Coll.List[D.Rule] =
   val fb2 = Flow.rule(Flow.RBoundBad, Flow.l2(8, 9), Flow.l5(Flow.pos(Flow.RFVar, Flow.l3(0, 13, 15)), Flow.pos(Flow.RHoldsAt, Flow.l4(0, 15, 3, 4)), Flow.neg(Flow.RInB, Flow.l2(13, 3)), Flow.pos(Flow.RBLine, Flow.l2(13, 8)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
   Flow.l4(bnd1, bnd2, fb1, fb2)
 
-// D compiles and stratifies every rule it is given, per def: a rule group runs only for a def with its seed facts (a
+// D runs every rule it is given, per def: a rule group runs only for a def with its seed facts (a
 // block end that closes a capability, a value bound to a capability state, a stated ^<...> bound); without them it
 // derives nothing
 enum Flow.Seeds:
@@ -1562,8 +1565,36 @@ def Flow.seedsOf(fs: Coll.List[D.Fact], cl: Sym.Sym, as: Sym.Sym, bl: Sym.Sym, s
     val Flow.Seeds(c, a, b) = s
     Flow.seedsOf(rest, cl, as, bl, Flow.Seeds(c || Sym.eq(rel, cl), a || Sym.eq(rel, as), b || Sym.eq(rel, bl)))
 
-def Flow.rulesFor(fs: Coll.List[D.Fact]): Coll.List[D.Rule] =
-  val Flow.Seeds(c, a, b) = Flow.seedsOf(fs, Flow.relSym(Flow.RClose), Flow.relSym(Flow.RAssignAt), Flow.relSym(Flow.RBLine), Flow.Seeds(false, false, false))
+def Flow.seeds(fs: Coll.List[D.Fact]): Flow.Seeds = Flow.seedsOf(fs, Flow.relSym(Flow.RClose), Flow.relSym(Flow.RAssignAt), Flow.relSym(Flow.RBLine), Flow.Seeds(false, false, false))
+
+// the rule library compiled once per run (bead vic-kpev.1), one program per mix of seeded groups: by close, then at,
+// then bound, each without the group and with it
+enum Flow.Plans:
+  case Flow.Plans(noClose: Flow.PlansAt, close: Flow.PlansAt)
+
+enum Flow.PlansAt:
+  case Flow.PlansAt(noAt: Flow.PlansBound, at: Flow.PlansBound)
+
+enum Flow.PlansBound:
+  case Flow.PlansBound(noBound: D.Compiled, bound: D.Compiled)
+
+def Flow.plans(): Flow.Plans = Flow.Plans(Flow.plansAt(false), Flow.plansAt(true))
+
+def Flow.plansAt(c: Bool): Flow.PlansAt = Flow.PlansAt(Flow.plansBound(c, false), Flow.plansBound(c, true))
+
+def Flow.plansBound(c: Bool, a: Bool): Flow.PlansBound = Flow.PlansBound(D.compile(Flow.rulesOf(Flow.Seeds(c, a, false))), D.compile(Flow.rulesOf(Flow.Seeds(c, a, true))))
+
+def Flow.planFor(p: Flow.Plans, s: Flow.Seeds): D.Compiled =
+  val Flow.Seeds(c, a, b) = s
+  val Flow.Plans(p0, p1) = p
+  val pa = if c then p1 else p0
+  val Flow.PlansAt(q0, q1) = pa
+  val pb = if a then q1 else q0
+  val Flow.PlansBound(r0, r1) = pb
+  if b then r1 else r0
+
+def Flow.rulesOf(s: Flow.Seeds): Coll.List[D.Rule] =
+  val Flow.Seeds(c, a, b) = s
   val r1 = if c then Coll.revOnto(Coll.rev(Flow.closeRules()), Flow.rules()) else Flow.rules()
   val r2 = if a then Coll.revOnto(Coll.rev(Flow.factRules()), r1) else r1
   if b then Coll.revOnto(Coll.rev(Flow.boundRules()), r2) else r2
