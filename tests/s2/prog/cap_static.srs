@@ -1,0 +1,28 @@
+// pass: static capabilities (s2/emit.srs Emit.staticsOf): main opens the program's one Console and one Files handle, so
+// one instance of each lives while the program runs; the rows of show, twice and size take no Console or Files param
+// (tests/run.sh greps the C), and size's Files.readAll reaches the Files state main's handle made (its kept Region)
+def show(n: I64): Unit =
+  Console.print("n=")
+  Console.printI64(n)
+  Console.printChar(10)
+
+def twice(n: I64): Unit =
+  show(n)
+  show(n + 1)
+
+// a written binder: loud passes its own Console to show, whose row binder eff.Console is dropped
+def loud {Console} (n: I64): Unit = show(n)
+
+def size(p: Str): I64 = Files.readAll(p) match
+  case Os.Ok(s) => Str.len(s)
+  case Os.Fail(_) => 0 - 1
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle f = Srs.Files()
+  twice(1)
+  show(size("tests/s2/fs/a.txt"))
+  loud(9)
+  Console.print("done\n")
+  0

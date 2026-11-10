@@ -1,0 +1,29 @@
+// pass: a second Console handle in a nested scope: two instances of Console live at once, so Console is not static
+// (s2/emit.srs Emit.staticsOf) and each row keeps its Console param. Tag answers say inside tagged and asks the
+// Console outside it (deep handlers); say before and after tagged reaches main's Srs.Console
+handler Tag for Console:
+  def print(s: Str): Unit =
+    Console.print("[")
+    Console.print(s)
+    Console.print("]")
+  def printI64(v: I64): Unit = Console.printI64(v)
+  def printChar(c: I64): Unit = Console.printChar(c)
+  def eprint(s: Str): Unit = Console.eprint(s)
+  def eprintI64(v: I64): Unit = Console.eprintI64(v)
+  def captureBegin(): Unit = Console.captureBegin()
+  def captureEnd(): Str = Console.captureEnd()
+
+def say(s: Str): Unit =
+  Console.print(s)
+  Console.printChar(10)
+
+def tagged(s: Str): Unit =
+  handle t = Tag()
+  say(s)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  say("plain")
+  tagged("inner")
+  say("after")
+  0

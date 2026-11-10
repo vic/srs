@@ -1,0 +1,11 @@
+// expect: error[unhandled-effect]
+// X5: a capability is static only when its one handle dominates every op of it (s2/emit.srs Emit.staticsOf); an op
+// outside that handle's extent is a checker error already: show(1) runs before main's only Console handle
+def show(n: I64): Unit = Console.printI64(n)
+
+def main(): I64 =
+  show(1)
+  handle c = Srs.Console()
+  show(2)
+  0
+// expect: --> tests/s2/neg/static_extent.srs:7

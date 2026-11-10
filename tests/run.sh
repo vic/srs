@@ -116,4 +116,9 @@ timeout 60 $CC -O0 -o "$B/s2c1_tailcall0" "$B/s2c1_tailcall.c" rt/srs_rt.c && ou
 # words are total in C (U32, U64): prog/bits under shift and signed-overflow traps; a shift count not taken mod the
 # width is C undefined behavior, and x86 masks it silently, so the plain run cannot see it
 timeout 60 $CC -fsanitize=shift,signed-integer-overflow -fsanitize-trap=shift,signed-integer-overflow -o "$B/s2c1_bits_ub" "$B/s2c1_bits.c" rt/srs_rt.c && out=$(timeout 1 "$B/s2c1_bits_ub") && [ "$out" = "$(cat tests/s2/prog/bits.out)" ] && echo "ok s2c prog bits under UB traps" || { echo "FAIL s2c prog bits under UB traps"; fail=1; }
+# static capabilities (s2/emit.srs Emit.staticsOf): main's one Console handle leaves no Console param in the rows;
+# a nested second Console handle, or a call of main, keeps the param
+if ! grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_static.c" && grep -q '^static srs_cap s_eff__Console = ' "$B/s2c1_cap_static.c"; then echo "ok s2c static Console: no param"; else echo "FAIL s2c static Console: param kept"; fail=1; fi
+if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_nested.c" && ! grep -q 's_eff__Console' "$B/s2c1_cap_nested.c"; then echo "ok s2c nested Console: param kept"; else echo "FAIL s2c nested Console: made static"; fail=1; fi
+if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_main_call.c" && ! grep -q 's_eff__Console' "$B/s2c1_cap_main_call.c"; then echo "ok s2c main called: param kept"; else echo "FAIL s2c main called: made static"; fail=1; fi
 exit $fail

@@ -1,0 +1,12 @@
+// pass: a fn that calls main could open main's handles a second time, so no capability is static (s2/emit.srs
+// Emit.staticsOf) and show keeps its Console param (tests/run.sh greps the C); back never takes the call
+def show(n: I64): Unit =
+  Console.printI64(n)
+  Console.printChar(10)
+
+def back(n: I64): I64 = if n < 0 then main() else n
+
+def main(): I64 =
+  handle c = Srs.Console()
+  show(back(7))
+  0
