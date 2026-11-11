@@ -2,3 +2,4 @@
 #include <stdint.h>
 typedef struct srs_cap srs_cap;
 void* srs_cap_alloc(srs_cap* c, int64_t size);
+int64_t rt_out_flush(void);

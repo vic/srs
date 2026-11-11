@@ -51,6 +51,7 @@ static void out_flush(void) {
   if (!wr_all(1, g_stdout.p, g_stdout.n)) { fputs("srs: cannot write stdout\n", stderr); _exit(70); }
   g_stdout.n = 0;
 }
+int64_t rt_out_flush(void) { out_flush(); return 0; }
 
 // ── main's stack (A14): $SRS_STACK bytes (suffix k, m or g), else srs_main_stack, which a program's own C may define
 // (a weak 0 here: main runs on the process stack). Set: rt_init calls main again on a thread whose stack is that size,
