@@ -1,0 +1,29 @@
+// expect: error[region-escape]
+// the Arena is opened inside an if arm of a block, not at the top of the handler fn: the scan finds it
+enum Oen.Tag:
+  case Oen.A
+  case Oen.B
+
+capability Oen:
+  def get(): Str
+
+handler Hoen for Oen:
+  def get(): Str =
+    val t = Oen.A
+    t match
+      case Oen.A =>
+        if true then
+          handle r = Srs.Arena()
+          val n = 3
+          val xs: Array[U8](n) = Array.fill(n, U8.of(66))
+          Str.ofBytes(n, xs)
+        else "no"
+      case Oen.B => "b"
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle h = Hoen()
+  Console.print(Oen.get())
+  0
+// expect: --> tests/s2/neg/op_result_escape_nested.srs:16

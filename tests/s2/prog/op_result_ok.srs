@@ -1,0 +1,25 @@
+// pass: an unannotated op result a handler fn builds without closing a region stays legal: a scalar, a literal Str, and
+// an enum built in the region the handler was opened in
+enum Or.Pair:
+  case Or.Pair(a: I64, b: I64)
+
+capability Or:
+  def num(): I64
+  def word(): Str
+  def pair(): Or.Pair
+
+handler Hor for Or:
+  def num(): I64 = 7
+  def word(): Str = "ok"
+  def pair(): Or.Pair = Or.Pair(3, 4)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle h = Hor()
+  Console.printI64(Or.num())
+  Console.print(Or.word())
+  Or.pair() match
+    case Or.Pair(a, b) => Console.printI64(a + b)
+  Console.print("\n")
+  0

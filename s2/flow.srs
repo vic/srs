@@ -917,8 +917,55 @@ def Flow.checkOps(p: Flow.Plans, cx: Flow.Cx, pr: Sym.Sym, row: Coll.List[Ast.Bi
       case Flow.RulesNegCycle(rel) => Flow.RulesNegCycle(rel)
       case Flow.RulesIllTyped(rel) => Flow.RulesIllTyped(rel)
 
-// fn f of op n as the def Flow checks, its result <> (in no capability); none when op n's result names no capability
-// (it lives nowhere the op knows of)
+// does a fn body open a region (an Ast.Handle anywhere in it)? In a handler fn memory can die only in a region its own body
+// opens: its args, the row capabilities and the receiver outlive the call, and a callee's result is checked by Flow.def.
+// Every Expr and Stmt case is written out (no `_` arm): a new AST case is a compile error here, not a silent skip.
+def Flow.bodyOpens(b: Ast.Body): Bool = b match
+  case Ast.Def(_, e) => Flow.opens(e)
+  case Ast.Extern(_) => false
+
+def Flow.opens(e: Ast.Expr): Bool = e match
+  case Ast.Int(_, _) => false
+  case Ast.Bool(_, _) => false
+  case Ast.Str(_, _) => false
+  case Ast.Unit(_) => false
+  case Ast.Name(_, _) => false
+  case Ast.Call(_, _, _, _, args) => Flow.opensAll(args)
+  case Ast.Method(_, _, _, args) => Flow.opensAll(args)
+  case Ast.Resume(_, _, a) => Flow.opens(a)
+  case Ast.Bin(_, _, l, r) => Flow.opens(l) || Flow.opens(r)
+  case Ast.Un(_, _, x) => Flow.opens(x)
+  case Ast.If(_, c, t, x) => Flow.opens(c) || Flow.opens(t) || Flow.opens(x)
+  case Ast.Match(_, s, arms) => Flow.opens(s) || Flow.opensArms(arms)
+  case Ast.Block(_, ss, last) => Flow.opensStmts(ss) || Flow.opens(last)
+  case Ast.While(_, c, b) => Flow.opens(c) || Flow.opens(b)
+  case Ast.Assign(_, _, x) => Flow.opens(x)
+  case Ast.Quant(_, _, _, _, x) => Flow.opens(x)
+
+def Flow.opensAll(es: Coll.List[Ast.Expr]): Bool = es match
+  case Coll.Nil => false
+  case Coll.Cons(e, rest) => Flow.opens(e) || Flow.opensAll(rest)
+
+def Flow.opensArms(arms: Coll.List[Ast.Arm]): Bool = arms match
+  case Coll.Nil => false
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, body) = a
+    Flow.opens(body) || Flow.opensArms(rest)
+
+def Flow.opensStmts(ss: Coll.List[Ast.Stmt]): Bool = ss match
+  case Coll.Nil => false
+  case Coll.Cons(s, rest) => Flow.opensStmt(s) || Flow.opensStmts(rest)
+
+def Flow.opensStmt(s: Ast.Stmt): Bool = s match
+  case Ast.Val(_, _, _, e) => Flow.opens(e)
+  case Ast.Var(_, _, _, e) => Flow.opens(e)
+  case Ast.Handle(_, _, _, _) => true
+  case Ast.Do(e) => Flow.opens(e)
+  case Ast.Check(_, _, e) => Flow.opens(e)
+
+// fn f of op n as the def Flow checks: its result <> (in no capability) when the op result names one (self); an unannotated op
+// result keeps its own (inferred) rule, as a def result does, but only when the body opens a region (Flow.bodyOpens): memory of
+// a region the fn closes is error[region-escape]. A body that opens none has nothing that dies, and pays no check.
 def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
   val Ast.Fn(line, n, gs, params, ret, exit, body) = f
   val Ast.Ty(rl, rn, ras, _, rvs) = ret
@@ -929,7 +976,7 @@ def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
     case Coll.Some(t) =>
       val Ast.Ty(_, _, _, caps, _) = t
       caps match
-        case Ast.Inferred => Coll.None
+        case Ast.Inferred => if Flow.bodyOpens(body) then Coll.Some(f) else Coll.None
         case Ast.Stated(_) => Coll.Some(g)
         case Ast.Chosen(_) => Coll.Some(g)
 
