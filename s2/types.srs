@@ -56,6 +56,8 @@ enum Ty.Clash:
   case Ty.UnhandledEffect(line: I64, p: Sym.Sym)
   // in a given's fn, a capability its trait method does not declare (vic Q2: the given's row is a subset)
   case Ty.GivenRow(line: I64, p: Sym.Sym)
+  // a world capability (Srs.Env, Srs.Files, Srs.Clock, Srs.Net) handled outside main by a def that holds no binder of it
+  case Ty.AmbientWorld(line: I64, p: Sym.Sym)
   // an rt_* extern called outside the fns of a handler named Srs.*
   case Ty.RtOutsideSrs(line: I64, f: Sym.Sym)
   // a libc extern called outside the fns of a handler named Srs.*
@@ -121,6 +123,8 @@ enum Ty.Mode:
 // whose body runs: only the fns of a handler named Srs.* may call rt_* (vic 2026-11-09)
 enum Ty.By:
   case Ty.User
+  // the user def main: the one place a world capability is handled
+  case Ty.Main
   case Ty.Srs
   // a fn of a given: its capabilities are its trait method's {} binders
   case Ty.Given
@@ -1398,7 +1402,7 @@ def Ty.block(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ss: Coll.L
       val Ty.Cx(_, _, _, hs, _, mode, _, rows, _, _, idx) = cx
       val mp = Ty.protoOf(hs, h)
       val st0 = if Ty.isMultiShot(hs, h) then Ty.shapeFns(cx, Ty.shape(cx, st, x, mp, rest, last), mp, Ty.cpsCallsE(cx, mp, last, Ty.cpsCalls(cx, mp, rest, Coll.Nil)), Coll.Nil) else st
-      val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, st0, sl, h), bs, xs, Coll.Nil)
+      val Ty.Es(st1, eargs) = Ty.exprs(cx, Ty.pureHandle(mode, Ty.ambient(cx, st0, bs, sl, h, mp), sl, h), bs, xs, Coll.Nil)
       val Ty.Caps(st2, caps) = Ty.rowCaps(cx, st1, bs, sl, Eff.row(rows, h), Coll.Nil)
       val bs2 = Coll.Cons(Ty.Bind(x, K.Con(Ty.protoOf(hs, h), Coll.Nil)), bs)
       Ty.multiOf(hs, h) match
@@ -1477,8 +1481,9 @@ enum Ty.FnEx:
   case Ty.FnEx(st: Ty.St, f: El.Fn)
 
 // row: the implicit capabilities (s2/eff.srs), outermost locals, C params after the written ones
-def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
+def Ty.fn(cx0: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val Ast.Fn(line, name, gs, ps, ret, _, body) = f
+  val cx = Ty.mainCx(cx0, name)
   val Ty.Cx(_, _, protos, _, _, _, _, _, _, arr, idx) = cx
   val tps = Ty.tparams(gs, Coll.Nil)
   // A1: each I64 param has an identity; the param types and the result name lengths by it
@@ -1496,6 +1501,40 @@ def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
     case Ast.Def(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
       Ty.FnEx(Ty.mhPlace(st1, eb), El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
+
+// a user def named main runs as Ty.Main
+def Ty.mainCx(cx: Ty.Cx, name: Sym.Sym): Ty.Cx =
+  val Ty.Cx(fns, es, ps, hs, trs, mode, imp, rows, vals, arr, idx) = cx
+  mode match
+    case Ty.Run(by) => by match
+      case Ty.User => if Str.eq(Sym.str(name), "main") then Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.Main), imp, rows, vals, arr, idx) else cx
+      case Ty.Main => cx
+      case Ty.Srs => cx
+      case Ty.Given => cx
+      case Ty.MultiOp(_, _, _) => cx
+    case Ty.Comptime => cx
+
+// a world capability is handled only in main, or where a binder already holds it (object capability: no ambient authority)
+def Ty.ambient(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, h: Sym.Sym, p: Sym.Sym): Ty.St =
+  val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, _) = cx
+  if !Ty.worldHandler(h) then st
+  else mode match
+    case Ty.Run(by) => by match
+      case Ty.Main => st
+      case Ty.User => Ty.held(st, bs, line, p)
+      case Ty.Srs => Ty.held(st, bs, line, p)
+      case Ty.Given => Ty.held(st, bs, line, p)
+      case Ty.MultiOp(_, _, _) => Ty.held(st, bs, line, p)
+    case Ty.Comptime => st
+
+def Ty.held(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.Sym): Ty.St =
+  Ty.innermost(Ty.subst(st), bs, p) match
+    case Coll.Some(_) => st
+    case Coll.None => Ty.clash(st, Ty.AmbientWorld(line, p))
+
+def Ty.worldHandler(h: Sym.Sym): Bool =
+  val s = Sym.str(h)
+  Str.eq(s, "Srs.Env") || Str.eq(s, "Srs.Files") || Str.eq(s, "Srs.Clock") || Str.eq(s, "Srs.Net")
 
 def Ty.rowBinds(row: Coll.List[Eff.Cap], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = row match
   case Coll.Nil => acc

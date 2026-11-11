@@ -1,0 +1,15 @@
+// pass: a def that already holds Env through its binder may install Srs.Env locally
+// env: SRS_T_AMB=abc
+def AR.inner {Env} (): Str =
+  handle e2 = Srs.Env()
+  Env.get("SRS_T_AMB") match
+    case Os.Unset => "unset"
+    case Os.Set(s) => s
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle e = Srs.Env()
+  Console.print(AR.inner())
+  Console.print("\n")
+  0

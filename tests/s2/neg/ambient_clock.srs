@@ -1,0 +1,13 @@
+// expect: error[ambient-world]
+// expect: --> tests/s2/neg/ambient_clock.srs:5
+// a def that holds no Clock binder installs Srs.Clock itself: ambient authority
+def peek(): Unit =
+  handle e = Srs.Clock()
+  Clock.now()
+  ()
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  peek()
+  0
