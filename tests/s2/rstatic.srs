@@ -1,7 +1,8 @@
 // s2 component (Region static, rule of Emit.staticsOf): El-level, not a grep of C. each probe is the prelude plus one program
 // with ONE Arena handle in main; the line says whether Emit.staticsOf makes Region a file-static instance. static = 1 only
 // when no Region binder {r: Region} is written anywhere. every namesRegion arm has its probe: a def, a named call, a handler
-// fn, a trait method, a trait head, a given head, a given method. a mutant that drops an arm (or the whole named
+// fn, a trait method, a trait head, a given head, a given method; a top-level extern names
+// none (static stays 1). a mutant that drops an arm (or the whole named
 // condition) prints 1 where 0 is expected
 def RS.src(s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
   case Parse.Ok(ds, _) => ds
@@ -46,5 +47,6 @@ def main(): I64 =
   RS.probe("traithead", "trait Tr [A: Type] {q: Region}:\n  def mk(x: A): A\ngiven Tr[I64]:\n  def mk(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
   RS.probe("givenhead", "trait Tr [A: Type]:\n  def mk(x: A): A\ngiven {q: Region} Tr[I64]:\n  def mk(x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
   RS.probe("givenfn", "trait Tr [A: Type]:\n  def mk(x: A): A\ngiven Tr[I64]:\n  def mk {q: Region} (x: I64): I64 = x\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
+  RS.probe("extern", "extern def ext {q: Region} (x: I64): I64\ndef main(): I64 =\n  handle r = Srs.Arena()\n  0\n", lib)
   RS.probe("two", "def main(): I64 =\n  handle r = Srs.Arena()\n  handle q = Srs.Heap()\n  0\n", lib)
   0

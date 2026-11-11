@@ -211,6 +211,7 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.eq(x, "Str") then Console.print("srs_str")
     else if Str.eq(x, "Ptr") then Console.print("void*")
     else if Str.eq(x, "U32") then Console.print("uint32_t")
+    else if Str.eq(x, "U8") then Console.print("uint8_t")
     else if Str.eq(x, "U64") then Console.print("uint64_t")
     // A1: Array[A](n) is one pointer to its elements (no header); Cell[A] a pointer to its word
     else if Str.eq(x, "Array") || Str.eq(x, "Cell") then Emit.arrayC(cx, args)
@@ -1240,11 +1241,11 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs match
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
-  Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
+  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
-  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le")
+  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8")
 
 // C conversion to an unsigned type is mod 2^width (C11 6.3.1.3p2); uint64_t to int64_t above INT64_MAX is
 // implementation-defined (6.3.1.3p3), two's complement on every target compiler (gcc, clang)
@@ -1255,6 +1256,8 @@ def Emit.wordPrims(): Unit =
   Console.print("static inline uint64_t U64__ofI64(int64_t x) { return (uint64_t)x; }\n")
   Console.print("static inline int64_t I64__of(uint32_t x) { return x; }\n")
   Console.print("static inline int64_t I64__ofU64(uint64_t x) { return (int64_t)x; }\n")
+  Console.print("static inline uint8_t U8__of(int64_t x) { return (uint8_t)x; }\n")
+  Console.print("static inline int64_t I64__ofU8(uint8_t x) { return x; }\n")
   Emit.wordLoad("32", "uint32_t", "4", "__builtin_bswap32")
   Emit.wordLoad("64", "uint64_t", "8", "__builtin_bswap64")
 
@@ -1287,6 +1290,7 @@ def Emit.strPrims(): Unit =
   Console.print("  if (b < 0) b = 0;\n  if (e > s.n) e = s.n;\n  if (e < b) e = b;\n")
   Console.print("  return (srs_str){s.p + b, e - b};\n}\n")
   Console.print("static inline bool Str__eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }\n")
+  Console.print("static inline srs_str Str__ofBytes(void* r, int64_t n, uint8_t* xs) { return (srs_str){xs, n}; }\n")
 
 def Emit.ptrs(tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = tps match
   case Coll.Nil => acc
@@ -2136,7 +2140,7 @@ def Emit.namesRegion(ds: Coll.List[Ast.Decl]): Bool = ds match
   case Coll.Nil => false
   case Coll.Cons(d, rest) =>
     val named = d match
-      case Ast.DFn(f) => Emit.fnNamesRegion(f)
+      case Ast.DFn(f) => Emit.declFnNamesRegion(f)
       case Ast.DVal(f) => Emit.fnNamesRegion(f)
       case Ast.DHandler(h) =>
         val Ast.Handler(_, _, _, fns, _) = h
@@ -2157,6 +2161,15 @@ def Emit.fnsNameRegion(fs: Coll.List[Ast.Fn]): Bool = fs match
 def Emit.fnNamesRegion(f: Ast.Fn): Bool =
   val Ast.Fn(_, _, gs, _, _, _, _) = f
   Emit.groupsNameRegion(gs)
+
+// a top-level extern is C, with no body to name a region in: its binder (Str.ofBytes) names none the caller chooses, so
+// it must not turn Region static off for every program that carries the prelude. a trait method signature is also an
+// Ast.Extern body, but it does name one, so it goes through fnNamesRegion
+def Emit.declFnNamesRegion(f: Ast.Fn): Bool =
+  val Ast.Fn(_, _, _, _, _, _, body) = f
+  body match
+    case Ast.Extern => false
+    case _ => Emit.fnNamesRegion(f)
 
 def Emit.groupsNameRegion(gs: Coll.List[Ast.Group]): Bool = gs match
   case Coll.Nil => false
