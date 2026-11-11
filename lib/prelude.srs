@@ -50,7 +50,7 @@ def Srs.Arena.hUsed(): I64 = 1
 def Srs.Arena.hCap(): I64 = 2
 def Srs.Arena.header(): I64 = 24
 def Srs.Arena.chunk(): I64 = 1048576
-def Srs.Arena.reserve(): I64 = 67108864
+def Srs.Arena.reserve(): I64 = 33554432
 def Srs.Arena.huge(): I64 = 2097152
 def Srs.Arena.page(): I64 = 4096
 
@@ -80,7 +80,7 @@ def Srs.Arena.pages(size: I64): Ptr =
     val p = Srs.Arena.map(want + Srs.Arena.huge())
     val mask = U64.ofI64(Srs.Arena.huge() - 1)
     val a = rt_ptr_of((rt_ptr_addr(p) + mask) & ~mask)
-    val adv = madvise(a, U64.ofI64(want), MADV_HUGEPAGE)
+    val adv = Srs.Pages.advise(g, a, want)
     rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
     rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
     Srs.Arena.take(g, n)
@@ -164,6 +164,101 @@ handler Srs.Arena for Region:
   def init(): Ptr = Srs.Arena.newArena()
   def alloc(self: Ptr, size: I64): Ptr = Srs.Arena.alloc(self, size)
   def free(self: Ptr): Unit = Srs.Arena.free(self)
+
+// ── Pages: the one authority to ask the kernel for huge pages. A program that never handles Srs.Pages (only main may,
+// Ty.worldHandler) gets no advice. The Arena advises each fresh reservation while the gate is On: main arms it with the
+// machine-wide count of failed huge-page faults (/proc/vmstat thp_fault_fallback), and it shuts for good once more than
+// Srs.Pages.limit() failed since (each failure cost a compaction stall). The gate is the rt_globals words tag, base and
+// seen (the last count read); only Srs.Gate.arm and Srs.Gate.shut write tag, and nothing turns a Shut gate On again.
+// A constructor with a field allocates in a Region and the prelude fns have none, so the gate enum has no field: base is a word.
+enum Srs.Gate:
+  case Srs.GateIdle
+  case Srs.GateOn
+  case Srs.GateShut
+
+def Srs.Gate.tag(): I64 = 6
+def Srs.Gate.base(): I64 = 7
+def Srs.Gate.seen(): I64 = 8
+
+def Srs.Gate.read(g: Ptr): Srs.Gate =
+  val t = rt_ptr_get(g, Srs.Gate.tag())
+  if t == 1 then Srs.GateOn
+  else if t == 2 then Srs.GateShut
+  else Srs.GateIdle
+
+def Srs.Gate.shut(g: Ptr): Unit = rt_ptr_set(g, Srs.Gate.tag(), 2)
+
+def Srs.Gate.idle(g: Ptr): Bool = Srs.Gate.read(g) match
+  case Srs.GateIdle => true
+  case Srs.GateOn => false
+  case Srs.GateShut => false
+
+def Srs.Gate.on(g: Ptr): Unit =
+  rt_ptr_set(g, Srs.Gate.base(), rt_ptr_get(g, Srs.Gate.seen()))
+  rt_ptr_set(g, Srs.Gate.tag(), 1)
+
+// Idle -> On with the count last seen as the base; any other state stays as it is
+def Srs.Gate.arm(g: Ptr): Unit = if Srs.Gate.idle(g) then Srs.Gate.on(g) else ()
+
+def Srs.Pages.limit(): I64 = 64
+
+// the index after the next newline, or the length of s
+def Srs.Pages.eol(s: Str, i: I64): I64 =
+  if i >= Str.len(s) then i
+  else if Str.at(s, i) == 10 then i + 1
+  else Srs.Pages.eol(s, i + 1)
+
+def Srs.Pages.num(s: Str, i: I64, acc: I64): I64 =
+  if i < Str.len(s) && Str.at(s, i) >= 48 && Str.at(s, i) <= 57 then Srs.Pages.num(s, i + 1, acc * 10 + Str.at(s, i) - 48)
+  else acc
+
+def Srs.Pages.keep(g: Ptr, n: I64): Bool =
+  rt_ptr_set(g, Srs.Gate.seen(), n)
+  true
+
+// the line "thp_fault_fallback N" (the space ends the name: thp_fault_fallback_charge is another line): N goes to seen
+def Srs.Pages.scan(g: Ptr, s: Str, i: I64): Bool =
+  if i + 19 > Str.len(s) then false
+  else if Str.eq(Str.slice(s, i, i + 19), "thp_fault_fallback ") then Srs.Pages.keep(g, Srs.Pages.num(s, i + 19, 0))
+  else Srs.Pages.scan(g, s, Srs.Pages.eol(s, i))
+
+// true when the count was read into seen
+def Srs.Pages.sample(g: Ptr): Bool = Srs.Pages.read(g, rt_fs_read_all("/proc/vmstat"))
+
+// a failed read is a Str of negative length (rt_fs_read_all)
+def Srs.Pages.read(g: Ptr, s: Str): Bool = if Str.len(s) < 0 then false else Srs.Pages.scan(g, s, 0)
+
+def Srs.Pages.huge(a: Ptr, len: I64): Unit =
+  val r = madvise(a, U64.ofI64(len), MADV_HUGEPAGE)
+  ()
+
+// an unreadable count or more than limit() failures since arming shuts the gate
+def Srs.Pages.step(g: Ptr, a: Ptr, len: I64, ok: Bool): Unit =
+  if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then Srs.Pages.huge(a, len)
+  else Srs.Gate.shut(g)
+
+// advise len bytes at a (a fresh, 2 MiB aligned reservation) while the gate is On
+def Srs.Pages.advise(g: Ptr, a: Ptr, len: I64): Unit = Srs.Gate.read(g) match
+  case Srs.GateIdle => ()
+  case Srs.GateShut => ()
+  case Srs.GateOn => Srs.Pages.step(g, a, len, Srs.Pages.sample(g))
+
+def Srs.Pages.arm(): Ptr =
+  val g = rt_globals()
+  val ok = Srs.Pages.sample(g)
+  val r = if ok then Srs.Gate.arm(g) else Srs.Gate.shut(g)
+  g
+
+capability Pages:
+  // false once the gate shut (or when main armed none)
+  def live(): Bool
+
+handler Srs.Pages for Pages:
+  def init(): Ptr = Srs.Pages.arm()
+  def live(self: Ptr): Bool = Srs.Gate.read(self) match
+    case Srs.GateOn => true
+    case Srs.GateIdle => false
+    case Srs.GateShut => false
 
 // strings: pure primitives, no effect (vic 2026-11-09)
 extern def Str.len(s: Str): I64

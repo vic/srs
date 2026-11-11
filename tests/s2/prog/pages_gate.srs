@@ -1,0 +1,19 @@
+// pass: main installs Srs.Pages, which arms the huge-page gate (tests/run.sh checks the C compiles); the Arena then
+// fills 60 MiB of 1 MiB chunks, so two reservations are advised or not by the gate, and every word reads back
+def Pg.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Pg.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def Pg.go {r: Region} (k: I64, acc: I64): I64 =
+  if k == 0 then acc
+  else
+    val n = 100000
+    val a = Array.fill(n, 1)
+    Pg.go(k - 1, acc + Pg.sum(n, a, 0, 0))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle p = Srs.Pages()
+  handle r = Srs.Arena()
+  Console.printI64(Pg.go(75, 0))
+  Console.print("\n")
+  0

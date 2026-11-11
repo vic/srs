@@ -1,0 +1,18 @@
+// pass: the same fill with no Srs.Pages: the gate stays idle and nothing is advised (no MADV_HUGEPAGE under strace)
+def Pn.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Pn.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def Pn.go {r: Region} (k: I64, acc: I64): I64 =
+  if k == 0 then acc
+  else
+    val n = 100000
+    val a = Array.fill(n, 1)
+    Pn.go(k - 1, acc + Pn.sum(n, a, 0, 0))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  
+  handle r = Srs.Arena()
+  Console.printI64(Pn.go(75, 0))
+  Console.print("\n")
+  0

@@ -55,9 +55,12 @@ ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v stra
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
 if [ ! -x "${ST:-}" ]; then echo "FAIL prog/out_big: strace missing"; fail=1
 elif [ "${w:-0}" -gt 1 ]; then echo "ok prog/out_big writes $w"; else echo "FAIL prog/out_big writes ${w:-none}, want > 1"; fail=1; fi
-# Arena chunks come from srs_pages, advised for huge pages: prog/alloc_chunks fills more than one 1 MiB chunk
+# Arena chunks are advised for huge pages only when main installs Srs.Pages: prog/alloc_chunks (no Pages) fills more than one 1 MiB chunk and gets
+# no advice, prog/pages_gate (Pages) fills three reservations and gets some while the gate is On
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_alloc_chunks" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
-if [ "${h:-0}" -ge 1 ]; then echo "ok prog/alloc_chunks huge-page advice $h"; else echo "FAIL prog/alloc_chunks no MADV_HUGEPAGE"; fail=1; fi
+if [ "${h:-0}" -eq 0 ]; then echo "ok prog/alloc_chunks no advice without Pages"; else echo "FAIL prog/alloc_chunks advised $h without Pages"; fail=1; fi
+h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_pages_gate" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
+if [ "${h:-0}" -ge 1 ]; then echo "ok prog/pages_gate huge-page advice $h"; else echo "FAIL prog/pages_gate no MADV_HUGEPAGE"; fail=1; fi
 for t in tests/s2/neg/*.srs; do
   n=$(basename "$t" .srs); pass=1
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
@@ -208,7 +211,7 @@ for pair in "corpus:$CSRCF" "s2c:$S2C" "tiny:lib/prelude.srs tests/s2/fragbase/t
 done
 out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny_grow.srs 2>/dev/null); msg=$(frag_ratchet tiny "$FB" "$out"); code=$?
 case "$msg" in *"stmt-expr grew"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: one extra match grows stmt-expr" || { echo "FAIL fragment ratchet armed (grow)"; fail=1; };; *) echo "FAIL fragment ratchet armed (grow): $msg"; fail=1;; esac
-sed 's/^tiny stmt-expr .*/tiny stmt-expr 80/' "$FB" > "$B/fragment.low"
+awk '$1 == "tiny" && $2 == "stmt-expr" {$3 = $3 + 1} {print}' "$FB" > "$B/fragment.low"
 out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny.srs 2>/dev/null); msg=$(frag_ratchet tiny "$B/fragment.low" "$out"); code=$?
 case "$msg" in *"stmt-expr shrank"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: a decrease needs a base update" || { echo "FAIL fragment ratchet armed (shrink)"; fail=1;};; *) echo "FAIL fragment ratchet armed (shrink): $msg"; fail=1;; esac
 exit $fail
