@@ -1,0 +1,22 @@
+// pass: vic-6z7p.25 a def that requests an op with a {r: Region} binder gets Region in its inferred row, like a call of a
+// def with {r: Region}: Rr.go has no annotation and takes the Region of its caller; Rr.m names the capability as evidence
+capability Rg:
+  def mk {r: Region} (n: I64): Str<r>
+
+handler Hrg for Rg:
+  def mk {r: Region} (n: I64): Str<r> =
+    val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+    Str.ofBytes(n, xs)
+
+def Rr.go(n: I64): Str = Rg.mk(n)
+
+def Rr.m {h: Rg} (n: I64): Str = h.mk(n)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle h = Hrg()
+  Console.print(Rr.go(3))
+  Console.print(Rr.m(2))
+  Console.print("\n")
+  0

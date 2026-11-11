@@ -298,6 +298,30 @@ def Eff.isFn(m: Coll.SMap[Eff.Callee], x: Sym.Sym): Bool = Coll.sLookup(m, x) ma
   case Coll.Some(_) => true
   case Coll.None => false
 
+// an op with {} binders of its own (3e: {r: Region}) takes those capabilities from its caller: the request needs each
+// protocol too (so the def's row gets it, as for a call of a def with such a binder)
+def Eff.opNeedsQ(cx: Eff.Cx, at: Eff.At, q: Coll.Option[Eff.Req], w: Eff.W): Eff.W = q match
+  case Coll.None => w
+  case Coll.Some(rq) =>
+    val Eff.Req(p, op) = rq
+    Eff.opNeeds(cx, at, p, op, w)
+
+def Eff.opNeeds(cx: Eff.Cx, at: Eff.At, p: Sym.Sym, op: Sym.Sym, w: Eff.W): Eff.W =
+  val Eff.Cx(ps, _, _, _, _, _) = cx
+  Ty.protoOp(ps, p, op) match
+    case Coll.None => w
+    case Coll.Some(o) =>
+      val Ast.Op(_, _, ogs, _, _, _) = o
+      Eff.needsOf(cx, at, Ty.evidence(ogs, Coll.Nil), w)
+
+def Eff.needsOf(cx: Eff.Cx, at: Eff.At, bs: Coll.List[Ast.Binder], w: Eff.W): Eff.W = bs match
+  case Coll.Nil => w
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    val Ast.Ty(_, tn, _, _, _) = t
+    val Eff.Cx(ps, _, _, _, _, _) = cx
+    Eff.needsOf(cx, at, rest, if Ty.isProto(ps, tn) then Eff.req(cx, at, tn, w) else w)
+
 def Eff.reqTo(cx: Eff.Cx, at: Eff.At, q: Coll.Option[Eff.Req], w: Eff.W): Eff.W = q match
   case Coll.Some(rq) =>
     val Eff.Req(p, _) = rq
@@ -334,7 +358,7 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     else if Eff.isIn(ctors, g) || Eff.isArrayNew(ss, g) then Eff.req(cx, at, region, w1)
     // Cell.put(c, v) and Array.put(xs, i, v) write (A1, A1b): a request on Mut, so a fn that writes has Mut in its row
     else if Str.eq(Sym.str(g), "Cell.put") || Str.eq(Sym.str(g), "Array.put") then Eff.req(cx, at, Sym.of("Mut"), w1)
-    else Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1)
+    else Eff.opNeedsQ(cx, at, Eff.reqOf(ps, g), Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1))
   // a trait method on {} evidence requests the capabilities the method declares (vic Q2); xs.at(i) on a local (an
   // array, A1) builds an Array.Index in the innermost Region
   case Ast.Method(_, recv, op, xs) =>
@@ -342,7 +366,7 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     val Eff.Cx(ps, _, _, _, ss, trs) = cx
     val Eff.Syms(_, _, _, _, region, _, _) = ss
     Eff.binderTy(ev, recv) match
-      case Coll.Some(tn) => Eff.capReqs(cx, at, Ty.methodCaps(ps, trs, tn, op), Eff.exprs(cx, at, xs, w))
+      case Coll.Some(tn) => Eff.opNeeds(cx, at, tn, op, Eff.capReqs(cx, at, Ty.methodCaps(ps, trs, tn, op), Eff.exprs(cx, at, xs, w)))
       case Coll.None => if Str.eq(Sym.str(op), "at") then Eff.req(cx, at, region, Eff.exprs(cx, at, xs, w)) else Eff.exprs(cx, at, xs, w)
   // what the rest of the block requests is the handle site's, not the op's
   case Ast.Resume(_, _, x) => Eff.expr(cx, at, x, w)
