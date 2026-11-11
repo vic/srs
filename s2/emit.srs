@@ -1315,11 +1315,12 @@ def Emit.wordLoad(bits: Str, ty: Str, bytes: Str, swap: Str): Unit =
   Console.print("; k++) if (i + k >= 0 && i + k < s.n) v |= (")
   Console.print(ty)
   Console.print(")s.p[i + k] << (8 * k);\n  return v;\n}\n")
-
+// the semantics of rt_str_* in rt/srs_rt.c: at is -1 out of range; slice clamps b to [0, n] and e to [b, n]
+// Str__at tests 0 <= i < n as one unsigned compare: a negative i becomes at least 2^63 as a uint64_t and n <= INT64_MAX, so the one test is equal to the two signed ones (one cmp and one branch, not setcc pairs)
 // the semantics of rt_str_* in rt/srs_rt.c: at is -1 out of range; slice clamps b to [0, n] and e to [b, n]
 def Emit.strPrims(): Unit =
   Console.print("static inline int64_t Str__len(srs_str s) { return s.n; }\n")
-  Console.print("static inline int64_t Str__at(srs_str s, int64_t i) { return (i >= 0 && i < s.n) ? s.p[i] : -1; }\n")
+  Console.print("static inline int64_t Str__at(srs_str s, int64_t i) { return (uint64_t)i < (uint64_t)s.n ? s.p[i] : -1; }\n")
   Console.print("static inline srs_str Str__slice(srs_str s, int64_t b, int64_t e) {\n")
   Console.print("  if (b < 0) b = 0;\n  if (e > s.n) e = s.n;\n  if (e < b) e = b;\n")
   Console.print("  return (srs_str){s.p + b, e - b};\n}\n")
