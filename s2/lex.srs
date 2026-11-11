@@ -9,6 +9,7 @@ enum Lex.Tok:
   case Lex.TStr(s: Str, line: I64)
   case Lex.TChar(s: Str, line: I64)
   case Lex.TOp(s: Str, line: I64)
+  case Lex.TLtGlued(line: I64)
   case Lex.TNl(line: I64)
   case Lex.TIndent(line: I64)
   case Lex.TDedent(line: I64)
@@ -37,6 +38,10 @@ def Lex.isTwo(a: I64, b: I64): Bool =
 // the width of the operator token at i (c, then b): >>> is the one three-char operator
 def Lex.opWidth(src: Str, i: I64, c: I64, b: I64): I64 =
   if c == '>' && b == '>' && Str.at(src, i + 2) == '>' then 3 else if Lex.isTwo(c, b) then 2 else 1
+
+// a < right after an identifier character, ] or ) is glued to the type before it (a region list T<r>): it is a TLtGlued token;
+// the parser takes it as a region list after a type, as less-than in an expression
+def Lex.gluedTo(p: I64): Bool = Lex.isAlpha(p) || Lex.isDigit(p) || p == ']' || p == ')'
 
 // a hex digit's value, or -1
 def Lex.hexVal(c: I64): I64 =
@@ -125,7 +130,7 @@ def Lex.go(src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll
       if w == 1 && !Lex.isPunct(c) then Lex.Bad(line, Lex.BadChar)
       else
         val d = if c == '(' || c == '[' then depth + 1 else if (c == ')' || c == ']') && depth > 0 then depth - 1 else depth
-        Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(Lex.TOp(Str.slice(src, i, i + w), line), out))
+        Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(if c == '<' && w == 1 && Lex.gluedTo(Str.at(src, i - 1)) then Lex.TLtGlued(line) else Lex.TOp(Str.slice(src, i, i + w), line), out))
 
 // a line at column col, shallower than or as deep as the indent: close every deeper indent; col must be on the stack
 def Lex.dedent(src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match

@@ -26,6 +26,7 @@ def Parse.lineOf(t: Lex.Tok): I64 = t match
   case Lex.TStr(_, l) => l
   case Lex.TChar(_, l) => l
   case Lex.TOp(_, l) => l
+  case Lex.TLtGlued(l) => l
   case Lex.TNl(l) => l
   case Lex.TIndent(l) => l
   case Lex.TDedent(l) => l
@@ -54,6 +55,11 @@ def Parse.isIndent(ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
 
 def Parse.isDedent(ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
   case Lex.TDedent(_) => true
+  case _ => false
+
+// a < glued to the type before it: the start of a region list
+def Parse.isGlued(ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
+  case Lex.TLtGlued(_) => true
   case _ => false
 
 def Parse.isEof(ts: Coll.List[Lex.Tok]): Bool = Parse.peek(ts) match
@@ -412,10 +418,15 @@ def Parse.ty(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident(ts) match
             if Parse.isOp(t3, "^") then
               Parse.op(Parse.next(t3), "<") match
                 case Parse.Err(l, w) => Parse.Err(l, w)
-                case Parse.Ok(_, t4) => Parse.names(t4, ">", Coll.Nil) match
-                  case Parse.Err(l, w) => Parse.Err(l, w)
-                  case Parse.Ok(cs, t5) => Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Stated(cs), vals), t5)
+                case Parse.Ok(_, t4) => Parse.caps(Parse.line(ts), name, args, vals, t4)
+            else if Parse.isGlued(t3) then Parse.caps(Parse.line(ts), name, args, vals, Parse.next(t3))
             else Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Inferred, vals), t3)
+
+// the names of a region list, after its <, up to > (the type's caps)
+def Parse.caps(line: I64, name: Sym.Sym, args: Coll.List[Ast.Ty], vals: Coll.List[Ast.Expr], ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] =
+  Parse.names(ts, ">", Coll.Nil) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(cs, t1) => Parse.Ok(Ast.Ty(line, name, args, Ast.Stated(cs), vals), t1)
 
 def Parse.tys(ts: Coll.List[Lex.Tok], close: Str, acc: Coll.List[Ast.Ty]): Parse.R[Coll.List[Ast.Ty]] =
   if Parse.isOp(ts, close) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
@@ -960,6 +971,7 @@ def Parse.binOf(t: Lex.Tok): Coll.Option[Parse.BinTok] = t match
     else if Str.eq(s, "/") then Coll.Some(Parse.BinTok(Ast.Div, 6))
     else if Str.eq(s, "%") then Coll.Some(Parse.BinTok(Ast.Mod, 6))
     else Coll.None
+  case Lex.TLtGlued(_) => Coll.Some(Parse.BinTok(Ast.Lt, 4))
   case _ => Coll.None
 
 // operators of level >= lvl, left associative

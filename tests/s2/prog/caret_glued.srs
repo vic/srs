@@ -1,0 +1,27 @@
+// pass: a region list is a < glued to the last token of the type (name, ] or ) ): T<r>, T[A]<r>, T[A](n)<r>. on val, param
+// and result types it is a bound that holds. a < in an expression stays less-than, glued or spaced
+def keep {s: Region} {t: Region} (a: List<s>): I64 = sum(a)
+def mk {r: Region} {s: Region} (): List<r> = build{r}(2)
+def go {s: Region} {t: Region} (): I64 =
+  val x: List<s> = build{s}(3)
+  val y = mk{t, s}()
+  keep{s, t}(x) + sum(y)
+// a type with type args and value args, then the region list
+def Cg.len {r: Region} (n: I64, xs: Array[I64](n)<r>): I64 = n
+def Cg.lt(a: I64, b: I64): I64 =
+  if a<b then 1 else 0
+def Cg.lt2(a: I64, b: I64): I64 =
+  if a < b then 1 else 0
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  handle tmp = Srs.Arena()
+  Console.printI64(go{sess, tmp}())
+  Console.print("\n")
+  val n = 4
+  val xs: Array[I64](n)<tmp> = Array.fill(n, 7)
+  Console.printI64(Cg.len{tmp}(n, xs))
+  Console.print("\n")
+  Console.printI64(Cg.lt(1, 2) + Cg.lt(2, 1) + Cg.lt2(1, 2) + Cg.lt2(2, 1))
+  Console.print("\n")
+  0
