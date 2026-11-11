@@ -75,6 +75,22 @@ enum { CHUNK = 1 << 20 };
 // freed CHUNK-size chunks (A14), taken before malloc: their pages are already faulted in. One list per process: the
 // program runs one thread. Bigger chunks go back to malloc
 static chunk* g_spare;
+#ifdef SNX_CENSUS
+// census: live malloc'd chunks (spare ones included, they stay allocated) and their bytes with header
+static int64_t g_cz_chunks, g_cz_bytes;
+int64_t srs_cz_chunks(void) { return g_cz_chunks; }
+int64_t srs_cz_bytes(void) { return g_cz_bytes; }
+// the arena that last took a chunk: its head chunk is the one still filling (only its used bytes count)
+static arena* g_cz_last;
+int64_t srs_cz_head_untouched(void) { return g_cz_last && g_cz_last->head ? (int64_t)(g_cz_last->head->cap - g_cz_last->head->used) : 0; }
+// set by rt_arena_free just before it calls the snx side (weak: absent when snx_rt.c has no census)
+static int64_t g_cz_s_region, g_cz_s_n;
+int64_t srs_cz_s_region(void) { return g_cz_s_region; }
+int64_t srs_cz_s_n(void) { return g_cz_s_n; }
+__attribute__((weak)) void snx_cz_sample(void);
+int64_t srs_cz_spare_n(void) { int64_t n = 0; for (chunk* c = g_spare; c; c = c->next) n++; return n; }
+int64_t srs_cz_spare_bytes(void) { int64_t b = 0; for (chunk* c = g_spare; c; c = c->next) b += (int64_t)(sizeof(chunk) + c->cap); return b; }
+#endif
 
 void* rt_arena_new(void) { return calloc(1, sizeof(arena)); }
 void* rt_arena_alloc(void* self, int64_t size) {
@@ -85,6 +101,10 @@ void* rt_arena_alloc(void* self, int64_t size) {
     chunk* c = cap == CHUNK && g_spare ? g_spare : malloc(sizeof(chunk) + cap);
     if (!c) { fputs("srs: out of memory\n", stderr); exit(70); }
     if (c == g_spare) g_spare = c->next;
+#ifdef SNX_CENSUS
+    else { g_cz_chunks++; g_cz_bytes += (int64_t)(sizeof(chunk) + cap); }
+    g_cz_last = a;
+#endif
     c->next = a->head; c->used = 0; c->cap = cap; a->head = c;
   }
   void* p = (char*)(a->head + 1) + a->head->used;
@@ -93,9 +113,22 @@ void* rt_arena_alloc(void* self, int64_t size) {
 }
 int64_t rt_arena_free(void* self) {
   arena* a = self;
+#ifdef SNX_CENSUS
+  if (g_cz_last == a) g_cz_last = 0;
+  { // sample before the chunks move to g_spare: this arena's chunks (head counted by used bytes) and the spare list
+    int64_t n = 0, reg = 0;
+    for (chunk* c = a->head; c; c = c->next) { n++; reg += (int64_t)sizeof(chunk) + (c == a->head ? (int64_t)c->used : (int64_t)c->cap); }
+    if (n > 100 && snx_cz_sample) { g_cz_s_region = reg; g_cz_s_n = n; snx_cz_sample(); }
+  }
+#endif
   for (chunk* c = a->head; c;) {
     chunk* n = c->next;
-    if (c->cap == CHUNK) { c->next = g_spare; g_spare = c; } else free(c);
+    if (c->cap == CHUNK) { c->next = g_spare; g_spare = c; } else {
+#ifdef SNX_CENSUS
+      g_cz_chunks--; g_cz_bytes -= (int64_t)(sizeof(chunk) + c->cap);
+#endif
+      free(c);
+    }
     c = n;
   }
   free(a);
