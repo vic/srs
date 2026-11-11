@@ -128,7 +128,7 @@ def Mem.isIn [V: Type] (m: Coll.SMap[V], s: Sym.Sym): Bool = Coll.sLookup(m, s) 
 def Mem.expr(cx: Mem.Cx, at: Mem.At, w: Mem.W, e: Ast.Expr): Mem.W = e match
   case Ast.Call(line, f, _, _, args) =>
     val Mem.Cx(fns, ctors, _, ss) = cx
-    val w2 = if Mem.isIn(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at, line, f) else if Mem.isIn(fns, f) then Mem.call(w, at, f) else w
+    val w2 = if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at, line, f) else if Mem.isIn(fns, f) then Mem.call(w, at, f) else w
     Mem.exprs(cx, at, w2, args)
   case Ast.Method(_, _, _, args) => Mem.exprs(cx, at, w, args)
   case Ast.Resume(_, _, x) => Mem.expr(cx, at, w, x)
@@ -185,7 +185,7 @@ def Mem.decls(cx: Mem.Cx, w: Mem.W, ds: Coll.List[Ast.Decl]): Mem.W = ds match
       Mem.decls(cx, w2, rest)
     case _ => Mem.decls(cx, w, rest)
 
-// the cases with fields (a nullary case is a static: it allocates nothing) and the Region handlers
+// every case, true when it has fields (a nullary case is a static: it allocates nothing); and the Region handlers
 def Mem.ctors(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
@@ -199,7 +199,7 @@ def Mem.caseCtors(cs: Coll.List[Ast.Case], m: Coll.SMap[Bool]): Coll.SMap[Bool] 
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, fields) = c
     fields match
-      case Coll.Nil => Mem.caseCtors(rest, m)
+      case Coll.Nil => Mem.caseCtors(rest, Coll.sInsert(m, n, false))
       case Coll.Cons(_, _) => Mem.caseCtors(rest, Coll.sInsert(m, n, true))
 
 def Mem.regionHs(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
@@ -235,7 +235,7 @@ enum Mem.Mult:
   case Mem.Many(why: Mem.Why)
 
 enum Mem.Row:
-  case Mem.Row(line: I64, ctor: Sym.Sym, bytes: Coll.Option[I64], m: Mem.Mult)
+  case Mem.Row(line: I64, ctor: Sym.Sym, bytes: Coll.Option[I64], dies: Bool, m: Mem.Mult)
 
 enum Mem.Block:
   case Mem.Block(line: I64, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row])
@@ -246,7 +246,7 @@ enum Mem.Report:
 
 // what the model says, by name or id
 enum Mem.Model:
-  case Mem.Model(manyDef: Coll.SMap[Bool], loopCall: Coll.SMap[Bool], byRegion: Coll.IMap[Coll.List[I64]], live: Coll.List[I64], bytes: Coll.IMap[Coll.List[Emit.SiteB]])
+  case Mem.Model(manyDef: Coll.SMap[Bool], loopCall: Coll.SMap[Bool], byRegion: Coll.IMap[Coll.List[I64]], live: Coll.List[I64], bytes: Coll.IMap[Coll.List[Emit.SiteB]], esc: Coll.SMap[Coll.List[Mem.Src]])
 
 def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   val fl = Mem.fnList(ds, Coll.Nil)
@@ -256,13 +256,13 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
   D.solve(Mem.rules(), facts) match
     case D.Solved(m) =>
-      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip))
+      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), Mem.escAll(cx, fl, Coll.sEmpty()))
       Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
 def Mem.liveOf(md: Mem.Model): Coll.List[I64] =
-  val Mem.Model(_, _, _, live, _) = md
+  val Mem.Model(_, _, _, live, _, _) = md
   live
 
 def Mem.names(ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ts match
@@ -330,7 +330,7 @@ def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss:
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
       val Mem.Region(_, line, nm, h) = x
-      val Mem.Model(_, _, byRegion, _, _) = md
+      val Mem.Model(_, _, byRegion, _, _, _) = md
       val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
       Mem.blocks(md, cs, free, ss, ns, rs, rest, Coll.Cons(Mem.Block(line, nm, h, rows), acc))
     case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, rest, acc)
@@ -340,13 +340,13 @@ def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: C
   case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
     case Coll.Some(x) =>
       val Mem.Site(f, line, ctor, loop) = x
-      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.bytesAt(md, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
+      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.bytesAt(md, line, ctor), Mem.dies(md, f, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
     case Coll.None => Mem.rows(md, cs, free, ss, rest, acc)
 
 // a site in a loop of its def, else its def's reason to be many: its own call sites, a call in a loop, or a caller
 // that is many
 def Mem.multOf(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], f: Sym.Sym, loop: Bool): Mem.Mult =
-  val Mem.Model(manyDef, loopCall, _, _, _) = md
+  val Mem.Model(manyDef, loopCall, _, _, _, _) = md
   if loop then Mem.Many(Mem.InLoop)
   else if !Mem.isIn(manyDef, f) then Mem.Once
   else if Mem.count(cs, f) >= 2 then Mem.Many(Mem.Sites(f, Mem.count(cs, f)))
@@ -374,7 +374,7 @@ def Mem.sitesAt(m: Coll.IMap[Coll.List[Emit.SiteB]], line: I64): Coll.List[Emit.
 // the bytes of one box of ctor at line: the largest over the instances of its def; none for an Array.fill (its
 // size is known at run time) or a def no instance reaches
 def Mem.bytesAt(md: Mem.Model, line: I64, ctor: Sym.Sym): Coll.Option[I64] =
-  val Mem.Model(_, _, _, _, bm) = md
+  val Mem.Model(_, _, _, _, bm, _) = md
   Mem.maxBytes(Mem.sitesAt(bm, line), ctor, Coll.None)
 
 def Mem.maxBytes(xs: Coll.List[Emit.SiteB], ctor: Sym.Sym, best: Coll.Option[I64]): Coll.Option[I64] = xs match
@@ -385,3 +385,176 @@ def Mem.maxBytes(xs: Coll.List[Emit.SiteB], ctor: Sym.Sym, best: Coll.Option[I64
       case Coll.Some(x) => if Sym.eq(c, ctor) && b > x then Coll.Some(b) else best
       case Coll.None => if Sym.eq(c, ctor) then Coll.Some(b) else best
     Mem.maxBytes(rest, ctor, now)
+
+// ── M4: which boxes a def's run leaves reachable after it returns (vic/c/mem-design.md "M4 spec") ──
+// a value's sources: a box made at a site of the def, the result of a call that can hold boxes, a param
+enum Mem.Src:
+  case Mem.SSite(line: I64, ctor: Sym.Sym)
+  case Mem.SCall(line: I64)
+  case Mem.SParam
+
+// the walk's state: each local's sources, and the sources given to a sink (an op arg, a var assignment, a resume)
+enum Mem.Fl:
+  case Mem.Fl(env: Coll.SMap[Coll.List[Mem.Src]], sinks: Coll.List[Mem.Src])
+
+// the state after an expression, and the expression's sources
+enum Mem.Fv:
+  case Mem.Fv(fl: Mem.Fl, srcs: Coll.List[Mem.Src])
+
+def Mem.sink(fl: Mem.Fl, xs: Coll.List[Mem.Src]): Mem.Fl =
+  val Mem.Fl(env, ss) = fl
+  Mem.Fl(env, Coll.revOnto(xs, ss))
+
+def Mem.bind(fl: Mem.Fl, x: Sym.Sym, xs: Coll.List[Mem.Src]): Mem.Fl =
+  val Mem.Fl(env, ss) = fl
+  Mem.Fl(Coll.sInsert(env, x, xs), ss)
+
+// the sinks of after with the env of before: a block or an arm does not leak its names
+def Mem.scope(before: Mem.Fl, after: Mem.Fl): Mem.Fl =
+  val Mem.Fl(env, _) = before
+  val Mem.Fl(_, ss) = after
+  Mem.Fl(env, ss)
+
+// a type whose values hold no box
+def Mem.scalar(t: Ast.Ty): Bool =
+  val Ast.Ty(_, n, _, _, _) = t
+  val x = Sym.str(n)
+  Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "Unit") || Str.eq(x, "U8") || Str.eq(x, "U32") || Str.eq(x, "U64") || Str.eq(x, "I32")
+
+def Mem.flow(cx: Mem.Cx, fl: Mem.Fl, e: Ast.Expr): Mem.Fv = e match
+  case Ast.Name(_, x) =>
+    val Mem.Fl(env, _) = fl
+    val xs: Coll.List[Mem.Src] = Coll.sLookup(env, x) match
+      case Coll.Some(s) => s
+      case Coll.None => Coll.Nil
+    Mem.Fv(fl, xs)
+  case Ast.Call(line, f, _, _, args) =>
+    val Mem.Cx(fns, ctors, _, ss) = cx
+    val Mem.Fv(fl2, as) = Mem.flows(cx, fl, args, Coll.Nil)
+    if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.Fv(fl2, Coll.Cons(Mem.SSite(line, f), as))
+    else if Mem.isIn(ctors, f) then Mem.Fv(fl2, Coll.Nil)
+    else Coll.sLookup(fns, f) match
+      case Coll.Some(g) =>
+        val Ast.Fn(_, _, _, _, ret, _, _) = g
+        if Mem.scalar(ret) then Mem.Fv(fl2, Coll.Nil) else Mem.Fv(fl2, Coll.Cons(Mem.SCall(line), as))
+      case Coll.None => Mem.Fv(fl2, Coll.Cons(Mem.SCall(line), as))
+  case Ast.Method(line, _, _, args) =>
+    val Mem.Fv(fl2, as) = Mem.flows(cx, fl, args, Coll.Nil)
+    Mem.Fv(Mem.sink(fl2, as), Coll.Cons(Mem.SCall(line), Coll.Nil))
+  case Ast.Resume(_, _, x) =>
+    val Mem.Fv(fl2, xs) = Mem.flow(cx, fl, x)
+    Mem.Fv(Mem.sink(fl2, xs), Coll.Nil)
+  case Ast.Bin(_, _, l, r) =>
+    val Mem.Fv(fl2, _) = Mem.flow(cx, fl, l)
+    val Mem.Fv(fl3, _) = Mem.flow(cx, fl2, r)
+    Mem.Fv(fl3, Coll.Nil)
+  case Ast.Un(_, _, x) =>
+    val Mem.Fv(fl2, _) = Mem.flow(cx, fl, x)
+    Mem.Fv(fl2, Coll.Nil)
+  case Ast.If(_, c, t, x) =>
+    val Mem.Fv(fl2, _) = Mem.flow(cx, fl, c)
+    val Mem.Fv(fl3, ts) = Mem.flow(cx, fl2, t)
+    val Mem.Fv(fl4, xs) = Mem.flow(cx, fl3, x)
+    Mem.Fv(fl4, Coll.revOnto(ts, xs))
+  case Ast.Match(_, s, arms) =>
+    val Mem.Fv(fl2, ss) = Mem.flow(cx, fl, s)
+    Mem.flowArms(cx, fl2, ss, arms, Coll.Nil)
+  case Ast.Block(_, stmts, last) =>
+    val Mem.Fv(fl2, xs) = Mem.flowStmts(cx, fl, stmts, last)
+    Mem.Fv(Mem.scope(fl, fl2), xs)
+  case Ast.While(_, c, body) =>
+    val Mem.Fv(fl2, _) = Mem.flow(cx, fl, c)
+    val Mem.Fv(fl3, _) = Mem.flow(cx, fl2, body)
+    Mem.Fv(fl3, Coll.Nil)
+  case Ast.Assign(_, _, x) =>
+    val Mem.Fv(fl2, xs) = Mem.flow(cx, fl, x)
+    Mem.Fv(Mem.sink(fl2, xs), Coll.Nil)
+  case Ast.Quant(_, _, _, _, _) => Mem.Fv(fl, Coll.Nil)
+  case Ast.Int(_, _) => Mem.Fv(fl, Coll.Nil)
+  case Ast.Bool(_, _) => Mem.Fv(fl, Coll.Nil)
+  case Ast.Str(_, _) => Mem.Fv(fl, Coll.Nil)
+  case Ast.Unit(_) => Mem.Fv(fl, Coll.Nil)
+
+// the args in order: the state after them all, their sources together
+def Mem.flows(cx: Mem.Cx, fl: Mem.Fl, es: Coll.List[Ast.Expr], acc: Coll.List[Mem.Src]): Mem.Fv = es match
+  case Coll.Nil => Mem.Fv(fl, acc)
+  case Coll.Cons(e, rest) =>
+    val Mem.Fv(fl2, xs) = Mem.flow(cx, fl, e)
+    Mem.flows(cx, fl2, rest, Coll.revOnto(xs, acc))
+
+// each arm binds its pattern's names to the scrutinee's sources; the match's sources are all arms' sources
+def Mem.flowArms(cx: Mem.Cx, fl: Mem.Fl, ss: Coll.List[Mem.Src], arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Src]): Mem.Fv = arms match
+  case Coll.Nil => Mem.Fv(fl, acc)
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, p, body) = a
+    val inArm: Mem.Fl = p match
+      case Ast.PCase(_, binds) => Mem.bindAll(fl, binds, ss)
+      case Ast.PAny => fl
+    val Mem.Fv(fl2, xs) = Mem.flow(cx, inArm, body)
+    Mem.flowArms(cx, Mem.scope(fl, fl2), ss, rest, Coll.revOnto(xs, acc))
+
+def Mem.bindAll(fl: Mem.Fl, xs: Coll.List[Sym.Sym], ss: Coll.List[Mem.Src]): Mem.Fl = xs match
+  case Coll.Nil => fl
+  case Coll.Cons(x, rest) => Mem.bindAll(Mem.bind(fl, x, ss), rest, ss)
+
+def Mem.flowStmts(cx: Mem.Cx, fl: Mem.Fl, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Mem.Fv = ss match
+  case Coll.Nil => Mem.flow(cx, fl, last)
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(_, x, _, e) =>
+      val Mem.Fv(fl2, xs) = Mem.flow(cx, fl, e)
+      Mem.flowStmts(cx, Mem.bind(fl2, x, xs), rest, last)
+    case Ast.Var(_, x, _, e) =>
+      val Mem.Fv(fl2, xs) = Mem.flow(cx, fl, e)
+      Mem.flowStmts(cx, Mem.bind(fl2, x, xs), rest, last)
+    case Ast.Handle(_, _, _, args) =>
+      val Mem.Fv(fl2, _) = Mem.flows(cx, fl, args, Coll.Nil)
+      Mem.flowStmts(cx, fl2, rest, last)
+    case Ast.Do(e) =>
+      val Mem.Fv(fl2, _) = Mem.flow(cx, fl, e)
+      Mem.flowStmts(cx, fl2, rest, last)
+    case Ast.Check(_, _, e) =>
+      val Mem.Fv(fl2, _) = Mem.flow(cx, fl, e)
+      Mem.flowStmts(cx, fl2, rest, last)
+
+// the sources a def's run leaves reachable: its result's and its sinks'
+def Mem.escapes(cx: Mem.Cx, f: Ast.Fn): Coll.List[Mem.Src] =
+  val Ast.Fn(_, _, _, ps, _, _, body) = f
+  body match
+    case Ast.Def(_, e) =>
+      val Mem.Fv(fl, xs) = Mem.flow(cx, Mem.Fl(Mem.params(ps, Coll.sEmpty()), Coll.Nil), e)
+      val Mem.Fl(_, ss) = fl
+      Coll.revOnto(xs, ss)
+    case Ast.Extern(_) => Coll.Nil
+
+def Mem.params(ps: Coll.List[Ast.Binder], env: Coll.SMap[Coll.List[Mem.Src]]): Coll.SMap[Coll.List[Mem.Src]] = ps match
+  case Coll.Nil => env
+  case Coll.Cons(p, rest) =>
+    val Ast.Binder(_, x, _) = p
+    Mem.params(rest, Coll.sInsert(env, x, Coll.Cons(Mem.SParam, Coll.Nil)))
+
+def Mem.hasSite(xs: Coll.List[Mem.Src], line: I64, ctor: Sym.Sym): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(x, rest) => x match
+    case Mem.SSite(l, c) => if l == line && Sym.eq(c, ctor) then true else Mem.hasSite(rest, line, ctor)
+    case Mem.SCall(_) => Mem.hasSite(rest, line, ctor)
+    case Mem.SParam => Mem.hasSite(rest, line, ctor)
+
+// a case with fields: its constructor allocates a box
+def Mem.allocates(ctors: Coll.SMap[Bool], f: Sym.Sym): Bool = Coll.sLookup(ctors, f) match
+  case Coll.Some(b) => b
+  case Coll.None => false
+
+// each def's escaping sources, by name (the first def of a name, as Ty.idxFns)
+def Mem.escAll(cx: Mem.Cx, fs: Coll.List[Ast.Fn], m: Coll.SMap[Coll.List[Mem.Src]]): Coll.SMap[Coll.List[Mem.Src]] = fs match
+  case Coll.Nil => m
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    Mem.escAll(cx, rest, if Mem.isIn(m, n) then m else Coll.sInsert(m, n, Mem.escapes(cx, f)))
+
+// a site of def f dies in f when no source f's run leaves reachable is that site
+def Mem.dies(md: Mem.Model, f: Sym.Sym, line: I64, ctor: Sym.Sym): Bool =
+  val Mem.Model(_, _, _, _, _, esc) = md
+  val xs: Coll.List[Mem.Src] = Coll.sLookup(esc, f) match
+    case Coll.Some(s) => s
+    case Coll.None => Coll.Nil
+  !Mem.hasSite(xs, line, ctor)

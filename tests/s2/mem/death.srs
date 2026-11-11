@@ -1,0 +1,33 @@
+// mem: a box returned escapes its def; a box only read dies; a box given to a def that can return it escapes; assigned to a var escapes (a var is a sink: the analysis does not follow it)
+enum MD:
+  case MD(v: I64)
+
+def MD.get(d: MD): I64 = d match
+  case MD(v) => v
+
+def MD.id(d: MD): MD = d
+
+def MD.make(x: I64): MD = MD(x)
+
+def MD.peek(x: I64): I64 = MD.get(MD(x))
+
+def MD.wrap(x: I64): MD = MD.id(MD(x))
+
+def MD.keep(x: I64): I64 =
+  var d = MD(0)
+  d = MD(x)
+  MD.get(d)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(MD.get(MD.make(1)) + MD.peek(2) + MD.get(MD.wrap(3)) + MD.keep(4) + MD.unbox(MD.box(5)))
+  0
+
+enum MW:
+  case MW(d: MD)
+
+def MD.box(x: I64): MW = MW(MD(x))
+
+def MD.unbox(w: MW): I64 = w match
+  case MW(d) => MD.get(d)
