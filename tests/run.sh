@@ -156,6 +156,34 @@ for t in tests/s2/mem/*.srs; do
   pass=1; [ $code -eq 0 ] && [ "$out" = "$(cat "${t%.srs}.out")" ] || pass=0
   verdict "mem/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
 done
+# --mem's "once" checked at run time: a prog test with one region (main's, one life) runs with its C rewritten so each
+# box names its case (tests/s2/cz.h prints "CZ case count"); a case --mem gives exactly one site, once, is allocated at
+# most once. armed: mem/many's MCons (many) must count more than one box
+czc() { # name test libs...: the census binary $B/cz_name
+  local n=$1 t=$2; shift 2
+  timeout 5 "$B/s2c1" "$@" "$t" > "$B/cz_$n.c" 2>/dev/null || return 1
+  sed -E -i -e '1i #include "cz.h"' -e 's/srs_alloc\(eff__Region, (\(int64_t\)\(offsetof\(struct E_[A-Za-z0-9_]+, u\) \+ sizeof\(\(\(struct E_[A-Za-z0-9_]+\*\)0\)->u\.C_([A-Za-z0-9_]+)\)\))\)/CZA("\2", eff__Region, \1)/g' "$B/cz_$n.c"
+  timeout 60 $CC -I tests/s2 -o "$B/cz_$n" "$B/cz_$n.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null
+}
+czn() { awk -v n="$(printf '%s' "$2" | sed 's/\./__/g')" '$1 == "CZ" && $2 == n {s += $3} END {print s + 0}' <<< "$1"; }
+armed=0; czc armed tests/s2/mem/many.srs lib/prelude.srs && armed=$(czn "$("$B/cz_armed" 2>&1 >/dev/null)" MCons)
+if [ "${armed:-0}" -gt 1 ]; then echo "ok mem census armed (MCons $armed)"; else echo "FAIL mem census unarmed (MCons ${armed:-none})"; fail=1; fi
+memrun() { # test libs...
+  local t=$1 n out once pass why cz x c; shift; n=$(basename "$(dirname "$t")")_$(basename "$t" .srs)
+  out=$(timeout 2 "$B/s2c1" --mem "$@" "$t" 2>/dev/null) || return 0
+  [ "$(printf '%s\n' "$out" | grep -c '^region ')" = 1 ] || return 0
+  once=$(printf '%s\n' "$out" | grep '^  ' | awk '{print $2}' | sort | uniq -u | while read -r x; do
+    printf '%s\n' "$out" | grep -Eq "^  [^ ]+ $x( [0-9]+ B)? once$" && echo "$x"; done)
+  [ -n "$once" ] || return 0
+  pass=1; why=""
+  if czc "$n" "$t" "$@"; then
+    cz=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/cz_$n" 2>&1 >/dev/null)
+    for x in $once; do c=$(czn "$cz" "$x"); [ "$c" -le 1 ] || { pass=0; why="$why $x=$c"; }; done
+  else pass=0; why="census build"; fi
+  verdict "memrun/$n" $pass "once but allocated:$why"
+}
+for t in tests/s2/prog/*.srs; do memrun "$t" $S2LIBS; done
+for t in tests/s2/mem/*.srs; do memrun "$t" lib/prelude.srs; done
 # s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
 # a trailing byte each read as bad (a miss)
 S2STORE="$B/store-s2"; rm -rf "$S2STORE"
