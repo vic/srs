@@ -1537,7 +1537,7 @@ def Emit.strInline(n: Sym.Sym): Bool =
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
-  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32") || Emit.ptrPrim(s)
+  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "Str.less") || Str.eq(s, "Str.has") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32") || Emit.ptrPrim(s)
 
 // C conversion to an unsigned type is mod 2^width (C11 6.3.1.3p2); uint64_t to int64_t above INT64_MAX and int64_t to int32_t out of range are
 // implementation-defined (6.3.1.3p3), two's complement on every target compiler (gcc, clang)
@@ -1602,6 +1602,8 @@ def Emit.strPrims(): Unit =
   Console.print("  if (b < 0) b = 0;\n  if (e > s.n) e = s.n;\n  if (e < b) e = b;\n")
   Console.print("  return (srs_str){s.p + b, e - b};\n}\n")
   Console.print("static inline bool Str__eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }\n")
+  Console.print("static inline bool Str__less(srs_str a, srs_str b) {\n  int64_t m = a.n < b.n ? a.n : b.n;\n  int c = m > 0 ? memcmp(a.p, b.p, (size_t)m) : 0;\n  return c ? c < 0 : a.n < b.n;\n}\n")
+  Console.print("static inline bool Str__has(srs_str s, int64_t c, int64_t i, int64_t e) {\n  if (i < 0) i = 0;\n  if (e > s.n) e = s.n;\n  return (uint64_t)c < 256 && i < e && memchr(s.p + i, (int)c, (size_t)(e - i)) != NULL;\n}\n")
   Console.print("static inline srs_str Str__ofBytes(void* r, int64_t n, uint8_t* xs) { return (srs_str){xs, n}; }\n")
   Console.print("static inline void Array__blit(uint8_t* d, srs_str s, int64_t m) { int64_t k = m < s.n ? m : s.n; if (k > 0) memcpy(d, s.p, (size_t)k); }\n")
 
