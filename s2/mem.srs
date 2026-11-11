@@ -235,7 +235,7 @@ enum Mem.Mult:
   case Mem.Many(why: Mem.Why)
 
 enum Mem.Row:
-  case Mem.Row(line: I64, ctor: Sym.Sym, m: Mem.Mult)
+  case Mem.Row(line: I64, ctor: Sym.Sym, bytes: Coll.Option[I64], m: Mem.Mult)
 
 enum Mem.Block:
   case Mem.Block(line: I64, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row])
@@ -246,9 +246,9 @@ enum Mem.Report:
 
 // what the model says, by name or id
 enum Mem.Model:
-  case Mem.Model(manyDef: Coll.SMap[Bool], loopCall: Coll.SMap[Bool], byRegion: Coll.IMap[Coll.List[I64]], live: Coll.List[I64])
+  case Mem.Model(manyDef: Coll.SMap[Bool], loopCall: Coll.SMap[Bool], byRegion: Coll.IMap[Coll.List[I64]], live: Coll.List[I64], bytes: Coll.IMap[Coll.List[Emit.SiteB]])
 
-def Mem.report(ds: Coll.List[Ast.Decl]): Mem.Report =
+def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   val fl = Mem.fnList(ds, Coll.Nil)
   val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms())
   val w = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
@@ -256,13 +256,13 @@ def Mem.report(ds: Coll.List[Ast.Decl]): Mem.Report =
   val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
   D.solve(Mem.rules(), facts) match
     case D.Solved(m) =>
-      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil))
+      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip))
       Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
 def Mem.liveOf(md: Mem.Model): Coll.List[I64] =
-  val Mem.Model(_, _, _, live) = md
+  val Mem.Model(_, _, _, live, _) = md
   live
 
 def Mem.names(ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ts match
@@ -330,7 +330,7 @@ def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss:
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
       val Mem.Region(_, line, nm, h) = x
-      val Mem.Model(_, _, byRegion, _) = md
+      val Mem.Model(_, _, byRegion, _, _) = md
       val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
       Mem.blocks(md, cs, free, ss, ns, rs, rest, Coll.Cons(Mem.Block(line, nm, h, rows), acc))
     case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, rest, acc)
@@ -340,13 +340,13 @@ def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: C
   case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
     case Coll.Some(x) =>
       val Mem.Site(f, line, ctor, loop) = x
-      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.multOf(md, cs, free, f, loop)), acc))
+      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.bytesAt(md, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
     case Coll.None => Mem.rows(md, cs, free, ss, rest, acc)
 
 // a site in a loop of its def, else its def's reason to be many: its own call sites, a call in a loop, or a caller
 // that is many
 def Mem.multOf(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], f: Sym.Sym, loop: Bool): Mem.Mult =
-  val Mem.Model(manyDef, loopCall, _, _) = md
+  val Mem.Model(manyDef, loopCall, _, _, _) = md
   if loop then Mem.Many(Mem.InLoop)
   else if !Mem.isIn(manyDef, f) then Mem.Once
   else if Mem.count(cs, f) >= 2 then Mem.Many(Mem.Sites(f, Mem.count(cs, f)))
@@ -359,3 +359,29 @@ def Mem.manyCaller(manyDef: Coll.SMap[Bool], free: Coll.List[Mem.Edge], f: Sym.S
   case Coll.Cons(e, rest) =>
     val Mem.Edge(a, b) = e
     if Sym.eq(b, f) && Mem.isIn(manyDef, a) then a else Mem.manyCaller(manyDef, rest, f)
+
+// the constructor sites by line: each instance of a def adds one entry for its site
+def Mem.siteMap(sb: Coll.List[Emit.SiteB], m: Coll.IMap[Coll.List[Emit.SiteB]]): Coll.IMap[Coll.List[Emit.SiteB]] = sb match
+  case Coll.Nil => m
+  case Coll.Cons(s, rest) =>
+    val Emit.SiteB(line, _, _) = s
+    Mem.siteMap(rest, Coll.insert(m, line, Coll.Cons(s, Mem.sitesAt(m, line))))
+
+def Mem.sitesAt(m: Coll.IMap[Coll.List[Emit.SiteB]], line: I64): Coll.List[Emit.SiteB] = Coll.lookup(m, line) match
+  case Coll.Some(xs) => xs
+  case Coll.None => Coll.Nil
+
+// the bytes of one box of ctor at line: the largest over the instances of its def; none for an Array.fill (its
+// size is known at run time) or a def no instance reaches
+def Mem.bytesAt(md: Mem.Model, line: I64, ctor: Sym.Sym): Coll.Option[I64] =
+  val Mem.Model(_, _, _, _, bm) = md
+  Mem.maxBytes(Mem.sitesAt(bm, line), ctor, Coll.None)
+
+def Mem.maxBytes(xs: Coll.List[Emit.SiteB], ctor: Sym.Sym, best: Coll.Option[I64]): Coll.Option[I64] = xs match
+  case Coll.Nil => best
+  case Coll.Cons(s, rest) =>
+    val Emit.SiteB(_, c, b) = s
+    val now: Coll.Option[I64] = best match
+      case Coll.Some(x) => if Sym.eq(c, ctor) && b > x then Coll.Some(b) else best
+      case Coll.None => if Sym.eq(c, ctor) then Coll.Some(b) else best
+    Mem.maxBytes(rest, ctor, now)

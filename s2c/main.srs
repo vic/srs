@@ -404,20 +404,31 @@ enum S2c.Mode:
   // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
   case S2c.MemAll
 
-// --mem: "region x file:line handler", then "  file:line ctor once" or "  file:line ctor many: why", then the total
+// --mem: "region x file:line handler", then "  file:line ctor N B once" or "  file:line ctor N B many: why" (no bytes
+// for an Array.fill), then the total: the once sites and their bytes, the many sites
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
   case Mem.Ok(bs) =>
-    val S2c.MemCount(once, many) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0))
+    val S2c.MemCount(once, onceB, many) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0))
     Console.print("total: ")
     Console.printI64(once)
-    Console.print(" once, ")
+    Console.print(" once ")
+    Console.printI64(onceB)
+    Console.print(" B, ")
     Console.printI64(many)
     Console.print(" many\n")
     0
 
 enum S2c.MemCount:
-  case S2c.MemCount(once: I64, many: I64)
+  case S2c.MemCount(once: I64, onceB: I64, many: I64)
+
+def S2c.memBytes(b: Coll.Option[I64]): I64 = b match
+  case Coll.Some(n) =>
+    Console.print(" ")
+    Console.printI64(n)
+    Console.print(" B")
+    n
+  case Coll.None => 0
 
 def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemCount): S2c.MemCount = bs match
   case Coll.Nil => c
@@ -435,21 +446,22 @@ def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemC
 def S2c.memRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], c: S2c.MemCount): S2c.MemCount = rows match
   case Coll.Nil => c
   case Coll.Cons(r, rest) =>
-    val Mem.Row(line, ctor, m) = r
-    val S2c.MemCount(once, many) = c
+    val Mem.Row(line, ctor, bytes, m) = r
+    val S2c.MemCount(once, onceB, many) = c
     Console.print("  ")
     S2c.place(fs, line)
     Console.print(" ")
     Console.print(Sym.str(ctor))
+    val n = S2c.memBytes(bytes)
     m match
       case Mem.Once =>
         Console.print(" once\n")
-        S2c.memRows(fs, rest, S2c.MemCount(once + 1, many))
+        S2c.memRows(fs, rest, S2c.MemCount(once + 1, onceB + n, many))
       case Mem.Many(why) =>
         Console.print(" many: ")
         S2c.memWhy(why)
         Console.print("\n")
-        S2c.memRows(fs, rest, S2c.MemCount(once, many + 1))
+        S2c.memRows(fs, rest, S2c.MemCount(once, onceB, many + 1))
 
 def S2c.memWhy(w: Mem.Why): Unit = w match
   case Mem.InLoop => Console.print("in a loop")
@@ -498,7 +510,7 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.HashAll =>
     Hs.print(ds)
     0
-  case S2c.MemAll => S2c.mem(fs, Mem.report(ds))
+  case S2c.MemAll => S2c.mem(fs, Mem.report(ds, Emit.memSites(ds, res)))
   case S2c.Fragment =>
     S2c.fragment(fs, Elgate.run(ds, res))
   case S2c.EmitAgree =>
