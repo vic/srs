@@ -189,7 +189,7 @@ def Elgate.fns(cx: Emit.Cx, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Col
     val El.Fn(_, name, _, _, _, _, body) = f
     val a1 = body match
       case El.Def(e) => Elgate.push(Elgate.ex(cx, name, false, e, Coll.Nil), true, acc)
-      case El.Extern(_) => acc
+      case El.Extern(_, _) => acc
     Elgate.fns(cx, rest, a1)
 
 // every vtable slot's fn prototype is what the op call passes (env/self pointer + op params): a handler whose slots are
@@ -217,7 +217,7 @@ def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]
       case El.Def(e) => site match
         case Mono.Top => Elgate.push(Elgate.ex(cx, name, true, e, Coll.Nil), Sym.eq(name, Sym.of("main")), acc)
         case Mono.Impl(_) => Elgate.push(Elgate.ex(cx, name, false, e, Coll.Nil), false, acc)
-      case El.Extern(_) => acc
+      case El.Extern(_, _) => acc
     Elgate.insts(cx, rest, a1)
 
 // the violations of the C Emit.program prints for res

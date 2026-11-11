@@ -250,7 +250,7 @@ def Parse.libcName(abi: Ast.Abi, rf: Parse.R[Ast.Fn]): Parse.R[Ast.Fn] = rf matc
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(f, t) => abi match
     case Ast.AbiSrs => rf
-    case Ast.AbiLibc =>
+    case _ =>
       val Ast.Fn(line, name, _, _, _, _, _) = f
       if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc extern names a C function: no '.' in its name") else rf
 
@@ -270,14 +270,55 @@ enum Parse.FnKind:
   case Parse.FDef
   case Parse.FExtern(abi: Ast.Abi)
 
+// the params of a def or extern, and whether they end in `...`: only a libc extern may (C variadics)
+enum Parse.PS:
+  case Parse.PS(ps: Coll.List[Ast.Binder], variadic: Bool)
+
+def Parse.psOf(p: Parse.PS): Coll.List[Ast.Binder] = p match
+  case Parse.PS(ps, _) => ps
+
+def Parse.psVar(p: Parse.PS): Bool = p match
+  case Parse.PS(_, va) => va
+
+def Parse.fnParams(ts: Coll.List[Lex.Tok], k: Parse.FnKind): Parse.R[Parse.PS] = k match
+  case Parse.FExtern(abi) => abi match
+    case Ast.AbiLibc => Parse.op(ts, "(") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t1) => Parse.libcParams(t1, Coll.Nil)
+    case _ => Parse.plainParams(ts)
+  case Parse.FDef => Parse.plainParams(ts)
+
+def Parse.plainParams(ts: Coll.List[Lex.Tok]): Parse.R[Parse.PS] = Parse.params(ts) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(ps, t) => Parse.Ok(Parse.PS(ps, false), t)
+
+// name: type, ... [, ...] ) : the `...` is three `.` tokens, last in the list
+def Parse.libcParams(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Binder]): Parse.R[Parse.PS] =
+  if Parse.isOp(ts, ")") then Parse.Ok(Parse.PS(Coll.rev(acc), false), Parse.next(ts))
+  else if Parse.isOp(ts, ".") && Parse.isOp(Parse.next(ts), ".") && Parse.isOp(Parse.next(Parse.next(ts)), ".") then
+    val t3 = Parse.next(Parse.next(Parse.next(ts)))
+    if Parse.isOp(t3, ")") then Parse.Ok(Parse.PS(Coll.rev(acc), true), Parse.next(t3)) else Parse.Err(Parse.line(t3), ")")
+  else Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(x, t1) => Parse.op(t1, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t2) => Parse.ty(t2) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(t, t3) =>
+          val acc2 = Coll.Cons(Ast.Binder(Parse.line(ts), x, t), acc)
+          if Parse.isOp(t3, ",") then Parse.libcParams(Parse.next(t3), acc2) else Parse.libcParams(t3, acc2)
+
+// a libc extern ending in `...` is the variadic ABI
+def Parse.abiVar(abi: Ast.Abi, va: Bool): Ast.Abi = if va then Ast.AbiLibcVar else abi
+
 // def name groups (params) groups : ty [<atoms>] [= rhs]
 def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(name, t1) => Parse.groups(t1, Coll.Nil) match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(g1, t2) => Parse.params(t2) match
+    case Parse.Ok(g1, t2) => Parse.fnParams(t2, k) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(ps, t3) => Parse.groups(t3, Coll.rev(g1)) match
+      case Parse.Ok(pv, t3) => Parse.groups(t3, Coll.rev(g1)) match
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(gs, t4) => Parse.op(t4, ":") match
           case Parse.Err(l, w) => Parse.Err(l, w)
@@ -285,7 +326,7 @@ def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn
             case Parse.Err(l, w) => Parse.Err(l, w)
             case Parse.Ok(ret, t6) => Parse.exitFacts(t6) match
               case Parse.Err(l, w) => Parse.Err(l, w)
-              case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern(Parse.abiOf(k))), k)
+              case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, Parse.psOf(pv), ret, exit, Ast.Extern(Parse.abiVar(Parse.abiOf(k), Parse.psVar(pv)))), k)
 
 // the body of a def by its kind
 def Parse.fnBody(ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind): Parse.R[Ast.Fn] = k match

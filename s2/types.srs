@@ -817,7 +817,10 @@ def Ty.args(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr
 // f[T]{caps}(args): open the binders, explicit type args, check mode (want binds the result first), args left to right;
 // each protocol {} binder takes a caller capability (the chosen name, else the one of its protocol in scope)
 def Ty.callFn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn, targs: Coll.List[Ast.Ty], chosen: Coll.List[Sym.Sym], xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
-  val Ast.Fn(_, name, gs, ps, ret, _, _) = g
+  val Ast.Fn(_, name, gs, ps, ret, _, body) = g
+  val variadic: Bool = body match
+    case Ast.Def(_, _) => false
+    case Ast.Extern(abi) => Ty.isVariadic(abi)
   val tps = Ty.tparams(gs, Coll.Nil)
   val Ty.Open(st1a, tv0, vars) = Ty.open(st, tps, Coll.Nil, Coll.Nil)
   // A1: a length in the signature names an I64 param: at the call it is the identity of the arg (a fresh one when the
@@ -829,15 +832,74 @@ def Ty.callFn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, g: Ast.Fn
   val st2 = Ty.explicit(st1, line, vars, Ty.terms(targs, Coll.Nil, Coll.Nil))
   val rt = Ty.term(ret, tv)
   val st3 = Ty.expectOpt(st2, line, rt, want)
-  if Coll.length(ps) != Coll.length(xs) then Ty.Ex(Ty.args(cx, Ty.clash(st3, Ty.Arity(line, name)), bs, xs), rt, El.Bad(line))
+  if (if variadic then Coll.length(xs) < Coll.length(ps) else Coll.length(ps) != Coll.length(xs)) then Ty.Ex(Ty.args(cx, Ty.clash(st3, Ty.Arity(line, name)), bs, xs), rt, El.Bad(line))
   else
-    val Ty.Es(st4, eargs) = Ty.params(cx, st3, bs, line, ps, tv, xs, Coll.Nil)
+    val Ty.Es(st4p, eargs0) = Ty.params(cx, st3, bs, line, ps, tv, xs, Coll.Nil)
+    val Ty.Es(st4, eargs) = if variadic then Ty.extras(cx, st4p, bs, Ty.dropN(xs, Coll.length(ps)), Coll.rev(eargs0)) else Ty.Es(st4p, eargs0)
     val ev = Ty.evidence(gs, Coll.Nil)
     val st4b = if Coll.length(chosen) > 0 && Coll.length(chosen) != Coll.length(ev) then Ty.clash(st4, Ty.ChosenCount(line, name)) else st4
     val Ty.Caps(st5, caps) = Ty.capArgs(cx, st4b, bs, line, tv, ev, chosen, 0, Coll.Nil)
     val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
     val Ty.Caps(st6, icaps) = Ty.rowCaps(cx, st5, bs, line, Ty.runRow(cx, Eff.row(rows, name)), Coll.Nil)
-    Ty.Ex(Ty.inst(st6, line, name, vars), rt, El.CallFn(line, name, vars, Coll.revOnto(Coll.rev(caps), icaps), eargs))
+    Ty.Ex(Ty.inst(st6, line, name, vars), rt, El.CallFn(line, name, vars, Coll.revOnto(Coll.rev(caps), icaps), Ty.callArgs(body, ps, eargs)))
+
+// the args a call keeps: a libc callee's ghost args (an Array length: no C argument) are checked, then dropped
+def Ty.callArgs(body: Ast.Body, ps: Coll.List[Ast.Binder], es: Coll.List[El.Expr]): Coll.List[El.Expr] = body match
+  case Ast.Def(_, _) => es
+  case Ast.Extern(abi) => abi match
+    case Ast.AbiSrs => es
+    case _ => Ty.dropGhost(Ty.ghostsFor(abi, ps), es)
+
+def Ty.dropGhost(gh: Coll.List[Bool], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(e, rest) => gh match
+    case Coll.Nil => es
+    case Coll.Cons(g, gr) => if g then Ty.dropGhost(gr, rest) else Coll.Cons(e, Ty.dropGhost(gr, rest))
+
+def Ty.isVariadic(abi: Ast.Abi): Bool = abi match
+  case Ast.AbiLibcVar => true
+  case _ => false
+
+// the extra args of a variadic libc call: C promotes each to int, so each is an I32 (anything else is a mismatch)
+def Ty.extras(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], xs: Coll.List[Ast.Expr], acc: Coll.List[El.Expr]): Ty.Es = xs match
+  case Coll.Nil => Ty.Es(st, Coll.rev(acc))
+  case Coll.Cons(x, rest) =>
+    val Ty.Ex(st1, _, ex) = Ty.expr(cx, st, bs, x, Coll.Some(Ty.con("I32")))
+    Ty.extras(cx, st1, bs, rest, Coll.Cons(ex, acc))
+
+def Ty.dropN(xs: Coll.List[Ast.Expr], n: I64): Coll.List[Ast.Expr] = if n <= 0 then xs else xs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(_, rest) => Ty.dropN(rest, n - 1)
+
+// the ghost params of a libc extern: an I64 that only names the length of an Array param is a proof object, not a C value
+// (the C prototype and the C call leave it out); an srs extern has none
+def Ty.ghostsFor(abi: Ast.Abi, ps: Coll.List[Ast.Binder]): Coll.List[Bool] = abi match
+  case Ast.AbiSrs => Ty.noGhosts(ps)
+  case _ => Ty.ghosts(ps, ps)
+
+def Ty.noGhosts(ps: Coll.List[Ast.Binder]): Coll.List[Bool] = ps match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(_, rest) => Coll.Cons(false, Ty.noGhosts(rest))
+
+def Ty.ghosts(all: Coll.List[Ast.Binder], ps: Coll.List[Ast.Binder]): Coll.List[Bool] = ps match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(p, rest) =>
+    val Ast.Binder(_, x, t) = p
+    val Ast.Ty(_, tn, _, _, _) = t
+    Coll.Cons(Str.eq(Sym.str(tn), "I64") && Ty.lengthOfAny(all, x), Ty.ghosts(all, rest))
+
+def Ty.lengthOfAny(all: Coll.List[Ast.Binder], x: Sym.Sym): Bool = all match
+  case Coll.Nil => false
+  case Coll.Cons(q, rest) =>
+    val Ast.Binder(_, _, qt) = q
+    val Ast.Ty(_, _, _, _, vals) = qt
+    Ty.namesVal(vals, x) || Ty.lengthOfAny(rest, x)
+
+def Ty.namesVal(vals: Coll.List[Ast.Expr], x: Sym.Sym): Bool = vals match
+  case Coll.Nil => false
+  case Coll.Cons(v, rest) => v match
+    case Ast.Name(_, y) => Sym.eq(x, y) || Ty.namesVal(rest, x)
+    case _ => Ty.namesVal(rest, x)
 
 // a signature with a value arg in a param type or the result (A1)
 def Ty.sigVals(ps: Coll.List[Ast.Binder], ret: Ast.Ty): Bool = if Ty.hasVals(ret) then true else Ty.paramVals(ps)
@@ -1357,7 +1419,7 @@ def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val eps = Ty.elParams(ps, tv, Coll.Nil)
   val st = Ty.fnShape(cx, st0b, line, tps, ps, ret)
   body match
-    case Ast.Extern(abi) => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern(abi)))
+    case Ast.Extern(abi) => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern(abi, Ty.ghostsFor(abi, ps))))
     case Ast.Def(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
       Ty.FnEx(Ty.mhPlace(st1, eb), El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
@@ -1965,6 +2027,7 @@ def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
   val libc: Bool = body match
     case Ast.Extern(abi) => abi match
       case Ast.AbiLibc => true
+      case Ast.AbiLibcVar => true
       case Ast.AbiSrs => false
     case _ => false
   mode match

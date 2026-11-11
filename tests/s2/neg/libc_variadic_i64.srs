@@ -1,0 +1,6 @@
+// expect: error[mismatch]
+// the extra args of a variadic libc call are int in C: an I64 one is a mismatch (the call is also outside a handler)
+extern "libc" def open(path: CStr, flags: I32, ...): I32
+def Lv.f(p: CStr, fl: I32, x: I64): I32 = open(p, fl, x)
+def main(): I64 = 0
+// expect: --> tests/s2/neg/libc_variadic_i64.srs:4

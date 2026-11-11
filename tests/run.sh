@@ -89,6 +89,14 @@ for t in tests/s2/prog/*.srs tests/s2/neg/*.srs; do
 done
 if timeout 60 "$B/s2c1" --l2-agree $S2C 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree s2c sources"; bad=1; fi
 if [ $bad -eq 0 ]; then echo "ok l2-agree"; else fail=1; fi
+# tests/s2/cok/*.srs: s2c1 accepts them and the C compiler accepts the C (built, never run): our prototype of each libc extern
+# agrees with the real declaration in the libc headers (C11 6.7p4)
+for t in tests/s2/cok/*.srs; do
+  n=$(basename "$t" .srs); pass=1; m=cok_$n
+  timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || pass=0
+  msg=$(timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>&1) || pass=0
+  verdict "cok/$n" $pass "cc msg=$(printf '%s' "$msg" | head -1)"
+done
 # s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
 # "// expect: msg" is rejected (exit 1) with msg; a test with neither proves nothing (FAIL)
 for t in tests/s2/eval/*.srs; do

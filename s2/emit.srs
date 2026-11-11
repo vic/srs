@@ -486,7 +486,7 @@ def Emit.fnName(cx: Emit.Cx, f: Sym.Sym, ts: Coll.List[K.Term]): Unit =
     case Coll.Some(g) =>
       val El.Fn(_, _, _, _, _, _, body) = g
       body match
-        case El.Extern(_) => Emit.id(f)
+        case El.Extern(_, _) => Emit.id(f)
         case _ => Emit.defName(f, ts)
     case Coll.None => Emit.defName(f, ts)
 
@@ -1264,11 +1264,15 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn], cs: Coll.ISet): Unit = fs ma
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, tps, _, _, _, body) = f
     body match
-      case El.Extern(abi) =>
-        if Emit.strInline(n) || !Emit.keepExtern(abi, cs, n) then ()
-        else
-          // one C symbol for every instance: a [] binder slot is void* (spec sec 3 slotType)
-          Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), Emit.KExtern)
+      case El.Extern(abi, ghost) => abi match
+        case Ast.AbiSrs =>
+          if Emit.strInline(n) || !Emit.keepExtern(abi, cs, n) then ()
+          else
+            // one C symbol for every instance: a [] binder slot is void* (spec sec 3 slotType)
+            Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), Emit.KExtern)
+            Console.print(";\n")
+        case _ =>
+          Emit.libcSig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), ghost, Emit.isVarAbi(abi))
           Console.print(";\n")
       case _ => ()
     Emit.externs(cx, rest, cs)
@@ -1277,12 +1281,61 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn], cs: Coll.ISet): Unit = fs ma
 // C compiler checks against the libc headers (Emit.libcHeaders), called or not
 def Emit.keepExtern(abi: Ast.Abi, cs: Coll.ISet, n: Sym.Sym): Bool = abi match
   case Ast.AbiLibc => true
+  case Ast.AbiLibcVar => true
   case Ast.AbiSrs => Coll.setHas(cs, Sym.hash(n))
+
+// the prototype of a libc extern: the C compiler checks it against the real declaration (C11 6.7p4). A ghost param (an
+// Array length) is no C param, an Array param is void* (the call converts uint8_t* to it), `...` ends a variadic one
+def Emit.libcSig(cx: Emit.Cx, fi: Emit.Fi, ghost: Coll.List[Bool], va: Bool): Unit =
+  val Emit.Fi(self, _, _, slots, ret) = fi
+  Emit.ctype(cx, ret)
+  Console.print(" ")
+  Emit.id(self)
+  Console.print("(")
+  val kept = Emit.keptVals(slots, ghost, 0)
+  Emit.libcParams(cx, slots, ghost, Emit.First)
+  if va then Console.print(if kept == 0 then "..." else ", ...") else if kept == 0 then Console.print("void") else ()
+  Console.print(")")
+
+def Emit.keptVals(slots: Coll.List[Emit.Slot], ghost: Coll.List[Bool], n: I64): I64 = slots match
+  case Coll.Nil => n
+  case Coll.Cons(sl, rest) => sl match
+    case Emit.SCap(_) => Emit.keptVals(rest, ghost, n)
+    case Emit.SVal(_, _) => ghost match
+      case Coll.Nil => Emit.keptVals(rest, Coll.Nil, n + 1)
+      case Coll.Cons(g, grest) => Emit.keptVals(rest, grest, if g then n else n + 1)
+
+def Emit.libcParams(cx: Emit.Cx, slots: Coll.List[Emit.Slot], ghost: Coll.List[Bool], s: Emit.Sep): Unit = slots match
+  case Coll.Nil => ()
+  case Coll.Cons(sl, rest) => sl match
+    case Emit.SCap(_) => Emit.libcParams(cx, rest, ghost, s)
+    case Emit.SVal(x, t) =>
+      val g: Bool = ghost match
+        case Coll.Nil => false
+        case Coll.Cons(b, _) => b
+      val grest: Coll.List[Bool] = ghost match
+        case Coll.Nil => Coll.Nil
+        case Coll.Cons(_, r) => r
+      if g then Emit.libcParams(cx, rest, grest, s)
+      else
+        Emit.sep(s)
+        Emit.libcCType(cx, t)
+        Console.print(" p_")
+        Emit.id(x)
+        Emit.libcParams(cx, rest, grest, Emit.Comma)
+
+def Emit.libcCType(cx: Emit.Cx, t: K.Term): Unit = t match
+  case K.Con(n, _) => if Str.eq(Sym.str(n), "Array") then Console.print("void*") else Emit.ctype(cx, t)
+  case _ => Emit.ctype(cx, t)
+
+def Emit.isVarAbi(abi: Ast.Abi): Bool = abi match
+  case Ast.AbiLibcVar => true
+  case _ => false
 
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
 def Emit.libcHeaders(fs: Coll.List[El.Fn]): Unit =
-  if Emit.anyLibc(fs) then Console.print("#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\n") else ()
+  if Emit.anyLibc(fs) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
 
 def Emit.anyLibc(fs: Coll.List[El.Fn]): Bool = fs match
   case Coll.Nil => false
@@ -1290,13 +1343,13 @@ def Emit.anyLibc(fs: Coll.List[El.Fn]): Bool = fs match
     val El.Fn(_, _, _, _, _, _, body) = f
     body match
       case El.Def(_) => Emit.anyLibc(rest)
-      case El.Extern(abi) => abi match
-        case Ast.AbiLibc => true
+      case El.Extern(abi, _) => abi match
         case Ast.AbiSrs => Emit.anyLibc(rest)
+        case _ => true
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
-  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
+  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("rt_os_errno")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
@@ -1361,7 +1414,7 @@ def Emit.externCast(cx: Emit.Cx, f: Sym.Sym, gts: Coll.List[K.Term]): Coll.Optio
     case Coll.Some(g) =>
       val El.Fn(_, _, tps, _, _, ret, body) = g
       body match
-        case El.Extern(_) => ret match
+        case El.Extern(_, _) => ret match
           case K.Con(n, xs) => if Coll.length(xs) == 0 then Ty.lookup(Ty.zipBind(tps, gts, Coll.Nil), n) else Coll.None
           case _ => Coll.None
         case _ => Coll.None
@@ -1605,7 +1658,7 @@ def Emit.cpsFns(cx: Emit.Cx, sfi: Emit.Fi, p: Sym.Sym, hfs: Coll.List[El.Fn], ga
         val vslots = Emit.dropCap(gslots, k)
         val e: El.Expr = body match
           case El.Def(b) => b
-          case El.Extern(_) => El.Unit(0)
+          case El.Extern(_, _) => El.Unit(0)
         val e2 = Emit.normLast(cx, p, k, e, gv)
         val gss = Emit.restStmts(e2)
         val sc = Emit.SC(sfi, gfi, p, hfs, gans, k, nsc, Emit.UFn(g, gv, Emit.restParts(e2)))
@@ -2251,7 +2304,7 @@ def Emit.mainStmts(fs: Coll.List[El.Fn]): Coll.List[El.Stmt] = fs match
       case El.Def(e) => e match
         case El.Block(_, ss, _) => ss
         case _ => Coll.Nil
-      case El.Extern(_) => Coll.Nil
+      case El.Extern(_, _) => Coll.Nil
     else Emit.mainStmts(rest)
 
 // Region is static only when no region is named (named: Emit.namesRegion); its one handle (Srs.Arena or Srs.Heap) is the
@@ -2279,7 +2332,7 @@ def Emit.seenFns(cx: Emit.Cx, fs: Coll.List[El.Fn], s: Emit.Seen): Emit.Seen = f
     val El.Fn(_, _, _, _, _, _, body) = f
     val s1 = body match
       case El.Def(e) => Emit.seenE(cx, e, s)
-      case El.Extern(_) => s
+      case El.Extern(_, _) => s
     Emit.seenFns(cx, rest, s1)
 
 def Emit.seenHs(cx: Emit.Cx, hs: Coll.List[El.Handler], s: Emit.Seen): Emit.Seen = hs match
@@ -2358,7 +2411,7 @@ def Emit.externSet(fs: Coll.List[El.Fn], ex: Coll.ISet): Coll.ISet = fs match
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, _, _, _, _, body) = f
     body match
-      case El.Extern(_) => Emit.externSet(rest, Coll.setAdd(ex, Sym.hash(n)))
+      case El.Extern(_, _) => Emit.externSet(rest, Coll.setAdd(ex, Sym.hash(n)))
       case El.Def(_) => Emit.externSet(rest, ex)
 
 def Emit.seenCall(cs: Coll.ISet, ex: Coll.ISet, f: Sym.Sym): Coll.ISet =
@@ -2413,7 +2466,7 @@ def Emit.dropFns(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], isDef: Bool, fs: C
 
 def Emit.dropBody(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], body: El.Body): El.Body = body match
   case El.Def(e) => El.Def(Emit.dropE(m, xs, e))
-  case El.Extern(a) => El.Extern(a)
+  case El.Extern(a, g) => El.Extern(a, g)
 
 // caps has a dropped binder, or a written binder (a name that is not a row binder eff.X)
 def Emit.mayPass(caps: Coll.List[Sym.Sym], xs: Coll.List[Sym.Sym]): Bool = caps match

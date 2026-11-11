@@ -71,10 +71,11 @@ enum El.Param:
 enum El.Fn:
   case El.Fn(line: I64, name: Sym.Sym, tparams: Coll.List[Sym.Sym], caps: Coll.List[Sym.Sym], params: Coll.List[El.Param], ret: K.Term, body: El.Body)
 
-// a def has C, an extern is a C symbol of the runtime
+// a def has C, an extern is a C symbol of the runtime; ghost: per param, true for an I64 that only names the length of an
+// Array param of a libc extern (a proof object: not a C param, not a C argument)
 enum El.Body:
   case El.Def(e: El.Expr)
-  case El.Extern(abi: Ast.Abi)
+  case El.Extern(abi: Ast.Abi, ghost: Coll.List[Bool])
 
 // handler name for protocol proto: its fns (init, then the ops)
 enum El.Handler:
