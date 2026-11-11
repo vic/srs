@@ -1804,8 +1804,104 @@ def Flow.check(cx: Flow.Cx, f: Ast.Fn): Flow.Verdict = Flow.checkWith(Flow.plans
 
 def Flow.checkWith(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn): Flow.Verdict = Flow.checkIn(p, cx, f, Coll.Nil)
 
+// L2 (prototype): a fn whose Flow facts can hold no capability: no {} binder or fact group, no <..> in its own signature, no
+// handle or resume in its body, and every call is to a fn whose signature names none: every clash rule needs RCapName / RCapOf (or an
+// entry fact), so with no capability the engine derives nothing
+def Flow.plainFn(cx: Flow.Cx, f: Ast.Fn): Bool =
+  val Ast.Fn(_, _, gs, ps, ret, exit, body) = f
+  val Flow.Cx(_, _, fns, _, _, _, _) = cx
+  Flow.noAtoms(exit) && Flow.plainSigOf(gs, ps, ret) && Flow.plainBody(fns, body)
+
+def Flow.noAtoms(xs: Coll.List[Ast.Atom]): Bool = xs match
+  case Coll.Nil => true
+  case Coll.Cons(_, _) => false
+
+def Flow.plainSigOf(gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder], ret: Ast.Ty): Bool =
+  Flow.plainGroups(gs) && Flow.plainBinders(ps) && Flow.plainTy(ret)
+
+def Flow.plainGroups(gs: Coll.List[Ast.Group]): Bool = gs match
+  case Coll.Nil => true
+  case Coll.Cons(g, rest) => g match
+    case Ast.Types(_) => Flow.plainGroups(rest)
+    case Ast.Evidence(_) => false
+    case Ast.Facts(_) => false
+
+def Flow.plainBinders(bs: Coll.List[Ast.Binder]): Bool = bs match
+  case Coll.Nil => true
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Flow.plainTy(t) && Flow.plainBinders(rest)
+
+def Flow.plainTy(t: Ast.Ty): Bool =
+  val Ast.Ty(_, _, args, caps, _) = t
+  val capsOk: Bool = caps match
+    case Ast.Inferred => true
+    case Ast.Stated(_) => false
+    case Ast.Chosen(_) => false
+  capsOk && Flow.plainTys(args)
+
+def Flow.plainTys(ts: Coll.List[Ast.Ty]): Bool = ts match
+  case Coll.Nil => true
+  case Coll.Cons(t, rest) => Flow.plainTy(t) && Flow.plainTys(rest)
+
+def Flow.plainBody(fns: Coll.List[Ast.Fn], b: Ast.Body): Bool = b match
+  case Ast.Def(_, e) => Flow.plainE(fns, e)
+  case Ast.Extern(_) => true
+
+def Flow.plainE(fns: Coll.List[Ast.Fn], e: Ast.Expr): Bool = e match
+  case Ast.Int(_, _) => true
+  case Ast.Bool(_, _) => true
+  case Ast.Str(_, _) => true
+  case Ast.Unit(_) => true
+  case Ast.Name(_, _) => true
+  case Ast.Call(_, g, _, _, args) =>
+    val calleeOk: Bool = Flow.fnNamed(fns, g) match
+      case Coll.Some(c) =>
+        val Ast.Fn(_, _, cgs, cps, cret, _, _) = c
+        Flow.plainSigOf(cgs, cps, cret)
+      case Coll.None => true
+    calleeOk && Flow.plainAll(fns, args)
+  case Ast.Method(_, _, _, args) => Flow.plainAll(fns, args)
+  case Ast.Resume(_, _, _) => false
+  case Ast.Bin(_, _, l, r) => Flow.plainE(fns, l) && Flow.plainE(fns, r)
+  case Ast.Un(_, _, x) => Flow.plainE(fns, x)
+  case Ast.If(_, c, t, x) => Flow.plainE(fns, c) && Flow.plainE(fns, t) && Flow.plainE(fns, x)
+  case Ast.Match(_, s, arms) => Flow.plainE(fns, s) && Flow.plainArms(fns, arms)
+  case Ast.Block(_, ss, last) => Flow.plainStmts(fns, ss) && Flow.plainE(fns, last)
+  case Ast.While(_, c, b) => Flow.plainE(fns, c) && Flow.plainE(fns, b)
+  case Ast.Assign(_, _, x) => Flow.plainE(fns, x)
+  case Ast.Quant(_, _, _, _, x) => Flow.plainE(fns, x)
+
+def Flow.plainAll(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Expr]): Bool = es match
+  case Coll.Nil => true
+  case Coll.Cons(e, rest) => Flow.plainE(fns, e) && Flow.plainAll(fns, rest)
+
+def Flow.plainArms(fns: Coll.List[Ast.Fn], arms: Coll.List[Ast.Arm]): Bool = arms match
+  case Coll.Nil => true
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, body) = a
+    Flow.plainE(fns, body) && Flow.plainArms(fns, rest)
+
+def Flow.plainStmts(fns: Coll.List[Ast.Fn], ss: Coll.List[Ast.Stmt]): Bool = ss match
+  case Coll.Nil => true
+  case Coll.Cons(s, rest) => Flow.plainStmt(fns, s) && Flow.plainStmts(fns, rest)
+
+def Flow.plainStmt(fns: Coll.List[Ast.Fn], s: Ast.Stmt): Bool = s match
+  case Ast.Val(_, _, _, e) => Flow.plainE(fns, e)
+  case Ast.Var(_, _, _, e) => Flow.plainE(fns, e)
+  case Ast.Handle(_, _, _, _) => false
+  case Ast.Do(e) => Flow.plainE(fns, e)
+  case Ast.Check(_, _, e) => Flow.plainE(fns, e)
+
 // f checked with the rule library compiled once (Flow.plans) for every def, row in scope (Flow.facts)
 def Flow.checkIn(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Flow.Verdict =
+  if Flow.rowNone(row) && Flow.plainFn(cx, f) then Flow.skipped(p, cx, f, row) else Flow.checkEngine(p, cx, f, row)
+
+def Flow.rowNone(row: Coll.List[Ast.Binder]): Bool = row match
+  case Coll.Nil => true
+  case Coll.Cons(_, _) => false
+
+def Flow.checkEngine(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Flow.Verdict =
   val fs = Flow.facts(cx, f, row)
   D.run(Flow.planFor(p, Flow.seeds(fs)), fs) match
     case D.Solved(m) => Flow.verdictOf(Flow.readAll(m))
@@ -1876,7 +1972,12 @@ def Flow.seeds(fs: Coll.List[D.Fact]): Flow.Seeds = Flow.seedsOf(fs, Flow.relSym
 // the rule library compiled once per run (bead vic-kpev.1), one program per mix of seeded groups: by close, then at,
 // then bound, each without the group and with it
 enum Flow.Plans:
-  case Flow.Plans(noClose: Flow.PlansAt, close: Flow.PlansAt)
+  case Flow.Plans(noClose: Flow.PlansAt, close: Flow.PlansAt, l2: Flow.L2)
+
+// L2: a fn without capabilities skips the engine (L2On); L2Agree also runs the engine and reports L2-UNSOUND when it disagrees (the gate)
+enum Flow.L2:
+  case Flow.L2On
+  case Flow.L2Agree
 
 enum Flow.PlansAt:
   case Flow.PlansAt(noAt: Flow.PlansBound, at: Flow.PlansBound)
@@ -1884,7 +1985,9 @@ enum Flow.PlansAt:
 enum Flow.PlansBound:
   case Flow.PlansBound(noBound: D.Compiled, bound: D.Compiled)
 
-def Flow.plans(): Flow.Plans = Flow.Plans(Flow.plansAt(false), Flow.plansAt(true))
+def Flow.plans(): Flow.Plans = Flow.Plans(Flow.plansAt(false), Flow.plansAt(true), Flow.L2On)
+
+def Flow.plansAgree(): Flow.Plans = Flow.Plans(Flow.plansAt(false), Flow.plansAt(true), Flow.L2Agree)
 
 def Flow.plansAt(c: Bool): Flow.PlansAt = Flow.PlansAt(Flow.plansBound(c, false), Flow.plansBound(c, true))
 
@@ -1892,7 +1995,7 @@ def Flow.plansBound(c: Bool, a: Bool): Flow.PlansBound = Flow.PlansBound(D.compi
 
 def Flow.planFor(p: Flow.Plans, s: Flow.Seeds): D.Compiled =
   val Flow.Seeds(c, a, b) = s
-  val Flow.Plans(p0, p1) = p
+  val Flow.Plans(p0, p1, _) = p
   val pa = if c then p1 else p0
   val Flow.PlansAt(q0, q1) = pa
   val pb = if a then q1 else q0
@@ -1917,3 +2020,15 @@ def Flow.binderProto(bs: Coll.List[Ast.Binder], b: Sym.Sym): Coll.Option[Sym.Sym
     val Ast.Binder(_, n, t) = x
     val Ast.Ty(_, tn, _, _, _) = t
     if Sym.eq(n, b) then Coll.Some(tn) else Flow.binderProto(rest, b)
+
+// the verdict of a skippable fn: Ok without the engine; in the Agree mode (the gate) the engine runs too and must say Ok, else a
+// clash named L2-UNSOUND
+def Flow.skipped(p: Flow.Plans, cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Flow.Verdict =
+  val Flow.Plans(_, _, mode) = p
+  mode match
+    case Flow.L2On => Flow.Ok
+    case Flow.L2Agree => Flow.checkEngine(p, cx, f, row) match
+      case Flow.Ok => Flow.Ok
+      case _ =>
+        val Ast.Fn(line, _, _, _, _, _, _) = f
+        Flow.Bad(Coll.Cons(Flow.Stuck(line, Sym.of("L2-UNSOUND")), Coll.Nil))

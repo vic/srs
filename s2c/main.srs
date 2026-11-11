@@ -277,8 +277,12 @@ def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], arr
           1
         case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
 
+def S2c.plansOf(m: S2c.Mode): Flow.Plans = m match
+  case S2c.EmitAgree => Flow.plansAgree()
+  case _ => Flow.plans()
+
 def S2c.flowed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
-  S2c.flowAll(Flow.plans(), S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
+  S2c.flowAll(S2c.plansOf(m), S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match
     case S2c.FlowBad(rel) => S2c.internal("flow", rel)
     case S2c.FlowOk(cs) => cs match
       case Coll.Cons(_, _) =>
@@ -367,6 +371,8 @@ def S2c.internal(phase: Str, rel: Sym.Sym): I64 =
 // what a checked program becomes: C (the default), or the output of an s1 flag (vic 2026-11-09: s2 has every s1 flag)
 enum S2c.Mode:
   case S2c.EmitC
+  // --l2-agree: as the C output, but a fn the Flow shortcut skips is also checked by the engine (L2-UNSOUND on a disagreement)
+  case S2c.EmitAgree
   // --eval: "name value" for each nullary pure def but main, run at compile time
   case S2c.EvalAll
   // --hash: "name a.b.c.d", the content hash of every def and enum
@@ -401,6 +407,9 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
     0
   case S2c.Fragment =>
     S2c.fragment(fs, Elgate.run(ds, res))
+  case S2c.EmitAgree =>
+    Emit.program(ds, res)
+    0
   case S2c.EmitC =>
     Emit.program(ds, res)
     0
@@ -436,6 +445,7 @@ def S2c.args(): S2c.Args =
   else if Args.count() > 1 && Str.eq(Args.at(1), "--hash") then S2c.Args(S2c.HashAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--fragment") then S2c.Args(S2c.Fragment, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--l2-agree") then S2c.Args(S2c.EmitAgree, 2)
   else S2c.Args(S2c.EmitC, 1)
 
 def main(): I64 =

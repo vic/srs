@@ -1,0 +1,134 @@
+// L2 soundness, permanent (vic-6z7p.30): Flow.plainFn lets a fn without capabilities skip the Datalog engine. That is sound iff no
+// clash relation is derivable from facts a capability-free fn emits. RULES: with the capability seed relations (CAPS below) absent and
+// every other relation free, no clash relation of Flow.relOf is derivable (least fixpoint, negation ignored: sound for derivability).
+// EMITTER: the facts Flow.facts emits for plain fns never use a CAPS relation. A new rule that derives a clash from a free
+// relation, or an emitter that adds a CAPS fact to a plain fn, fails here.
+def Fq.sy {r: Region} (x: Flow.Rel): Sym.Sym = Flow.relSym(x)
+
+// the relations only a capability (a binder, a handle), a call binding one, or an entry fact can make true
+def Fq.caps {r: Region} (): Coll.List[Sym.Sym] =
+  val a = Coll.Cons(Fq.sy(Flow.RMsEnd), Coll.Cons(Fq.sy(Flow.REscCap), Coll.Cons(Fq.sy(Flow.RAssignAt), Coll.Nil)))
+  val b = Coll.Cons(Fq.sy(Flow.RCallee), Coll.Cons(Fq.sy(Flow.RWant), Coll.Cons(Fq.sy(Flow.RNoSol), Coll.Cons(Fq.sy(Flow.RMsRes), a))))
+  val c = Coll.Cons(Fq.sy(Flow.RCapLine), Coll.Cons(Fq.sy(Flow.RHandle), Coll.Cons(Fq.sy(Flow.RClose), Coll.Cons(Fq.sy(Flow.RBind), b))))
+  Coll.Cons(Fq.sy(Flow.RCapName), Coll.Cons(Fq.sy(Flow.RCapOf), c))
+
+def Fq.has {r: Region} (xs: Coll.List[Sym.Sym], x: Sym.Sym): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(y, rest) => if Sym.eq(x, y) then true else Fq.has(rest, x)
+
+def Fq.headOf {r: Region} (ru: D.Rule): Sym.Sym = ru match
+  case D.Rule(h, _) => Fq.atomRel(h)
+
+def Fq.atomRel {r: Region} (a: D.Atom): Sym.Sym = a match
+  case D.Atom(rel, _) => rel
+
+// every positive body relation of ru is in f
+def Fq.bodyIn {r: Region} (f: Coll.List[Sym.Sym], ls: Coll.List[D.Lit]): Bool = ls match
+  case Coll.Nil => true
+  case Coll.Cons(l, rest) => l match
+    case D.Pos(a) => Fq.has(f, Fq.atomRel(a)) && Fq.bodyIn(f, rest)
+    case D.Neg(_) => Fq.bodyIn(f, rest)
+
+def Fq.hasRule {r: Region} (rs: Coll.List[D.Rule], x: Sym.Sym): Bool = rs match
+  case Coll.Nil => false
+  case Coll.Cons(ru, rest) => if Sym.eq(Fq.headOf(ru), x) then true else Fq.hasRule(rest, x)
+
+// one round: add every relation of the universe derivable now
+def Fq.round {r: Region} (rs: Coll.List[D.Rule], caps: Coll.List[Sym.Sym], f: Coll.List[Sym.Sym], us: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = us match
+  case Coll.Nil => f
+  case Coll.Cons(u, rest) =>
+    val f1 = if Fq.has(f, u) then f else if Fq.derivable(rs, rs, caps, f, u) then Coll.Cons(u, f) else f
+    Fq.round(rs, caps, f1, rest)
+
+// u is free (no rule, not a CAPS seed) or some rule of u has every positive body relation in f
+def Fq.derivable {r: Region} (all: Coll.List[D.Rule], rs: Coll.List[D.Rule], caps: Coll.List[Sym.Sym], f: Coll.List[Sym.Sym], u: Sym.Sym): Bool =
+  if !Fq.hasRule(all, u) then !Fq.has(caps, u) else Fq.anyRule(rs, f, u)
+
+def Fq.anyRule {r: Region} (rs: Coll.List[D.Rule], f: Coll.List[Sym.Sym], u: Sym.Sym): Bool = rs match
+  case Coll.Nil => false
+  case Coll.Cons(ru, rest) =>
+    val D.Rule(h, body) = ru
+    if Sym.eq(Fq.atomRel(h), u) && Fq.bodyIn(f, body) then true else Fq.anyRule(rest, f, u)
+
+def Fq.lits {r: Region} (ls: Coll.List[D.Lit], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ls match
+  case Coll.Nil => acc
+  case Coll.Cons(l, rest) => l match
+    case D.Pos(a) => Fq.lits(rest, Coll.Cons(Fq.atomRel(a), acc))
+    case D.Neg(a) => Fq.lits(rest, Coll.Cons(Fq.atomRel(a), acc))
+
+def Fq.universe {r: Region} (rs: Coll.List[D.Rule], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = rs match
+  case Coll.Nil => acc
+  case Coll.Cons(ru, rest) =>
+    val D.Rule(h, body) = ru
+    Fq.universe(rest, Fq.lits(body, Coll.Cons(Fq.atomRel(h), acc)))
+
+// the derivable set, fuel rounds (each round adds at least one relation or stops)
+def Fq.fix {r: Region} (rs: Coll.List[D.Rule], caps: Coll.List[Sym.Sym], us: Coll.List[Sym.Sym], f: Coll.List[Sym.Sym], fuel: I64): Coll.List[Sym.Sym] =
+  if fuel <= 0 then f
+  else
+    val f1 = Fq.round(rs, caps, f, us)
+    if Coll.length(f1) == Coll.length(f) then f else Fq.fix(rs, caps, us, f1, fuel - 1)
+
+def Fq.clashRels {r: Region} (): Coll.List[Flow.Kind] =
+  val a = Coll.Cons(Flow.KDead, Coll.Cons(Flow.KEscape, Coll.Cons(Flow.KStale, Coll.Cons(Flow.KMsState, Coll.Cons(Flow.KBound, Coll.Nil)))))
+  Coll.Cons(Flow.KStuck, Coll.Cons(Flow.KSplit, Coll.Cons(Flow.KUnended, Coll.Cons(Flow.KAmbig, Coll.Cons(Flow.KExitBad, Coll.Cons(Flow.KNoSol, a))))))
+
+def Fq.checkKinds {r: Region} (f: Coll.List[Sym.Sym], ks: Coll.List[Flow.Kind]): Unit = ks match
+  case Coll.Nil => ()
+  case Coll.Cons(k, rest) =>
+    val x = Flow.relSym(Flow.relOf(k))
+    Console.print(Sym.str(x))
+    Console.print(if Fq.has(f, x) then " DERIVABLE WITHOUT A CAPABILITY\n" else " needs a capability\n")
+    Fq.checkKinds(f, rest)
+
+// ── the emitter side: the facts Flow.facts emits for plain fns use no CAPS relation ──
+def Fq.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred, Coll.Nil)
+def Fq.nm {r: Region} (x: Str): Ast.Expr = Ast.Name(1, Sym.of(x))
+def Fq.fn {r: Region} (name: Str, body: Ast.Expr): Ast.Fn =
+  Ast.Fn(1, Sym.of(name), Coll.Nil, Coll.Cons(Ast.Binder(1, Sym.of("x"), Fq.ty("I64")), Coll.Nil), Fq.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body))
+def Fq.val {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(1, Sym.of(x), Coll.None, e)
+def Fq.var {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Var(1, Sym.of(x), Coll.None, e)
+
+// the plain fns: arithmetic, val/var/assign, if, while, a call of another plain fn
+def Fq.fns {r: Region} (): Coll.List[Ast.Fn] =
+  val inc = Fq.fn("inc", Ast.Bin(1, Ast.Add, Fq.nm("x"), Ast.Int(1, 1)))
+  val ass = Fq.fn("ass", Ast.Block(1, Coll.Cons(Fq.var("y", Fq.nm("x")), Coll.Cons(Ast.Do(Ast.Assign(1, Sym.of("y"), Ast.Int(1, 2))), Coll.Nil)), Fq.nm("y")))
+  val cond = Fq.fn("cond", Ast.If(1, Ast.Bool(1, true), Fq.nm("x"), Ast.Int(1, 0)))
+  val loop = Fq.fn("loop", Ast.Block(1, Coll.Cons(Fq.var("i", Ast.Int(1, 0)), Coll.Cons(Ast.Do(Ast.While(1, Ast.Bin(1, Ast.Lt, Fq.nm("i"), Fq.nm("x")), Ast.Assign(1, Sym.of("i"), Ast.Bin(1, Ast.Add, Fq.nm("i"), Ast.Int(1, 1))))), Coll.Nil)), Fq.nm("i")))
+  val call = Fq.fn("call", Ast.Call(1, Sym.of("inc"), Coll.Nil, Coll.Nil, Coll.Cons(Fq.nm("x"), Coll.Nil)))
+  val vals = Fq.fn("vals", Ast.Block(1, Coll.Cons(Fq.val("a", Fq.nm("x")), Coll.Cons(Fq.val("b", Fq.nm("a")), Coll.Nil)), Fq.nm("b")))
+  Coll.Cons(inc, Coll.Cons(ass, Coll.Cons(cond, Coll.Cons(loop, Coll.Cons(call, Coll.Cons(vals, Coll.Nil))))))
+
+def Fq.factRels {r: Region} (fs: Coll.List[D.Fact], caps: Coll.List[Sym.Sym], bad: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = fs match
+  case Coll.Nil => bad
+  case Coll.Cons(f, rest) =>
+    val D.Fact(rel, _) = f
+    Fq.factRels(rest, caps, if Fq.has(caps, rel) && !Fq.has(bad, rel) then Coll.Cons(rel, bad) else bad)
+
+def Fq.emitted {r: Region} (cx: Flow.Cx, fs: Coll.List[Ast.Fn], all: Coll.List[Ast.Fn], bad: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = fs match
+  case Coll.Nil => bad
+  case Coll.Cons(f, rest) =>
+    val plain: Bool = Flow.plainFn(cx, f)
+    val facts: Coll.List[D.Fact] = if plain then Flow.facts(cx, f, Coll.Nil) else Coll.Nil
+    Console.print(if plain then "plain\n" else "NOT PLAIN\n")
+    Fq.emitted(cx, rest, all, Fq.factRels(facts, Fq.caps(), bad))
+
+def Fq.printBad {r: Region} (bad: Coll.List[Sym.Sym]): Unit = bad match
+  case Coll.Nil => Console.print("emitter: no CAPS relation in the facts of a plain fn\n")
+  case Coll.Cons(x, rest) =>
+    Console.print("EMITTER VIOLATION: a plain fn emits ")
+    Console.print(Sym.str(x))
+    Console.print("\n")
+    Fq.printBad(rest)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val rs = Flow.rulesOf(Flow.Seeds(true, true, true))
+  val us = Fq.universe(rs, Coll.Nil)
+  val f = Fq.fix(rs, Fq.caps(), us, Coll.Nil, Coll.length(us) + 1)
+  Fq.checkKinds(f, Fq.clashRels())
+  val all = Fq.fns()
+  val cx = Flow.Cx(Coll.Nil, Coll.Nil, all, Coll.Nil, Coll.Nil, Eff.none(), Eff.syms())
+  Fq.printBad(Fq.emitted(cx, all, all, Coll.Nil))
+  0

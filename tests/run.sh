@@ -81,6 +81,14 @@ for t in tests/s2/cneg/*.srs; do
   while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
   verdict "cneg/$n" $pass "cc exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
+# the Flow shortcut (Flow.plainFn, vic-6z7p.30): every program of prog/ neg/ and the component tests is compiled with --l2-agree: a fn the shortcut
+# skips is also checked by the engine, and any disagreement prints L2-UNSOUND (the soundness argument is tests/s2/flow_seeds.srs)
+bad=0
+for t in tests/s2/prog/*.srs tests/s2/neg/*.srs; do
+  if timeout 10 "$B/s2c1" --l2-agree $S2LIBS "$t" 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree $t"; bad=1; fi
+done
+if timeout 60 "$B/s2c1" --l2-agree $S2C 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree s2c sources"; bad=1; fi
+if [ $bad -eq 0 ]; then echo "ok l2-agree"; else fail=1; fi
 # s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
 # "// expect: msg" is rejected (exit 1) with msg; a test with neither proves nothing (FAIL)
 for t in tests/s2/eval/*.srs; do
