@@ -1,0 +1,16 @@
+// pass: extern "libc" val imports a C constant or macro as a value of I32, I64 or U64: read as ((int32_t)(NAME)), no prototype, no effect
+// (legal anywhere). The C compile is the check that the name exists.
+extern "libc" val O_RDONLY: I32
+extern "libc" val MADV_HUGEPAGE: I32
+
+def flags(): I64 = I64.ofI32(O_RDONLY) + I64.ofI32(MADV_HUGEPAGE)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  Console.printI64(I64.ofI32(O_RDONLY))
+  Console.print("\n")
+  Console.printI64(I64.ofI32(MADV_HUGEPAGE))
+  Console.print("\n")
+  Console.printI64(flags())
+  Console.print("\n")
+  0

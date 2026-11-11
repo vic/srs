@@ -261,6 +261,7 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
   case El.CallFn(_, f, ts, caps, args) =>
     val gts = Emit.grAll(cx, fi, ts)
     if Emit.isTail(pos) && Emit.isSelf(fi, f, gts) then Emit.jump(cx, fi, env, caps, args)
+    else if Coll.length(args) == 0 && Emit.isLibcValCall(cx, f) then Emit.libcValRead(cx, f)
     else
       val cast = Emit.externCast(cx, f, gts)
       cast match
@@ -1320,6 +1321,7 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn], cs: Coll.ISet): Unit = fs ma
 def Emit.keepExtern(abi: Ast.Abi, cs: Coll.ISet, n: Sym.Sym): Bool = abi match
   case Ast.AbiLibc => true
   case Ast.AbiLibcVar => true
+  case Ast.AbiLibcVal => false
   case Ast.AbiSrs => Coll.setHas(cs, Sym.hash(n))
 
 // the prototype of a libc extern: the C compiler checks it against the real declaration (C11 6.7p4). A ghost param (an
@@ -1453,6 +1455,36 @@ def Emit.cfieldChecks(cx: Emit.Cx, name: Sym.Sym, fs: Coll.List[Ast.CField]): Un
     Console.print(Sym.str(tn))
     Console.print("\");\n")
     Emit.cfieldChecks(cx, name, rest)
+// a libc val has no prototype: it is read as ((T)(NAME)) at each use (Emit.ex, El.CallFn)
+def Emit.isLibcVal(abi: Ast.Abi): Bool = abi match
+  case Ast.AbiLibcVal => true
+  case _ => false
+
+// the type of a libc val named f
+def Emit.libcValTy(cx: Emit.Cx, f: Sym.Sym): Coll.Option[K.Term] =
+  val Emit.Cx(_, fns, _, _, _, _, _, _, _) = cx
+  Coll.sLookup(fns, f) match
+    case Coll.Some(g) =>
+      val El.Fn(_, _, _, _, _, ret, body) = g
+      body match
+        case El.Extern(abi, _) => if Emit.isLibcVal(abi) then Coll.Some(ret) else Coll.None
+        case _ => Coll.None
+    case Coll.None => Coll.None
+
+def Emit.isLibcValCall(cx: Emit.Cx, f: Sym.Sym): Bool = Emit.libcValTy(cx, f) match
+  case Coll.Some(_) => true
+  case Coll.None => false
+
+// ((T)(NAME)): the cast gives the srs type whatever the C type of the macro
+def Emit.libcValRead(cx: Emit.Cx, f: Sym.Sym): Unit = Emit.libcValTy(cx, f) match
+  case Coll.Some(t) =>
+    Console.print("((")
+    Emit.ctype(cx, t)
+    Console.print(")(")
+    Emit.id(f)
+    Console.print("))")
+  case Coll.None => ()
+
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
 def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl]): Unit =

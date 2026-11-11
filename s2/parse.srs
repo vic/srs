@@ -103,7 +103,7 @@ def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   else if Parse.isKw(ts, "extern") then
     Parse.externAbi(Parse.next(ts)) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(abi, t0) => if Parse.isKw(t0, "struct") then Parse.cstruct(abi, Parse.line(ts), Parse.next(t0)) else Parse.kw(t0, "def") match
+      case Parse.Ok(abi, t0) => if Parse.isKw(t0, "struct") then Parse.cstruct(abi, Parse.line(ts), Parse.next(t0)) else if Parse.isKw(t0, "val") then Parse.wrapFn(Parse.libcVal(abi, Parse.line(ts), Parse.next(t0))) else Parse.kw(t0, "def") match
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(_, t1) => Parse.wrapFn(Parse.libcName(abi, Parse.fn(t1, Parse.line(ts), Parse.FExtern(abi))))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
@@ -250,6 +250,7 @@ def Parse.libcName(abi: Ast.Abi, rf: Parse.R[Ast.Fn]): Parse.R[Ast.Fn] = rf matc
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(f, t) => abi match
     case Ast.AbiSrs => rf
+    case Ast.AbiLibcVal => rf
     case _ =>
       val Ast.Fn(line, name, _, _, _, _, _) = f
       if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc extern names a C function: no '.' in its name") else rf
@@ -268,6 +269,7 @@ def Parse.cstruct(abi: Ast.Abi, line: I64, ts: Coll.List[Lex.Tok]): Parse.R[Ast.
           case Parse.Err(l, w) => Parse.Err(l, w)
           case Parse.Ok(fs, t3) => Parse.Ok(Ast.DType(Ast.TypeDecl(line, name, Coll.Nil, Coll.Nil, Ast.CStruct(fs))), t3)
   case Ast.AbiLibcVar => Parse.Err(line, "a libc struct takes no `...`")
+  case Ast.AbiLibcVal => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
   case Ast.AbiSrs => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
 
 def Parse.cfields(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.CField]): Parse.R[Coll.List[Ast.CField]] =
@@ -284,6 +286,25 @@ def Parse.cfields(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.CField]): Parse.R[C
           else Parse.Err(Parse.line(ts), "a libc struct field of type I32, I64, U32 or U64")
 
 def Parse.cfieldTy(s: Str): Bool = Str.eq(s, "I32") || Str.eq(s, "I64") || Str.eq(s, "U32") || Str.eq(s, "U64")
+
+// extern "libc" val NAME: T: a C constant or macro of type I32, I64 or U64, no `.` in its name
+def Parse.libcVal(abi: Ast.Abi, line: I64, ts: Coll.List[Lex.Tok]): Parse.R[Ast.Fn] = abi match
+  case Ast.AbiLibc => Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(name, t1) => Parse.op(t1, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t2) => Parse.ty(t2) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(ty, t3) =>
+          val Ast.Ty(_, tn, targs, _, _) = ty
+          if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc val names a C constant: no '.' in its name")
+          else if Coll.length(targs) == 0 && Parse.libcValTy(Sym.str(tn)) then Parse.Ok(Ast.Fn(line, name, Coll.Nil, Coll.Nil, ty, Coll.Nil, Ast.Extern(Ast.AbiLibcVal)), t3)
+          else Parse.Err(line, "a libc val of type I32, I64 or U64")
+  case Ast.AbiSrs => Parse.Err(line, "a val is declared only as extern \"libc\" val NAME: I32")
+  case Ast.AbiLibcVal => Parse.Err(line, "a val is declared only as extern \"libc\" val NAME: I32")
+  case Ast.AbiLibcVar => Parse.Err(line, "a libc val takes no `...`")
+
+def Parse.libcValTy(s: Str): Bool = Str.eq(s, "I32") || Str.eq(s, "I64") || Str.eq(s, "U64")
 
 // the ABI of an extern body; a def's body is replaced by Parse.bodyOf, its placeholder is the srs ABI
 def Parse.abiOf(k: Parse.FnKind): Ast.Abi = k match
