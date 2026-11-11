@@ -305,14 +305,14 @@ def K.neqsOf(w: Coll.IMap[Coll.List[K.Neq]], n: I64): Coll.List[K.Neq] = Coll.no
   case Coll.Tip => Coll.Nil
   case Coll.Bin(_, _, cs, _, _) => cs
 
-def K.watchIn(s: Coll.IMap[K.Term], w: Coll.IMap[Coll.List[K.Fd]], c: K.Fd, ts: Coll.List[K.Term]): Coll.IMap[Coll.List[K.Fd]] = ts match
+def K.watchIn(s: K.Subst, w: Coll.IMap[Coll.List[K.Fd]], c: K.Fd, ts: Coll.List[K.Term]): Coll.IMap[Coll.List[K.Fd]] = ts match
   case Coll.Nil => w
   case Coll.Cons(t, rest) => K.walk(s, t) match
     case K.Var(n) => K.watchIn(s, Coll.insert(w, n, Coll.Cons(c, K.watchers(w, n))), c, rest)
     case _ => K.watchIn(s, w, c, rest)
 
 // c registered under the variables it reads (under s): =/= in the fix index, the others in the any index
-def K.watch(s: Coll.IMap[K.Term], ps: K.Props, c: K.Fd): K.Props =
+def K.watch(s: K.Subst, ps: K.Props, c: K.Fd): K.Props =
   val K.Props(fx, an, nw, evs) = ps
   if K.isNe(c) then K.Props(K.watchIn(s, fx, c, K.fdTerms(c)), an, nw, evs) else K.Props(fx, K.watchIn(s, an, c, K.fdTerms(c)), nw, evs)
 
@@ -412,12 +412,12 @@ def K.post(st: K.State, u: K.Uni): Coll.Option[K.State] = u match
         case Coll.Some(st2) => K.prop(st2, Coll.Nil)
 
 // the variables of t that are still free under s (a leaf of the term it stands for)
-def K.leaves(s: Coll.IMap[K.Term], t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = K.walk(s, t) match
+def K.leaves(s: K.Subst, t: K.Term, acc: Coll.List[I64]): Coll.List[I64] = K.walk(s, t) match
   case K.Var(n) => Coll.Cons(n, acc)
   case K.Int(_) => acc
   case K.Con(_, args) => K.leavesAll(s, args, acc)
 
-def K.leavesAll(s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
+def K.leavesAll(s: K.Subst, ts: Coll.List[K.Term], acc: Coll.List[I64]): Coll.List[I64] = ts match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.leavesAll(s, t, K.leaves(s, h, acc))
 
@@ -448,7 +448,7 @@ def K.wakePairs(st: K.State, m: I64, qs: Coll.List[K.Neq]): Coll.Option[K.State]
           K.wakePairs(K.State(s, ns, ds, K.Props(fx, an, K.watchNeq(nw, p, K.leaves(s, K.Var(m), Coll.Nil)), evs), nx), m, rest)
 
 // the store under s: a pair that can never unify is dropped; one that already is equal (unify adds no binding) fails
-def K.recheck(s: Coll.IMap[K.Term], ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
+def K.recheck(s: K.Subst, ns: Coll.List[K.Neq], kept: Coll.List[K.Neq]): Coll.Option[Coll.List[K.Neq]] = ns match
   case Coll.Nil => Coll.Some(Coll.rev(kept))
   case Coll.Cons(h, t) =>
     val K.Neq(a, b) = h

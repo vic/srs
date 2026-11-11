@@ -95,7 +95,7 @@ enum Ty.By:
 
 // the substitution, the next fresh var, the clashes, the instances
 enum Ty.St:
-  case Ty.St(s: Coll.IMap[K.Term], next: I64, cs: Coll.List[Ty.Clash], is: Coll.List[Ty.Inst], gs: Coll.List[Ty.Goal], nom: Coll.SMap[K.Term])
+  case Ty.St(s: K.Subst, next: I64, cs: Coll.List[Ty.Clash], is: Coll.List[Ty.Inst], gs: Coll.List[Ty.Goal], nom: Coll.SMap[K.Term])
 
 enum Ty.At:
   case Ty.At(st: Ty.St, t: K.Term)
@@ -309,10 +309,10 @@ def Ty.unhandled(cx: Ty.Cx, line: I64, p: Sym.Sym): Ty.Clash =
     case Ty.Comptime => Ty.UnhandledEffect(line, p)
 
 // the innermost local of protocol type p
-def Ty.innermost(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = Ty.innermostFrom(s, bs, p, Coll.Nil)
+def Ty.innermost(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym): Coll.Option[Sym.Sym] = Ty.innermostFrom(s, bs, p, Coll.Nil)
 
 // seen: the names of the inner locals; a capability whose name an inner local shadows is out of reach by its name
-def Ty.innermostFrom(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
+def Ty.innermostFrom(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym, seen: Coll.List[Sym.Sym]): Coll.Option[Sym.Sym] = bs match
   case Coll.Nil => Coll.None
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, t) = b
@@ -412,7 +412,7 @@ def Ty.capFor(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, p: Sym.Sym, chosen: 
     case Coll.Nil => Ty.Caps(Ty.clash(st, Ty.NoCap(line, p)), Coll.Nil)
 
 // the distinct local names of type p (a shadowed name counts once)
-def Ty.capsOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], p: Sym.Sym, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.capsOf(s: K.Subst, bs: Coll.List[Ty.Bind], p: Sym.Sym, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, t) = b
@@ -479,7 +479,7 @@ def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym
           case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
       case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
 
-def Ty.subst(st: Ty.St): Coll.IMap[K.Term] =
+def Ty.subst(st: Ty.St): K.Subst =
   val Ty.St(s, _, _, _, _, _) = st
   s
 
@@ -824,7 +824,7 @@ def Ty.evidence(gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List
 
 // ── the program: every def and handler fn; then each instance must be solved ──
 enum Ty.Result:
-  case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: Coll.IMap[K.Term], fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
+  case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: K.Subst, fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
 def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], vals: Coll.SMap[Bool]): Ty.Cx = ds match
   case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none(), vals)
@@ -962,13 +962,13 @@ def Ty.fnsEl(cx: Ty.Cx, st: Ty.St, fs: Coll.List[Ast.Fn], row: Coll.List[Eff.Cap
     Ty.fnsEl(cx, st1, rest, row, Coll.Cons(ef, acc))
 
 // an instance with a type arg that is still a var after the whole program: CannotInfer
-def Ty.unsolved(s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
+def Ty.unsolved(s: K.Subst, is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
   case Coll.Nil => cs
   case Coll.Cons(i, rest) =>
     val Ty.Inst(line, f, ts) = i
     if Ty.ground(s, ts) then Ty.unsolved(s, rest, cs) else Ty.unsolved(s, rest, Coll.Cons(Ty.CannotInfer(line, f), cs))
 
-def Ty.ground(s: Coll.IMap[K.Term], ts: Coll.List[K.Term]): Bool = ts match
+def Ty.ground(s: K.Subst, ts: Coll.List[K.Term]): Bool = ts match
   case Coll.Nil => true
   case Coll.Cons(t, rest) => if Ty.groundT(K.reify(s, t)) then Ty.ground(s, rest) else false
 
@@ -1420,7 +1420,7 @@ enum Ty.Res:
 def Ty.givenFuel(): I64 = 1000
 
 // every goal of the program, with the final substitution; a goal that is not ground has a CannotInfer already
-def Ty.goals(ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
+def Ty.goals(ps: Coll.List[Ast.Proto], cands: Coll.List[Ty.Cand], s: K.Subst, gs: Coll.List[Ty.Goal], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = gs match
   case Coll.Nil => cs
   case Coll.Cons(g, rest) =>
     val Ty.Goal(line, t0, locals, chosen) = g
@@ -1438,11 +1438,11 @@ def Ty.resClash(line: I64, t: K.Term, res: Ty.Res, cs: Coll.List[Ty.Clash]): Col
   case Ty.TwoLocals => Coll.Cons(Ty.AmbigEvidence(line, t), cs)
   case Ty.OutOfFuel => Coll.Cons(Ty.GivenFuel(line, t), cs)
 
-def Ty.localProves(s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], x: Sym.Sym, t: K.Term): Bool = Ty.lookup(locals, x) match
+def Ty.localProves(s: K.Subst, locals: Coll.List[Ty.Bind], x: Sym.Sym, t: K.Term): Bool = Ty.lookup(locals, x) match
   case Coll.Some(u) => Mono.termEq(K.reify(s, u), t)
   case Coll.None => false
 
-def Ty.resolve(cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64): Ty.Res =
+def Ty.resolve(cands: Coll.List[Ty.Cand], s: K.Subst, locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64): Ty.Res =
   if fuel <= 0 then Ty.OutOfFuel
   else
     val n = Coll.length(Ty.localsOf(s, locals, t, Coll.Nil))
@@ -1453,7 +1453,7 @@ def Ty.resolve(cands: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.Lis
       case Ty.ViableFuel => Ty.OutOfFuel
 
 // the distinct local names whose type is t (a shadowed name counts once)
-def Ty.localsOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], t: K.Term, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+def Ty.localsOf(s: K.Subst, bs: Coll.List[Ty.Bind], t: K.Term, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
     val Ty.Bind(x, u) = b
@@ -1464,7 +1464,7 @@ enum Ty.Vs:
   case Ty.ViableFuel
 
 // the givens whose head matches t and whose own goals are proved
-def Ty.viable(all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64, acc: Coll.List[Ty.Cand]): Ty.Vs = cs match
+def Ty.viable(all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: K.Subst, locals: Coll.List[Ty.Bind], t: K.Term, fuel: I64, acc: Coll.List[Ty.Cand]): Ty.Vs = cs match
   case Coll.Nil => Ty.Viable(Coll.rev(acc))
   case Coll.Cons(c, rest) =>
     val Ty.Cand(_, tps, head, evs) = c
@@ -1475,7 +1475,7 @@ def Ty.viable(all: Coll.List[Ty.Cand], cs: Coll.List[Ty.Cand], s: Coll.IMap[K.Te
         case Ty.OutOfFuel => Ty.ViableFuel
         case _ => Ty.viable(all, rest, s, locals, t, fuel, acc)
 
-def Ty.allProved(all: Coll.List[Ty.Cand], s: Coll.IMap[K.Term], locals: Coll.List[Ty.Bind], gs: Coll.List[K.Term], fuel: I64): Ty.Res = gs match
+def Ty.allProved(all: Coll.List[Ty.Cand], s: K.Subst, locals: Coll.List[Ty.Bind], gs: Coll.List[K.Term], fuel: I64): Ty.Res = gs match
   case Coll.Nil => Ty.Proved
   case Coll.Cons(g, rest) => Ty.resolve(all, s, locals, g, fuel) match
     case Ty.Proved => Ty.allProved(all, s, locals, rest, fuel)
@@ -1534,7 +1534,7 @@ def Ty.isBuiltin(n: Sym.Sym): Bool =
   Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type") || Str.eq(s, "U32") || Str.eq(s, "U64")
 
 // x is a local whose type is protocol p
-def Ty.isCapOf(s: Coll.IMap[K.Term], bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
+def Ty.isCapOf(s: K.Subst, bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
   case Coll.None => false
   case Coll.Some(t) => K.walk(s, t) match
     case K.Con(n, args) => Sym.eq(n, p) && Coll.length(args) == 0
@@ -1648,7 +1648,7 @@ def Ty.missing(sigs: Coll.List[Ast.Fn], fs: Coll.List[Ast.Fn], line: I64, st: Ty
     Ty.missing(rest, fs, line, st1)
 
 // a generic extern's [] slots are void*: each type arg it is called at must be a pointer (an enum or Ptr)
-def Ty.externSlots(es: Coll.List[Ast.Enum], ext: Coll.SMap[Bool], s: Coll.IMap[K.Term], is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
+def Ty.externSlots(es: Coll.List[Ast.Enum], ext: Coll.SMap[Bool], s: K.Subst, is: Coll.List[Ty.Inst], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = is match
   case Coll.Nil => cs
   case Coll.Cons(i, rest) =>
     val Ty.Inst(line, f, ts) = i
@@ -1664,7 +1664,7 @@ def Ty.externs(fs: Coll.List[Ast.Fn], m: Coll.SMap[Bool]): Coll.SMap[Bool] = fs 
       case _ => m
     Ty.externs(rest, m2)
 
-def Ty.ptrSlots(es: Coll.List[Ast.Enum], s: Coll.IMap[K.Term], line: I64, ts: Coll.List[K.Term], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = ts match
+def Ty.ptrSlots(es: Coll.List[Ast.Enum], s: K.Subst, line: I64, ts: Coll.List[K.Term], cs: Coll.List[Ty.Clash]): Coll.List[Ty.Clash] = ts match
   case Coll.Nil => cs
   case Coll.Cons(t0, rest) =>
     val t = K.reify(s, t0)

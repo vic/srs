@@ -159,7 +159,7 @@ def TT.terms(ts: Coll.List[K.Term]): Unit = ts match
         Console.print(", ")
         TT.terms(rest)
 
-def TT.reified {r: Region} (s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def TT.reified {r: Region} (s: K.Subst, ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => TT.reified(s, rest, Coll.Cons(K.reify(s, t), acc))
 
@@ -171,7 +171,7 @@ def TT.syms(xs: Coll.List[Sym.Sym]): Unit = xs match
     TT.syms(rest)
 
 // the calls of e, in evaluation order (args first)
-def TT.calls {r: Region} (s: Coll.IMap[K.Term], e: El.Expr): Unit = e match
+def TT.calls {r: Region} (s: K.Subst, e: El.Expr): Unit = e match
   case El.CallFn(_, f, ts, caps, args) =>
     TT.callsAll(s, args)
     Console.print(Sym.str(f))
@@ -213,13 +213,13 @@ def TT.calls {r: Region} (s: Coll.IMap[K.Term], e: El.Expr): Unit = e match
   case El.Match(_, x, _, _) => TT.calls(s, x)
   case _ => ()
 
-def TT.callsAll {r: Region} (s: Coll.IMap[K.Term], xs: Coll.List[El.Expr]): Unit = xs match
+def TT.callsAll {r: Region} (s: K.Subst, xs: Coll.List[El.Expr]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
     TT.calls(s, x)
     TT.callsAll(s, rest)
 
-def TT.stmts {r: Region} (s: Coll.IMap[K.Term], ss: Coll.List[El.Stmt]): Unit = ss match
+def TT.stmts {r: Region} (s: K.Subst, ss: Coll.List[El.Stmt]): Unit = ss match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
     x match
@@ -233,7 +233,7 @@ def TT.elab {r: Region} (src: Str, lib: Coll.List[Ast.Decl], name: Str): Unit =
   TT.showAll(cs)
   TT.fnCalls(s, fs, Sym.of(name))
 
-def TT.fnCalls {r: Region} (s: Coll.IMap[K.Term], fs: Coll.List[El.Fn], name: Sym.Sym): Unit = fs match
+def TT.fnCalls {r: Region} (s: K.Subst, fs: Coll.List[El.Fn], name: Sym.Sym): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, _, _, _, _, body) = f

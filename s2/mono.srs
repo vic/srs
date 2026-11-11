@@ -16,7 +16,7 @@ enum Mono.Key:
   case Mono.Goal(t: K.Term)
 
 // t reified, then each binder of sub replaced by its arg
-def Mono.ground(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], t: K.Term): K.Term = Mono.apply(sub, K.reify(s, t))
+def Mono.ground(s: K.Subst, sub: Coll.List[Ty.Bind], t: K.Term): K.Term = Mono.apply(sub, K.reify(s, t))
 
 def Mono.apply(sub: Coll.List[Ty.Bind], t: K.Term): K.Term = t match
   case K.Con(n, args) => args match
@@ -30,7 +30,7 @@ def Mono.applyAll(sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => Mono.applyAll(sub, rest, Coll.Cons(Mono.apply(sub, t), acc))
 
-def Mono.groundAll(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def Mono.groundAll(s: K.Subst, sub: Coll.List[Ty.Bind], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(t, rest) => Mono.groundAll(s, sub, rest, Coll.Cons(Mono.ground(s, sub, t), acc))
 
@@ -86,7 +86,7 @@ def Mono.run(res: Ty.Result): Coll.List[Mono.Inst] =
 
 // what the worklist reads: the final substitution, the defs, the givens
 enum Mono.Cx:
-  case Mono.Cx(s: Coll.IMap[K.Term], fs: Coll.SMap[El.Fn], gvs: Coll.List[El.Given])
+  case Mono.Cx(s: K.Subst, fs: Coll.SMap[El.Fn], gvs: Coll.List[El.Given])
 
 def Mono.fnMap(fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
   case Coll.Nil => m
@@ -195,7 +195,7 @@ def Mono.matchAll(xs: Coll.List[Sym.Sym], ps: Coll.List[K.Term], ts: Coll.List[K
     case Coll.Cons(t, trest) => Mono.matchAll(xs, prest, trest, Mono.matchT(xs, p, t, acc))
 
 // the generic calls of e, at ground args under sub
-def Mono.calls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = e match
+def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = e match
   case El.CallFn(_, f, ts, _, args) =>
     val acc2 = ts match
       case Coll.Nil => acc
@@ -215,17 +215,17 @@ def Mono.calls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], e: El.Expr, acc: C
   case El.Assign(_, _, x) => Mono.calls(s, sub, x, acc)
   case _ => acc
 
-def Mono.callsAll(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.callsAll(s: K.Subst, sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) => Mono.callsAll(s, sub, rest, Mono.calls(s, sub, x, acc))
 
-def Mono.armCalls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Arm], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.armCalls(s: K.Subst, sub: Coll.List[Ty.Bind], xs: Coll.List[El.Arm], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
     val El.Arm(_, _, b) = a
     Mono.armCalls(s, sub, rest, Mono.calls(s, sub, b, acc))
 
-def Mono.stmtCalls(s: Coll.IMap[K.Term], sub: Coll.List[Ty.Bind], xs: Coll.List[El.Stmt], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
+def Mono.stmtCalls(s: K.Subst, sub: Coll.List[Ty.Bind], xs: Coll.List[El.Stmt], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) =>
     val acc2 = x match

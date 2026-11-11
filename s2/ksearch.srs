@@ -18,7 +18,7 @@ enum K.Rule:
 
 // what a branch knows: substitution, disequalities, domains, propagators (s2/kfd.srs), the next fresh variable
 enum K.State:
-  case K.State(s: Coll.IMap[K.Term], neq: Coll.List[K.Neq], dom: Coll.IMap[K.Dom], fd: K.Props, next: I64)
+  case K.State(s: K.Subst, neq: Coll.List[K.Neq], dom: Coll.IMap[K.Dom], fd: K.Props, next: I64)
 
 enum K.Branch:
   case K.Branch(st: K.State, gs: Coll.List[K.Goal])
@@ -77,7 +77,7 @@ def K.shiftFd(c: K.Fd, k: I64): K.Fd = c match
 
 // K.unifyT(s, K.shift(h, k), y, tr) without the copy: a head subterm is shifted only when it is bound into s, so a head
 // that clashes allocates nothing. The binding direction is that of K.unify, so s is the same.
-def K.unifyOff(s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term, tr: Coll.List[I64]): K.Uni = h match
+def K.unifyOff(s: K.Subst, h: K.Term, k: I64, y: K.Term, tr: Coll.List[I64]): K.Uni = h match
   case K.Var(n) => K.unifyT(s, K.Var(n + k), y, tr)
   case K.Int(_) => K.unifyT(s, h, y, tr)
   case K.Con(f, hs) => K.walk(s, y) match
@@ -85,7 +85,7 @@ def K.unifyOff(s: Coll.IMap[K.Term], h: K.Term, k: I64, y: K.Term, tr: Coll.List
     case K.Con(g, ys) => if Sym.eq(f, g) then K.unifyAllOff(s, hs, k, ys, tr) else K.Clash
     case K.Int(_) => K.Clash
 
-def K.unifyAllOff(s: Coll.IMap[K.Term], hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = hs match
+def K.unifyAllOff(s: K.Subst, hs: Coll.List[K.Term], k: I64, ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = hs match
   case Coll.Nil => ys match
     case Coll.Nil => K.Uni(s, tr)
     case Coll.Cons(_, _) => K.Clash

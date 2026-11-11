@@ -16,7 +16,7 @@ def Emit.isInline(al: Emit.Alloc): Bool = al match
 
 // the declarations emit reads, by name
 enum Emit.Cx:
-  case Emit.Cx(s: Coll.IMap[K.Term], fns: Coll.SMap[El.Fn], cases: Coll.SMap[Emit.CaseAt], enums: Coll.SMap[Ast.Enum], protos: Coll.SMap[Ast.Proto], hprotos: Coll.SMap[Sym.Sym], alloc: Emit.Alloc, nominal: Coll.SMap[K.Term], statics: Coll.List[Emit.Static])
+  case Emit.Cx(s: K.Subst, fns: Coll.SMap[El.Fn], cases: Coll.SMap[Emit.CaseAt], enums: Coll.SMap[Ast.Enum], protos: Coll.SMap[Ast.Proto], hprotos: Coll.SMap[Sym.Sym], alloc: Emit.Alloc, nominal: Coll.SMap[K.Term], statics: Coll.List[Emit.Static])
 
 // a C local: a param p_x, or a binding v_x_n (n = the number of locals bound before it)
 enum Emit.Name:
@@ -68,7 +68,7 @@ enum Emit.Part:
   case Emit.Code
 
 // ── the declarations by name ──
-def Emit.cxOf(ds: Coll.List[Ast.Decl], s: Coll.IMap[K.Term], fs: Coll.List[El.Fn], sc: Coll.List[Emit.Static]): Emit.Cx =
+def Emit.cxOf(ds: Coll.List[Ast.Decl], s: K.Subst, fs: Coll.List[El.Fn], sc: Coll.List[Emit.Static]): Emit.Cx =
   Emit.cxDecls(ds, Emit.Cx(s, Emit.fnMap(fs, Coll.sEmpty()), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Coll.sEmpty(), Emit.VTable, Coll.sEmpty(), sc))
 
 def Emit.fnMap(fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
@@ -115,7 +115,7 @@ def Emit.caseAt(cx: Emit.Cx, c: Sym.Sym): Coll.Option[Emit.CaseAt] =
   val Emit.Cx(_, _, cs, _, _, _, _, _, _) = cx
   Coll.sLookup(cs, c)
 
-def Emit.subst(cx: Emit.Cx): Coll.IMap[K.Term] =
+def Emit.subst(cx: Emit.Cx): K.Subst =
   val Emit.Cx(s, _, _, _, _, _, _, _, _) = cx
   s
 

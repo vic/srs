@@ -6,8 +6,11 @@ enum K.Term:
   case K.Con(f: Sym.Sym, args: Coll.List[K.Term])
   case K.Int(v: I64)
 
+// the substitution: a synonym today (step 2 puts a trie behind it)
+type K.Subst = Coll.IMap[K.Term]
+
 // the term t stands for in s: a variable follows its bindings (a triangular substitution)
-def K.walk(s: Coll.IMap[K.Term], t: K.Term): K.Term = t match
+def K.walk(s: K.Subst, t: K.Term): K.Term = t match
   case K.Var(n) => Coll.node(s, n) match
     case Coll.Tip => t
     case Coll.Bin(_, _, u, _, _) => K.walk(s, u)
@@ -15,17 +18,17 @@ def K.walk(s: Coll.IMap[K.Term], t: K.Term): K.Term = t match
   case K.Int(_) => t
 
 // variable n occurs in t under s: binding n to t would build an infinite term
-def K.occurs(s: Coll.IMap[K.Term], n: I64, t: K.Term): Bool = K.walk(s, t) match
+def K.occurs(s: K.Subst, n: I64, t: K.Term): Bool = K.walk(s, t) match
   case K.Var(m) => m == n
   case K.Con(_, args) => K.occursIn(s, n, args)
   case K.Int(_) => false
 
-def K.occursIn(s: Coll.IMap[K.Term], n: I64, ts: Coll.List[K.Term]): Bool = ts match
+def K.occursIn(s: K.Subst, n: I64, ts: Coll.List[K.Term]): Bool = ts match
   case Coll.Nil => false
   case Coll.Cons(h, t) => if K.occurs(s, n, h) then true else K.occursIn(s, n, t)
 
 // s extended so a and b are equal, or None
-def K.unify(s: Coll.IMap[K.Term], a: K.Term, b: K.Term): Coll.Option[Coll.IMap[K.Term]] =
+def K.unify(s: K.Subst, a: K.Term, b: K.Term): Coll.Option[K.Subst] =
   val x = K.walk(s, a)
   val y = K.walk(s, b)
   x match
@@ -39,13 +42,13 @@ def K.unify(s: Coll.IMap[K.Term], a: K.Term, b: K.Term): Coll.Option[Coll.IMap[K
       case K.Int(w) => if v == w then Coll.Some(s) else Coll.None
       case K.Con(_, _) => Coll.None
 
-def K.bind(s: Coll.IMap[K.Term], n: I64, t: K.Term): Coll.Option[Coll.IMap[K.Term]] = t match
+def K.bind(s: K.Subst, n: I64, t: K.Term): Coll.Option[K.Subst] = t match
   case K.Var(m) => if m == n then Coll.Some(s) else Coll.Some(Coll.insert(s, n, t))
   case K.Con(_, _) => if K.occurs(s, n, t) then Coll.None else Coll.Some(Coll.insert(s, n, t))
   case K.Int(_) => Coll.Some(Coll.insert(s, n, t))
 
 // pairwise; lists of other lengths do not unify (arity)
-def K.unifyAll(s: Coll.IMap[K.Term], xs: Coll.List[K.Term], ys: Coll.List[K.Term]): Coll.Option[Coll.IMap[K.Term]] = xs match
+def K.unifyAll(s: K.Subst, xs: Coll.List[K.Term], ys: Coll.List[K.Term]): Coll.Option[K.Subst] = xs match
   case Coll.Nil => ys match
     case Coll.Nil => Coll.Some(s)
     case Coll.Cons(_, _) => Coll.None
@@ -56,12 +59,12 @@ def K.unifyAll(s: Coll.IMap[K.Term], xs: Coll.List[K.Term], ys: Coll.List[K.Term
       case Coll.Some(s2) => K.unifyAll(s2, xt, yt)
 
 // t with every bound variable replaced, all the way down (an answer)
-def K.reify(s: Coll.IMap[K.Term], t: K.Term): K.Term = K.walk(s, t) match
+def K.reify(s: K.Subst, t: K.Term): K.Term = K.walk(s, t) match
   case K.Var(n) => K.Var(n)
   case K.Int(v) => K.Int(v)
   case K.Con(f, args) => K.Con(f, Coll.rev(K.reifyOnto(s, args, Coll.Nil)))
 
-def K.reifyOnto(s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
+def K.reifyOnto(s: K.Subst, ts: Coll.List[K.Term], acc: Coll.List[K.Term]): Coll.List[K.Term] = ts match
   case Coll.Nil => acc
   case Coll.Cons(h, t) => K.reifyOnto(s, t, Coll.Cons(K.reify(s, h), acc))
 
@@ -69,9 +72,9 @@ def K.reifyOnto(s: Coll.IMap[K.Term], ts: Coll.List[K.Term], acc: Coll.List[K.Te
 // so the constraints on those variables wake and no others. K.unify above is the checker's, and stays without a trail
 enum K.Uni:
   case K.Clash
-  case K.Uni(s: Coll.IMap[K.Term], bound: Coll.List[I64])
+  case K.Uni(s: K.Subst, bound: Coll.List[I64])
 
-def K.unifyT(s: Coll.IMap[K.Term], a: K.Term, b: K.Term, tr: Coll.List[I64]): K.Uni =
+def K.unifyT(s: K.Subst, a: K.Term, b: K.Term, tr: Coll.List[I64]): K.Uni =
   val x = K.walk(s, a)
   val y = K.walk(s, b)
   x match
@@ -85,12 +88,12 @@ def K.unifyT(s: Coll.IMap[K.Term], a: K.Term, b: K.Term, tr: Coll.List[I64]): K.
       case K.Int(w) => if v == w then K.Uni(s, tr) else K.Clash
       case K.Con(_, _) => K.Clash
 
-def K.bindT(s: Coll.IMap[K.Term], n: I64, t: K.Term, tr: Coll.List[I64]): K.Uni = t match
+def K.bindT(s: K.Subst, n: I64, t: K.Term, tr: Coll.List[I64]): K.Uni = t match
   case K.Var(m) => if m == n then K.Uni(s, tr) else K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
   case K.Con(_, _) => if K.occurs(s, n, t) then K.Clash else K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
   case K.Int(_) => K.Uni(Coll.insert(s, n, t), Coll.Cons(n, tr))
 
-def K.unifyAllT(s: Coll.IMap[K.Term], xs: Coll.List[K.Term], ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = xs match
+def K.unifyAllT(s: K.Subst, xs: Coll.List[K.Term], ys: Coll.List[K.Term], tr: Coll.List[I64]): K.Uni = xs match
   case Coll.Nil => ys match
     case Coll.Nil => K.Uni(s, tr)
     case Coll.Cons(_, _) => K.Clash
