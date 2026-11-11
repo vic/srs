@@ -1,0 +1,21 @@
+// pass: 3e an op with a {r: Region} binder returns its result in the CALLER's innermost Region: the handler fn gets that
+// capability per call (w_Hrg_mk(env, r, n)), by the request form Rg.mk(n) and the method form h.mk(n)
+capability Rg:
+  def mk {r: Region} (n: I64): Str<r>
+
+handler Hrg for Rg:
+  def mk {r: Region} (n: I64): Str<r> =
+    val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+    Str.ofBytes(n, xs)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle h = Hrg()
+  Console.print(Rg.mk(2))
+  Console.print(h.mk(3))
+  handle b = Srs.Arena()
+  val s = Rg.mk(4)
+  Console.print(s)
+  Console.print("\n")
+  0

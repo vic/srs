@@ -110,7 +110,7 @@ def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[E
         val a2 = Elgate.add(a1, Elgate.StmtExpr, Elgate.CNew, l, fn)
         if Emit.isInline(al) then a2 else Elgate.add(a2, Elgate.VtableCall, Elgate.CNew, l, fn)
       case El.Comptime => a1
-  case El.Op(l, _, ty, op, args) =>
+  case El.Op(l, _, ty, op, args, _) =>
     val a1 = Elgate.exs(cx, fn, args, acc)
     val a2 = if Sym.eq(op, Sym.of("exit")) then Elgate.add(a1, Elgate.Exit, Elgate.COp, l, fn) else a1
     val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
@@ -194,18 +194,18 @@ def Elgate.fns(cx: Emit.Cx, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Col
 
 // every vtable slot's fn prototype is what the op call passes (env/self pointer + op params): a handler whose slots are
 // the h_ fns themselves (Emit.slotPre = h_) must have no fn taking capability params
-def Elgate.slots(hn: Sym.Sym, direct: Bool, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = fs match
+def Elgate.slots(cx: Emit.Cx, p: Sym.Sym, hn: Sym.Sym, direct: Bool, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = fs match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
     val El.Fn(l, name, _, caps, _, _, _) = f
-    val bad = direct && Coll.length(caps) > 0 && !Str.eq(Sym.str(name), "init")
-    Elgate.slots(hn, direct, rest, if bad then Elgate.add(acc, Elgate.VtableSlot, Elgate.CHandle, l, hn) else acc)
+    val bad = direct && Coll.length(caps) > Emit.ownN(cx, p, name) && !Str.eq(Sym.str(name), "init")
+    Elgate.slots(cx, p, hn, direct, rest, if bad then Elgate.add(acc, Elgate.VtableSlot, Elgate.CHandle, l, hn) else acc)
 
 def Elgate.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = hs match
   case Coll.Nil => acc
   case Coll.Cons(h, rest) =>
-    val El.Handler(hn, _, fs, _) = h
-    Elgate.handlers(cx, rest, Elgate.slots(hn, Str.eq(Emit.slotPre(fs), "h_"), fs, Elgate.fns(cx, fs, acc)))
+    val El.Handler(hn, p, fs, _) = h
+    Elgate.handlers(cx, rest, Elgate.slots(cx, p, hn, Str.eq(Emit.slotPre(cx, p, fs), "h_"), fs, Elgate.fns(cx, fs, acc)))
 
 // each mono instance of a def (KDef: a self tail call is a jump) or of a given's method
 def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = is match

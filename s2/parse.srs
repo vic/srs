@@ -549,7 +549,7 @@ enum Parse.Moves:
   case Parse.ByRel(line: I64, rel: Sym.Sym)
 
 enum Parse.COp:
-  case Parse.COp(line: I64, name: Sym.Sym, params: Coll.List[Ast.Binder], ret: Ast.Ty, moves: Parse.Moves)
+  case Parse.COp(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, moves: Parse.Moves)
 
 def Parse.proto(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
@@ -576,7 +576,7 @@ def Parse.proto(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Ast.Decl] = Parse.id
 def Parse.resolveOps(os: Coll.List[Parse.COp], ss: Coll.List[Sym.Sym], rels: Coll.List[Parse.Rel], acc: Coll.List[Ast.Op]): Parse.R[Coll.List[Ast.Op]] = os match
   case Coll.Nil => Parse.Ok(Coll.rev(acc), Coll.Nil)
   case Coll.Cons(o, rest) =>
-    val Parse.COp(line, name, ps, ret, mv) = o
+    val Parse.COp(line, name, gs, ps, ret, mv) = o
     val rt: Parse.R[Coll.List[Ast.Trans]] = mv match
       case Parse.Stay => Parse.Ok(Parse.stays(ss), Coll.Nil)
       case Parse.Move(a, b) => Parse.Ok(Coll.Cons(Ast.Trans(a, b), Coll.Nil), Coll.Nil)
@@ -585,7 +585,7 @@ def Parse.resolveOps(os: Coll.List[Parse.COp], ss: Coll.List[Sym.Sym], rels: Col
         case Coll.None => Parse.Err(l, "a transition of this capability")
     rt match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(trs, _) => Parse.resolveOps(rest, ss, rels, Coll.Cons(Ast.Op(line, name, ps, ret, trs), acc))
+      case Parse.Ok(trs, _) => Parse.resolveOps(rest, ss, rels, Coll.Cons(Ast.Op(line, name, gs, ps, ret, trs), acc))
 
 def Parse.stays(ss: Coll.List[Sym.Sym]): Coll.List[Ast.Trans] = ss match
   case Coll.Nil => Coll.Nil
@@ -634,14 +634,32 @@ def Parse.items(ts: Coll.List[Lex.Tok], pr: Parse.Pr): Parse.R[Parse.Pr] =
         case Parse.Ok(rd, t2) => Parse.items(Parse.endLine(t2), Parse.Pr(ss, st, es, dr, os, Coll.Cons(rd, rs), rels))
   else Parse.Err(Parse.line(ts), "capability item")
 
+// the groups and params of a capability op: def name [<entry>] {groups} (params) [{groups}], as a def's signature
+enum Parse.CS:
+  case Parse.CS(gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder])
+
+def Parse.csGroups(c: Parse.CS): Coll.List[Ast.Group] = c match
+  case Parse.CS(gs, _) => gs
+
+def Parse.csParams(c: Parse.CS): Coll.List[Ast.Binder] = c match
+  case Parse.CS(_, ps) => ps
+
+def Parse.capSig(ts: Coll.List[Lex.Tok]): Parse.R[Parse.CS] = Parse.groups(ts, Coll.Nil) match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(g1, t1) => Parse.params(t1) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(ps, t2) => Parse.groups(t2, Coll.rev(g1)) match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(gs, t3) => Parse.Ok(Parse.CS(gs, ps), t3)
+
 // def name [<A> | <s r t>] (params): ty [<B> | <t>] in a capability
 def Parse.capDef(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Parse.COp] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(name, t1) => Parse.entry(t1) match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(en, t2) => Parse.params(t2) match
+    case Parse.Ok(en, t2) => Parse.capSig(t2) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(ps, t3) => Parse.op(t3, ":") match
+      case Parse.Ok(cs, t3) => Parse.op(t3, ":") match
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(_, t4) => Parse.opRet(t4) match
           case Parse.Err(l, w) => Parse.Err(l, w)
@@ -649,7 +667,7 @@ def Parse.capDef(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Parse.COp] = Parse.
             case Parse.Err(l, w) => Parse.Err(l, w)
             case Parse.Ok(ex, t6) => Parse.moves(line, en, ex) match
               case Parse.Err(l, w) => Parse.Err(l, w)
-              case Parse.Ok(mv, _) => Parse.Ok(Parse.COp(line, name, ps, ret, mv), t6)
+              case Parse.Ok(mv, _) => Parse.Ok(Parse.COp(line, name, Parse.csGroups(cs), Parse.csParams(cs), ret, mv), t6)
 
 // an op result: ty, or ty{names} (the receiver takes the type's {} binders: View{self}); a type with <...> takes no {}
 def Parse.opRet(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ty(ts) match

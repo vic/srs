@@ -223,12 +223,24 @@ def Eff.decls(cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.List[D.Fact] 
       Eff.decls(cx, rest, Eff.hfns(cx, hn, hfs, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
     case _ => Eff.decls(cx, rest, w)
 
+// the {} binders a handler fn shares with the op it implements: a per-call capability of the caller (the op declares it),
+// not a row entry of the handler
+def Eff.opOwn(cx: Eff.Cx, h: Sym.Sym, fname: Sym.Sym): Coll.List[Sym.Sym] =
+  val Eff.Cx(ps, hp, _, _, _, _) = cx
+  Coll.sLookup(hp, h) match
+    case Coll.None => Coll.Nil
+    case Coll.Some(p) => Ty.protoOp(ps, p, fname) match
+      case Coll.None => Coll.Nil
+      case Coll.Some(o) =>
+        val Ast.Op(_, _, ogs, _, _, _) = o
+        Fx.binderNames(Ty.evidence(ogs, Coll.Nil), Coll.Nil)
+
 // decl(F, P) for each {} binder of a protocol; the body of a run def
 // n: the subject, the def itself or its handler
 def Eff.fn(cx: Eff.Cx, n: Sym.Sym, f: Ast.Fn, w: Eff.W): Eff.W =
-  val Ast.Fn(_, _, gs, ps, _, _, body) = f
+  val Ast.Fn(_, fname, gs, ps, _, _, body) = f
   val ev = Ty.evidence(gs, Coll.Nil)
-  val w1 = Eff.declsOf(cx, n, ev, w)
+  val w1 = Eff.declsOf(cx, n, ev, Eff.opOwn(cx, n, fname), w)
   body match
     case Ast.Def(_, e) => Eff.expr(cx, Eff.At(n, 0, Coll.Nil, Ty.names(ps, Ty.names(ev, Coll.Nil)), ev), e, w1)
     case _ => w1
@@ -237,18 +249,19 @@ def Eff.hfns(cx: Eff.Cx, h: Sym.Sym, fs: Coll.List[Ast.Fn], w: Eff.W): Eff.W = f
   case Coll.Nil => w
   case Coll.Cons(f, rest) => Eff.hfns(cx, h, rest, Eff.fn(cx, h, f, w))
 
-def Eff.declsOf(cx: Eff.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], w: Eff.W): Eff.W = bs match
+def Eff.declsOf(cx: Eff.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], own: Coll.List[Sym.Sym], w: Eff.W): Eff.W = bs match
   case Coll.Nil => w
   case Coll.Cons(b, rest) =>
-    val Ast.Binder(_, _, t) = b
+    val Ast.Binder(_, bx, t) = b
     val Ast.Ty(_, tn, _, _, _) = t
     val Eff.Cx(ps, hp, _, _, ss, _) = cx
     val Eff.Syms(req, decl, _, _, _, _, _) = ss
-    // a {} binder of a handler fn is a row entry of its handler (req, not decl): the w_ wrapper then supplies the cap
+    // a {} binder of a handler fn is a row entry of its handler (req, not decl): the w_ wrapper then supplies the cap; one the op
+    // itself declares is the caller's per call (decl)
     val rel = Coll.sLookup(hp, f) match
-      case Coll.Some(_) => req
+      case Coll.Some(_) => if Ty.memberSym(bx, own) then decl else req
       case Coll.None => decl
-    if Ty.isProto(ps, tn) then Eff.declsOf(cx, f, rest, Eff.add(w, rel, Eff.v2(D.VSym(f), D.VSym(tn)))) else Eff.declsOf(cx, f, rest, w)
+    if Ty.isProto(ps, tn) then Eff.declsOf(cx, f, rest, own, Eff.add(w, rel, Eff.v2(D.VSym(f), D.VSym(tn)))) else Eff.declsOf(cx, f, rest, own, w)
 
 def Eff.req(cx: Eff.Cx, at: Eff.At, p: Sym.Sym, w: Eff.W): Eff.W =
   val Eff.At(f, _, hd, _, _) = at

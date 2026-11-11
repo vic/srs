@@ -149,10 +149,10 @@ def Tl.cases(cx: Tl.Cx, cs: Coll.List[Ast.Case], acc: Coll.List[Ast.Case], es: C
 def Tl.ops(cx: Tl.Cx, os: Coll.List[Ast.Op], acc: Coll.List[Ast.Op], es: Coll.List[Tl.Err]): Tl.W[Coll.List[Ast.Op]] = os match
   case Coll.Nil => Tl.W(Coll.rev(acc), es)
   case Coll.Cons(o, rest) =>
-    val Ast.Op(line, n, ps, ret, tr) = o
+    val Ast.Op(line, n, gs, ps, ret, tr) = o
     val Tl.W(ps2, es2) = Tl.binders(cx, ps, Coll.Nil, es)
     val Tl.W(ret2, es3) = Tl.ty(cx, Coll.Nil, Coll.Nil, ret, Tl.fuel(), es2)
-    Tl.ops(cx, rest, Coll.Cons(Ast.Op(line, n, ps2, ret2, tr), acc), es3)
+    Tl.ops(cx, rest, Coll.Cons(Ast.Op(line, n, gs, ps2, ret2, tr), acc), es3)
 
 // ── expressions: the types written in them (call type args, val annotations, quantifiers) ──
 def Tl.expr(cx: Tl.Cx, e: Ast.Expr, es: Coll.List[Tl.Err]): Tl.W[Ast.Expr] = e match

@@ -243,21 +243,28 @@ def Fx.statesF(p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Fx.St): Fx.St = ss match
 def Fx.opsF(p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
-    val Ast.Op(line, n, _, ret, trs) = o
-    Fx.opsF(p, rest, Fx.resF(p, line, ret, Fx.trsF(p, n, line, trs, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))))
+    val Ast.Op(line, n, ogs, _, ret, trs) = o
+    Fx.opsF(p, rest, Fx.resF(p, line, ret, Fx.binderNames(Ty.evidence(ogs, Coll.Nil), Coll.Nil), Fx.trsF(p, n, line, trs, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))))
+
+// the names of binders: an op result T<r> may name a {r: Region} binder of the op itself (the caller's capability it takes)
+def Fx.binderNames(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, x, _) = b
+    Fx.binderNames(rest, Coll.Cons(x, acc))
 
 // where an op result of capability p lives: fxResCap(p, x, line) per name of <...>; fxResChoice(p, T, i, x, line) per
 // name of T{...} and fxResCount(p, T, n, line)
-def Fx.resF(p: Sym.Sym, line: I64, ret: Ast.Ty, st: Fx.St): Fx.St =
+def Fx.resF(p: Sym.Sym, line: I64, ret: Ast.Ty, own: Coll.List[Sym.Sym], st: Fx.St): Fx.St =
   val Ast.Ty(_, t, _, caps, _) = ret
   caps match
     case Ast.Inferred => st
-    case Ast.Stated(xs) => Fx.resCaps(p, line, xs, st)
+    case Ast.Stated(xs) => Fx.resCaps(p, line, xs, own, st)
     case Ast.Chosen(xs) => Fx.resChoices(p, t, line, xs, 0, Fx.add(st, Fx.fact(Fx.RResCount, Fx.l4(Fx.s(p), Fx.s(t), Fx.i(Coll.length(xs)), Fx.i(line)))))
 
-def Fx.resCaps(p: Sym.Sym, line: I64, xs: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
+def Fx.resCaps(p: Sym.Sym, line: I64, xs: Coll.List[Sym.Sym], own: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
   case Coll.Nil => st
-  case Coll.Cons(x, rest) => Fx.resCaps(p, line, rest, Fx.add(st, Fx.fact(Fx.RResCap, Fx.l3(Fx.s(p), Fx.s(x), Fx.i(line)))))
+  case Coll.Cons(x, rest) => Fx.resCaps(p, line, rest, own, if Ty.memberSym(x, own) then st else Fx.add(st, Fx.fact(Fx.RResCap, Fx.l3(Fx.s(p), Fx.s(x), Fx.i(line)))))
 
 def Fx.resChoices(p: Sym.Sym, t: Sym.Sym, line: I64, xs: Coll.List[Sym.Sym], i: I64, st: Fx.St): Fx.St = xs match
   case Coll.Nil => st

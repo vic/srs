@@ -77,6 +77,9 @@ enum Ty.Clash:
   case Ty.PutData(line: I64, xs: Sym.Sym)
   // a ctor pattern binder named like a declared ctor: a nested pattern, not supported (a binder is always a variable)
   case Ty.NestedPattern(line: I64, x: Sym.Sym)
+  // 3e: a handler fn does not declare the {} binders its op declares (first, in order); an op binder that is no capability protocol
+  case Ty.OpSig(line: I64, op: Sym.Sym)
+  case Ty.OpBinder(line: I64, op: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -1040,8 +1043,9 @@ def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym
     case Coll.Some(rt) => K.walk(Ty.subst(st), rt) match
       case K.Con(tn, targs) => Ty.protoOp(ps, tn, op) match
         case Coll.Some(o) =>
-          val Ast.Op(_, _, ops, oret, _) = o
-          Ty.callSig(cx, st, bs, line, Ty.ProtoOp(recv), rt, op, ops, oret, Coll.Nil, xs, want)
+          val Ast.Op(_, _, ogs, ops, oret, _) = o
+          val Ty.Caps(st0, ocaps) = Ty.opCaps(cx, st, bs, line, Ty.evidence(ogs, Coll.Nil), Coll.Nil)
+          Ty.callSig(cx, st0, bs, line, Ty.ProtoOp(recv, ocaps), rt, op, ops, oret, Coll.Nil, xs, want)
         case Coll.None => Ty.traitMethod(trs, tn, op) match
           case Coll.Some(tm) =>
             val Ty.TM(tr, m) = tm
@@ -1061,7 +1065,7 @@ def Ty.subst(st: Ty.St): K.Subst =
 
 // recv.op: an op of capability recv, or a trait method with the caller's capabilities for its {} binders
 enum Ty.OpKind:
-  case Ty.ProtoOp(recv: Sym.Sym)
+  case Ty.ProtoOp(recv: Sym.Sym, caps: Coll.List[Sym.Sym])
   case Ty.TraitOp(caps: Coll.List[Sym.Sym])
 
 // a signature with its binders bound to tv: arity, args, result
@@ -1071,7 +1075,7 @@ def Ty.callSig(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, k: Ty.Op
   else
     val Ty.Es(st1, eargs) = Ty.params(cx, st, bs, line, ps, tv, xs, Coll.Nil)
     val ex: El.Expr = k match
-      case Ty.ProtoOp(recv) => El.Op(line, recv, rty, name, eargs)
+      case Ty.ProtoOp(recv, ocaps) => El.Op(line, recv, rty, name, eargs, ocaps)
       case Ty.TraitOp(caps) => El.TCall(line, rty, name, caps, eargs)
     Ty.lit(st1, line, rt, want, ex)
 
@@ -1080,6 +1084,19 @@ def Ty.zipBind(xs: Coll.List[Sym.Sym], ts: Coll.List[K.Term], acc: Coll.List[Ty.
   case Coll.Cons(x, rest) => ts match
     case Coll.Nil => acc
     case Coll.Cons(t, trest) => Ty.zipBind(rest, trest, Coll.Cons(Ty.Bind(x, t), acc))
+
+// the capabilities an op's own {} binders take at a request: the caller's innermost of each protocol (as a constructor
+// takes the innermost Region), none in scope = NoCap
+def Ty.opCaps(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ev: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Ty.Caps = ev match
+  case Coll.Nil => Ty.Caps(st, Coll.rev(acc))
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    val Ast.Ty(_, pn, _, _, _) = t
+    val Ty.Cx(_, _, ps, _, _, _, _, _, _, _, _) = cx
+    if !Ty.isProto(ps, pn) then Ty.opCaps(cx, st, bs, line, rest, acc)
+    else Ty.innermost(Ty.subst(st), bs, pn) match
+      case Coll.Some(x) => Ty.opCaps(cx, st, bs, line, rest, Coll.Cons(x, acc))
+      case Coll.None => Ty.opCaps(cx, Ty.clash(st, Ty.NoCap(line, pn)), bs, line, rest, acc)
 
 def Ty.protoOp(ps: Coll.List[Ast.Proto], p: Sym.Sym, op: Sym.Sym): Coll.Option[Ast.Op] = ps match
   case Coll.Nil => Coll.None
@@ -1090,7 +1107,7 @@ def Ty.protoOp(ps: Coll.List[Ast.Proto], p: Sym.Sym, op: Sym.Sym): Coll.Option[A
 def Ty.opIn(os: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Op] = os match
   case Coll.Nil => Coll.None
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, n, _, _, _) = o
+    val Ast.Op(_, n, _, _, _, _) = o
     if Sym.eq(n, op) then Coll.Some(o) else Ty.opIn(rest, op)
 
 enum Ty.TM:
@@ -1565,7 +1582,7 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
       shots match
         case Ast.OneShot =>
           val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
-          Ty.decls(cx, Ty.stateOk(Ty.esOf(cx), Ty.opRets(ps, st1, p, fs), fs), rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
+          Ty.decls(cx, Ty.opSig(ps, Ty.stateOk(Ty.esOf(cx), Ty.opRets(ps, st1, p, fs), fs), p, fs), rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
         // multi-shot (vic-hm63): typed here; its C (selective CPS) is a later rung, so it stops at this phase for now
         case Ast.MultiShot(a, ks) =>
           val ans = Ty.answerOf(fs, a)
@@ -1578,6 +1595,10 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
       val Ty.Fns(st1, efs, _, _) = Ty.givenFns(Ty.byGiven(cx), Ty.givenShape(cx, st, g), tn, Ty.underGroups(gs, fs, Coll.Nil), Coll.Nil)
       val gv = El.Given(Ty.tparams(gs, Coll.Nil), Ty.binderNames(Ty.evidence(gs, Coll.Nil), Coll.Nil), Ty.term(head, Coll.Nil), efs)
       Ty.decls(cx, st1, rest, acc, hacc, Coll.Cons(gv, gacc))
+    case Ast.DProto(pr) =>
+      val Ast.Proto(_, _, _, _, _, _, pops, _) = pr
+      val Ty.Cx(_, _, cps, _, _, _, _, _, _, _, _) = cx
+      Ty.decls(cx, Ty.opBinders(cps, st, pops), rest, acc, hacc, gacc)
     case Ast.DEnum(e) =>
       val Ast.Enum(_, _, _, cases) = e
       Ty.decls(cx, Ty.erasedFields(cx, st, cases), rest, acc, hacc, gacc)
@@ -1645,6 +1666,44 @@ def Ty.sameTys(xs: Coll.List[Ast.Ty], ys: Coll.List[Ast.Ty]): Bool = xs match
     case Coll.Nil => false
     case Coll.Cons(y, yr) => Ty.sameTy(x, y) && Ty.sameTys(xr, yr)
 
+// 3e: a handler fn declares the {} binders its op declares: the first k, same protocols in order (more are its row)
+def Ty.opSig(ps: Coll.List[Ast.Proto], st: Ty.St, p: Sym.Sym, fs: Coll.List[Ast.Fn]): Ty.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, n, fgs, _, _, _, _) = f
+    val st1: Ty.St = Ty.protoOp(ps, p, n) match
+      case Coll.None => st
+      case Coll.Some(o) =>
+        val Ast.Op(_, _, ogs, _, _, _) = o
+        if Ty.protoPrefix(Ty.evidence(ogs, Coll.Nil), Ty.evidence(fgs, Coll.Nil)) then st else Ty.clash(st, Ty.OpSig(line, n))
+    Ty.opSig(ps, st1, p, rest)
+
+// the op's binders are a prefix of the fn's by protocol
+def Ty.protoPrefix(op: Coll.List[Ast.Binder], fn: Coll.List[Ast.Binder]): Bool = op match
+  case Coll.Nil => true
+  case Coll.Cons(a, arest) => fn match
+    case Coll.Nil => false
+    case Coll.Cons(b, brest) =>
+      val Ast.Binder(_, _, at) = a
+      val Ast.Ty(_, an, _, _, _) = at
+      val Ast.Binder(_, _, bt) = b
+      val Ast.Ty(_, bn, _, _, _) = bt
+      Sym.eq(an, bn) && Ty.protoPrefix(arest, brest)
+
+// 3e: every {} binder of an op is a capability protocol (the caller's capability it takes per call)
+def Ty.opBinders(ps: Coll.List[Ast.Proto], st: Ty.St, os: Coll.List[Ast.Op]): Ty.St = os match
+  case Coll.Nil => st
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(line, n, ogs, _, _, _) = o
+    Ty.opBinders(ps, if Ty.allProtos(ps, Ty.evidence(ogs, Coll.Nil)) then st else Ty.clash(st, Ty.OpBinder(line, n)), rest)
+
+def Ty.allProtos(ps: Coll.List[Ast.Proto], bs: Coll.List[Ast.Binder]): Bool = bs match
+  case Coll.Nil => true
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    val Ast.Ty(_, pn, _, _, _) = t
+    Ty.isProto(ps, pn) && Ty.allProtos(ps, rest)
+
 // a one-shot handler fn returns its op's result type: the op's decl is what the caller gets (Ty.fn checked the body
 // against the fn's own result). a fn for an op T{self} may return T's body: it makes the T (its facts are the op's)
 def Ty.opRets(ps: Coll.List[Ast.Proto], st: Ty.St, p: Sym.Sym, fs: Coll.List[Ast.Fn]): Ty.St = fs match
@@ -1654,7 +1713,7 @@ def Ty.opRets(ps: Coll.List[Ast.Proto], st: Ty.St, p: Sym.Sym, fs: Coll.List[Ast
     val st1: Ty.St = Ty.protoOp(ps, p, n) match
       case Coll.None => st
       case Coll.Some(o) =>
-        val Ast.Op(_, _, _, oret, _) = o
+        val Ast.Op(_, _, _, _, oret, _) = o
         Ty.expect(st, line, Ty.term(ret, Coll.Nil), Ty.opWant(st, oret))
     Ty.opRets(ps, st1, p, rest)
 
@@ -1901,7 +1960,7 @@ def Ty.multiFns(cx: Ty.Cx, st: Ty.St, hn: Sym.Sym, p: Sym.Sym, ans: Ast.Ty, ks: 
 // the declared result of op n of capability p (what resume k(v) takes)
 def Ty.opResult(ps: Coll.List[Ast.Proto], p: Sym.Sym, n: Sym.Sym): K.Term = Ty.protoOp(ps, p, n) match
   case Coll.Some(o) =>
-    val Ast.Op(_, _, _, oret, _) = o
+    val Ast.Op(_, _, _, _, oret, _) = o
     Ty.term(oret, Coll.Nil)
   case Coll.None => Ty.con("Unit")
 
@@ -1939,7 +1998,7 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.MHandled(line, _, h, _, _, _, _, _) => Ty.clash(st, Ty.MultishotShape(line, h))
       case El.CallFn(_, _, _, _, xs) => Ty.mhNone(st, xs)
       case El.New(_, _, _, _, _, xs) => Ty.mhNone(st, xs)
-      case El.Op(_, _, _, _, xs) => Ty.mhNone(st, xs)
+      case El.Op(_, _, _, _, xs, _) => Ty.mhNone(st, xs)
       case El.TCall(_, _, _, _, xs) => Ty.mhNone(st, xs)
       case El.Resume(_, _, x) => Ty.mhNone(st, Coll.Cons(x, Coll.Nil))
       case El.Bin(_, _, l, r) => Ty.mhNone(st, Coll.Cons(l, Coll.Cons(r, Coll.Nil)))

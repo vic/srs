@@ -1,0 +1,20 @@
+// expect: error[region-escape]
+// an op with a {r: Region} binder returns its result in the caller's innermost Region: here the Arena b, which the block closes
+capability Rg:
+  def mk {r: Region} (n: I64): Str<r>
+
+handler Hrg for Rg:
+  def mk {r: Region} (n: I64): Str<r> =
+    val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+    Str.ofBytes(n, xs)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle h = Hrg()
+  val s: Str =
+    handle b = Srs.Arena()
+    Rg.mk(3)
+  Console.print(s)
+  0
+// expect: --> tests/s2/neg/op_region_escape.srs:16

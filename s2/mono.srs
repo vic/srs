@@ -202,7 +202,7 @@ def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[M
       case Coll.Cons(_, _) => Coll.Cons(Mono.Call(f, Mono.groundAll(s, sub, ts, Coll.Nil)), acc)
     Mono.callsAll(s, sub, args, acc2)
   case El.New(_, _, _, _, _, args) => Mono.callsAll(s, sub, args, acc)
-  case El.Op(_, _, ty, _, args) => Mono.callsAll(s, sub, args, Coll.Cons(Mono.Goal(Mono.ground(s, sub, ty)), acc))
+  case El.Op(_, _, ty, _, args, _) => Mono.callsAll(s, sub, args, Coll.Cons(Mono.Goal(Mono.ground(s, sub, ty)), acc))
   case El.MHandled(_, _, _, _, args, rest, _, _) => Mono.callsAll(s, sub, Coll.Cons(rest, args), acc)
   case El.Resume(_, _, x) => Mono.calls(s, sub, x, acc)
   case El.TCall(_, ty, _, _, args) => Mono.callsAll(s, sub, args, Coll.Cons(Mono.Goal(Mono.ground(s, sub, ty)), acc))

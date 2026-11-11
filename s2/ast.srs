@@ -137,7 +137,7 @@ enum Ast.Trans:
   case Ast.Trans(from: Sym.Sym, to: Sym.Sym)
 
 enum Ast.Op:
-  case Ast.Op(line: I64, name: Sym.Sym, params: Coll.List[Ast.Binder], ret: Ast.Ty, trans: Coll.List[Ast.Trans])
+  case Ast.Op(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, trans: Coll.List[Ast.Trans])
 
 enum Ast.RuleDef:
   case Ast.RuleDef(line: I64, name: Sym.Sym, params: Coll.List[Sym.Sym], body: Coll.List[Ast.Atom])
@@ -759,7 +759,7 @@ def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
     // each def moves by a transition named as itself: parsing the text back gives the same transitions
-    val Ast.Op(_, name, ps, ret, trs) = o
+    val Ast.Op(_, name, _, ps, ret, trs) = o
     Ast.line(Ast.step())
     Console.print("transition ")
     Ast.sym(name)

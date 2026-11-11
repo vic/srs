@@ -23,8 +23,8 @@ def AT.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Co
 
 // tests/rules.srs
 def AT.door {r: Region} (): Ast.Decl =
-  val knock = Ast.Op(7, AT.s("knock"), Coll.Nil, AT.ty("I64"), AT.l2(AT.tr("Shut", "Open1"), AT.tr("Open1", "Open2")))
-  val leave = Ast.Op(8, AT.s("leave"), Coll.Nil, AT.ty("Unit"), AT.l2(AT.tr("Open1", "Gone"), AT.tr("Open2", "Gone")))
+  val knock = Ast.Op(7, AT.s("knock"), Coll.Nil, Coll.Nil, AT.ty("I64"), AT.l2(AT.tr("Shut", "Open1"), AT.tr("Open1", "Open2")))
+  val leave = Ast.Op(8, AT.s("leave"), Coll.Nil, Coll.Nil, AT.ty("Unit"), AT.l2(AT.tr("Open1", "Gone"), AT.tr("Open2", "Gone")))
   val two = Ast.RuleDef(9, AT.s("twoKnocks"), AT.l2(AT.s("s"), AT.s("s3")), AT.l2(AT.a3(9, "next", "s", "knock", "s2"), AT.a3(9, "next", "s2", "knock", "s3")))
   val reach1 = Ast.RuleDef(10, AT.s("reach"), AT.l2(AT.s("s"), AT.s("t")), AT.l1(AT.a3(10, "next", "s", "knock", "t")))
   val reach2 = Ast.RuleDef(11, AT.s("reach"), AT.l2(AT.s("s"), AT.s("t")), AT.l2(AT.a3(11, "next", "s", "knock", "u"), AT.a2(11, "reach", "u", "t")))

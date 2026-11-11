@@ -387,7 +387,7 @@ def Names.statesF(p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Names.St): Names.St = 
 def Names.ops(p: Sym.Sym, os: Coll.List[Ast.Op], st: Names.St): Names.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
-    val Ast.Op(line, name, params, ret, trs) = o
+    val Ast.Op(line, name, _, params, ret, trs) = o
     val n = Coll.length(params) + 1
     val st1 = Names.add(Names.add(Names.add(Names.declare(st, Names.NCall, Eff.dotted(Sym.str(p), name), line), Names.fOpOf(p, name)), Names.fWantArity(p, name, n)), Names.fSameI(n))
     Names.ops(p, rest, Names.transF(p, name, trs, line, Names.ty(ret, Coll.Nil, Names.binderTys(params, Coll.Nil, st1))))

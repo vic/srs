@@ -18,15 +18,15 @@ def FT.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Co
 
 // tests/file.lib: protocol File; lib/prelude.srs: protocol Region (drop free)
 def FT.protos {r: Region} (): Coll.List[Ast.Proto] =
-  val read = Ast.Op(5, FT.s("read"), Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Opened", "Read1"), FT.tr("Read1", "Read2")))
-  val close = Ast.Op(6, FT.s("close"), Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Read1", "Closed"), FT.tr("Read2", "Closed")))
+  val read = Ast.Op(5, FT.s("read"), Coll.Nil, Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Opened", "Read1"), FT.tr("Read1", "Read2")))
+  val close = Ast.Op(6, FT.s("close"), Coll.Nil, Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Read1", "Closed"), FT.tr("Read2", "Closed")))
   val file = Ast.Proto(1, FT.s("File"), FT.l4(FT.s("Opened"), FT.s("Read1"), FT.s("Read2"), FT.s("Closed")), FT.s("Opened"), FT.l1(FT.s("Closed")), Coll.None, FT.l2(read, close), Coll.Nil)
-  val alloc = Ast.Op(28, FT.s("alloc"), FT.l1(Ast.Binder(28, FT.s("size"), FT.ty("I64"))), FT.ty("Ptr"), FT.l1(FT.tr("Open", "Open")))
-  val free = Ast.Op(29, FT.s("free"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Open", "Freed")))
+  val alloc = Ast.Op(28, FT.s("alloc"), Coll.Nil, FT.l1(Ast.Binder(28, FT.s("size"), FT.ty("I64"))), FT.ty("Ptr"), FT.l1(FT.tr("Open", "Open")))
+  val free = Ast.Op(29, FT.s("free"), Coll.Nil, Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Open", "Freed")))
   val region = Ast.Proto(24, FT.s("Region"), FT.l2(FT.s("Open"), FT.s("Freed")), FT.s("Open"), FT.l1(FT.s("Freed")), Coll.Some(FT.s("free")), FT.l2(alloc, free), Coll.Nil)
   // a test protocol: two ops of one type from one state to two end states
-  val on = Ast.Op(1, FT.s("on"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "On")))
-  val hit = Ast.Op(1, FT.s("hit"), Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "Broken")))
+  val on = Ast.Op(1, FT.s("on"), Coll.Nil, Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "On")))
+  val hit = Ast.Op(1, FT.s("hit"), Coll.Nil, Coll.Nil, FT.ty("Unit"), FT.l1(FT.tr("Off", "Broken")))
   val lamp = Ast.Proto(1, FT.s("Lamp"), FT.l3(FT.s("Off"), FT.s("On"), FT.s("Broken")), FT.s("Off"), FT.l2(FT.s("On"), FT.s("Broken")), Coll.None, FT.l2(on, hit), Coll.Nil)
   Coll.Cons(file, Coll.Cons(region, Coll.Cons(lamp, FT.l1(FT.door()))))
 
@@ -34,8 +34,8 @@ def FT.handlers {r: Region} (): Coll.List[Ast.Handler] = Coll.Cons(Ast.Handler(3
 
 // tests/rules.srs: protocol Door with rule defs twoKnocks, and reach (two clauses, recursive)
 def FT.door {r: Region} (): Ast.Proto =
-  val knock = Ast.Op(7, FT.s("knock"), Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Shut", "Open1"), FT.tr("Open1", "Open2")))
-  val leave = Ast.Op(8, FT.s("leave"), Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Open1", "Gone"), FT.tr("Open2", "Gone")))
+  val knock = Ast.Op(7, FT.s("knock"), Coll.Nil, Coll.Nil, FT.ty("I64"), FT.l2(FT.tr("Shut", "Open1"), FT.tr("Open1", "Open2")))
+  val leave = Ast.Op(8, FT.s("leave"), Coll.Nil, Coll.Nil, FT.ty("Unit"), FT.l2(FT.tr("Open1", "Gone"), FT.tr("Open2", "Gone")))
   val two = Ast.RuleDef(9, FT.s("twoKnocks"), FT.l2(FT.s("s"), FT.s("s3")), FT.l2(FT.nextA("s", "knock", "s2"), FT.nextA("s2", "knock", "s3")))
   val reach1 = Ast.RuleDef(10, FT.s("reach"), FT.l2(FT.s("s"), FT.s("t")), FT.l1(FT.nextA("s", "knock", "t")))
   val reach2 = Ast.RuleDef(11, FT.s("reach"), FT.l2(FT.s("s"), FT.s("t")), FT.l2(FT.nextA("s", "knock", "u"), Ast.Atom(11, Sym.of("reach"), FT.l2(Ast.TName(FT.s("u")), Ast.TName(FT.s("t"))))))

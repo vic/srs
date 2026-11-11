@@ -1,0 +1,15 @@
+// expect: error[no-capability]
+// the op needs a Region capability of the caller: none is in scope
+capability Rn:
+  def mk {r: Region} (n: I64): Str<r>
+
+handler Hrn for Rn:
+  def mk {r: Region} (n: I64): Str<r> =
+    val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+    Str.ofBytes(n, xs)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle h = Hrn()
+  Console.print(Rn.mk(3))
+  0

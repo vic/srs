@@ -68,6 +68,8 @@ def TT.show(c: Ty.Clash): Unit = c match
   case Ty.StateType(l, x) => TT.sayN("statetype", l, x)
   case Ty.PutData(l, x) => TT.sayN("putdata", l, x)
   case Ty.NestedPattern(l, x) => TT.sayN("nestedpattern", l, x)
+  case Ty.OpSig(l, x) => TT.sayN("opsig", l, x)
+  case Ty.OpBinder(l, x) => TT.sayN("opbinder", l, x)
 
 def TT.say(k: Str, l: I64): Unit =
   Console.print(" ")
@@ -216,7 +218,7 @@ def TT.calls {r: Region} (s: K.Subst, e: El.Expr): Unit = e match
     TT.calls(s, c)
     TT.calls(s, t)
     TT.calls(s, x)
-  case El.Op(_, _, _, _, args) => TT.callsAll(s, args)
+  case El.Op(_, _, _, _, args, _) => TT.callsAll(s, args)
   case El.While(_, c, b) =>
     TT.calls(s, c)
     TT.calls(s, b)
@@ -268,7 +270,7 @@ def TT.bads(e: El.Expr): I64 = e match
   case El.Bad(_) => 1
   case El.CallFn(_, _, _, _, args) => TT.badsAll(args)
   case El.New(_, _, _, _, _, args) => TT.badsAll(args)
-  case El.Op(_, _, _, _, args) => TT.badsAll(args)
+  case El.Op(_, _, _, _, args, _) => TT.badsAll(args)
   case El.Bin(_, _, l, rhs) => TT.bads(l) + TT.bads(rhs)
   case El.Un(_, _, x) => TT.bads(x)
   case El.If(_, c, t, x) => TT.bads(c) + TT.bads(t) + TT.bads(x)

@@ -18,8 +18,8 @@ def NT.list {r: Region} (line: I64): Ast.Decl =
 
 // protocol File: states Opened, Read1, Closed; start Opened; read: Opened -> Read1; close: Read1 -> Closed
 def NT.file {r: Region} (start: Str, to: Str, drop: Coll.Option[Sym.Sym]): Ast.Decl =
-  val read = Ast.Op(11, NT.s("read"), Coll.Nil, NT.ty("I64"), NT.l1(Ast.Trans(NT.s("Opened"), NT.s(to))))
-  val close = Ast.Op(12, NT.s("close"), Coll.Nil, NT.ty("Unit"), NT.l1(Ast.Trans(NT.s("Read1"), NT.s("Closed"))))
+  val read = Ast.Op(11, NT.s("read"), Coll.Nil, Coll.Nil, NT.ty("I64"), NT.l1(Ast.Trans(NT.s("Opened"), NT.s(to))))
+  val close = Ast.Op(12, NT.s("close"), Coll.Nil, Coll.Nil, NT.ty("Unit"), NT.l1(Ast.Trans(NT.s("Read1"), NT.s("Closed"))))
   Ast.DProto(Ast.Proto(10, NT.s("File"), NT.l3(NT.s("Opened"), NT.s("Read1"), NT.s("Closed")), NT.s(start), NT.l1(NT.s("Closed")), drop, NT.l2(read, close), Coll.Nil))
 
 def NT.hfn {r: Region} (line: I64, name: Str, arity: I64): Ast.Fn =

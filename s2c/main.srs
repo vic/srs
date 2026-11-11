@@ -210,6 +210,8 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: K.Subst, cs: Coll.List[Ty.Clash]
       case Ty.StateShape(l, x) => S2c.diag(fs, "handler-state-shape", l, "a handler state must be pointer-shaped (Ptr, Array, Cell or an enum), not", S2c.Name(x), "keep the scalar in a Cell: init(): Cell[I64]")
       case Ty.StateType(l, x) => S2c.diag(fs, "handler-state-type", l, "an op takes another self type than the handler's state (what init returns):", S2c.Name(x), "write self: <the type init returns>")
       case Ty.NestedPattern(l, x) => S2c.diag(fs, "nested-pattern", l, "a sub-pattern is a variable, and this one is named like a constructor", S2c.Name(x), "bind it, then match: case W.W1(e) => e match ...")
+      case Ty.OpSig(l, x) => S2c.diag(fs, "op-signature", l, "a handler fn must declare the {} binders its op declares, first and in order:", S2c.Name(x), "write the op's binders, e.g. def mk {r: Region} (n: I64): Str<r>")
+      case Ty.OpBinder(l, x) => S2c.diag(fs, "op-binder", l, "an op binder must be a capability protocol such as Region:", S2c.Name(x), "the op can take the caller's capabilities only")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match

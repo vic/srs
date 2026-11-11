@@ -866,7 +866,7 @@ def Flow.opSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], c: Flow.Cap, op: Sym.Sym, 
       val Ast.Ty(_, tn, _, caps, _) = t
       caps match
         case Ast.Inferred => if Flow.dataTy(es, tn) then Flow.siteSrc(cs, cn, acc) else acc
-        case Ast.Stated(rs) => if Flow.memberSym(Sym.of("self"), rs) then Coll.Cons(Flow.SCap(id), acc) else acc
+        case Ast.Stated(rs) => Flow.ownSrcs(cs, Flow.opEvidence(ps, proto, op), rs, if Flow.memberSym(Sym.of("self"), rs) then Coll.Cons(Flow.SCap(id), acc) else acc)
         case Ast.Chosen(_) => Flow.needsAt(Flow.typeNeeds(cx, tn), id, Coll.Cons(Flow.SCap(id), acc))
 
 def Flow.needsAt(ns: Coll.List[Flow.Need], id: I64, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = ns match
@@ -884,8 +884,34 @@ def Flow.opRet(ps: Coll.List[Ast.Proto], proto: Sym.Sym, op: Sym.Sym): Coll.Opti
 def Flow.opRetIn(ops: Coll.List[Ast.Op], op: Sym.Sym): Coll.Option[Ast.Ty] = ops match
   case Coll.Nil => Coll.None
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, n, _, ret, _) = o
+    val Ast.Op(_, n, _, _, ret, _) = o
     if Sym.eq(n, op) then Coll.Some(ret) else Flow.opRetIn(rest, op)
+
+// the {} binders (evidence) the op itself declares
+def Flow.opEvidence(ps: Coll.List[Ast.Proto], proto: Sym.Sym, op: Sym.Sym): Coll.List[Ast.Binder] = Flow.protoNamed(ps, proto) match
+  case Coll.None => Coll.Nil
+  case Coll.Some(pr) =>
+    val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
+    Flow.opEvidenceIn(ops, op)
+
+def Flow.opEvidenceIn(ops: Coll.List[Ast.Op], op: Sym.Sym): Coll.List[Ast.Binder] = ops match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, n, ogs, _, _, _) = o
+    if Sym.eq(n, op) then Ty.evidence(ogs, Coll.Nil) else Flow.opEvidenceIn(rest, op)
+
+// an op result T<r> where r is a {} binder of the op: it lives in the caller capability r takes, the innermost of its protocol
+def Flow.ownSrcs(cs: Coll.List[Flow.Cap], ev: Coll.List[Ast.Binder], rs: Coll.List[Sym.Sym], acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = ev match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, x, t) = b
+    val Ast.Ty(_, tn, _, _, _) = t
+    if Flow.memberSym(x, rs) then Flow.innermost(cs, tn) match
+      case Coll.Some(c) =>
+        val Flow.Cap(_, id, _, _) = c
+        Flow.ownSrcs(cs, rest, rs, Coll.Cons(Flow.SCap(id), acc))
+      case Coll.None => Flow.ownSrcs(cs, rest, rs, acc)
+    else Flow.ownSrcs(cs, rest, rs, acc)
 
 // the result of a request P.op(...): the op's result on the innermost capability of P in scope (none: the implicit one,
 // a caller's, which this def cannot end). a result that lives in self keeps its args' regions sv too, as c.op(...)
@@ -975,6 +1001,16 @@ def Flow.opensStmt(s: Ast.Stmt): Bool = s match
   case Ast.Do(e) => Flow.opens(e)
   case Ast.Check(_, _, e) => Flow.opens(e)
 
+// g with its result stated to live in rs (the op's own {} binders it names, self left out: the receiver is no capability of the fn)
+def Flow.withRes(g: Ast.Fn, rs: Coll.List[Sym.Sym]): Ast.Fn =
+  val Ast.Fn(line, n, gs, params, ret, exit, body) = g
+  val Ast.Ty(rl, rn, ras, _, rvs) = ret
+  Ast.Fn(line, n, gs, params, Ast.Ty(rl, rn, ras, Ast.Stated(rs), rvs), exit, body)
+
+def Flow.dropSelf(rs: Coll.List[Sym.Sym], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = rs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(r, rest) => if Sym.eq(r, Sym.of("self")) then Flow.dropSelf(rest, acc) else Flow.dropSelf(rest, Coll.Cons(r, acc))
+
 // fn f of op n as the def Flow checks: its result <> (in no capability) when the op result names one (self); an unannotated op
 // result keeps its own (inferred) rule, as a def result does, but only when the body opens a region (Flow.bodyOpens): memory of
 // a region the fn closes is error[region-escape]. A body that opens none has nothing that dies, and pays no check.
@@ -989,7 +1025,7 @@ def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
       val Ast.Ty(_, _, _, caps, _) = t
       caps match
         case Ast.Inferred => if Flow.bodyOpens(body) then Coll.Some(f) else Coll.None
-        case Ast.Stated(_) => Coll.Some(g)
+        case Ast.Stated(rs) => Coll.Some(Flow.withRes(g, Flow.dropSelf(rs, Coll.Nil)))
         case Ast.Chosen(_) => Coll.Some(g)
 
 // each row capability (protocol p, name x: eff.p) as a binder {x: p}
@@ -1267,7 +1303,7 @@ def Flow.ruleModels(ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], acc: Col
 def Flow.nextFacts(ops: Coll.List[Ast.Op], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ops match
   case Coll.Nil => acc
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, name, _, _, trs) = o
+    val Ast.Op(_, name, _, _, _, trs) = o
     Flow.nextFacts(rest, Flow.nextOf(name, trs, acc))
 
 def Flow.nextOf(op: Sym.Sym, trs: Coll.List[Ast.Trans], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = trs match
@@ -1342,7 +1378,7 @@ def Flow.withTrans(ps: Coll.List[Ast.Proto], bs: Coll.List[Flow.CapB], a: Sym.Sy
 def Flow.opHas(ops: Coll.List[Ast.Op], op: Sym.Sym, a: Sym.Sym, b: Sym.Sym): Bool = ops match
   case Coll.Nil => false
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, name, _, _, trs) = o
+    val Ast.Op(_, name, _, _, _, trs) = o
     if Sym.eq(name, op) && Flow.transHas(trs, a, b) then true else Flow.opHas(rest, op, a, b)
 
 def Flow.transHas(trs: Coll.List[Ast.Trans], a: Sym.Sym, b: Sym.Sym): Bool = trs match
@@ -1565,7 +1601,7 @@ def Flow.protoFacts(ps: Coll.List[Ast.Proto], fs: Coll.List[D.Fact]): Coll.List[
 def Flow.opFacts(proto: Sym.Sym, ops: Coll.List[Ast.Op], fs: Coll.List[D.Fact]): Coll.List[D.Fact] = ops match
   case Coll.Nil => fs
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, name, _, _, trs) = o
+    val Ast.Op(_, name, _, _, _, trs) = o
     Flow.opFacts(proto, rest, Flow.transFacts(proto, name, trs, fs))
 
 def Flow.transFacts(proto: Sym.Sym, op: Sym.Sym, trs: Coll.List[Ast.Trans], fs: Coll.List[D.Fact]): Coll.List[D.Fact] = trs match
@@ -1596,7 +1632,7 @@ def Flow.endsAfterDrop(s: Sym.Sym, ends: Coll.List[Sym.Sym], dropOp: Coll.Option
 def Flow.dropReaches(s: Sym.Sym, d: Sym.Sym, ends: Coll.List[Sym.Sym], ops: Coll.List[Ast.Op]): Bool = ops match
   case Coll.Nil => false
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, name, _, _, trs) = o
+    val Ast.Op(_, name, _, _, _, trs) = o
     if Sym.eq(name, d) then Flow.transReaches(s, trs, ends) else Flow.dropReaches(s, d, ends, rest)
 
 def Flow.transReaches(s: Sym.Sym, trs: Coll.List[Ast.Trans], ends: Coll.List[Sym.Sym]): Bool = trs match

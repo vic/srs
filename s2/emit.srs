@@ -282,7 +282,7 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print("P_")
     Emit.id(c)
     Emit.suffix(Emit.grAll(cx, fi, ts))
-  case El.Op(_, recv, ty, op, args) => Emit.op(cx, fi, env, recv, Emit.gr(cx, fi, ty), op, args)
+  case El.Op(_, recv, ty, op, args, caps) => Emit.op(cx, fi, env, recv, Emit.gr(cx, fi, ty), op, args, caps)
   // a multi-shot handle: the locals in scope by address, then the first segment (Emit.mSite prints the segments)
   case El.MHandled(_, _, _, _, _, _, _, _) =>
     Console.print("({ void* e0_[] = { ")
@@ -667,12 +667,12 @@ def Emit.opIndex(cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): I64 =
 def Emit.opIn(os: Coll.List[Ast.Op], op: Sym.Sym, i: I64): I64 = os match
   case Coll.Nil => i
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, n, _, _, _) = o
+    val Ast.Op(_, n, _, _, _, _) = o
     if Sym.eq(n, op) then i else Emit.opIn(rest, op, i + 1)
 
 // recv.op(args): through the capability's vtable (an op whose every transition ends the protocol clears live), or a
 // trait method of {} evidence: the given's static fn (rung T2)
-def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr]): Unit = ty match
+def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, op: Sym.Sym, args: Coll.List[El.Expr], caps: Coll.List[Sym.Sym]): Unit = ty match
   case K.Con(pn, targs) =>
     val Emit.Cx(_, _, _, _, ps, _, al, _, _) = cx
     // r.alloc(n) bumps through srs_alloc as a constructor does: the capability holds an Arena's bump (Emit.allocFast)
@@ -686,10 +686,11 @@ def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, 
         val Ast.Proto(_, _, _, _, ends, _, ops, _) = p
         Ty.opIn(ops, op) match
           case Coll.Some(o) =>
-            val Ast.Op(_, _, ops2, oret, trans) = o
+            val Ast.Op(_, _, _, ops2, oret, trans) = o
             Console.print("({ __auto_type r_ = ((")
             Emit.ctype(cx, Ty.term(oret, Coll.Nil))
             Console.print("(*)(void*")
+            Emit.capTys(caps)
             Emit.opTys(cx, ops2)
             Console.print("))(")
             Emit.local(Emit.vs(env), recv)
@@ -698,6 +699,7 @@ def Emit.op(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, recv: Sym.Sym, ty: K.Term, 
             Console.print("]))(")
             Emit.local(Emit.vs(env), recv)
             Console.print("->self")
+            Emit.capLocals(env, caps)
             Emit.args(cx, fi, env, args, Emit.Comma)
             Console.print("); ")
             if Emit.kills(trans, ends) then
@@ -722,6 +724,20 @@ def Emit.tcall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, ty: K.Term, op: Sym.Sym,
     Emit.args(cx, fi, env, args, if Coll.length(caps) == 0 then Emit.First else Emit.Comma)
     Console.print(")")
   case _ => Console.print("0")
+
+// the capabilities an op's own {} binders take, after self: their C types in the vtable call's cast, and their values
+def Emit.capTys(caps: Coll.List[Sym.Sym]): Unit = caps match
+  case Coll.Nil => ()
+  case Coll.Cons(_, rest) =>
+    Console.print(", srs_cap*")
+    Emit.capTys(rest)
+
+def Emit.capLocals(env: Emit.Env, caps: Coll.List[Sym.Sym]): Unit = caps match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    Console.print(", ")
+    Emit.local(Emit.vs(env), c)
+    Emit.capLocals(env, rest)
 
 def Emit.opTys(cx: Emit.Cx, ps: Coll.List[Ast.Binder]): Unit = ps match
   case Coll.Nil => ()
@@ -1038,7 +1054,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CallFn(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
   case El.New(_, en, ts, _, _, args) => Emit.exsTys(cx, fi, args, Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc))
   case El.Nullary(_, en, ts, _) => Coll.Cons(K.Con(en, Emit.grAll(cx, fi, ts)), acc)
-  case El.Op(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
+  case El.Op(_, _, _, _, args, _) => Emit.exsTys(cx, fi, args, acc)
   case El.MHandled(_, _, _, _, args, rest, _, _) => Emit.exsTys(cx, fi, Coll.Cons(rest, args), acc)
   case El.Resume(_, _, x) => Emit.exsTys(cx, fi, Coll.Cons(x, Coll.Nil), acc)
   case El.TCall(_, _, _, _, args) => Emit.exsTys(cx, fi, args, acc)
@@ -1534,7 +1550,7 @@ def Emit.opV(cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): K.Term =
       val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
       Ty.opIn(ops, op) match
         case Coll.Some(o) =>
-          val Ast.Op(_, _, _, oret, _) = o
+          val Ast.Op(_, _, _, _, oret, _) = o
           Ty.term(oret, Coll.Nil)
         case Coll.None => Ty.con("Unit")
     case Coll.None => Ty.con("Unit")
@@ -1614,7 +1630,7 @@ def Emit.branchOf(k: Sym.Sym, s: El.Stmt): Coll.Option[El.Expr] =
 
 def Emit.lastVal(cx: Emit.Cx, p: Sym.Sym, l: I64, c: El.Expr): El.Stmt =
   val t: K.Term = c match
-    case El.Op(_, _, _, op, _) => Emit.opV(cx, p, op)
+    case El.Op(_, _, _, op, _, _) => Emit.opV(cx, p, op)
     case El.CallFn(_, f, _, _, _) =>
       val Emit.Cx(_, fns, _, _, _, _, _, _, _) = cx
       Coll.sLookup(fns, f) match
@@ -1824,7 +1840,7 @@ def Emit.segs(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.Stmt
 def Emit.cutV(cx: Emit.Cx, sc: Emit.SC, e: El.Expr): K.Term =
   val Emit.SC(_, _, p, _, _, _, _, _) = sc
   e match
-    case El.Op(_, _, _, op, _) => Emit.opV(cx, p, op)
+    case El.Op(_, _, _, op, _, _) => Emit.opV(cx, p, op)
     case El.CallFn(_, f, _, _, _) =>
       val Emit.Cx(_, fns, _, _, _, _, _, _, _) = cx
       Coll.sLookup(fns, f) match
@@ -1945,7 +1961,7 @@ def Emit.segBody(cx: Emit.Cx, sc: Emit.SC, scope: Emit.Scope, ss: Coll.List[El.S
         Console.print(" }; return ")
         o match
           // an op of p: the site's op fn, with the next segment as k
-          case El.Op(_, _, _, op, args) =>
+          case El.Op(_, _, _, op, args, _) =>
             Emit.mhName(sfi, op)
             Console.print("(")
             Emit.segName(sc, i + 1)
@@ -1977,7 +1993,7 @@ def Emit.cutOf(k: Sym.Sym, s: El.Stmt): Coll.Option[El.Expr] = s match
   case El.Handle(_, _, _, _, _) => Coll.None
 
 def Emit.cutE(k: Sym.Sym, e: El.Expr): Coll.Option[El.Expr] = e match
-  case El.Op(_, recv, _, _, _) => if Sym.eq(recv, k) then Coll.Some(e) else Coll.None
+  case El.Op(_, recv, _, _, _, _) => if Sym.eq(recv, k) then Coll.Some(e) else Coll.None
   case El.CallFn(_, _, _, caps, _) => if Ty.memberSym(k, caps) then Coll.Some(e) else Coll.None
   case _ => Coll.None
 
@@ -2094,36 +2110,55 @@ def Emit.vtables(cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
   case Coll.Cons(h, rest) =>
     val El.Handler(hn, p, fs, _) = h
     val Emit.Cx(_, _, _, _, ps, _, _, _, _) = cx
-    val pre: Str = Emit.slotPre(fs)
-    Emit.wrappers(cx, hn, fs)
+    val pre: Str = Emit.slotPre(cx, p, fs)
+    Emit.wrappers(cx, p, hn, fs)
     Console.print("static void* const vt_")
     Emit.id(hn)
     Console.print("[] = {")
     Coll.sLookup(ps, p) match
       case Coll.Some(pr) =>
         val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
-        Emit.vtOps(pre, hn, ops)
+        Emit.vtOps(cx, p, pre, hn, ops)
       case Coll.None => ()
     Console.print(" 0 };\n")
     Emit.vtables(cx, rest)
 
 // the vtable slot prefix: w_ (wrapper: env pointer + op params) for a handler with a row, else the h_ fn itself
-def Emit.slotPre(fs: Coll.List[El.Fn]): Str = if Emit.hasRow(fs) then "w_" else "h_"
+def Emit.slotPre(cx: Emit.Cx, p: Sym.Sym, fs: Coll.List[El.Fn]): Str = if Emit.hasRow(cx, p, fs) then "w_" else "h_"
 
 // a handler with a row (E1b): every fn takes the same implicit capabilities
-def Emit.hasRow(fs: Coll.List[El.Fn]): Bool = fs match
+def Emit.hasRow(cx: Emit.Cx, p: Sym.Sym, fs: Coll.List[El.Fn]): Bool = fs match
   case Coll.Nil => false
   case Coll.Cons(f, _) =>
-    val El.Fn(_, _, _, caps, _, _, _) = f
-    Coll.length(caps) > 0
+    val El.Fn(_, name, _, caps, _, _, _) = f
+    Coll.length(caps) > Emit.ownN(cx, p, name)
+
+// the {} binders an op declares itself (the caller's capabilities, passed per call after self): its fn's first caps
+def Emit.ownN(cx: Emit.Cx, p: Sym.Sym, op: Sym.Sym): I64 =
+  val Emit.Cx(_, _, _, _, ps, _, _, _, _) = cx
+  Coll.sLookup(ps, p) match
+    case Coll.None => 0
+    case Coll.Some(pr) =>
+      val Ast.Proto(_, _, _, _, _, _, ops, _) = pr
+      Emit.ownIn(ops, op)
+
+def Emit.ownIn(ops: Coll.List[Ast.Op], op: Sym.Sym): I64 = ops match
+  case Coll.Nil => 0
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, n, ogs, _, _, _) = o
+    if Sym.eq(n, op) then Coll.length(Ty.evidence(ogs, Coll.Nil)) else Emit.ownIn(rest, op)
 
 // its vtable entries: w_H_op(srs_env* e, args) calls h_H_op(e->c[0], .., e->st, args) (init is not in the vtable)
-def Emit.wrappers(cx: Emit.Cx, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs match
+def Emit.wrappers(cx: Emit.Cx, p: Sym.Sym, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, name, _, caps, _, _, _) = f
     if Coll.length(caps) > 0 && !Str.eq(Sym.str(name), "init") then
       val Emit.Fi(_, _, _, slots, ret) = Emit.fiOf(cx, Mono.Inst(f, Coll.Nil, Mono.Top))
+      val own = Emit.ownN(cx, p, name)
+      // the op's own binders come first in the fn's caps and are passed per call: w_H_op(e, own caps, args); the rest of
+      // the caps are the handler's row, from its env
+      val ownSlots = Emit.takeCaps(slots, own)
       Console.print("static ")
       Emit.ctype(cx, ret)
       Console.print(" w_")
@@ -2131,18 +2166,36 @@ def Emit.wrappers(cx: Emit.Cx, hn: Sym.Sym, fs: Coll.List[El.Fn]): Unit = fs mat
       Console.print("_")
       Emit.id(name)
       Console.print("(void* e_")
+      Emit.params(cx, ownSlots, Emit.Comma)
       Emit.params(cx, Emit.opSlots(slots), Emit.Comma)
       Console.print(") { srs_env* e = (srs_env*)e_; return h_")
       Emit.id(hn)
       Console.print("_")
       Emit.id(name)
       Console.print("(")
-      Emit.envCaps(0, Coll.length(caps))
+      Emit.ownArgs(ownSlots, Emit.First)
+      Emit.envCaps(0, Coll.length(caps) - own)
       Console.print("e->st")
       Emit.slotArgs(Emit.opSlots(slots))
       Console.print("); }\n")
     else ()
-    Emit.wrappers(cx, hn, rest)
+    Emit.wrappers(cx, p, hn, rest)
+
+// the first n capability slots
+def Emit.takeCaps(slots: Coll.List[Emit.Slot], n: I64): Coll.List[Emit.Slot] = if n <= 0 then Coll.Nil else slots match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(s, rest) => s match
+    case Emit.SCap(_) => Coll.Cons(s, Emit.takeCaps(rest, n - 1))
+    case Emit.SVal(_, _) => Coll.Nil
+
+def Emit.ownArgs(slots: Coll.List[Emit.Slot], s: Emit.Sep): Unit = slots match
+  case Coll.Nil => ()
+  case Coll.Cons(sl, rest) =>
+    Emit.sep(s)
+    Console.print("p_")
+    Emit.id(Emit.slotName(sl))
+    Console.print(", ")
+    Emit.ownArgs(rest, Emit.First)
 
 // the op's own params: no capability, no self
 def Emit.opSlots(slots: Coll.List[Emit.Slot]): Coll.List[Emit.Slot] = slots match
@@ -2166,17 +2219,17 @@ def Emit.slotArgs(slots: Coll.List[Emit.Slot]): Unit = slots match
     Emit.id(Emit.slotName(s))
     Emit.slotArgs(rest)
 
-def Emit.vtOps(pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
+def Emit.vtOps(cx: Emit.Cx, p: Sym.Sym, pre: Str, hn: Sym.Sym, ops: Coll.List[Ast.Op]): Unit = ops match
   case Coll.Nil => ()
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, n, _, _, _) = o
+    val Ast.Op(_, n, _, _, _, _) = o
     Console.print(" (void*)")
-    Console.print(pre)
+    Console.print(if Emit.ownIn(ops, n) > 0 then "w_" else pre)
     Emit.id(hn)
     Console.print("_")
     Emit.id(n)
     Console.print(",")
-    Emit.vtOps(pre, hn, rest)
+    Emit.vtOps(cx, p, pre, hn, rest)
 
 // the inline Arena bump (spec sec 5.2): the free bytes of an Arena's head chunk are cur..end of its capability, so an
 // allocation is a compare and a bump with no vtable test. The slow path (end reached, or a Region handler that is not
@@ -2352,7 +2405,7 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
     val Emit.Seen(ps, called, hn, cs, ex) = s
     Emit.seenEs(cx, args, Emit.Seen(ps, called || Sym.eq(f, Sym.of("main")), hn, Emit.seenCall(cs, ex, f), ex))
   case El.New(_, _, _, _, _, args) => Emit.seenEs(cx, args, s)
-  case El.Op(_, _, _, _, args) => Emit.seenEs(cx, args, s)
+  case El.Op(_, _, _, _, args, _) => Emit.seenEs(cx, args, s)
   case El.MHandled(_, _, h, _, args, rest, _, _) => Emit.seenEs(cx, Coll.Cons(rest, args), Emit.saw(cx, s, h))
   case El.Resume(_, _, x) => Emit.seenE(cx, x, s)
   case El.TCall(_, _, _, _, args) => Emit.seenEs(cx, args, s)
@@ -2510,7 +2563,7 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.New(l, en, ts, c, at, args) => El.New(l, en, ts, c, at, Emit.dropEs(m, xs, args))
   case El.MHandled(l, x, h, caps, args, rest, a, ans) => El.MHandled(l, x, h, caps, Emit.dropEs(m, xs, args), Emit.dropE(m, xs, rest), a, ans)
   case El.Resume(l, k, x) => El.Resume(l, k, Emit.dropE(m, xs, x))
-  case El.Op(l, recv, ty, op, args) => El.Op(l, recv, ty, op, Emit.dropEs(m, xs, args))
+  case El.Op(l, recv, ty, op, args, cs) => El.Op(l, recv, ty, op, Emit.dropEs(m, xs, args), cs)
   case El.TCall(l, ty, op, caps, args) => El.TCall(l, ty, op, caps, Emit.dropEs(m, xs, args))
   case El.Bin(l, op, a, b) => El.Bin(l, op, Emit.dropE(m, xs, a), Emit.dropE(m, xs, b))
   case El.Un(l, op, x) => El.Un(l, op, Emit.dropE(m, xs, x))

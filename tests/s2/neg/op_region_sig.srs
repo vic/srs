@@ -1,0 +1,15 @@
+// expect: error[op-signature]
+// the handler fn must declare the op's {r: Region} binder: without it the op's result has no region to live in
+capability Rs:
+  def mk {r: Region} (n: I64): Str<r>
+
+handler Hrs for Rs:
+  def mk(n: I64): Str = "x"
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Arena()
+  handle h = Hrs()
+  Console.print(Rs.mk(3))
+  0
+// expect: --> tests/s2/neg/op_region_sig.srs:7
