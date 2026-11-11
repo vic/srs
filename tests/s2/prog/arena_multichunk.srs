@@ -1,0 +1,22 @@
+// pass: Srs.Arena over more than one 1 MiB chunk: 8 arrays of 60000 words (480 KB each) fill 4 chunks, each is read
+// back whole, so a wrong header word (used, cap, next) or a chunk handed out twice shows in a sum
+def Am.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Am.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val n = 60000
+  val a = Array.fill(n, 1)
+  val b = Array.fill(n, 2)
+  val c = Array.fill(n, 3)
+  val d = Array.fill(n, 4)
+  val e = Array.fill(n, 5)
+  val f = Array.fill(n, 6)
+  val g = Array.fill(n, 7)
+  val h = Array.fill(n, 8)
+  Console.printI64(Am.sum(n, a, 0, 0) + Am.sum(n, b, 0, 0) * 10 + Am.sum(n, c, 0, 0) * 100 + Am.sum(n, d, 0, 0) * 1000)
+  Console.print("\n")
+  Console.printI64(Am.sum(n, e, 0, 0) + Am.sum(n, f, 0, 0) + Am.sum(n, g, 0, 0) + Am.sum(n, h, 0, 0))
+  Console.print("\n")
+  0

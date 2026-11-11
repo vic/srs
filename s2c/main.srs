@@ -27,7 +27,7 @@ def S2c.read(first: I64, i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.
       val fs2 = Coll.Cons(S2c.File(p, base, src), fs)
       val next = base + S2c.lineCount(src, 0, 1)
       Parse.sourceFrom(src, base) match
-        case Parse.Ok(fds, _) => S2c.read(first, i + 1, next, Coll.revOnto(fds, ds), if i == first then errs else S2c.reserved(fds, errs), fs2)
+        case Parse.Ok(fds, _) => S2c.read(first, i + 1, next, Coll.revOnto(if i == first then S2c.preludeLibc(fds, Coll.Nil) else fds, ds), if i == first then errs else S2c.reserved(fds, errs), fs2) case Parse.Err(line, want) => S2c.read(first, i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
         case Parse.Err(line, want) => S2c.read(first, i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
 
 def S2c.lineCount(s: Str, i: I64, n: I64): I64 =
@@ -66,6 +66,23 @@ def S2c.reservedDecl(d: Ast.Decl, errs: Coll.List[S2c.Err]): Coll.List[S2c.Err] 
 def S2c.reservedName(line: I64, n: Sym.Sym, errs: Coll.List[S2c.Err]): Coll.List[S2c.Err] =
   val s = Sym.str(n)
   if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Coll.Cons(S2c.Reserved(line, n), errs) else errs
+
+// the prelude is the first file: its libc externs are AbiLibcPre (printed, with the libc headers, only when called)
+def S2c.preludeLibc(ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Decl]): Coll.List[Ast.Decl] = ds match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(d, rest) => S2c.preludeLibc(rest, Coll.Cons(S2c.preludeDecl(d), acc))
+
+def S2c.preludeDecl(d: Ast.Decl): Ast.Decl = d match
+  case Ast.DFn(f) =>
+    val Ast.Fn(l, n, gs, ps, ret, ex, body) = f
+    body match
+      case Ast.Extern(abi) => S2c.preludeAbi(abi, Ast.DFn(Ast.Fn(l, n, gs, ps, ret, ex, Ast.Extern(Ast.AbiLibcPre))), d)
+      case Ast.Def(_, _) => d
+  case _ => d
+
+def S2c.preludeAbi(abi: Ast.Abi, marked: Ast.Decl, d: Ast.Decl): Ast.Decl = abi match
+  case Ast.AbiLibc => marked
+  case _ => d
 
 // ── diagnostics (vic Q-E1, 2026-11-09): error[code]: what / --> file:line / the source line / expected, found / help ──
 // what a diagnostic names after its title: nothing, a name, a type, or the type wanted and the type found

@@ -1,0 +1,26 @@
+// pass: Srs.Arena with a block over a chunk (3 MB: its own mapping, unmapped at the end of the region), written
+// in place and read back, next to small blocks of the same region
+def Ab.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Ab.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def Ab.mark(n: I64, xs: Array[I64](n), i: I64): Unit =
+  if 0 <= i && i < n then
+    Array.put(xs, i, i)
+    Ab.mark(n, xs, i + 1)
+  else ()
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val ns = 100
+  val small = Array.fill(ns, 2)
+  val bign = 400000
+  val big = Array.fill(bign, 1)
+  val after = Array.fill(ns, 3)
+  Ab.mark(bign, big, 0)
+  Console.printI64(Ab.sum(bign, big, 0, 0))
+  Console.print("\n")
+  Console.printI64(Ab.sum(ns, small, 0, 0) + Ab.sum(ns, after, 0, 0))
+  Console.print("\n")
+  0

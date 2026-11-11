@@ -13,9 +13,6 @@ extern def rt_str_at(s: Str, i: I64): I64
 extern def rt_str_slice(s: Str, b: I64, e: I64): Str
 extern def rt_str_eq(a: Str, b: Str): Bool
 extern def rt_exit(code: I64): Unit
-extern def rt_arena_new(): Ptr
-extern def rt_arena_alloc(self: Ptr, size: I64): Ptr
-extern def rt_arena_free(self: Ptr): Unit
 extern def rt_heap_new(): Ptr
 extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
 extern def rt_heap_free(self: Ptr): Unit
@@ -30,15 +27,143 @@ capability Region:
   drop free
 
 // Allocators = handlers of Region.
-handler Srs.Arena for Region:
-  def init(): Ptr = rt_arena_new()
-  def alloc(self: Ptr, size: I64): Ptr = rt_arena_alloc(self, size)
-  def free(self: Ptr): Unit = rt_arena_free(self)
 
 handler Srs.Heap for Region:
   def init(): Ptr = rt_heap_new()
   def alloc(self: Ptr, size: I64): Ptr = rt_heap_alloc(self, size)
   def free(self: Ptr): Unit = rt_heap_free(self)
+
+// ── Srs.Arena in srs (arena into srs; the C arena, rt_arena_* and srs_pages, is gone). Chunks of
+// 1 MiB come from 64 MiB reservations (mmap, 2 MiB aligned, advised for huge pages) and a freed chunk waits on a spare
+// list; a block over a chunk is its own mmap, unmapped at free. State: the arena is one word (its head chunk), a chunk
+// is a 3-word header {next, used, cap} then its bytes (rt/srs_rt.c chunk, emit.srs srs_chunk: the same layout), and the
+// process-lifetime state is the rt_globals block, one word per name below. Pointers are kept as I64 addresses.
+// These defs are named Srs.*: they run as the prelude's own code and may call the rt_ prims and the libc functions.
+def Srs.Arena.gSpare(): I64 = 0
+def Srs.Arena.gCur(): I64 = 1
+def Srs.Arena.gEnd(): I64 = 2
+def Srs.Arena.gFree(): I64 = 3
+def Srs.Arena.gSmall(): I64 = 4
+def Srs.Arena.gSmallEnd(): I64 = 5
+def Srs.Arena.hNext(): I64 = 0
+def Srs.Arena.hUsed(): I64 = 1
+def Srs.Arena.hCap(): I64 = 2
+def Srs.Arena.header(): I64 = 24
+def Srs.Arena.chunk(): I64 = 1048576
+def Srs.Arena.reserve(): I64 = 67108864
+def Srs.Arena.huge(): I64 = 2097152
+def Srs.Arena.page(): I64 = 4096
+
+def Srs.Arena.addr(p: Ptr): I64 = I64.ofU64(rt_ptr_addr(p))
+def Srs.Arena.at(a: I64): Ptr = rt_ptr_of(U64.ofI64(a))
+def Srs.Arena.up(n: I64, to: I64): I64 = (n + to - 1) / to * to
+
+def Srs.Arena.flags(): I32 = I32.of(I64.ofU64(U64.ofI64(I64.ofI32(MAP_PRIVATE)) | U64.ofI64(I64.ofI32(MAP_ANONYMOUS)) | U64.ofI64(I64.ofI32(MAP_NORESERVE))))
+def Srs.Arena.prot(): I32 = I32.of(I64.ofU64(U64.ofI64(I64.ofI32(PROT_READ)) | U64.ofI64(I64.ofI32(PROT_WRITE))))
+
+// len bytes of fresh zeroed pages; failure is the C arena's: a message and exit 70
+def Srs.Arena.map(len: I64): Ptr =
+  val p = mmap(Srs.Arena.at(0), U64.ofI64(len), Srs.Arena.prot(), Srs.Arena.flags(), I32.of(0 - 1), 0)
+  if Srs.Arena.addr(p) == 0 - 1 then
+    rt_eprint("srs: out of memory\n")
+    rt_exit(70)
+    p
+  else p
+
+// n bytes (a multiple of a page) from the current reservation, a new one when it is used up
+def Srs.Arena.pages(size: I64): Ptr =
+  val g = rt_globals()
+  val n = Srs.Arena.up(size, Srs.Arena.page())
+  if rt_ptr_get(g, Srs.Arena.gEnd()) - rt_ptr_get(g, Srs.Arena.gCur()) >= n then Srs.Arena.take(g, n)
+  else
+    val want = if n > Srs.Arena.reserve() then Srs.Arena.up(n, Srs.Arena.huge()) else Srs.Arena.reserve()
+    val p = Srs.Arena.map(want + Srs.Arena.huge())
+    val mask = U64.ofI64(Srs.Arena.huge() - 1)
+    val a = rt_ptr_of((rt_ptr_addr(p) + mask) & ~mask)
+    val adv = madvise(a, U64.ofI64(want), MADV_HUGEPAGE)
+    rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
+    rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
+    Srs.Arena.take(g, n)
+
+def Srs.Arena.take(g: Ptr, n: I64): Ptr =
+  val cur = rt_ptr_get(g, Srs.Arena.gCur())
+  rt_ptr_set(g, Srs.Arena.gCur(), cur + n)
+  Srs.Arena.at(cur)
+
+// the arena struct: a freed one, else 8 bytes of the current page
+def Srs.Arena.newArena(): Ptr =
+  val g = rt_globals()
+  val free = rt_ptr_get(g, Srs.Arena.gFree())
+  if free != 0 then
+    val s = Srs.Arena.at(free)
+    rt_ptr_set(g, Srs.Arena.gFree(), rt_ptr_get(s, 0))
+    rt_ptr_set(s, 0, 0)
+    s
+  else
+    val cur = rt_ptr_get(g, Srs.Arena.gSmall())
+    val s = if cur != 0 && cur < rt_ptr_get(g, Srs.Arena.gSmallEnd()) then Srs.Arena.at(cur) else Srs.Arena.smallPage(g)
+    rt_ptr_set(g, Srs.Arena.gSmall(), Srs.Arena.addr(s) + 8)
+    s
+
+def Srs.Arena.smallPage(g: Ptr): Ptr =
+  val p = Srs.Arena.pages(Srs.Arena.page())
+  rt_ptr_set(g, Srs.Arena.gSmallEnd(), Srs.Arena.addr(p) + Srs.Arena.page())
+  p
+
+def Srs.Arena.bump(c: Ptr, n: I64): Ptr =
+  val used = rt_ptr_get(c, Srs.Arena.hUsed())
+  rt_ptr_set(c, Srs.Arena.hUsed(), used + n)
+  rt_ptr_add(c, Srs.Arena.header() + used)
+
+// a new head chunk with room for n bytes: a spare one, a fresh one, or (n over a chunk) its own mapping
+def Srs.Arena.open(self: Ptr, n: I64): Ptr =
+  val g = rt_globals()
+  val spare = rt_ptr_get(g, Srs.Arena.gSpare())
+  val big = n > Srs.Arena.chunk()
+  val c = if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)
+  rt_ptr_set(c, Srs.Arena.hNext(), rt_ptr_get(self, 0))
+  rt_ptr_set(c, Srs.Arena.hUsed(), 0)
+  rt_ptr_set(c, Srs.Arena.hCap(), if big then n else Srs.Arena.chunk())
+  rt_ptr_set(self, 0, Srs.Arena.addr(c))
+  c
+
+def Srs.Arena.fresh(g: Ptr, spare: I64): Ptr =
+  if spare != 0 then
+    val s = Srs.Arena.at(spare)
+    rt_ptr_set(g, Srs.Arena.gSpare(), rt_ptr_get(s, Srs.Arena.hNext()))
+    s
+  else Srs.Arena.pages(Srs.Arena.header() + Srs.Arena.chunk())
+
+def Srs.Arena.alloc(self: Ptr, size: I64): Ptr =
+  val n = Srs.Arena.up(size, 8)
+  val head = rt_ptr_get(self, 0)
+  if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then Srs.Arena.bump(Srs.Arena.at(head), n)
+  else Srs.Arena.bump(Srs.Arena.open(self, n), n)
+
+// every chunk of the arena: a chunk size goes on the spare list, a big block is unmapped; then the struct is kept for reuse
+def Srs.Arena.release(g: Ptr, c: I64): Unit =
+  if c == 0 then ()
+  else
+    val ch = Srs.Arena.at(c)
+    val next = rt_ptr_get(ch, Srs.Arena.hNext())
+    val cap = rt_ptr_get(ch, Srs.Arena.hCap())
+    if cap == Srs.Arena.chunk() then
+      rt_ptr_set(ch, Srs.Arena.hNext(), rt_ptr_get(g, Srs.Arena.gSpare()))
+      rt_ptr_set(g, Srs.Arena.gSpare(), c)
+    else
+      val un = munmap(ch, U64.ofI64(Srs.Arena.up(Srs.Arena.header() + cap, Srs.Arena.page())))
+    Srs.Arena.release(g, next)
+
+def Srs.Arena.free(self: Ptr): Unit =
+  val g = rt_globals()
+  Srs.Arena.release(g, rt_ptr_get(self, 0))
+  rt_ptr_set(self, 0, rt_ptr_get(g, Srs.Arena.gFree()))
+  rt_ptr_set(g, Srs.Arena.gFree(), Srs.Arena.addr(self))
+
+handler Srs.Arena for Region:
+  def init(): Ptr = Srs.Arena.newArena()
+  def alloc(self: Ptr, size: I64): Ptr = Srs.Arena.alloc(self, size)
+  def free(self: Ptr): Unit = Srs.Arena.free(self)
 
 // strings: pure primitives, no effect (vic 2026-11-09)
 extern def Str.len(s: Str): I64
@@ -71,6 +196,26 @@ extern def rt_os_errno(): I32
 // R0b I32: storage for a C int (libc results), no literal and no operator. I32.of keeps the low 32 bits, I64.ofI32 sign-extends
 extern def I32.of(x: I64): I32
 extern def I64.ofI32(x: I32): I64
+
+// the srs Arena's raw memory (arena into srs): rt_ names, so only a Srs.* handler fn may call them. Inline prims emitted
+// by s2c (Emit.ptrPrims): word i of a block, a byte offset, a pointer as a number and back, the allocator's state block
+extern def rt_ptr_get(p: Ptr, i: I64): I64
+extern def rt_ptr_set(p: Ptr, i: I64, v: I64): Unit
+extern def rt_ptr_add(p: Ptr, n: I64): Ptr
+extern def rt_ptr_addr(p: Ptr): U64
+extern def rt_ptr_of(a: U64): Ptr
+extern def rt_globals(): Ptr
+
+// pages from the OS (extern "libc": the C compiler checks each against <sys/mman.h>); the flags are the C constants
+extern "libc" def mmap(addr: Ptr, len: U64, prot: I32, flags: I32, fd: I32, off: I64): Ptr
+extern "libc" def munmap(addr: Ptr, len: U64): I32
+extern "libc" def madvise(addr: Ptr, len: U64, advice: I32): I32
+extern "libc" val PROT_READ: I32
+extern "libc" val PROT_WRITE: I32
+extern "libc" val MAP_PRIVATE: I32
+extern "libc" val MAP_ANONYMOUS: I32
+extern "libc" val MAP_NORESERVE: I32
+extern "libc" val MADV_HUGEPAGE: I32
 
 // rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
 def U32.rotr(x: U32, n: I64): U32 = (x >> n) | (x << (32 - n))

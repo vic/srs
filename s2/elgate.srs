@@ -207,6 +207,12 @@ def Elgate.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], acc: Coll.List[Elgat
     val El.Handler(hn, p, fs, _) = h
     Elgate.handlers(cx, rest, Elgate.slots(cx, p, hn, Str.eq(Emit.slotPre(cx, p, fs), "h_"), fs, Elgate.fns(cx, fs, acc)))
 
+// main, and a Srs.* def of the prelude (handler code, Ty.Srs; user files cannot declare Srs.* names, S2c.reservedName), may
+// end the process like a handler fn
+def Elgate.mayExit(name: Sym.Sym): Bool =
+  val s = Sym.str(name)
+  Sym.eq(name, Sym.of("main")) || (Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs."))
+
 // each mono instance of a def (KDef: a self tail call is a jump) or of a given's method
 def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = is match
   case Coll.Nil => acc
@@ -215,7 +221,7 @@ def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]
     val El.Fn(_, name, _, _, _, _, body) = f
     val a1 = body match
       case El.Def(e) => site match
-        case Mono.Top => Elgate.push(Elgate.ex(cx, name, true, e, Coll.Nil), Sym.eq(name, Sym.of("main")), acc)
+        case Mono.Top => Elgate.push(Elgate.ex(cx, name, true, e, Coll.Nil), Elgate.mayExit(name), acc)
         case Mono.Impl(_) => Elgate.push(Elgate.ex(cx, name, false, e, Coll.Nil), false, acc)
       case El.Extern(_, _) => acc
     Elgate.insts(cx, rest, a1)

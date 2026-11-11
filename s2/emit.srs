@@ -1311,17 +1311,21 @@ def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn], cs: Coll.ISet): Unit = fs ma
             Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), Emit.KExtern)
             Console.print(";\n")
         case _ =>
-          Emit.libcSig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), ghost, Emit.isVarAbi(abi))
-          Console.print(";\n")
+          if !Emit.keepExtern(abi, cs, n) then ()
+          else
+            Emit.libcSig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), ghost, Emit.isVarAbi(abi))
+            Console.print(";\n")
       case _ => ()
     Emit.externs(cx, rest, cs)
 
-// an extern keeps its prototype when its program calls it; a libc extern always does: the declaration alone is what the
-// C compiler checks against the libc headers (Emit.libcHeaders), called or not
+// an extern keeps its prototype when its program calls it; a libc extern declared in a user file always does: the
+// declaration alone is what the C compiler checks against the libc headers (cneg/libc_wrong_ret). A libc extern of the
+// prelude (S2c.read marks it AbiLibcPre) is kept only when called, as a libc val is never printed
 def Emit.keepExtern(abi: Ast.Abi, cs: Coll.ISet, n: Sym.Sym): Bool = abi match
   case Ast.AbiLibc => true
   case Ast.AbiLibcVar => true
   case Ast.AbiLibcVal => false
+  case Ast.AbiLibcPre => Coll.setHas(cs, Sym.hash(n))
   case Ast.AbiSrs => Coll.setHas(cs, Sym.hash(n))
 
 // the prototype of a libc extern: the C compiler checks it against the real declaration (C11 6.7p4). A ghost param (an
@@ -1487,8 +1491,8 @@ def Emit.libcValRead(cx: Emit.Cx, f: Sym.Sym): Unit = Emit.libcValTy(cx, f) matc
 
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
-def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl]): Unit =
-  if Emit.anyLibc(fs) || Emit.anyCStruct(ds) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
+def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl], cs: Coll.ISet): Unit =
+  if Emit.anyLibc(fs, cs) || Emit.anyCStruct(ds) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
 
 // a program that declares an extern "libc" struct includes the libc headers: the C compiler checks every field against them
 def Emit.anyCStruct(ds: Coll.List[Ast.Decl]): Bool = ds match
@@ -1501,15 +1505,19 @@ def Emit.anyCStruct(ds: Coll.List[Ast.Decl]): Bool = ds match
         case _ => Emit.anyCStruct(rest)
     case _ => Emit.anyCStruct(rest)
 
-def Emit.anyLibc(fs: Coll.List[El.Fn]): Bool = fs match
+// a libc extern of a user file, or a libc function or val of the prelude that the program calls
+def Emit.anyLibc(fs: Coll.List[El.Fn], cs: Coll.ISet): Bool = fs match
   case Coll.Nil => false
   case Coll.Cons(f, rest) =>
-    val El.Fn(_, _, _, _, _, _, body) = f
+    val El.Fn(_, n, _, _, _, _, body) = f
     body match
-      case El.Def(_) => Emit.anyLibc(rest)
+      case El.Def(_) => Emit.anyLibc(rest, cs)
       case El.Extern(abi, _) => abi match
-        case Ast.AbiSrs => Emit.anyLibc(rest)
-        case _ => true
+        case Ast.AbiLibc => true
+        case Ast.AbiLibcVar => true
+        case Ast.AbiLibcVal => if Coll.setHas(cs, Sym.hash(n)) then true else Emit.anyLibc(rest, cs)
+        case Ast.AbiLibcPre => if Coll.setHas(cs, Sym.hash(n)) then true else Emit.anyLibc(rest, cs)
+        case Ast.AbiSrs => Emit.anyLibc(rest, cs)
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
@@ -1517,10 +1525,27 @@ def Emit.strInline(n: Sym.Sym): Bool =
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
-  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32")
+  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32") || Emit.ptrPrim(s)
 
 // C conversion to an unsigned type is mod 2^width (C11 6.3.1.3p2); uint64_t to int64_t above INT64_MAX and int64_t to int32_t out of range are
 // implementation-defined (6.3.1.3p3), two's complement on every target compiler (gcc, clang)
+// the raw-memory prims of the srs Arena (lib/prelude.srs, rt_ptr_*): callable only in the fns of a Srs.* handler
+// (Ty.rtCall). A block is read and written by int64_t word index; rt_globals is the process-lifetime state block of the
+// allocator (one file-static, zeroed; one thread, as the C arena it replaces)
+def Emit.ptrPrim(s: Str): Bool =
+  Str.eq(s, "rt_ptr_get") || Str.eq(s, "rt_ptr_set") || Str.eq(s, "rt_ptr_add") || Str.eq(s, "rt_ptr_addr") || Str.eq(s, "rt_ptr_of") || Str.eq(s, "rt_globals")
+
+def Emit.ptrPrims(cs: Coll.ISet): Unit =
+  Emit.primIf(cs, "rt_ptr_get", "static inline int64_t rt_ptr_get(void* p, int64_t i) { return ((int64_t*)p)[i]; }\n")
+  Emit.primIf(cs, "rt_ptr_set", "static inline int64_t rt_ptr_set(void* p, int64_t i, int64_t v) { ((int64_t*)p)[i] = v; return 0; }\n")
+  Emit.primIf(cs, "rt_ptr_add", "static inline void* rt_ptr_add(void* p, int64_t n) { return (char*)p + n; }\n")
+  Emit.primIf(cs, "rt_ptr_addr", "static inline uint64_t rt_ptr_addr(void* p) { return (uint64_t)(uintptr_t)p; }\n")
+  Emit.primIf(cs, "rt_ptr_of", "static inline void* rt_ptr_of(uint64_t a) { return (void*)(uintptr_t)a; }\n")
+  Emit.primIf(cs, "rt_globals", "static int64_t srs_globals[8];\nstatic inline void* rt_globals(void) { return srs_globals; }\n")
+
+// a prim line only in a program that calls the prim (pay per use)
+def Emit.primIf(cs: Coll.ISet, name: Str, text: Str): Unit =
+  if Coll.setHas(cs, Sym.hash(Sym.of(name))) then Console.print(text) else ()
 def Emit.wordPrims(): Unit =
   Console.print("static inline uint32_t U32__of(int64_t x) { return (uint32_t)x; }\n")
   Console.print("static inline uint32_t U32__ofU64(uint64_t x) { return (uint32_t)x; }\n")
@@ -2382,14 +2407,14 @@ def Emit.vtOps(cx: Emit.Cx, p: Sym.Sym, pre: Str, hn: Sym.Sym, ops: Coll.List[As
 // the inline Arena bump (spec sec 5.2): the free bytes of an Arena's head chunk are cur..end of its capability, so an
 // allocation is a compare and a bump with no vtable test. The slow path (end reached, or a Region handler that is not
 // an Arena: its cur and end stay null) runs the handler's alloc; for an Arena it writes the bump back into the head
-// chunk (the chunk layout of rt/srs_rt.c:24-25), lets rt_arena_alloc open a chunk, and takes the new head's free bytes
+// chunk (the chunk layout of the Srs.Arena handler in lib/prelude.srs), lets its alloc open a chunk, and takes the new head's free bytes
 def Emit.allocFast(cx: Emit.Cx): Unit =
   Console.print("typedef struct srs_chunk { struct srs_chunk* next; size_t used, cap; } srs_chunk;\n")
   Console.print("__attribute__((noinline)) static void* srs_alloc_slow(srs_cap* c, int64_t size) {\n")
   Console.print("  if (c->vt == vt_Srs__Arena) {\n")
   Console.print("    srs_chunk** hp = (srs_chunk**)c->self;\n")
   Console.print("    if (c->end) (*hp)->used = (size_t)(c->cur - (char*)(*hp + 1));\n")
-  Console.print("    void* p = rt_arena_alloc(c->self, size);\n")
+  Console.print("    void* p = h_Srs__Arena_alloc(c->self, size);\n")
   Console.print("    c->cur = (char*)(*hp + 1) + (*hp)->used; c->end = (char*)(*hp + 1) + (*hp)->cap;\n")
   Console.print("    return p;\n")
   Console.print("  }\n")
@@ -2794,11 +2819,12 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   val ens = Emit.closeEnums(cx, Emit.instTys(cx, is, Emit.hfnTys(hs, Coll.Nil)), Coll.BTip, Coll.Nil)
   Console.print("// DO-NOT-EDIT. Generated by srs (s2/emit.srs).\n")
   Console.print("#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n")
-  Emit.libcHeaders(fs, ds)
+  Emit.libcHeaders(fs, ds, cs)
   Emit.cstructChecks(cx, ds)
   Console.print("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
   Emit.strPrims()
   Emit.wordPrims()
+  Emit.ptrPrims(cs)
   // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
   // always null for other handlers
   Console.print("typedef struct srs_cap { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")

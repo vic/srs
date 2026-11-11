@@ -1629,7 +1629,7 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
     case Ast.DFn(f) =>
       val Ast.Fn(_, fname, _, _, _, _, _) = f
       val Ty.Cx(_, _, _, _, _, _, _, rows, _, _, idx) = cx
-      val Ty.FnEx(st1, ef) = Ty.fn(cx, st, f, Eff.row(rows, fname))
+      val Ty.FnEx(st1, ef) = Ty.fn(Ty.byHandler(cx, fname), st, f, Eff.row(rows, fname))
       Ty.decls(cx, st1, rest, Coll.Cons(ef, acc), hacc, gacc)
     // a top-level val is checked as a compile-time body (no row: only Region, the compiler's); no C (vic 2026-11-09)
     case Ast.DVal(f) =>
@@ -1842,7 +1842,7 @@ def Ty.lineOf(e: Ast.Expr): I64 = e match
   case Ast.Assign(l, _, _) => l
   case Ast.Quant(l, _, _, _, _) => l
 
-// the fns of a handler named Srs.* run as Ty.Srs: the runtime's own bodies, the only callers of rt_*
+// the fns of a handler named Srs.*, and the top-level defs named Srs.*, run as Ty.Srs: the runtime's own bodies, the only callers of rt_*
 def Ty.byHandler(cx: Ty.Cx, h: Sym.Sym): Ty.Cx =
   val Ty.Cx(fns, es, ps, hs, trs, _, imp, rows, vals, arr, idx) = cx
   val s = Sym.str(h)
@@ -2151,6 +2151,7 @@ def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
       case Ast.AbiLibcVar => true
       case Ast.AbiSrs => false
       case Ast.AbiLibcVal => false
+      case Ast.AbiLibcPre => true
     case _ => false
   mode match
     case Ty.Run(by) => by match

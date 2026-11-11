@@ -100,16 +100,9 @@ srs_str rt_arg(int64_t i) {
   return (srs_str){(const uint8_t*)g_argv[i], (int64_t)strlen(g_argv[i])};
 }
 
-// Arena allocator: linked chunks, bump allocation, freed as a whole.
-typedef struct chunk { struct chunk* next; size_t used, cap; } chunk;
-typedef struct { chunk* head; } arena;
-enum { CHUNK = 1 << 20 };
-// freed CHUNK-size chunks (A14), taken before new pages: their pages are already faulted in. One list per process: the
-// program runs one thread. Bigger chunks come from malloc and go back to it
-static chunk* g_spare;
 
 // ── pages for the program's lifetime (srs_cap.h): bumped out of 64 MiB reservations that are advised for transparent
-// huge pages, so one fault maps 2 MiB where it maps 4 KiB from malloc. Never returned: CHUNK chunks end in g_spare.
+// huge pages, so one fault maps 2 MiB where it maps 4 KiB from malloc. Never returned. snx word arrays still use them.
 // Reserved, not committed: the address space grows by one reservation at a time, untouched pages cost nothing
 enum { PAGES_RESERVE = 64 << 20, HUGE_PAGE = 2 << 20 };
 static char *g_pages, *g_pages_end;
@@ -127,65 +120,6 @@ __attribute__((noinline)) void* srs_pages(int64_t size) {
   void* r = g_pages;
   g_pages += n;
   return r;
-}
-#ifdef SNX_CENSUS
-// census: live malloc'd chunks (spare ones included, they stay allocated) and their bytes with header
-static int64_t g_cz_chunks, g_cz_bytes;
-int64_t srs_cz_chunks(void) { return g_cz_chunks; }
-int64_t srs_cz_bytes(void) { return g_cz_bytes; }
-// the arena that last took a chunk: its head chunk is the one still filling (only its used bytes count)
-static arena* g_cz_last;
-int64_t srs_cz_head_untouched(void) { return g_cz_last && g_cz_last->head ? (int64_t)(g_cz_last->head->cap - g_cz_last->head->used) : 0; }
-// set by rt_arena_free just before it calls the snx side (weak: absent when snx_rt.c has no census)
-static int64_t g_cz_s_region, g_cz_s_n;
-int64_t srs_cz_s_region(void) { return g_cz_s_region; }
-int64_t srs_cz_s_n(void) { return g_cz_s_n; }
-__attribute__((weak)) void snx_cz_sample(void);
-int64_t srs_cz_spare_n(void) { int64_t n = 0; for (chunk* c = g_spare; c; c = c->next) n++; return n; }
-int64_t srs_cz_spare_bytes(void) { int64_t b = 0; for (chunk* c = g_spare; c; c = c->next) b += (int64_t)(sizeof(chunk) + c->cap); return b; }
-#endif
-
-void* rt_arena_new(void) { return calloc(1, sizeof(arena)); }
-void* rt_arena_alloc(void* self, int64_t size) {
-  arena* a = self;
-  size_t n = ((size_t)size + 7) & ~(size_t)7;  // 8-byte granule, as the inline bump (s2/emit.srs Emit.allocFast)
-  if (!a->head || a->head->used + n > a->head->cap) {
-    size_t cap = n > CHUNK ? n : CHUNK;
-    chunk* c = cap != CHUNK ? malloc(sizeof(chunk) + cap) : g_spare ? g_spare : srs_pages(sizeof(chunk) + CHUNK);
-    if (!c) { fputs("srs: out of memory\n", stderr); exit(70); }
-    if (c == g_spare) g_spare = c->next;
-#ifdef SNX_CENSUS
-    else { g_cz_chunks++; g_cz_bytes += (int64_t)(sizeof(chunk) + cap); }
-    g_cz_last = a;
-#endif
-    c->next = a->head; c->used = 0; c->cap = cap; a->head = c;
-  }
-  void* p = (char*)(a->head + 1) + a->head->used;
-  a->head->used += n;
-  return p;
-}
-int64_t rt_arena_free(void* self) {
-  arena* a = self;
-#ifdef SNX_CENSUS
-  if (g_cz_last == a) g_cz_last = 0;
-  { // sample before the chunks move to g_spare: this arena's chunks (head counted by used bytes) and the spare list
-    int64_t n = 0, reg = 0;
-    for (chunk* c = a->head; c; c = c->next) { n++; reg += (int64_t)sizeof(chunk) + (c == a->head ? (int64_t)c->used : (int64_t)c->cap); }
-    if (n > 100 && snx_cz_sample) { g_cz_s_region = reg; g_cz_s_n = n; snx_cz_sample(); }
-  }
-#endif
-  for (chunk* c = a->head; c;) {
-    chunk* n = c->next;
-    if (c->cap == CHUNK) { c->next = g_spare; g_spare = c; } else {
-#ifdef SNX_CENSUS
-      g_cz_chunks--; g_cz_bytes -= (int64_t)(sizeof(chunk) + c->cap);
-#endif
-      free(c);
-    }
-    c = n;
-  }
-  free(a);
-  return 0;
 }
 
 // Malloc allocator: every alloc is a separate block, tracked for free.

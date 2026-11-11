@@ -1,0 +1,29 @@
+// pass: Srs.Arena freed chunks go on a spare list and are handed out again, each to one arena: phase one fills
+// and frees a region of two chunks; then two regions open together, take those two, and keep their own data
+def Ar.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Ar.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def Ar.phase(): I64 =
+  handle r = Srs.Arena()
+  val n = 100000
+  val a = Array.fill(n, 1)
+  val b = Array.fill(n, 1)
+  Ar.sum(n, a, 0, 0) + Ar.sum(n, b, 0, 0)
+
+def Ar.two(): I64 =
+  handle ra = Srs.Arena()
+  val n = 100000
+  val a = Array.fill(n, 5)
+  handle rb = Srs.Arena()
+  val b = Array.fill(n, 9)
+  Ar.sum(n, a, 0, 0) + Ar.sum(n, b, 0, 0)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  Console.printI64(Ar.phase())
+  Console.print("\n")
+  Console.printI64(Ar.two())
+  Console.print("\n")
+  Console.printI64(Ar.two())
+  Console.print("\n")
+  0

@@ -251,6 +251,7 @@ def Parse.libcName(abi: Ast.Abi, rf: Parse.R[Ast.Fn]): Parse.R[Ast.Fn] = rf matc
   case Parse.Ok(f, t) => abi match
     case Ast.AbiSrs => rf
     case Ast.AbiLibcVal => rf
+    case Ast.AbiLibcPre => rf
     case _ =>
       val Ast.Fn(line, name, _, _, _, _, _) = f
       if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc extern names a C function: no '.' in its name") else rf
@@ -270,6 +271,7 @@ def Parse.cstruct(abi: Ast.Abi, line: I64, ts: Coll.List[Lex.Tok]): Parse.R[Ast.
           case Parse.Ok(fs, t3) => Parse.Ok(Ast.DType(Ast.TypeDecl(line, name, Coll.Nil, Coll.Nil, Ast.CStruct(fs))), t3)
   case Ast.AbiLibcVar => Parse.Err(line, "a libc struct takes no `...`")
   case Ast.AbiLibcVal => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
+  case Ast.AbiLibcPre => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
   case Ast.AbiSrs => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
 
 def Parse.cfields(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.CField]): Parse.R[Coll.List[Ast.CField]] =
@@ -303,6 +305,7 @@ def Parse.libcVal(abi: Ast.Abi, line: I64, ts: Coll.List[Lex.Tok]): Parse.R[Ast.
   case Ast.AbiSrs => Parse.Err(line, "a val is declared only as extern \"libc\" val NAME: I32")
   case Ast.AbiLibcVal => Parse.Err(line, "a val is declared only as extern \"libc\" val NAME: I32")
   case Ast.AbiLibcVar => Parse.Err(line, "a libc val takes no `...`")
+  case Ast.AbiLibcPre => Parse.Err(line, "a val is declared only as extern \"libc\" val NAME: I32")
 
 def Parse.libcValTy(s: Str): Bool = Str.eq(s, "I32") || Str.eq(s, "I64") || Str.eq(s, "U64")
 

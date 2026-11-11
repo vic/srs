@@ -208,7 +208,7 @@ for pair in "corpus:$CSRCF" "s2c:$S2C" "tiny:lib/prelude.srs tests/s2/fragbase/t
 done
 out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny_grow.srs 2>/dev/null); msg=$(frag_ratchet tiny "$FB" "$out"); code=$?
 case "$msg" in *"stmt-expr grew"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: one extra match grows stmt-expr" || { echo "FAIL fragment ratchet armed (grow)"; fail=1; };; *) echo "FAIL fragment ratchet armed (grow): $msg"; fail=1;; esac
-sed 's/^tiny stmt-expr .*/tiny stmt-expr 40/' "$FB" > "$B/fragment.low"
+sed 's/^tiny stmt-expr .*/tiny stmt-expr 80/' "$FB" > "$B/fragment.low"
 out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny.srs 2>/dev/null); msg=$(frag_ratchet tiny "$B/fragment.low" "$out"); code=$?
 case "$msg" in *"stmt-expr shrank"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: a decrease needs a base update" || { echo "FAIL fragment ratchet armed (shrink)"; fail=1;};; *) echo "FAIL fragment ratchet armed (shrink): $msg"; fail=1;; esac
 exit $fail
