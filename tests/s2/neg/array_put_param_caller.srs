@@ -1,0 +1,14 @@
+// expect: error[capability-bound]
+// the array lives in r1, the call names r2 for the param xs: Array[Str](n)<r>
+def Pc.push {r: Region} (n: I64, xs: Array[Str](n)<r>, i: I64, s: Str<r>): Unit =
+  if 0 <= i && i < n then Array.put(xs, i, s) else ()
+def main(): I64 =
+  handle m = Srs.Mut()
+  handle r1 = Srs.Arena()
+  val n = 2
+  val xs = Array.fill(n, "")
+  handle r2 = Srs.Arena()
+  val bs = Array.fill(n, U8.of(104))
+  val s = Str.ofBytes{r2}(n, bs)
+  Pc.push{r2}(n, xs, 0, s)
+  0

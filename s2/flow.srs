@@ -679,13 +679,21 @@ def Flow.putAt(st: Flow.St, p: I64, line: I64, xs: Coll.List[Ast.Expr], svs: Col
   case Coll.Cons(ex, _) => ex match
     case Ast.Name(_, x) => Flow.bindingOf(st, x) match
       case Coll.Some(b) =>
-        val Flow.Bnd(_, _, _, home) = b
+        val Flow.Bnd(_, _, bd, home) = b
         home match
           case Coll.Some(r) => Flow.putEsc(st, p, line, r, Flow.thirdOf(svs))
-          case Coll.None => Flow.Ev(st, p, Coll.Nil)
+          case Coll.None => Flow.putBound(st, p, line, bd, Flow.thirdOf(svs))
       case Coll.None => Flow.Ev(st, p, Coll.Nil)
     case _ => Flow.Ev(st, p, Coll.Nil)
   case Coll.Nil => Flow.Ev(st, p, Coll.Nil)
+
+// a param array with a stated region <rs>: what is put in must live in rs (the stated-bound check of an assignment, Flow.bound);
+// any other array without a home takes scalars only (Ty.arrPut)
+def Flow.putBound(st: Flow.St, p: I64, line: I64, bd: Coll.Option[Coll.List[I64]], sv: Coll.List[Flow.Src]): Flow.Ev = bd match
+  case Coll.Some(ids) =>
+    val Flow.At(st1, a) = Flow.next(st, p)
+    Flow.Ev(Flow.bound(st1, a, ids, sv, line), a, Coll.Nil)
+  case Coll.None => Flow.Ev(st, p, Coll.Nil)
 
 def Flow.thirdOf(svs: Coll.List[Coll.List[Flow.Src]]): Coll.List[Flow.Src] = svs match
   case Coll.Cons(_, r1) => r1 match

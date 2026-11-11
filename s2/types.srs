@@ -1589,7 +1589,18 @@ def Ty.binds(ps: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], acc: Coll.List[T
     val b: Ty.Bind = Ty.idOf(tv, x) match
       case Coll.Some(id) => Ty.Val(x, tx, id)
       case Coll.None => Ty.Bind(x, tx)
-    Ty.binds(rest, tv, Coll.Cons(b, acc))
+    Ty.binds(rest, tv, Ty.withHome(t, x, Coll.Cons(b, acc)))
+
+// a param array with a stated region (xs: Array[A](n)<r>) takes data in a slot: Flow checks the value against that region
+// (Flow.putAt, the stated-bound check), as for an array allocated in the fn (Ty.Home)
+def Ty.withHome(t: Ast.Ty, x: Sym.Sym, bs: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] =
+  if Ty.isBoundedArray(t) then Coll.Cons(Ty.Home(x), bs) else bs
+
+def Ty.isBoundedArray(t: Ast.Ty): Bool =
+  val Ast.Ty(_, n, _, caps, _) = t
+  caps match
+    case Ast.Stated(_) => Str.eq(Sym.str(n), "Array")
+    case _ => false
 
 // A1: an identity for each I64 param, in tv (Ty.term names a length by it)
 enum Ty.Ids:

@@ -1,0 +1,35 @@
+// pass: data goes into a PARAM array that states its region (xs: Array[Str](n)<r>): the stored Str must live in r too
+// (the stated-bound check). A growable keeps (cap, xs) as params: when full it fills a new array of twice the length in the
+// same region, copies, and calls itself with the pair rebound; pushes and copies are both puts of Str into a bounded param
+def Pg.copy {r: Region} (n: I64, xs: Array[Str](n)<r>, m: I64, ys: Array[Str](m)<r>, i: I64): Unit =
+  if 0 <= i && i < n && i < m then
+    Array.put(ys, i, xs(i))
+    Pg.copy(n, xs, m, ys, i + 1)
+  else ()
+
+def Pg.push {r: Region} (cap: I64, xs: Array[Str](cap)<r>, len: I64, k: I64, s: Str<r>): I64 =
+  if len >= k then Pg.count(cap, xs, 0, 0)
+  else if 0 <= len && len < cap then
+    Array.put(xs, len, s)
+    Pg.push(cap, xs, len + 1, k, s)
+  else
+    val m = cap * 2
+    val ys = Array.fill(m, "")
+    Pg.copy(cap, xs, m, ys, 0)
+    Pg.push(m, ys, len, k, s)
+
+def Pg.count {r: Region} (cap: I64, xs: Array[Str](cap)<r>, i: I64, acc: I64): I64 =
+  if 0 <= i && i < cap then Pg.count(cap, xs, i + 1, acc + Str.len(xs(i))) else acc
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val c0 = 2
+  val xs0 = Array.fill(c0, "")
+  val n = 3
+  val bs = Array.fill(n, U8.of(104))
+  val s = Str.ofBytes(n, bs)
+  Console.printI64(Pg.push(c0, xs0, 0, 11, s))
+  Console.print("\n")
+  0
