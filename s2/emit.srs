@@ -1236,19 +1236,25 @@ def Emit.nullaries(n: Sym.Sym, args: Coll.List[K.Term], cs: Coll.List[Ast.Case],
     Emit.nullaries(n, args, rest, i + 1)
 
 // ── prototypes (spec sec 1 D), vtables (E), bodies (G) ──
-def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn]): Unit = fs match
+def Emit.externs(cx: Emit.Cx, fs: Coll.List[El.Fn], cs: Coll.ISet): Unit = fs match
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, tps, _, _, _, body) = f
     body match
-      case El.Extern(_) =>
-        if Emit.strInline(n) then ()
+      case El.Extern(abi) =>
+        if Emit.strInline(n) || !Emit.keepExtern(abi, cs, n) then ()
         else
           // one C symbol for every instance: a [] binder slot is void* (spec sec 3 slotType)
           Emit.sig(cx, Emit.fiOf(cx, Mono.Inst(f, Emit.ptrs(tps, Coll.Nil), Mono.Top)), Emit.KExtern)
           Console.print(";\n")
       case _ => ()
-    Emit.externs(cx, rest)
+    Emit.externs(cx, rest, cs)
+
+// an extern keeps its prototype when its program calls it; a libc extern always does: the declaration alone is what the
+// C compiler checks against the libc headers (Emit.libcHeaders), called or not
+def Emit.keepExtern(abi: Ast.Abi, cs: Coll.ISet, n: Sym.Sym): Bool = abi match
+  case Ast.AbiLibc => true
+  case Ast.AbiSrs => Coll.setHas(cs, Sym.hash(n))
 
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
@@ -2143,9 +2149,10 @@ def Emit.hasMain(cx: Emit.Cx): Bool =
 enum Emit.Static:
   case Emit.Static(proto: Sym.Sym, h: Sym.Sym, x: Sym.Sym)
 
-// the protocol of every handle site in the program, and whether some fn calls main
+// the protocol of every handle site in the program, whether some fn calls main, the handlers named at a handle site (hn)
+// and the externs called (cs); ex = every extern of the program: sets of the names' hashes (a hash tie only keeps one more handler or extern)
 enum Emit.Seen:
-  case Emit.Seen(ps: Coll.List[Sym.Sym], callsMain: Bool)
+  case Emit.Seen(ps: Coll.List[Sym.Sym], callsMain: Bool, hn: Coll.ISet, cs: Coll.ISet, ex: Coll.ISet)
 
 def Emit.isStatic(cx: Emit.Cx, p: Sym.Sym): Bool =
   val Emit.Cx(_, _, _, _, _, _, _, _, st) = cx
@@ -2157,9 +2164,9 @@ def Emit.staticIn(st: Coll.List[Emit.Static], p: Sym.Sym): Bool = st match
     val Emit.Static(q, _, _) = s
     if Sym.eq(q, p) then true else Emit.staticIn(rest, p)
 
-def Emit.staticsOf(cx: Emit.Cx, ds: Coll.List[Ast.Decl], res: Ty.Result): Coll.List[Emit.Static] =
-  val Ty.Result(_, _, _, fs, hs, gvs) = res
-  val Emit.Seen(ps, called) = Emit.seenGvs(cx, gvs, Emit.seenHs(cx, hs, Emit.seenFns(cx, fs, Emit.Seen(Coll.Nil, false))))
+def Emit.staticsOf(cx: Emit.Cx, ds: Coll.List[Ast.Decl], res: Ty.Result, roots: Emit.Seen): Coll.List[Emit.Static] =
+  val Ty.Result(_, _, _, fs, hs, _) = res
+  val Emit.Seen(ps, called, _, _, _) = Emit.seenHs(cx, hs, roots)
   if called then Coll.Nil else Emit.mainStatics(cx, ps, Emit.namesRegion(ds), Emit.mainStmts(fs), Coll.Nil)
 
 // the program writes a Region binder {r: Region}: a def, a handler fn, a given fn or a trait method takes a named
@@ -2239,8 +2246,8 @@ def Emit.countSym(xs: Coll.List[Sym.Sym], x: Sym.Sym, n: I64): I64 = xs match
   case Coll.Cons(y, rest) => Emit.countSym(rest, x, if Sym.eq(x, y) then n + 1 else n)
 
 def Emit.saw(cx: Emit.Cx, s: Emit.Seen, h: Sym.Sym): Emit.Seen =
-  val Emit.Seen(ps, called) = s
-  Emit.Seen(Coll.Cons(Emit.protoOfH(cx, h), ps), called)
+  val Emit.Seen(ps, called, hn, cs, ex) = s
+  Emit.Seen(Coll.Cons(Emit.protoOfH(cx, h), ps), called, Coll.setAdd(hn, Sym.hash(h)), cs, ex)
 
 def Emit.seenFns(cx: Emit.Cx, fs: Coll.List[El.Fn], s: Emit.Seen): Emit.Seen = fs match
   case Coll.Nil => s
@@ -2265,8 +2272,8 @@ def Emit.seenGvs(cx: Emit.Cx, gs: Coll.List[El.Given], s: Emit.Seen): Emit.Seen 
 
 def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.CallFn(_, f, _, _, args) =>
-    val Emit.Seen(ps, called) = s
-    Emit.seenEs(cx, args, Emit.Seen(ps, called || Sym.eq(f, Sym.of("main"))))
+    val Emit.Seen(ps, called, hn, cs, ex) = s
+    Emit.seenEs(cx, args, Emit.Seen(ps, called || Sym.eq(f, Sym.of("main")), hn, Emit.seenCall(cs, ex, f), ex))
   case El.New(_, _, _, _, _, args) => Emit.seenEs(cx, args, s)
   case El.Op(_, _, _, _, args) => Emit.seenEs(cx, args, s)
   case El.MHandled(_, _, h, _, args, rest, _, _) => Emit.seenEs(cx, Coll.Cons(rest, args), Emit.saw(cx, s, h))
@@ -2292,6 +2299,54 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
 def Emit.seenEs(cx: Emit.Cx, xs: Coll.List[El.Expr], s: Emit.Seen): Emit.Seen = xs match
   case Coll.Nil => s
   case Coll.Cons(x, rest) => Emit.seenEs(cx, rest, Emit.seenE(cx, x, s))
+
+// what a program needs of the handlers and externs (pay per use): the handlers named at a handle site in its defs or
+// givens, then those named in the fns of a needed handler, until no more; the Arena too when allocFast is on (it reads
+// vt_Srs__Arena). Seen.cs holds every fn those bodies call, so an extern is needed when it is in cs.
+enum Emit.Reach:
+  case Emit.Reach(s: Emit.Seen, done: Coll.SMap[Bool], grew: Bool)
+
+def Emit.roots(cx: Emit.Cx, fs: Coll.List[El.Fn], gvs: Coll.List[El.Given]): Emit.Seen =
+  val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
+  val base: Coll.ISet = al match
+    case Emit.Inline => Coll.setAdd(Coll.setEmpty(), Sym.hash(Sym.of("Srs.Arena")))
+    case Emit.VTable => Coll.setEmpty()
+  Emit.seenGvs(cx, gvs, Emit.seenFns(cx, fs, Emit.Seen(Coll.Nil, false, base, Coll.setEmpty(), Emit.externSet(fs, Coll.setEmpty()))))
+
+def Emit.reach(cx: Emit.Cx, hs: Coll.List[El.Handler], s: Emit.Seen, done: Coll.SMap[Bool]): Emit.Seen =
+  val Emit.Reach(s2, done2, grew) = Emit.reachHs(cx, hs, Emit.Reach(s, done, false))
+  if grew then Emit.reach(cx, hs, s2, done2) else s2
+
+def Emit.reachHs(cx: Emit.Cx, hs: Coll.List[El.Handler], r: Emit.Reach): Emit.Reach = hs match
+  case Coll.Nil => r
+  case Coll.Cons(h, rest) =>
+    val El.Handler(n, _, fs, _) = h
+    val Emit.Reach(s, done, _) = r
+    val Emit.Seen(_, _, hn, _, _) = s
+    if Coll.setHas(hn, Sym.hash(n)) then
+      if Pure.has(done, n) then Emit.reachHs(cx, rest, r)
+      else Emit.reachHs(cx, rest, Emit.Reach(Emit.seenFns(cx, fs, s), Coll.sInsert(done, n, true), true))
+    else Emit.reachHs(cx, rest, r)
+
+// the externs of a program, and a call of one of them recorded in cs
+def Emit.externSet(fs: Coll.List[El.Fn], ex: Coll.ISet): Coll.ISet = fs match
+  case Coll.Nil => ex
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, n, _, _, _, _, body) = f
+    body match
+      case El.Extern(_) => Emit.externSet(rest, Coll.setAdd(ex, Sym.hash(n)))
+      case El.Def(_) => Emit.externSet(rest, ex)
+
+def Emit.seenCall(cs: Coll.ISet, ex: Coll.ISet, f: Sym.Sym): Coll.ISet =
+  val h = Sym.hash(f)
+  if Coll.setHas(ex, h) then (if Coll.setHas(cs, h) then cs else Coll.setAdd(cs, h)) else cs
+
+// the handlers a program needs
+def Emit.keepHs(hs: Coll.List[El.Handler], hn: Coll.ISet): Coll.List[El.Handler] = hs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(h, rest) =>
+    val El.Handler(n, _, _, _) = h
+    if Coll.setHas(hn, Sym.hash(n)) then Coll.Cons(h, Emit.keepHs(rest, hn)) else Emit.keepHs(rest, hn)
 
 def Emit.seenArms(cx: Emit.Cx, as: Coll.List[El.Arm], s: Emit.Seen): Emit.Seen = as match
   case Coll.Nil => s
@@ -2443,10 +2498,14 @@ def Emit.staticCaps(st: Coll.List[Emit.Static]): Unit = st match
 def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   val Ty.Result(_, _, s, fs0, _, _) = res0
   val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
-  val st = Emit.staticsOf(cx0, ds, res0)
+  val Ty.Result(_, _, _, fs00, _, gvs00) = res0
+  val roots = Emit.roots(cx0, fs00, gvs00)
+  val st = Emit.staticsOf(cx0, ds, res0, roots)
   val res = Emit.withStatics(cx0, res0, st)
   val Ty.Result(_, _, _, fs, hs, _) = res
   val cx = Emit.withFns(cx0, fs, st)
+  val Emit.Seen(_, _, hn, cs, _) = Emit.reach(cx, hs, roots, Coll.sEmpty())
+  val hsu = Emit.keepHs(hs, hn)
   val is = Mono.run(res)
   val ens = Emit.closeEnums(cx, Emit.instTys(cx, is, Coll.Nil), Coll.BTip, Coll.Nil)
   Console.print("// DO-NOT-EDIT. Generated by srs (s2/emit.srs).\n")
@@ -2463,17 +2522,17 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   Emit.fwds(ens)
   Emit.structs(cx, ens)
   Emit.statics(cx, ens)
-  Emit.externs(cx, fs)
+  Emit.externs(cx, fs, cs)
   Emit.protos(cx, is)
-  Emit.handlers(cx, Emit.oneShot(hs), Emit.Layout)
-  Emit.vtables(cx, Emit.oneShot(hs))
+  Emit.handlers(cx, Emit.oneShot(hsu), Emit.Layout)
+  Emit.vtables(cx, Emit.oneShot(hsu))
   Emit.staticCaps(st)
   val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
   al match
     case Emit.Inline => Emit.allocFast(cx)
     case Emit.VTable => ()
   Emit.bodies(cx, hs, is)
-  Emit.handlers(cx, Emit.oneShot(hs), Emit.Code)
+  Emit.handlers(cx, Emit.oneShot(hsu), Emit.Code)
   if Emit.hasMain(cx) then Console.print("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()
 
 // a def instance is f_<name><args>; a given method instance is named by its goal

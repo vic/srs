@@ -25,13 +25,13 @@ def RS.regions(sts: Coll.List[Emit.Static], n: I64): I64 = sts match
 def RS.probe(name: Str, src: Str, lib: Coll.List[Ast.Decl]): Unit =
   val ds = Coll.revOnto(Coll.rev(RS.src(src)), lib)
   val res = RS.checked(Ty.typed(ds, Names.UsesArrays))
-  val Ty.Result(cs, _, s, fs, _, _) = res
+  val Ty.Result(cs, _, s, fs, _, gvs) = res
   val cx = Emit.cxOf(ds, s, fs, Coll.Nil)
   Console.print(name)
   Console.print(": clashes ")
   Console.printI64(Coll.length(cs))
   Console.print(", static Region ")
-  Console.printI64(RS.regions(Emit.staticsOf(cx, ds, res), 0))
+  Console.printI64(RS.regions(Emit.staticsOf(cx, ds, res, Emit.roots(cx, fs, gvs)), 0))
   Console.print("\n")
 
 def main(): I64 =

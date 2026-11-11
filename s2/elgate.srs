@@ -222,9 +222,9 @@ def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]
 
 // the violations of the C Emit.program prints for res
 def Elgate.run(ds: Coll.List[Ast.Decl], res0: Ty.Result): Coll.List[Elgate.V] =
-  val Ty.Result(_, _, s, fs0, _, _) = res0
+  val Ty.Result(_, _, s, fs0, _, gvs0) = res0
   val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
-  val st = Emit.staticsOf(cx0, ds, res0)
+  val st = Emit.staticsOf(cx0, ds, res0, Emit.roots(cx0, fs0, gvs0))
   val res = Emit.withStatics(cx0, res0, st)
   val Ty.Result(_, _, _, fs, hs, _) = res
   val cx = Emit.withFns(cx0, fs, st)
