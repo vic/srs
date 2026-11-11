@@ -840,11 +840,21 @@ def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.E
     case Ast.DGiven(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals)
     case Ast.DType(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals)
 
-// the fns with effects first (s2/pure.srs): a top-level val may call none of them
-def Ty.check(ds: Coll.List[Ast.Decl]): Ty.Result = Eff.rows(ds) match
-  case Eff.Got(rows) => Ty.checkWith(ds, Coll.Nil, rows)
-  case Eff.RulesBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
+// the compiler's check: aliases expanded (Tl), effect rows, then types; the one entry for s2c and the tests
+enum Ty.Typed:
+  case Ty.TlBad(es: Coll.List[Tl.Err])
+  case Ty.RowsBad(rel: Sym.Sym)
+  case Ty.Checked(xds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result)
 
+def Ty.typed(ds: Coll.List[Ast.Decl]): Ty.Typed =
+  val Tl.W(xds, tes) = Tl.expand(ds)
+  tes match
+    case Coll.Cons(_, _) => Ty.TlBad(tes)
+    case Coll.Nil => Eff.rows(xds) match
+      case Eff.RulesBad(rel) => Ty.RowsBad(rel)
+      case Eff.Got(rows) => Ty.Checked(xds, rows, Ty.checkWith(xds, Tl.typeGoals(ds), rows))
+
+// the fns with effects first (s2/pure.srs): a top-level val may call none of them
 // tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls; rows: Eff.rows(ds)
 def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows): Ty.Result =
   val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _, vals0) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.sEmpty())

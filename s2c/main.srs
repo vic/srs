@@ -218,21 +218,18 @@ def S2c.showFx(fs: Coll.List[S2c.File], cs: Coll.List[Fx.Clash]): Unit = cs matc
     S2c.showFx(fs, rest)
 
 def S2c.typed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl]): I64 =
-  val Tl.W(xds, tes) = Tl.expand(ds)
-  tes match
-    case Coll.Cons(_, _) =>
+  Ty.typed(ds) match
+    case Ty.TlBad(tes) =>
       S2c.showTl(fs, Coll.rev(tes))
       1
-    case Coll.Nil => Eff.rows(xds) match
-      case Eff.RulesBad(rel) => S2c.internal("effect row", rel)
-      case Eff.Got(rows) =>
-        val res = Ty.checkWith(xds, Tl.typeGoals(ds), rows)
-        val Ty.Result(cs, _, s, _, _, _) = res
-        cs match
-          case Coll.Cons(_, _) =>
-            S2c.showClashes(fs, s, Coll.rev(cs))
-            1
-          case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
+    case Ty.RowsBad(rel) => S2c.internal("effect row", rel)
+    case Ty.Checked(xds, rows, res) =>
+      val Ty.Result(cs, _, s, _, _, _) = res
+      cs match
+        case Coll.Cons(_, _) =>
+          S2c.showClashes(fs, s, Coll.rev(cs))
+          1
+        case Coll.Nil => S2c.flowed(m, fs, xds, rows, res)
 
 def S2c.flowed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], rows: Eff.Rows, res: Ty.Result): I64 =
   S2c.flowAll(Flow.plans(), S2c.flowCx(ds, rows, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil), ds, Coll.Nil) match

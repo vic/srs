@@ -77,7 +77,15 @@ def TT.showAll(cs: Coll.List[Ty.Clash]): Unit = cs match
     TT.show(c)
     TT.showAll(rest)
 
-def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, Ty.check(ds))
+def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(name, TT.checked(Ty.typed(ds)))
+
+// a check that stopped before types prints why; an empty result follows so the report stays one line
+def TT.checked(t: Ty.Typed): Ty.Result = t match
+  case Ty.Checked(_, _, res) => res
+  case Ty.RowsBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
+  case Ty.TlBad(_) =>
+    Console.print(" tl-errors")
+    Ty.Result(Coll.Nil, Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
 
 def TT.report {r: Region} (name: Str, res: Ty.Result): Unit =
   Console.print(name)
@@ -98,7 +106,7 @@ def main(): I64 =
   handle fs = Srs.Files()
   val lib = TT.parseAll(TT.sources(), Coll.Nil)
   // the whole self check once: its clashes, instances, defs and mono
-  val self = Ty.check(lib)
+  val self = TT.checked(Ty.typed(lib))
   TT.report("self", self)
   val Ty.Result(_, is, _, sfs, _, _) = self
   val mi = Mono.run(self)
@@ -123,7 +131,7 @@ def main(): I64 =
   Console.print("elab usem:\n")
   TT.elab("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef pair {p: Region} {q: Region} (): I64 = 0\ndef rv [A: Type] {r: Region} (xs: Coll.List[A]): Coll.List[A] = Coll.rev(xs)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  handle b = Srs.Heap()\n  val xs = mk{b}(3)\n  Coll.length(rv{a}(xs)) + Coll.length(mk{a}(1)) + pair{a, b}()\n", small, "usem")
   Console.print("mono usem:\n")
-  TT.insts(Mono.run(Ty.check(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)))))
+  TT.insts(Mono.run(TT.checked(Ty.typed(Coll.revOnto(Coll.rev(TT.src("def mk {r: Region} (n: I64): Coll.List[I64] = Coll.Cons(n, Coll.Nil)\ndef usem(): I64 =\n  handle a = Srs.Arena()\n  Coll.length(Coll.rev(mk(3)))\n")), TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil))))))
   0
 
 // ── T3: the elaborated calls of one def: instance, type args (reified), caps; constructors with their region ──
@@ -221,7 +229,7 @@ def TT.stmts {r: Region} (s: Coll.IMap[K.Term], ss: Coll.List[El.Stmt]): Unit = 
     TT.stmts(s, rest)
 
 def TT.elab {r: Region} (src: Str, lib: Coll.List[Ast.Decl], name: Str): Unit =
-  val Ty.Result(cs, _, s, fs, _, _) = Ty.check(Coll.revOnto(Coll.rev(TT.src(src)), lib))
+  val Ty.Result(cs, _, s, fs, _, _) = TT.checked(Ty.typed(Coll.revOnto(Coll.rev(TT.src(src)), lib)))
   TT.showAll(cs)
   TT.fnCalls(s, fs, Sym.of(name))
 

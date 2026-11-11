@@ -7,6 +7,14 @@ def RS.src(s: Str): Coll.List[Ast.Decl] = Parse.source(s) match
   case Parse.Ok(ds, _) => ds
   case Parse.Err(_, _) => Coll.Nil
 
+// a check that stopped before types prints why; an empty result follows so the report stays one line
+def RS.checked(t: Ty.Typed): Ty.Result = t match
+  case Ty.Checked(_, _, res) => res
+  case Ty.RowsBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
+  case Ty.TlBad(_) =>
+    Console.print(" tl-errors")
+    Ty.Result(Coll.Nil, Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
+
 def RS.regions(sts: Coll.List[Emit.Static], n: I64): I64 = sts match
   case Coll.Nil => n
   case Coll.Cons(s, rest) =>
@@ -15,7 +23,7 @@ def RS.regions(sts: Coll.List[Emit.Static], n: I64): I64 = sts match
 
 def RS.probe(name: Str, src: Str, lib: Coll.List[Ast.Decl]): Unit =
   val ds = Coll.revOnto(Coll.rev(RS.src(src)), lib)
-  val res = Ty.check(ds)
+  val res = RS.checked(Ty.typed(ds))
   val Ty.Result(cs, _, s, fs, _, _) = res
   val cx = Emit.cxOf(ds, s, fs, Coll.Nil)
   Console.print(name)
