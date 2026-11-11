@@ -1,0 +1,8 @@
+// expect: error[region-escape]
+// a Str result stated in r (Str^<r>) lives in r like a data value: it must not outlive the block that closes r
+def mk {r: Region} (): Str^<r> = "x"
+def leak(): Str =
+  handle r = Srs.Arena()
+  mk{r}()
+def main(): I64 = Str.len(leak())
+// expect: --> tests/s2/neg/caret_str_escape.srs:5

@@ -460,16 +460,22 @@ enum Flow.Src:
 
 // the result of a call of g, args' sources svs
 def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]]): Coll.List[Flow.Src] =
-  val Flow.Cx(_, _, _, es, _, _) = cx
+  val Flow.Cx(ps, _, _, es, _, _) = cx
   val Ast.Fn(_, _, gs, _, ret, _, _) = g
-  val Ast.Ty(_, rn, _, _, _) = ret
+  val Ast.Ty(_, rn, _, rcaps, _) = ret
   // a result of a type with facts is bound to the caller capability g's binder of the fact's protocol takes (an arg of
   // a fact type is bound to it too: Flow.argBs checks it)
   val ns = Flow.typeNeeds(cx, rn)
   // a [] binder result may be any arg (pick) or made from one (a given's method): it lives in every arg's region too
   // (vic-m5r.15)
   val data = Flow.isEnumName(es, rn) || Ty.memberSym(rn, Ty.tparams(gs, Coll.Nil))
-  if data then Flow.dataSrcs(cx, cs, f, gs, chosen, svs, ns) else Flow.factSrcs(cx, cs, chosen, gs, ns, Coll.Nil)
+  val base = if data then Flow.dataSrcs(cx, cs, f, gs, chosen, svs, ns) else Flow.factSrcs(cx, cs, chosen, gs, ns, Coll.Nil)
+  // a result T^<rs> lives in the caller capabilities rs's binders take, whatever T is: a Str or Ptr result too (g's body
+  // is checked to keep it there, Flow.def)
+  rcaps match
+    case Ast.Stated(rs) => if data then base else Flow.capSrcs(Flow.binderIds(cs, chosen, Flow.capBs(ps, gs, 0, Coll.Nil), rs, Coll.Nil), base)
+    case Ast.Inferred => base
+    case Ast.Chosen(_) => base
 
 // a data result of f: the capabilities its type's facts bind it to, the innermost Region when f's row has Region, the
 // caller capabilities its region binders take, its args' sources
