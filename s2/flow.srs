@@ -27,7 +27,7 @@ enum Flow.St:
 // what the walk reads: the protocols, the handlers, the defs (a call reads its callee's signature), the enums (a
 // constructor call allocates in the innermost Region), the type decls, the effect rows (s2/eff.srs)
 enum Flow.Cx:
-  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl], rows: Eff.Rows, ss: Eff.Syms)
+  case Flow.Cx(ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fns: Coll.SMap[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl], rows: Eff.Rows, ss: Eff.Syms)
 
 def Flow.keyAt(cx: Flow.Cx): Sym.Sym =
   val Flow.Cx(_, _, _, _, _, _, ss) = cx
@@ -368,7 +368,7 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
     val Flow.Evs(st2, pa, svs) = Flow.exprs(cx, st, p, xs, Coll.Nil)
     val Flow.Cx(ps, _, fns, es, ts, _, ess) = cx
     val Flow.St(_, _, cs, _, _) = st2
-    Flow.fnNamed(fns, f) match
+    Coll.sLookup(fns, f) match
       case Coll.Some(g) =>
         val Flow.At(st3, pb) = Flow.argBounds(cx, st2, pa, g, chosen, svs, line)
         val Flow.At(st4, q) = Flow.call(ps, st3, pb, g, chosen, line)
@@ -1244,12 +1244,6 @@ enum Flow.CapB:
 enum Flow.VS:
   case Flow.VS(x: Sym.Sym, s: Sym.Sym)
 
-def Flow.fnNamed(fns: Coll.List[Ast.Fn], f: Sym.Sym): Coll.Option[Ast.Fn] = fns match
-  case Coll.Nil => Coll.None
-  case Coll.Cons(g, rest) =>
-    val Ast.Fn(_, n, _, _, _, _, _) = g
-    if Sym.eq(n, f) then Coll.Some(g) else Flow.fnNamed(rest, f)
-
 def Flow.protoNamed(ps: Coll.List[Ast.Proto], n: Sym.Sym): Coll.Option[Ast.Proto] = ps match
   case Coll.Nil => Coll.None
   case Coll.Cons(p, rest) =>
@@ -2054,18 +2048,18 @@ def Flow.plainTys(ts: Coll.List[Ast.Ty]): Bool = ts match
   case Coll.Nil => true
   case Coll.Cons(t, rest) => Flow.plainTy(t) && Flow.plainTys(rest)
 
-def Flow.plainBody(fns: Coll.List[Ast.Fn], b: Ast.Body): Bool = b match
+def Flow.plainBody(fns: Coll.SMap[Ast.Fn], b: Ast.Body): Bool = b match
   case Ast.Def(_, e) => Flow.plainE(fns, e)
   case Ast.Extern(_) => true
 
-def Flow.plainE(fns: Coll.List[Ast.Fn], e: Ast.Expr): Bool = e match
+def Flow.plainE(fns: Coll.SMap[Ast.Fn], e: Ast.Expr): Bool = e match
   case Ast.Int(_, _) => true
   case Ast.Bool(_, _) => true
   case Ast.Str(_, _) => true
   case Ast.Unit(_) => true
   case Ast.Name(_, _) => true
   case Ast.Call(_, g, _, _, args) =>
-    val calleeOk: Bool = Flow.fnNamed(fns, g) match
+    val calleeOk: Bool = Coll.sLookup(fns, g) match
       case Coll.Some(c) =>
         val Ast.Fn(_, _, cgs, cps, cret, _, _) = c
         Flow.plainSigOf(cgs, cps, cret)
@@ -2082,21 +2076,21 @@ def Flow.plainE(fns: Coll.List[Ast.Fn], e: Ast.Expr): Bool = e match
   case Ast.Assign(_, _, x) => Flow.plainE(fns, x)
   case Ast.Quant(_, _, _, _, x) => Flow.plainE(fns, x)
 
-def Flow.plainAll(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Expr]): Bool = es match
+def Flow.plainAll(fns: Coll.SMap[Ast.Fn], es: Coll.List[Ast.Expr]): Bool = es match
   case Coll.Nil => true
   case Coll.Cons(e, rest) => Flow.plainE(fns, e) && Flow.plainAll(fns, rest)
 
-def Flow.plainArms(fns: Coll.List[Ast.Fn], arms: Coll.List[Ast.Arm]): Bool = arms match
+def Flow.plainArms(fns: Coll.SMap[Ast.Fn], arms: Coll.List[Ast.Arm]): Bool = arms match
   case Coll.Nil => true
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, _, body) = a
     Flow.plainE(fns, body) && Flow.plainArms(fns, rest)
 
-def Flow.plainStmts(fns: Coll.List[Ast.Fn], ss: Coll.List[Ast.Stmt]): Bool = ss match
+def Flow.plainStmts(fns: Coll.SMap[Ast.Fn], ss: Coll.List[Ast.Stmt]): Bool = ss match
   case Coll.Nil => true
   case Coll.Cons(s, rest) => Flow.plainStmt(fns, s) && Flow.plainStmts(fns, rest)
 
-def Flow.plainStmt(fns: Coll.List[Ast.Fn], s: Ast.Stmt): Bool = s match
+def Flow.plainStmt(fns: Coll.SMap[Ast.Fn], s: Ast.Stmt): Bool = s match
   case Ast.Val(_, _, _, e) => Flow.plainE(fns, e)
   case Ast.Var(_, _, _, e) => Flow.plainE(fns, e)
   case Ast.Handle(_, _, _, _) => false

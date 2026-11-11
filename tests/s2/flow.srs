@@ -230,7 +230,7 @@ def FT.matchUse {r: Region} (): Ast.Fn =
   FT.main(2, Ast.Block(3, FT.l2(FT.handle(3, "r", "Arena"), FT.val(4, "xs", FT.bld(4, 3))), Ast.Match(5, FT.nm(5, "xs"), FT.l2(consArm, nilArm))))
 
 // ── the def side: a def with capability binders checks its own body, once per solution (world) ──
-def FT.fn {r: Region} (name: Str): Ast.Fn = Flow.fnNamed(FT.fns(), Sym.of(name)) match
+def FT.fn {r: Region} (name: Str): Ast.Fn = Ty.fnNamed(FT.fns(), Sym.of(name)) match
   case Coll.Some(f) => f
   case Coll.None => FT.main(0, Ast.Int(0, 0))
 
@@ -271,7 +271,7 @@ def FT.showAll(cs: Coll.List[Flow.Clash]): Unit = cs match
     FT.show(c)
     FT.showAll(rest)
 
-def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), FT.fns(), FT.enums(), Coll.Nil, Eff.none(), Eff.syms()), f))
+def FT.run {r: Region} (name: Str, f: Ast.Fn): Unit = FT.verdict(name, Flow.check(Flow.Cx(FT.protos(), FT.handlers(), Ty.idxFns(FT.fns(), Coll.sEmpty()), FT.enums(), Coll.Nil, Eff.none(), Eff.syms()), f))
 
 def FT.verdict (name: Str, v: Flow.Verdict): Unit =
   Console.print(name)
