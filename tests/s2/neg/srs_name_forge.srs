@@ -1,0 +1,14 @@
+// expect: error[reserved-name]
+// Srs.* names belong to the srs prelude: a user handler named Srs.X would pass Ty.rtCall and could call any rt_* extern
+extern def rt_print(s: Str): Unit
+
+capability Forge:
+  def go(): Unit
+
+handler Srs.Forge for Forge:
+  def go(): Unit = rt_print("forged\n")
+
+def main(): I64 =
+  handle f = Srs.Forge()
+  Forge.go()
+  0

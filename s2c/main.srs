@@ -5,6 +5,8 @@
 enum S2c.Err:
   case S2c.NoFile(path: Str)
   case S2c.Syntax(line: I64, want: Str)
+  // a decl named Srs.* in a file after the prelude (the first file)
+  case S2c.Reserved(line: I64, name: Sym.Sym)
 
 // a source file: its path, the number of its first line, its text. lines are numbered across the files, so a line
 // names its file (Parse.sourceFrom)
@@ -15,21 +17,55 @@ enum S2c.Read:
   case S2c.Read(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], files: Coll.List[S2c.File])
 
 // the args from i on, each a source file, in order; base = the number of the next file's first line
-def S2c.read(i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
+def S2c.read(first: I64, i: I64, base: I64, ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err], fs: Coll.List[S2c.File]): S2c.Read =
   if i >= Args.count() then S2c.Read(Coll.rev(ds), Coll.rev(errs), fs)
   else
     val p = Args.at(i)
     val src = Files.read(p)
-    if Str.len(src) < 0 then S2c.read(i + 1, base, ds, Coll.Cons(S2c.NoFile(p), errs), fs)
+    if Str.len(src) < 0 then S2c.read(first, i + 1, base, ds, Coll.Cons(S2c.NoFile(p), errs), fs)
     else
       val fs2 = Coll.Cons(S2c.File(p, base, src), fs)
       val next = base + S2c.lineCount(src, 0, 1)
       Parse.sourceFrom(src, base) match
-        case Parse.Ok(fds, _) => S2c.read(i + 1, next, Coll.revOnto(fds, ds), errs, fs2)
-        case Parse.Err(line, want) => S2c.read(i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
+        case Parse.Ok(fds, _) => S2c.read(first, i + 1, next, Coll.revOnto(fds, ds), if i == first then errs else S2c.reserved(fds, errs), fs2)
+        case Parse.Err(line, want) => S2c.read(first, i + 1, next, ds, Coll.Cons(S2c.Syntax(line, want), errs), fs2)
 
 def S2c.lineCount(s: Str, i: I64, n: I64): I64 =
   if i >= Str.len(s) then n else S2c.lineCount(s, i + 1, if Str.at(s, i) == 10 then n + 1 else n)
+
+// Srs.* names belong to the prelude: the handlers named Srs.* are the only bodies that may call rt_* and libc externs
+// (Ty.rtCall), so a user file may not declare any name with that prefix
+def S2c.reserved(ds: Coll.List[Ast.Decl], errs: Coll.List[S2c.Err]): Coll.List[S2c.Err] = ds match
+  case Coll.Nil => errs
+  case Coll.Cons(d, rest) => S2c.reserved(rest, S2c.reservedDecl(d, errs))
+
+def S2c.reservedDecl(d: Ast.Decl, errs: Coll.List[S2c.Err]): Coll.List[S2c.Err] = d match
+  case Ast.DFn(f) =>
+    val Ast.Fn(l, n, _, _, _, _, _) = f
+    S2c.reservedName(l, n, errs)
+  case Ast.DVal(f) =>
+    val Ast.Fn(l, n, _, _, _, _, _) = f
+    S2c.reservedName(l, n, errs)
+  case Ast.DEnum(e) =>
+    val Ast.Enum(l, n, _, _) = e
+    S2c.reservedName(l, n, errs)
+  case Ast.DProto(p) =>
+    val Ast.Proto(l, n, _, _, _, _, _, _) = p
+    S2c.reservedName(l, n, errs)
+  case Ast.DHandler(h) =>
+    val Ast.Handler(l, n, _, _, _) = h
+    S2c.reservedName(l, n, errs)
+  case Ast.DTrait(t) =>
+    val Ast.Trait(l, n, _, _) = t
+    S2c.reservedName(l, n, errs)
+  case Ast.DType(t) =>
+    val Ast.TypeDecl(l, n, _, _, _) = t
+    S2c.reservedName(l, n, errs)
+  case Ast.DGiven(_) => errs
+
+def S2c.reservedName(line: I64, n: Sym.Sym, errs: Coll.List[S2c.Err]): Coll.List[S2c.Err] =
+  val s = Sym.str(n)
+  if Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.") then Coll.Cons(S2c.Reserved(line, n), errs) else errs
 
 // ── diagnostics (vic Q-E1, 2026-11-09): error[code]: what / --> file:line / the source line / expected, found / help ──
 // what a diagnostic names after its title: nothing, a name, a type, or the type wanted and the type found
@@ -119,6 +155,7 @@ def S2c.showErrs(fs: Coll.List[S2c.File], es: Coll.List[S2c.Err]): Unit = es mat
         Console.eprint(p)
         Console.eprint("\n    = help: check the path and that the file is readable\n")
       case S2c.Syntax(line, want) => S2c.diag(fs, "parse", line, "parse error, expected", S2c.Text(want), "fix the syntax on this line")
+      case S2c.Reserved(line, n) => S2c.diag(fs, "reserved-name", line, "Srs.* names belong to the srs prelude:", S2c.Name(n), "name it without the Srs. prefix")
     S2c.showErrs(fs, rest)
 
 def S2c.showClashes(fs: Coll.List[S2c.File], s: K.Subst, cs: Coll.List[Ty.Clash]): Unit = cs match
@@ -406,7 +443,7 @@ def main(): I64 =
   handle f = Srs.Files()
   handle st = Srs.Store()
   val S2c.Args(m, first) = S2c.args()
-  val S2c.Read(ds, errs, fs) = S2c.read(first, 1, Coll.Nil, Coll.Nil, Coll.Nil)
+  val S2c.Read(ds, errs, fs) = S2c.read(first, first, 1, Coll.Nil, Coll.Nil, Coll.Nil)
   errs match
     case Coll.Cons(_, _) =>
       S2c.showErrs(fs, errs)
