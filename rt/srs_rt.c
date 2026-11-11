@@ -524,7 +524,15 @@ void* rt_out_new(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
   return o;
 }
 int64_t rt_out_str(void* self, srs_str s) { obuf_put(&((store_out*)self)->b, s.p, (size_t)s.n); return 0; }
-int64_t rt_out_i64(void* self, int64_t v) { char t[24]; int k = snprintf(t, sizeof t, "%lld", (long long)v); obuf_put(&((store_out*)self)->b, t, (size_t)k); return 0; }
+// the decimal text of v, written backwards from end (a 24-byte buffer holds any int64 with its sign): no format parsing on the print path
+static char* i64_text(char* end, int64_t v) {
+  uint64_t u = v < 0 ? 0 - (uint64_t)v : (uint64_t)v;
+  char* p = end;
+  do { *--p = (char)('0' + u % 10); u /= 10; } while (u);
+  if (v < 0) *--p = '-';
+  return p;
+}
+int64_t rt_out_i64(void* self, int64_t v) { char t[24]; char* p = i64_text(t + 24, v); obuf_put(&((store_out*)self)->b, p, (size_t)(t + 24 - p)); return 0; }
 int64_t rt_out_commit(void* self) {
   store_out* o = self;
   bool ok = wr_all(o->fd, o->b.p, o->b.n);
@@ -574,7 +582,7 @@ srs_str rt_capture_end(void) {
 }
 int64_t rt_print(srs_str s) { out_put(s.p, (size_t)s.n); return 0; }
 int64_t rt_eprint(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stderr); return 0; }
-int64_t rt_print_i64(int64_t v) { char t[24]; int k = snprintf(t, sizeof t, "%lld", (long long)v); out_put(t, (size_t)k); return 0; }
+int64_t rt_print_i64(int64_t v) { char t[24]; char* p = i64_text(t + 24, v); out_put(p, (size_t)(t + 24 - p)); return 0; }
 int64_t rt_eprint_i64(int64_t v) { fprintf(stderr, "%lld", (long long)v); return 0; }
 int64_t rt_print_char(int64_t c) { char t = (char)(unsigned char)c; out_put(&t, 1); return 0; }
 int64_t rt_str_len(srs_str s) { return s.n; }
