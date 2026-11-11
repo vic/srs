@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
@@ -20,6 +21,36 @@ typedef struct { const uint8_t* p; int64_t n; } srs_str;
 
 static int g_argc;
 static char** g_argv;
+
+// ── output buffers (vic-xg9m R2a): rt_print and the store writers append to a growable byte buffer (doubled on growth);
+// stdout's buffer is written by one write(1) loop at the flush points: process exit, before a spawn or fork (a child
+// writes to the same stdout), rt_exit. A write error is exit 70 (_exit: this may run in atexit)
+typedef struct { char* p; size_t n, cap; } obuf;
+static void obuf_put(obuf* b, const void* s, size_t n) {
+  if (b->n + n > b->cap) {
+    size_t c = b->cap ? b->cap : 4096;
+    while (c < b->n + n) c *= 2;
+    char* q = realloc(b->p, c);
+    if (!q) { fputs("srs: out of memory\n", stderr); _exit(70); }
+    b->p = q; b->cap = c;
+  }
+  if (n) memcpy(b->p + b->n, s, n);
+  b->n += n;
+}
+static bool wr_all(int fd, const char* p, size_t n) {
+  while (n > 0) {
+    ssize_t k = write(fd, p, n);
+    if (k < 0) { if (errno == EINTR) continue; return false; }
+    p += k; n -= (size_t)k;
+  }
+  return true;
+}
+static obuf g_stdout;
+static bool g_atexit;
+static void out_flush(void) {
+  if (!wr_all(1, g_stdout.p, g_stdout.n)) { fputs("srs: cannot write stdout\n", stderr); _exit(70); }
+  g_stdout.n = 0;
+}
 
 // ── main's stack (A14): $SRS_STACK bytes (suffix k, m or g), else srs_main_stack, which a program's own C may define
 // (a weak 0 here: main runs on the process stack). Set: rt_init calls main again on a thread whose stack is that size,
@@ -417,7 +448,7 @@ int64_t rt_proc_run(void* self) {
   os_proc* p = self;
   pid_t pid;
   int st;
-  fflush(stdout);
+  out_flush();
   int64_t r;
   if (p->bad || p->n == 0) r = 2 * OS_HOW + OS_BADPATH;
   else {
@@ -445,7 +476,7 @@ srs_str ext_net_echo(void) {
   memcpy(a.sun_path, path, strlen(path));
   int fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd < 0 || bind(fd, (struct sockaddr*)&a, sizeof a) != 0 || listen(fd, 1) != 0) return os_own(path);
-  fflush(stdout);
+  out_flush();
   if (fork() == 0) {
     alarm(2);
     int c = accept(fd, 0, 0);
@@ -478,7 +509,7 @@ static void mkdirs(const char* d) {
   mkdir(p, 0755);
 }
 // an entry is written to a temp file, then renamed: a reader sees a whole entry or none
-typedef struct { FILE* f; char tmp[4200]; char dst[4200]; } store_out;
+typedef struct { int fd; obuf b; char tmp[4200]; char dst[4200]; } store_out;
 void* rt_out_new(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
   store_out* o = malloc(sizeof *o);
   char dn[4096];
@@ -487,15 +518,18 @@ void* rt_out_new(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
   mkdirs(dn);
   store_path(o->dst, sizeof o->dst, dir, a, b, c, d);
   snprintf(o->tmp, sizeof o->tmp, "%s.tmp%ld", o->dst, (long)getpid());
-  o->f = fopen(o->tmp, "wb");
-  if (!o->f) { fprintf(stderr, "srs: cannot write %s\n", o->tmp); exit(70); }
+  o->fd = open(o->tmp, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+  if (o->fd < 0) { fprintf(stderr, "srs: cannot write %s\n", o->tmp); exit(70); }
+  o->b = (obuf){0, 0, 0};
   return o;
 }
-int64_t rt_out_str(void* self, srs_str s) { fwrite(s.p, 1, (size_t)s.n, ((store_out*)self)->f); return 0; }
-int64_t rt_out_i64(void* self, int64_t v) { fprintf(((store_out*)self)->f, "%lld", (long long)v); return 0; }
+int64_t rt_out_str(void* self, srs_str s) { obuf_put(&((store_out*)self)->b, s.p, (size_t)s.n); return 0; }
+int64_t rt_out_i64(void* self, int64_t v) { char t[24]; int k = snprintf(t, sizeof t, "%lld", (long long)v); obuf_put(&((store_out*)self)->b, t, (size_t)k); return 0; }
 int64_t rt_out_commit(void* self) {
   store_out* o = self;
-  if (fclose(o->f) != 0 || rename(o->tmp, o->dst) != 0) { fprintf(stderr, "srs: cannot commit %s\n", o->dst); exit(70); }
+  bool ok = wr_all(o->fd, o->b.p, o->b.n);
+  free(o->b.p);
+  if (close(o->fd) != 0 || !ok || rename(o->tmp, o->dst) != 0) { fprintf(stderr, "srs: cannot commit %s\n", o->dst); exit(70); }
   free(o);
   return 0;
 }
@@ -508,25 +542,41 @@ srs_str rt_store_read(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
 
 // where rt_print writes: stdout, or the capture buffer between rt_capture_begin and rt_capture_end (a printer's output
 // as one string; the bytes live until the program ends)
-static FILE* g_out;
-static char* g_cap;
-static size_t g_cap_n;
-static FILE* out(void) { return g_out ? g_out : stdout; }
+static obuf g_cap;
+static bool g_capturing;
+// stdout's buffer is bounded at 1 MiB: an append that would pass it writes the buffer out first (one bigger than the
+// bound is written directly); a capture is not bounded, its text is returned to the program
+#define OUT_MAX ((size_t)1 << 20)
+static __attribute__((noinline)) void out_slow(const void* s, size_t n) {
+  if (g_capturing) { obuf_put(&g_cap, s, n); return; }
+  if (!g_atexit) { g_atexit = true; atexit(out_flush); }
+  if (g_stdout.n + n > OUT_MAX) {
+    out_flush();
+    if (n > OUT_MAX) { if (!wr_all(1, s, n)) { fputs("srs: cannot write stdout\n", stderr); _exit(70); } return; }
+  }
+  obuf_put(&g_stdout, s, n);
+}
+// the hot path: stdout open, the bytes fit the buffer's capacity with a spare byte (a power of two <= OUT_MAX, grown only by out_slow)
+static inline void out_put(const void* s, size_t n) {
+  if (!g_capturing && g_atexit && g_stdout.n + n < g_stdout.cap) { memcpy(g_stdout.p + g_stdout.n, s, n); g_stdout.n += n; return; }
+  out_slow(s, n);
+}
 int64_t rt_capture_begin(void) {
-  g_out = open_memstream(&g_cap, &g_cap_n);
-  if (!g_out) { fputs("srs: cannot capture output\n", stderr); exit(70); }
+  g_cap = (obuf){0, 0, 0}; // a fresh buffer: the previous capture's bytes live on
+  obuf_put(&g_cap, "", 0);
+  g_capturing = true;
   return 0;
 }
 srs_str rt_capture_end(void) {
-  if (!g_out || fclose(g_out) != 0) { fputs("srs: capture not open\n", stderr); exit(70); }
-  g_out = 0;
-  return (srs_str){(const uint8_t*)g_cap, (int64_t)g_cap_n};
+  if (!g_capturing) { fputs("srs: capture not open\n", stderr); exit(70); }
+  g_capturing = false;
+  return (srs_str){(const uint8_t*)(g_cap.p ? g_cap.p : ""), (int64_t)g_cap.n};
 }
-int64_t rt_print(srs_str s) { fwrite(s.p, 1, (size_t)s.n, out()); return 0; }
+int64_t rt_print(srs_str s) { out_put(s.p, (size_t)s.n); return 0; }
 int64_t rt_eprint(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stderr); return 0; }
-int64_t rt_print_i64(int64_t v) { fprintf(out(), "%lld", (long long)v); return 0; }
+int64_t rt_print_i64(int64_t v) { char t[24]; int k = snprintf(t, sizeof t, "%lld", (long long)v); out_put(t, (size_t)k); return 0; }
 int64_t rt_eprint_i64(int64_t v) { fprintf(stderr, "%lld", (long long)v); return 0; }
-int64_t rt_print_char(int64_t c) { fputc((int)c, out()); return 0; }
+int64_t rt_print_char(int64_t c) { char t = (char)(unsigned char)c; out_put(&t, 1); return 0; }
 int64_t rt_str_len(srs_str s) { return s.n; }
 int64_t rt_str_at(srs_str s, int64_t i) { return (i >= 0 && i < s.n) ? s.p[i] : -1; }
 srs_str rt_str_slice(srs_str s, int64_t b, int64_t e) {
@@ -536,7 +586,7 @@ srs_str rt_str_slice(srs_str s, int64_t b, int64_t e) {
   return (srs_str){s.p + b, e - b};
 }
 bool rt_str_eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }
-int64_t rt_exit(int64_t code) { fflush(stdout); exit((int)code); }
+int64_t rt_exit(int64_t code) { out_flush(); exit((int)code); }
 // identity on a void* slot: the test of generic externs (vic-9l7.4 BD2, tests/s2/prog/generic.srs)
 void* ext_same(void* x) { return x; }
 // a non-null handle for tests of facts on types (vic-jxk, tests/s2/prog/type_facts.srs)

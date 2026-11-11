@@ -1,0 +1,14 @@
+// pass: stdout past the runtime's 1 MiB output buffer (vic-xg9m): 25000 lines, 2.4 MB, written in pieces, the same
+// bytes in the same order; the last line is a marker. tests/run.sh counts the write calls of this binary (> 1)
+def lines(i: I64): Unit =
+  if i < 25000 then
+    Console.print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+    Console.printI64(i)
+    Console.print("\n")
+    lines(i + 1)
+  else Console.print("end marker\n")
+
+def main(): I64 =
+  handle c = Srs.Console()
+  lines(0)
+  0

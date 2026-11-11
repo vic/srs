@@ -50,6 +50,11 @@ for t in tests/s2/prog/*.srs; do
     && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "prog/$n" $pass
 done
+# stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
+ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
+w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
+if [ ! -x "${ST:-}" ]; then echo "FAIL prog/out_big: strace missing"; fail=1
+elif [ "${w:-0}" -gt 1 ]; then echo "ok prog/out_big writes $w"; else echo "FAIL prog/out_big writes ${w:-none}, want > 1"; fail=1; fi
 for t in tests/s2/neg/*.srs; do
   n=$(basename "$t" .srs); pass=1
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
