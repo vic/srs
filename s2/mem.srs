@@ -1,0 +1,361 @@
+// s2 MEM (vic-gux0, vic/c/mem-design.md): where a program allocates. A constructor call with fields, or Array.fill /
+// Array.tabulate, is a site. A site fills the innermost Region handle around it in its def, else each Region its def
+// runs under. A site is many when it can run twice in one life of its region: in a loop, or in a def that is many.
+// Many is the safe answer (Birkedal, Tofte, Vejlstrup, POPL 1996, sec. 4: all multiplicities infinite is a solution),
+// so once is what needs proof. A def with two call sites is many; the entry of a call cycle has two (one from outside),
+// and the rest of the cycle is many through its caller. One Datalog program:
+//   reached(G) :- reached(F), call(F, G)
+//   run(G, R) :- callIn(R, G) | callFree(F, G), run(F, R)
+//   fills(S, R) :- siteIn(S, R) | siteFree(S, F), run(F, R)
+//   manyDef(G) :- multi(G) | loopCall(G) | callFree(F, G), manyDef(F)
+//   live(R) :- regionIn(R, F), reached(F)
+// Not seen yet: handler and given bodies, allocating externs ({r: Region} binders): a later rung.
+enum Mem.Rel:
+  case Mem.RCall
+  case Mem.RCallIn
+  case Mem.RCallFree
+  case Mem.RSiteIn
+  case Mem.RSiteFree
+  case Mem.RMulti
+  case Mem.RLoopCall
+  case Mem.RRegionIn
+  case Mem.RReached
+  case Mem.RRun
+  case Mem.RFills
+  case Mem.RManyDef
+  case Mem.RLive
+
+// Mem.relSym is the only place a relation name is a string
+def Mem.relSym(rel: Mem.Rel): Sym.Sym = rel match
+  case Mem.RCall => Sym.of("call")
+  case Mem.RCallIn => Sym.of("callIn")
+  case Mem.RCallFree => Sym.of("callFree")
+  case Mem.RSiteIn => Sym.of("siteIn")
+  case Mem.RSiteFree => Sym.of("siteFree")
+  case Mem.RMulti => Sym.of("multi")
+  case Mem.RLoopCall => Sym.of("loopCall")
+  case Mem.RRegionIn => Sym.of("regionIn")
+  case Mem.RReached => Sym.of("reached")
+  case Mem.RRun => Sym.of("run")
+  case Mem.RFills => Sym.of("fills")
+  case Mem.RManyDef => Sym.of("manyDef")
+  case Mem.RLive => Sym.of("live")
+
+def Mem.atom(rel: Mem.Rel, xs: Coll.List[I64]): D.Atom = D.Atom(Mem.relSym(rel), Pure.vars(xs))
+def Mem.pos(rel: Mem.Rel, xs: Coll.List[I64]): D.Lit = D.Pos(Mem.atom(rel, xs))
+def Mem.lits2(a: D.Lit, b: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Coll.Cons(b, Coll.Nil))
+def Mem.lit1(a: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Coll.Nil)
+
+def Mem.rules(): Coll.List[D.Rule] =
+  val reach = D.Rule(Mem.atom(Mem.RReached, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RReached, Pure.one(0)), Mem.pos(Mem.RCall, Pure.two(0, 1))))
+  val run1 = D.Rule(Mem.atom(Mem.RRun, Pure.two(1, 0)), Mem.lit1(Mem.pos(Mem.RCallIn, Pure.two(0, 1))))
+  val run2 = D.Rule(Mem.atom(Mem.RRun, Pure.two(1, 2)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(0, 2))))
+  val fill1 = D.Rule(Mem.atom(Mem.RFills, Pure.two(0, 1)), Mem.lit1(Mem.pos(Mem.RSiteIn, Pure.two(0, 1))))
+  val fill2 = D.Rule(Mem.atom(Mem.RFills, Pure.two(0, 2)), Mem.lits2(Mem.pos(Mem.RSiteFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(1, 2))))
+  val m1 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(0)), Mem.lit1(Mem.pos(Mem.RMulti, Pure.one(0))))
+  val m2 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(0)), Mem.lit1(Mem.pos(Mem.RLoopCall, Pure.one(0))))
+  val m3 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RManyDef, Pure.one(0))))
+  val live = D.Rule(Mem.atom(Mem.RLive, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RRegionIn, Pure.two(0, 1)), Mem.pos(Mem.RReached, Pure.one(1))))
+  Coll.Cons(reach, Coll.Cons(run1, Coll.Cons(run2, Coll.Cons(fill1, Coll.Cons(fill2, Coll.Cons(m1, Coll.Cons(m2, Coll.Cons(m3, Coll.Cons(live, Coll.Nil)))))))))
+
+def Mem.f1(rel: Mem.Rel, a: D.Val): D.Fact = D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Nil))
+def Mem.f2(rel: Mem.Rel, a: D.Val, b: D.Val): D.Fact = D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
+
+// a site: the def it is in, its line, the constructor (or Array.fill), and whether a loop of its own def holds it
+enum Mem.Site:
+  case Mem.Site(f: Sym.Sym, line: I64, ctor: Sym.Sym, loop: Bool)
+
+// a Region handle: the def it is in, its line, its name and its handler
+enum Mem.Region:
+  case Mem.Region(f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym)
+
+// what the walk knows of the program: defs by name, the constructors that allocate (a case with fields), the handlers
+// whose protocol is Region
+enum Mem.Cx:
+  case Mem.Cx(fns: Coll.SMap[Ast.Fn], ctors: Coll.SMap[Bool], regionHs: Coll.SMap[Bool], ss: Eff.Syms)
+
+// where a walk is: the def, the innermost Region handle of the def around it (an id), and whether a loop holds it
+enum Mem.At:
+  case Mem.At(f: Sym.Sym, reg: Coll.Option[I64], loop: Bool)
+
+// the walk's result so far: sites and regions by id (ids count up from 0), facts, call sites per callee, free calls
+enum Mem.W:
+  case Mem.W(sites: Coll.IMap[Mem.Site], ns: I64, regions: Coll.IMap[Mem.Region], nr: I64, facts: Coll.List[D.Fact], calls: Coll.SMap[I64], free: Coll.List[Mem.Edge])
+
+// a call that opens no region: f calls g in the region f runs in
+enum Mem.Edge:
+  case Mem.Edge(f: Sym.Sym, g: Sym.Sym)
+
+def Mem.fact(w: Mem.W, x: D.Fact): Mem.W =
+  val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
+  Mem.W(ss, ns, rs, nr, Coll.Cons(x, fs), cs, fr)
+
+def Mem.site(w: Mem.W, at: Mem.At, line: I64, ctor: Sym.Sym): Mem.W =
+  val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
+  val Mem.At(f, reg, loop) = at
+  val x: D.Fact = reg match
+    case Coll.Some(r) => Mem.f2(Mem.RSiteIn, D.VInt(ns), D.VInt(r))
+    case Coll.None => Mem.f2(Mem.RSiteFree, D.VInt(ns), D.VSym(f))
+  Mem.W(Coll.insert(ss, ns, Mem.Site(f, line, ctor, loop)), ns + 1, rs, nr, Coll.Cons(x, fs), cs, fr)
+
+def Mem.count(cs: Coll.SMap[I64], g: Sym.Sym): I64 = Coll.sLookup(cs, g) match
+  case Coll.Some(n) => n
+  case Coll.None => 0
+
+def Mem.call(w: Mem.W, at: Mem.At, g: Sym.Sym): Mem.W =
+  val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
+  val Mem.At(f, reg, loop) = at
+  val c = Mem.f2(Mem.RCall, D.VSym(f), D.VSym(g))
+  val fs2 = if loop then Coll.Cons(Mem.f1(Mem.RLoopCall, D.VSym(g)), Coll.Cons(c, fs)) else Coll.Cons(c, fs)
+  val cs2 = Coll.sInsert(cs, g, Mem.count(cs, g) + 1)
+  reg match
+    case Coll.Some(r) => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f2(Mem.RCallIn, D.VInt(r), D.VSym(g)), fs2), cs2, fr)
+    case Coll.None => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f2(Mem.RCallFree, D.VSym(f), D.VSym(g)), fs2), cs2, Coll.Cons(Mem.Edge(f, g), fr))
+
+// a new Region handle in def f: its id is the next one; the rest of the block runs under it
+def Mem.region(w: Mem.W, f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym): Mem.W =
+  val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
+  Mem.W(ss, ns, Coll.insert(rs, nr, Mem.Region(f, line, x, h)), nr + 1, Coll.Cons(Mem.f2(Mem.RRegionIn, D.VInt(nr), D.VSym(f)), fs), cs, fr)
+
+def Mem.nextRegion(w: Mem.W): I64 =
+  val Mem.W(_, _, _, nr, _, _, _) = w
+  nr
+
+def Mem.isIn [V: Type] (m: Coll.SMap[V], s: Sym.Sym): Bool = Coll.sLookup(m, s) match
+  case Coll.Some(_) => true
+  case Coll.None => false
+
+def Mem.expr(cx: Mem.Cx, at: Mem.At, w: Mem.W, e: Ast.Expr): Mem.W = e match
+  case Ast.Call(line, f, _, _, args) =>
+    val Mem.Cx(fns, ctors, _, ss) = cx
+    val w2 = if Mem.isIn(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at, line, f) else if Mem.isIn(fns, f) then Mem.call(w, at, f) else w
+    Mem.exprs(cx, at, w2, args)
+  case Ast.Method(_, _, _, args) => Mem.exprs(cx, at, w, args)
+  case Ast.Resume(_, _, x) => Mem.expr(cx, at, w, x)
+  case Ast.Bin(_, _, l, r) => Mem.expr(cx, at, Mem.expr(cx, at, w, l), r)
+  case Ast.Un(_, _, x) => Mem.expr(cx, at, w, x)
+  case Ast.If(_, c, t, x) => Mem.expr(cx, at, Mem.expr(cx, at, Mem.expr(cx, at, w, c), t), x)
+  case Ast.Match(_, s, arms) => Mem.arms(cx, at, Mem.expr(cx, at, w, s), arms)
+  case Ast.Block(_, stmts, last) => Mem.stmts(cx, at, w, stmts, last)
+  case Ast.While(_, c, body) =>
+    val Mem.At(f, reg, _) = at
+    val inLoop = Mem.At(f, reg, true)
+    Mem.expr(cx, inLoop, Mem.expr(cx, inLoop, w, c), body)
+  case Ast.Assign(_, _, x) => Mem.expr(cx, at, w, x)
+  case Ast.Quant(_, _, _, _, x) => Mem.expr(cx, at, w, x)
+  case Ast.Int(_, _) => w
+  case Ast.Bool(_, _) => w
+  case Ast.Str(_, _) => w
+  case Ast.Unit(_) => w
+  case Ast.Name(_, _) => w
+
+def Mem.exprs(cx: Mem.Cx, at: Mem.At, w: Mem.W, es: Coll.List[Ast.Expr]): Mem.W = es match
+  case Coll.Nil => w
+  case Coll.Cons(e, rest) => Mem.exprs(cx, at, Mem.expr(cx, at, w, e), rest)
+
+def Mem.arms(cx: Mem.Cx, at: Mem.At, w: Mem.W, arms: Coll.List[Ast.Arm]): Mem.W = arms match
+  case Coll.Nil => w
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, body) = a
+    Mem.arms(cx, at, Mem.expr(cx, at, w, body), rest)
+
+// a block: a handle of a Region handler opens a region over the rest of the block
+def Mem.stmts(cx: Mem.Cx, at: Mem.At, w: Mem.W, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Mem.W = ss match
+  case Coll.Nil => Mem.expr(cx, at, w, last)
+  case Coll.Cons(s, rest) => s match
+    case Ast.Handle(line, x, h, args) =>
+      val Mem.Cx(_, _, rhs, _) = cx
+      val w2 = Mem.exprs(cx, at, w, args)
+      val Mem.At(f, _, loop) = at
+      if Mem.isIn(rhs, h) then Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop), Mem.region(w2, f, line, x, h), rest, last)
+      else Mem.stmts(cx, at, w2, rest, last)
+    case Ast.Val(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Var(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Do(e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Check(_, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+
+def Mem.decls(cx: Mem.Cx, w: Mem.W, ds: Coll.List[Ast.Decl]): Mem.W = ds match
+  case Coll.Nil => w
+  case Coll.Cons(d, rest) => d match
+    case Ast.DFn(f) =>
+      val Ast.Fn(_, n, _, _, _, _, body) = f
+      val w2: Mem.W = body match
+        case Ast.Def(_, e) => Mem.expr(cx, Mem.At(n, Coll.None, false), w, e)
+        case Ast.Extern(_) => w
+      Mem.decls(cx, w2, rest)
+    case _ => Mem.decls(cx, w, rest)
+
+// the cases with fields (a nullary case is a static: it allocates nothing) and the Region handlers
+def Mem.ctors(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
+  case Coll.Nil => m
+  case Coll.Cons(d, rest) => d match
+    case Ast.DEnum(e) =>
+      val Ast.Enum(_, _, _, cases) = e
+      Mem.ctors(rest, Mem.caseCtors(cases, m))
+    case _ => Mem.ctors(rest, m)
+
+def Mem.caseCtors(cs: Coll.List[Ast.Case], m: Coll.SMap[Bool]): Coll.SMap[Bool] = cs match
+  case Coll.Nil => m
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, n, fields) = c
+    fields match
+      case Coll.Nil => Mem.caseCtors(rest, m)
+      case Coll.Cons(_, _) => Mem.caseCtors(rest, Coll.sInsert(m, n, true))
+
+def Mem.regionHs(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
+  case Coll.Nil => m
+  case Coll.Cons(d, rest) => d match
+    case Ast.DHandler(h) =>
+      val Ast.Handler(_, n, p, _, _) = h
+      Mem.regionHs(rest, if Sym.eq(p, Sym.of("Region")) then Coll.sInsert(m, n, true) else m)
+    case _ => Mem.regionHs(rest, m)
+
+def Mem.fnList(ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = ds match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(d, rest) => d match
+    case Ast.DFn(f) => Mem.fnList(rest, Coll.Cons(f, acc))
+    case _ => Mem.fnList(rest, acc)
+
+// multi(G) for a callee with two or more call sites
+def Mem.multis(fns: Coll.List[Ast.Fn], cs: Coll.SMap[I64], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = fns match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    Mem.multis(rest, cs, if Mem.count(cs, n) >= 2 then Coll.Cons(Mem.f1(Mem.RMulti, D.VSym(n)), acc) else acc)
+
+// ── the report: per live region (by line), its sites (by line) and their multiplicity ──
+enum Mem.Why:
+  case Mem.InLoop
+  case Mem.Sites(f: Sym.Sym, n: I64)
+  case Mem.LoopCalled(f: Sym.Sym)
+  case Mem.Via(f: Sym.Sym)
+
+enum Mem.Mult:
+  case Mem.Once
+  case Mem.Many(why: Mem.Why)
+
+enum Mem.Row:
+  case Mem.Row(line: I64, ctor: Sym.Sym, m: Mem.Mult)
+
+enum Mem.Block:
+  case Mem.Block(line: I64, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row])
+
+enum Mem.Report:
+  case Mem.Ok(bs: Coll.List[Mem.Block])
+  case Mem.RulesBad(rel: Sym.Sym)
+
+// what the model says, by name or id
+enum Mem.Model:
+  case Mem.Model(manyDef: Coll.SMap[Bool], loopCall: Coll.SMap[Bool], byRegion: Coll.IMap[Coll.List[I64]], live: Coll.List[I64])
+
+def Mem.report(ds: Coll.List[Ast.Decl]): Mem.Report =
+  val fl = Mem.fnList(ds, Coll.Nil)
+  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms())
+  val w = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
+  val Mem.W(sites, ns, regions, nr, fs, cs, free) = w
+  val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
+  D.solve(Mem.rules(), facts) match
+    case D.Solved(m) =>
+      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil))
+      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil))
+    case D.Unsafe(rel) => Mem.RulesBad(rel)
+    case D.NegCycle(rel) => Mem.RulesBad(rel)
+
+def Mem.liveOf(md: Mem.Model): Coll.List[I64] =
+  val Mem.Model(_, _, _, live) = md
+  live
+
+def Mem.names(ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ts match
+  case Coll.Nil => m
+  case Coll.Cons(t, rest) => t match
+    case Coll.Cons(v, _) => v match
+      case D.VSym(n) => Mem.names(rest, Coll.sInsert(m, n, true))
+      case D.VInt(_) => Mem.names(rest, m)
+    case Coll.Nil => Mem.names(rest, m)
+
+def Mem.ints(ts: Coll.List[Coll.List[D.Val]], acc: Coll.List[I64]): Coll.List[I64] = ts match
+  case Coll.Nil => acc
+  case Coll.Cons(t, rest) => t match
+    case Coll.Cons(v, _) => v match
+      case D.VInt(n) => Mem.ints(rest, Coll.Cons(n, acc))
+      case D.VSym(_) => Mem.ints(rest, acc)
+    case Coll.Nil => Mem.ints(rest, acc)
+
+// fills(S, R) grouped: region id to its site ids
+def Mem.group(ts: Coll.List[Coll.List[D.Val]], m: Coll.IMap[Coll.List[I64]]): Coll.IMap[Coll.List[I64]] = ts match
+  case Coll.Nil => m
+  case Coll.Cons(t, rest) => t match
+    case Coll.Cons(a, tl) => tl match
+      case Coll.Cons(b, _) => a match
+        case D.VInt(s) => b match
+          case D.VInt(r) => Mem.group(rest, Coll.insert(m, r, Coll.Cons(s, Mem.idsOf(m, r))))
+          case D.VSym(_) => Mem.group(rest, m)
+        case D.VSym(_) => Mem.group(rest, m)
+      case Coll.Nil => Mem.group(rest, m)
+    case Coll.Nil => Mem.group(rest, m)
+
+def Mem.idsOf(m: Coll.IMap[Coll.List[I64]], k: I64): Coll.List[I64] = Coll.lookup(m, k) match
+  case Coll.Some(xs) => xs
+  case Coll.None => Coll.Nil
+
+// a key that orders by line, then by id: id < n, so line * n + id is unique (both below 2^31 in any real program)
+def Mem.regionKeys(rs: Coll.IMap[Mem.Region], n: I64, ids: Coll.List[I64], acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] = ids match
+  case Coll.Nil => acc
+  case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
+    case Coll.Some(x) =>
+      val Mem.Region(_, line, _, _) = x
+      Mem.regionKeys(rs, n, rest, Coll.Cons(Coll.KV(line * n + r, r), acc))
+    case Coll.None => Mem.regionKeys(rs, n, rest, acc)
+
+def Mem.siteKeys(ss: Coll.IMap[Mem.Site], n: I64, ids: Coll.List[I64], acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] = ids match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
+    case Coll.Some(x) =>
+      val Mem.Site(_, line, _, _) = x
+      Mem.siteKeys(ss, n, rest, Coll.Cons(Coll.KV(line * n + s, s), acc))
+    case Coll.None => Mem.siteKeys(ss, n, rest, acc)
+
+def Mem.byLine(kvs: Coll.List[Coll.KV[I64]]): Coll.List[I64] =
+  val Coll.Sorted(xs) = Coll.sortDedup(kvs)
+  Mem.vals(xs, Coll.Nil)
+
+def Mem.vals(xs: Coll.List[Coll.KV[I64]], acc: Coll.List[I64]): Coll.List[I64] = xs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(kv, rest) =>
+    val Coll.KV(_, v) = kv
+    Mem.vals(rest, Coll.Cons(v, acc))
+
+def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ns: I64, rs: Coll.IMap[Mem.Region], ids: Coll.List[I64], acc: Coll.List[Mem.Block]): Coll.List[Mem.Block] = ids match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
+    case Coll.Some(x) =>
+      val Mem.Region(_, line, nm, h) = x
+      val Mem.Model(_, _, byRegion, _) = md
+      val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
+      Mem.blocks(md, cs, free, ss, ns, rs, rest, Coll.Cons(Mem.Block(line, nm, h, rows), acc))
+    case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, rest, acc)
+
+def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ids: Coll.List[I64], acc: Coll.List[Mem.Row]): Coll.List[Mem.Row] = ids match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
+    case Coll.Some(x) =>
+      val Mem.Site(f, line, ctor, loop) = x
+      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.multOf(md, cs, free, f, loop)), acc))
+    case Coll.None => Mem.rows(md, cs, free, ss, rest, acc)
+
+// a site in a loop of its def, else its def's reason to be many: its own call sites, a call in a loop, or a caller
+// that is many
+def Mem.multOf(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], f: Sym.Sym, loop: Bool): Mem.Mult =
+  val Mem.Model(manyDef, loopCall, _, _) = md
+  if loop then Mem.Many(Mem.InLoop)
+  else if !Mem.isIn(manyDef, f) then Mem.Once
+  else if Mem.count(cs, f) >= 2 then Mem.Many(Mem.Sites(f, Mem.count(cs, f)))
+  else if Mem.isIn(loopCall, f) then Mem.Many(Mem.LoopCalled(f))
+  else Mem.Many(Mem.Via(Mem.manyCaller(manyDef, free, f)))
+
+// the first free caller of f that is many (the model has one: manyDef(f) came from such a caller)
+def Mem.manyCaller(manyDef: Coll.SMap[Bool], free: Coll.List[Mem.Edge], f: Sym.Sym): Sym.Sym = free match
+  case Coll.Nil => f
+  case Coll.Cons(e, rest) =>
+    val Mem.Edge(a, b) = e
+    if Sym.eq(b, f) && Mem.isIn(manyDef, a) then a else Mem.manyCaller(manyDef, rest, f)

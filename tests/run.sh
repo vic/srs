@@ -125,6 +125,12 @@ for t in tests/s2/hash/*.srs; do
   done <<< "$rels"
   verdict "hash/$n" $pass
 done
+# s2c --mem (vic/c/mem-design.md): each Region and the sites that fill it, once or many; stdout == .out
+for t in tests/s2/mem/*.srs; do
+  n=$(basename "$t" .srs); out=$(timeout 2 "$B/s2c1" --mem lib/prelude.srs "$t" 2>&1); code=$?
+  pass=1; [ $code -eq 0 ] && [ "$out" = "$(cat "${t%.srs}.out")" ] || pass=0
+  verdict "mem/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
+done
 # s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
 # a trailing byte each read as bad (a miss)
 S2STORE="$B/store-s2"; rm -rf "$S2STORE"

@@ -1,0 +1,21 @@
+// mem: a self call runs its constructor many times in the caller's region; a def called from two sites is many too
+enum ML:
+  case MNil
+  case MCons(h: I64, t: ML)
+
+def ML.build(n: I64, acc: ML): ML = if n == 0 then acc else ML.build(n - 1, MCons(n, acc))
+
+def ML.one(x: I64): ML = MCons(x, MNil)
+
+def ML.len(l: ML, k: I64): I64 = l match
+  case MNil => k
+  case MCons(_, t) => ML.len(t, k + 1)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = ML.build(10, MNil)
+  val b = ML.one(1)
+  val c = ML.one(2)
+  Console.printI64(ML.len(a, 0) + ML.len(b, 0) + ML.len(c, 0))
+  0
