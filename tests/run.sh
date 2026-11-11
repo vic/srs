@@ -46,7 +46,7 @@ verdict() { # name pass
 # a "// env: A=1 B=" line: the program runs with those variables set (os_env, stack_deep)
 for t in tests/s2/prog/*.srs; do
   n=$(basename "$t" .srs); m=s2c1_$n; pass=0
-  timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>/dev/null \
+  timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
     && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "prog/$n" $pass
 done

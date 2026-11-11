@@ -1,0 +1,10 @@
+// expect: error[region-escape]
+// expect: 'a'
+// expect: --> tests/s2/neg/cap_alloc_escape.srs:8
+// the Text is made in the Arena a (cap_text{a}): it escapes the handler's block of mk
+type Text {r: Region} <r: Open> = Str
+extern def cap_text {r: Region} <r: Open> (n: I64): Text
+def mk {sess: Region} <sess: Open> (n: I64): Text =
+  handle a = Srs.Arena()
+  cap_text{a}(n)
+def main(): I64 = 0

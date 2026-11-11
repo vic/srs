@@ -1,0 +1,11 @@
+// pass: a C extern given a Region capability allocates the Str it returns in that region through srs_cap_alloc
+// (rt/srs_cap.h); the text is printed inside the Arena's scope, so the program prints xxx
+// c: tests/s2/prog/cap_alloc.c
+type Text {r: Region} <r: Open> = Str
+extern def cap_text {r: Region} <r: Open> (n: I64): Text
+def main(): I64 =
+  handle c = Srs.Console()
+  handle a = Srs.Arena()
+  Console.print(cap_text(3))
+  Console.print("\n")
+  0

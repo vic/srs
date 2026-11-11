@@ -1980,7 +1980,9 @@ def Emit.allocFast(cx: Emit.Cx): Unit =
   Console.print("  char* p = c->cur;\n")
   Console.print("  if ((size_t)(c->end - p) >= n) { c->cur = p + n; return p; }\n")
   Console.print("  return srs_alloc_slow(c, size);\n")
-  Console.print("}\n")
+  // srs_cap_alloc: the one non-static entry to the allocator, for a C extern given a capability (rt/srs_cap.h). Every
+  // Inline program carries it: an unused fn costs no run time, and a check for such externs would walk every fn
+  Console.print("}\nvoid* srs_cap_alloc(srs_cap* c, int64_t size) { return srs_alloc(c, size); }\n")
 
 def Emit.hasMain(cx: Emit.Cx): Bool =
   val Emit.Cx(_, fns, _, _, _, _, _, _, _) = cx
@@ -2290,7 +2292,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   Emit.wordPrims()
   // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
   // always null for other handlers
-  Console.print("typedef struct { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")
+  Console.print("typedef struct srs_cap { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")
   Console.print("typedef struct { void* st; srs_cap* c[]; } srs_env;\n")
   Console.print("void rt_init(int argc, char** argv);\n")
   Emit.fwds(ens)
