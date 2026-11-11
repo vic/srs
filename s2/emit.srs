@@ -1210,6 +1210,7 @@ def Emit.withEnum(cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
             Console.print(" ")
             Emit.tagType(w)
             Console.print(" none_; } u; }; };\n")
+            Emit.sizeAsserts(cx, n, args, cases, tv, w)
           case Emit.Code => Emit.nullaries(n, args, cases, 0)
   case _ => ()
 
@@ -1244,6 +1245,62 @@ def Emit.fieldDecls(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bin
       Console.print(";")
     else ()
     Emit.fieldDecls(cx, rest, tv, a)
+
+// each case struct's size is Emit.caseSize (the size --mem reports): the C compiler checks it, so the rule cannot drift
+// from the layout above
+def Emit.sizeAsserts(cx: Emit.Cx, n: Sym.Sym, args: Coll.List[K.Term], cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind], w: Emit.TagW): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, cn, fs) = c
+    fs match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        Console.print("_Static_assert(sizeof(((struct E_")
+        Emit.enumName(n, args)
+        Console.print("*)0)->u.C_")
+        Emit.id(cn)
+        Console.print(") == ")
+        Console.printI64(Emit.caseSize(cx, fs, tv, w))
+        Console.print(", \"srs layout\");\n")
+    Emit.sizeAsserts(cx, n, args, rest, tv, w)
+
+// a C type's size and alignment, for the types Emit.ctype prints
+enum Emit.CSize:
+  case Emit.CSize(size: I64, align: I64)
+
+def Emit.csize(cx: Emit.Cx, t: K.Term): Emit.CSize = t match
+  case K.Con(n, _) =>
+    val x = Sym.str(n)
+    if Str.eq(x, "Bool") || Str.eq(x, "U8") then Emit.CSize(1, 1)
+    else if Str.eq(x, "Str") then Emit.CSize(16, 8)
+    else if Str.eq(x, "U32") || Str.eq(x, "I32") then Emit.CSize(4, 4)
+    else Emit.nominalOf(cx, n) match
+      case Coll.Some(b) => Emit.csize(cx, b)
+      case Coll.None => Emit.CSize(8, 8)
+  case _ => Emit.CSize(8, 8)
+
+def Emit.tagBytes(w: Emit.TagW): I64 = w match
+  case Emit.T8 => 1
+  case Emit.T16 => 2
+  case Emit.T32 => 4
+
+// a case struct as C lays it out: the tag, the one-byte fields, then the word fields in declaration order, each at its
+// alignment; the size is rounded up to the largest alignment
+def Emit.caseSize(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], w: Emit.TagW): I64 =
+  val t = Emit.tagBytes(w)
+  val Emit.CSize(off, al) = Emit.lay(cx, fs, tv, Emit.AWord, Emit.lay(cx, fs, tv, Emit.AByte, Emit.CSize(t, t)))
+  Srs.Arena.up(off, al)
+
+// the fields of alignment a laid out after the CSize so far (size = the next offset, align = the largest so far)
+def Emit.lay(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], a: Emit.Align, at: Emit.CSize): Emit.CSize = fs match
+  case Coll.Nil => at
+  case Coll.Cons(f, rest) =>
+    val Ast.Binder(_, _, t) = f
+    val ft = Ty.term(t, tv)
+    val Emit.CSize(off, al) = at
+    val Emit.CSize(s, fa) = Emit.csize(cx, ft)
+    val next = if Emit.sameAlign(Emit.alignOf(cx, ft), a) then Emit.CSize(Srs.Arena.up(off, fa) + s, if fa > al then fa else al) else at
+    Emit.lay(cx, rest, tv, a, next)
 
 // a tag is the smallest unsigned C int that holds the case count
 enum Emit.TagW:
