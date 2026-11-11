@@ -578,6 +578,7 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
     else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Array.put") then Ty.arrPut(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Array.blit") then Ty.blit(cx, st, bs, line, f, xs, want)
     else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
 
 // ── A1 Cell[A]: one word in the innermost Region, Cell.get(c) reads it, Cell.put(c, v) writes it, a request on Mut (a
@@ -807,6 +808,34 @@ def Ty.arrPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sy
             case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, x)), bs, xs), line)
           case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
         case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// Array.blit(xs, at, s, m): copies the first min(m, Str.len(s)) bytes of s into the local Array[U8](n) xs from slot at; at and m
+// locals proved like Array.slice (0 <= at, 0 <= m, m <= n, at <= n - m), so the copy is in range for every s: a write
+// (a request on Mut); C memcpy. A copy: s may die before xs does
+def Ty.blit(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ex, r1) => r1 match
+    case Coll.Cons(eo, r2) => r2 match
+      case Coll.Cons(es, r3) => r3 match
+        case Coll.Cons(em, r4) => r4 match
+          case Coll.Nil => ex match
+            case Ast.Name(_, x) => Ty.lookup(bs, x) match
+              case Coll.Some(t) => Ty.arrayOf(Ty.subst(st), t) match
+                case Coll.Some(at) =>
+                  val Ty.ArrT(a, n) = at
+                  val st0 = Ty.expectOpt(st, line, Ty.con("U8"), Coll.Some(a))
+                  val Ty.Ex(st1, _, eO) = Ty.expr(cx, st0, bs, eo, Coll.Some(Ty.con("I64")))
+                  val Ty.Ex(st2, _, eS) = Ty.expr(cx, st1, bs, es, Coll.Some(Ty.con("Str")))
+                  val Ty.Ex(st3, _, eM) = Ty.expr(cx, st2, bs, em, Coll.Some(Ty.con("I64")))
+                  val ok: Bool = Ty.sliceOk(bs, Ty.idE(bs, eo), Ty.idE(bs, em), Ty.lenId(K.walk(Ty.subst(st3), n)))
+                  Ty.lit(Ty.needMut(cx, if ok then st3 else Ty.clash(st3, Ty.IndexUnproved(line, x)), bs, line), line, Ty.con("Unit"), want, El.Blit(line, x, eO, eS, eM))
+                case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Mismatch(line, t, Ty.con("Array"))), bs, xs), line)
+              case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, x)), bs, xs), line)
+            case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+          case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+        case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
       case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
     case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
   case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)

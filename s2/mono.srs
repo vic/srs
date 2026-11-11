@@ -223,6 +223,7 @@ def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[M
   case El.CField(_, c, _, _, _) => Mono.calls(s, sub, c, acc)
   case El.CellPut(_, c, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, c, acc))
   case El.ArrPut(_, _, i, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, i, acc))
+  case El.Blit(_, _, a, b, m) => Mono.calls(s, sub, m, Mono.calls(s, sub, b, Mono.calls(s, sub, a, acc)))
   case _ => acc
 
 def Mono.callsAll(s: K.Subst, sub: Coll.List[Ty.Bind], xs: Coll.List[El.Expr], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = xs match
