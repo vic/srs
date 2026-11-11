@@ -319,8 +319,8 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     val Eff.Syms(_, _, _, _, region, _, _) = ss
     if Eff.isFn(fns, g) then Eff.call(cx, at, g, w1)
     else if Eff.isIn(ctors, g) || Eff.isArrayNew(ss, g) then Eff.req(cx, at, region, w1)
-    // Cell.put(c, v) writes (A1): a request on Mut, so a fn that writes has Mut in its row
-    else if Str.eq(Sym.str(g), "Cell.put") then Eff.req(cx, at, Sym.of("Mut"), w1)
+    // Cell.put(c, v) and Array.put(xs, i, v) write (A1, A1b): a request on Mut, so a fn that writes has Mut in its row
+    else if Str.eq(Sym.str(g), "Cell.put") || Str.eq(Sym.str(g), "Array.put") then Eff.req(cx, at, Sym.of("Mut"), w1)
     else Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1)
   // a trait method on {} evidence requests the capabilities the method declares (vic Q2); xs.at(i) on a local (an
   // array, A1) builds an Array.Index in the innermost Region

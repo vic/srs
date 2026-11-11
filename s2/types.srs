@@ -68,6 +68,8 @@ enum Ty.Clash:
   case Ty.IndexUnproved(line: I64, xs: Sym.Sym)
   case Ty.SliceUnproved(line: I64, f: Sym.Sym)
   case Ty.LenUnnamed(line: I64, xs: Sym.Sym)
+  // A1b: Array.put of a value that is not a scalar
+  case Ty.PutData(line: I64, xs: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -542,15 +544,16 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
     else if Str.eq(fs, "Cell.new") then Ty.cellNew(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "Array.put") then Ty.arrPut(cx, st, bs, line, f, xs, want)
     else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
 
 // ── A1 Cell[A]: one word in the innermost Region, Cell.get(c) reads it, Cell.put(c, v) writes it, a request on Mut (a
-// write is an effect in the row). shortcut: A is a scalar (I64, Bool, U32, U64): a cell of region data needs a flow
-// rule that v outlives the cell; upgrade with that rule ──
+// write is an effect in the row). shortcut: A is a scalar (I64, Bool, U32, U64, U8): a cell (or an Array.put slot) of
+// region data needs a flow rule that v outlives the cell; upgrade with that rule ──
 def Ty.isScalar(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
   case K.Con(n, args) =>
     val x = Sym.str(n)
-    Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64"))
+    Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64") || Str.eq(x, "U8"))
   case _ => false
 
 def Ty.cellNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
@@ -583,18 +586,21 @@ def Ty.cellGet(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.S
     case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
   case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
 
-// Cell.put(c, v): a write, a request on Mut (its handler in scope, else unhandled-effect)
+// a write is a request on Mut: its handler in scope, else unhandled-effect
+def Ty.needMut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64): Ty.St =
+  val mut = Sym.of("Mut")
+  Ty.innermost(Ty.subst(st), bs, mut) match
+    case Coll.Some(_) => st
+    case Coll.None => Ty.clash(st, Ty.unhandled(cx, line, mut))
+
+// Cell.put(c, v): a write, a request on Mut
 def Ty.cellPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
   case Coll.Cons(ec, r1) => r1 match
     case Coll.Cons(ev, r2) => r2 match
       case Coll.Nil =>
         val Ty.Ex(st1, a, eC) = Ty.cellArg(cx, st, bs, ec)
         val Ty.Ex(st2, _, eV) = Ty.expr(cx, st1, bs, ev, Coll.Some(a))
-        val mut = Sym.of("Mut")
-        val st3: Ty.St = Ty.innermost(Ty.subst(st2), bs, mut) match
-          case Coll.Some(_) => st2
-          case Coll.None => Ty.clash(st2, Ty.unhandled(cx, line, mut))
-        Ty.lit(st3, line, Ty.con("Unit"), want, El.CellPut(line, eC, eV))
+        Ty.lit(Ty.needMut(cx, st2, bs, line), line, Ty.con("Unit"), want, El.CellPut(line, eC, eV))
       case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
     case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
   case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
@@ -688,12 +694,39 @@ def Ty.atCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym
 def Ty.index(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, x: Sym.Sym, at: Ty.ArrT, ix: Ast.Expr, want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.ArrT(a, n) = at
   val Ty.Ex(st1, _, ei) = Ty.expr(cx, st, bs, ix, Coll.Some(Ty.con("I64")))
+  Ty.lit(Ty.proved(st1, bs, line, x, n, ix), line, a, want, El.Index(line, x, ei))
+
+// the index ix of xs: Array[A](n) is a local proved in [0, n) by the facts in scope, else IndexUnproved
+def Ty.proved(st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, x: Sym.Sym, n: K.Term, ix: Ast.Expr): Ty.St =
   val ok: Bool = Ty.idE(bs, ix) match
-    case Coll.Some(i) => Ty.lenId(K.walk(Ty.subst(st1), n)) match
+    case Coll.Some(i) => Ty.lenId(K.walk(Ty.subst(st), n)) match
       case Coll.Some(nid) => Ty.inBounds(bs, i, nid)
       case Coll.None => false
     case Coll.None => false
-  Ty.lit(if ok then st1 else Ty.clash(st1, Ty.IndexUnproved(line, x)), line, a, want, El.Index(line, x, ei))
+  if ok then st else Ty.clash(st, Ty.IndexUnproved(line, x))
+
+// Array.put(xs, i, v): xs a local array, i proved like xs(i), v a scalar A, a write (a request on Mut); C xs[i] = v.
+// shortcut: A is a scalar (Ty.isScalar): region data in a slot needs a flow rule, later (PutData)
+def Ty.arrPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ex, r1) => r1 match
+    case Coll.Cons(ix, r2) => r2 match
+      case Coll.Cons(ev, r3) => r3 match
+        case Coll.Nil => ex match
+          case Ast.Name(_, x) => Ty.lookup(bs, x) match
+            case Coll.Some(t) => Ty.arrayOf(Ty.subst(st), t) match
+              case Coll.Some(at) =>
+                val Ty.ArrT(a, n) = at
+                val Ty.Ex(st1, _, eI) = Ty.expr(cx, st, bs, ix, Coll.Some(Ty.con("I64")))
+                val Ty.Ex(st2, ta, eV) = Ty.expr(cx, st1, bs, ev, Coll.Some(a))
+                val st3 = if Ty.isScalar(Ty.subst(st2), ta) then st2 else Ty.clash(st2, Ty.PutData(line, x))
+                Ty.lit(Ty.needMut(cx, Ty.proved(st3, bs, line, x, n, ix), bs, line), line, Ty.con("Unit"), want, El.ArrPut(line, x, eI, eV))
+              case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Mismatch(line, t, Ty.con("Array"))), bs, xs), line)
+            case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, x)), bs, xs), line)
+          case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+        case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
 
 // Array.slice(xs, off, m): a view of m elements from off, of type Array[A](m); off and m locals proved in range
 def Ty.slice(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
@@ -1797,6 +1830,7 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.CellNew(_, _, v, _) => Ty.mhNone(st, Coll.Cons(v, Coll.Nil))
       case El.CellGet(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.CellPut(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
+      case El.ArrPut(_, _, i, v) => Ty.mhNone(st, Coll.Cons(i, Coll.Cons(v, Coll.Nil)))
       case _ => st
     Ty.mhNone(st1, rest)
 

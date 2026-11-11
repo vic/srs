@@ -1,0 +1,31 @@
+// pass: A1b Array.put(xs, i, v): Unit writes one scalar slot in place (C p_xs[i] = v). i is proved in [0, n) by the same
+// if condition as xs(i); the write is a request on Mut, so Ap.fill and Ap.squares have Mut in their inferred row
+def Ap.fill(n: I64, xs: Array[U8](n), i: I64): Unit =
+  if 0 <= i && i < n then
+    Array.put(xs, i, U8.of(104 + i))
+    Ap.fill(n, xs, i + 1)
+  else ()
+
+def Ap.squares(n: I64, xs: Array[I64](n), i: I64): Unit =
+  if 0 <= i && i < n then
+    Array.put(xs, i, i * i)
+    Ap.squares(n, xs, i + 1)
+  else ()
+
+def Ap.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
+  if 0 <= i && i < n then Ap.sum(n, xs, i + 1, acc + xs(i)) else acc
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 5
+  val bs: Array[U8](n) = Array.fill(n, U8.of(0))
+  Ap.fill(n, bs, 0)
+  Console.print(Str.ofBytes(n, bs))
+  Console.print("\n")
+  val xs = Array.fill(n, 0)
+  Ap.squares(n, xs, 0)
+  Console.printI64(Ap.sum(n, xs, 0, 0))
+  Console.print("\n")
+  0

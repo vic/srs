@@ -361,6 +361,15 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print(") = (")
     Emit.ex(cx, fi, env, Emit.Inner, v)
     Console.print("), (int64_t)0)")
+  // A1b: the index is proved in range (Ty.arrPut): a plain store, no branch
+  case El.ArrPut(_, x, i, v) =>
+    Console.print("(")
+    Emit.local(Emit.vs(env), x)
+    Console.print("[")
+    Emit.ex(cx, fi, env, Emit.Inner, i)
+    Console.print("] = (")
+    Emit.ex(cx, fi, env, Emit.Inner, v)
+    Console.print("), (int64_t)0)")
   // A1: the index is proved in range (Ty.index): a plain load, no branch
   case El.Index(_, x, i) =>
     Emit.local(Emit.vs(env), x)
@@ -1023,6 +1032,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CellNew(_, _, v, a) => Emit.exTys(cx, fi, v, Coll.Cons(Emit.gr(cx, fi, a), acc))
   case El.CellGet(_, c) => Emit.exTys(cx, fi, c, acc)
   case El.CellPut(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
+  case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
   case _ => acc
 
 def Emit.exsTys(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
@@ -2258,6 +2268,7 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.CellNew(_, _, v, _) => Emit.seenE(cx, v, s)
   case El.CellGet(_, c) => Emit.seenE(cx, c, s)
   case El.CellPut(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
+  case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
   case _ => s
 
 def Emit.seenEs(cx: Emit.Cx, xs: Coll.List[El.Expr], s: Emit.Seen): Emit.Seen = xs match
@@ -2365,6 +2376,7 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.CellNew(l, r, v, a) => El.CellNew(l, r, Emit.dropE(m, xs, v), a)
   case El.CellGet(l, c) => El.CellGet(l, Emit.dropE(m, xs, c))
   case El.CellPut(l, c, v) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
+  case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
   case _ => e
 
 def Emit.dropEs(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match

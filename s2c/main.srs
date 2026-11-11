@@ -166,6 +166,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: K.Subst, cs: Coll.List[Ty.Clash]
       case Ty.IntRange(l, t) => S2c.diag(fs, "int-range", l, "the int literal does not fit its type", S2c.Type(K.reify(s, t)), "write a literal in range (U32: 0 to 0xffffffff), or convert: U64.ofI64(n)")
       case Ty.AssignVal(l, x) => S2c.diag(fs, "assign-val", l, "an immutable I64 local (a length or a fact may name it) is assigned:", S2c.Name(x), "declare it with var, or bind a new val")
       case Ty.IndexUnproved(l, x) => S2c.diag(fs, "index-unproved", l, "the index is not proved in [0, n) for the array", S2c.Name(x), "test it first (if 0 <= i && i < n then xs(i) else ...), or use xs.at(i)")
+      case Ty.PutData(l, x) => S2c.diag(fs, "put-data", l, "only a scalar (I64, Bool, U32, U64, U8) goes in a slot of the array", S2c.Name(x), "region data in a slot needs a flow rule that is not there yet")
       case Ty.SliceUnproved(l, f) => S2c.diag(fs, "slice-unproved", l, "the slice bounds are not proved for", S2c.Name(f), "test them first: if 0 <= off && 0 <= m && m <= n && off <= n - m then Array.slice(xs, off, m) else ...")
       case Ty.LenUnnamed(l, x) => S2c.diag(fs, "length-unnamed", l, "no local in scope holds the length of the array", S2c.Name(x), "keep the length binder n in scope (a param, a val or a field)")
     S2c.showClashes(fs, s, rest)
