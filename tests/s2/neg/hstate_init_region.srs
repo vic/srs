@@ -1,0 +1,21 @@
+// expect: error[region-escape]
+// init opens an Arena and returns an Array from it: the state would live in a region that is closed before the first op
+enum Hi.St:
+  case Hi.St.Mk(n: I64, xs: Array[I64](n))
+
+capability Hi:
+  def n(): I64
+
+handler Hhi for Hi:
+  def init(): Hi.St =
+    handle r = Srs.Arena()
+    val k = 3
+    Hi.St.Mk(k, Array.fill(k, 0))
+  def n(self: Hi.St): I64 = self match
+    case Hi.St.Mk(k, xs) => k
+
+def main(): I64 =
+  handle a = Srs.Arena()
+  handle t = Hhi()
+  Hi.n()
+// expect: --> tests/s2/neg/hstate_init_region.srs:11

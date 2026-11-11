@@ -1,0 +1,32 @@
+// pass: an op that returns the state declares T<self>: the value lives in the capability (an open state), so used inside the
+// handle block it is fine (the escape tests: hstate_escape)
+enum Hs.St:
+  case Hs.St.Mk(n: I64, xs: Array[I64](n))
+
+capability Hs:
+  state Open, Shut
+  start Open
+  stop Shut
+  def snap <Open> (): Hs.St<self> <Open>
+  def shut <Open> (): Unit <Shut>
+  drop shut
+
+handler Hhs for Hs:
+  def init(): Hs.St =
+    val n = 3
+    Hs.St.Mk(n, Array.fill(n, 7))
+  def snap(self: Hs.St): Hs.St = self
+  def shut(self: Hs.St): Unit = ()
+
+def Hs.size(s: Hs.St): I64 = s match
+  case Hs.St.Mk(n, xs) => n
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle a = Srs.Arena()
+  handle t = Hhs()
+  val s = Hs.snap()
+  Console.printI64(Hs.size(s))
+  Console.print("\n")
+  0

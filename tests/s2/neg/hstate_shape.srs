@@ -1,0 +1,13 @@
+// expect: error[handler-state-shape]
+// the handle site keeps the state as a void*: a Str (16 bytes) or a scalar is cut or converted, so init must return a pointer-shaped value
+capability Hs:
+  def len(): I64
+
+handler Hh for Hs:
+  def init(): Str = "hi"
+  def len(self: Str): I64 = Str.len(self)
+
+def main(): I64 =
+  handle h = Hh()
+  Hs.len()
+// expect: --> tests/s2/neg/hstate_shape.srs:7

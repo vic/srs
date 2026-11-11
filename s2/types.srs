@@ -60,6 +60,9 @@ enum Ty.Clash:
   case Ty.RtOutsideSrs(line: I64, f: Sym.Sym)
   // a libc extern called outside the fns of a handler named Srs.*
   case Ty.LibcOutsideHandler(line: I64, f: Sym.Sym)
+  // handler state: the type init returns is not pointer-shaped (the env keeps it as a void*); an op whose self is another type
+  case Ty.StateShape(line: I64, h: Sym.Sym)
+  case Ty.StateType(line: I64, op: Sym.Sym)
   // run-time code names a top-level val (a compile-time value)
   case Ty.ValAtRunTime(line: I64, x: Sym.Sym)
   // an int literal outside its type t (a U32 above 2^32 - 1)
@@ -1500,7 +1503,7 @@ def Ty.decls(cx: Ty.Cx, st: Ty.St, ds: Coll.List[Ast.Decl], acc: Coll.List[El.Fn
       shots match
         case Ast.OneShot =>
           val Ty.Fns(st1, efs, _, _) = Ty.fnsEl(Ty.byHandler(cx, hn), st, fs, Eff.row(rows, hn), Coll.Nil)
-          Ty.decls(cx, Ty.opRets(ps, st1, p, fs), rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
+          Ty.decls(cx, Ty.stateOk(Ty.esOf(cx), Ty.opRets(ps, st1, p, fs), fs), rest, acc, Coll.Cons(El.Handler(hn, p, efs, shots), hacc), gacc)
         // multi-shot (vic-hm63): typed here; its C (selective CPS) is a later rung, so it stops at this phase for now
         case Ast.MultiShot(a, ks) =>
           val ans = Ty.answerOf(fs, a)
@@ -1529,6 +1532,56 @@ def Ty.binderNames(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.Lis
   case Coll.Cons(b, rest) =>
     val Ast.Binder(_, x, _) = b
     Ty.binderNames(rest, Coll.Cons(x, acc))
+
+// handler state: the type init returns, S, is what every op takes as self. The handle site keeps it as a void* (srs_env st),
+// so S is pointer-shaped (Ptr, Array, Cell or an enum: a scalar or a Str would be cut or converted), and every op of the
+// handler takes the same S (else an op reads the state as another type)
+def Ty.esOf(cx: Ty.Cx): Coll.List[Ast.Enum] =
+  val Ty.Cx(_, es, _, _, _, _, _, _, _, _, _) = cx
+  es
+
+def Ty.stateOk(es: Coll.List[Ast.Enum], st: Ty.St, fs: Coll.List[Ast.Fn]): Ty.St = Ty.initFn(fs) match
+  case Coll.None => st
+  case Coll.Some(i) =>
+    val Ast.Fn(line, _, _, _, sty, _, _) = i
+    val Ast.Ty(_, sn, _, _, _) = sty
+    val st1 = if Ty.stateShaped(es, sn) then st else Ty.clash(st, Ty.StateShape(line, sn))
+    Ty.selfAgree(sty, st1, fs)
+
+def Ty.initFn(fs: Coll.List[Ast.Fn]): Coll.Option[Ast.Fn] = fs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, _) = f
+    if Str.eq(Sym.str(n), "init") then Coll.Some(f) else Ty.initFn(rest)
+
+def Ty.stateShaped(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool =
+  val s = Sym.str(n)
+  Str.eq(s, "Ptr") || Str.eq(s, "Array") || Str.eq(s, "Cell") || Ty.isEnum(es, n)
+
+def Ty.selfAgree(sty: Ast.Ty, st: Ty.St, fs: Coll.List[Ast.Fn]): Ty.St = fs match
+  case Coll.Nil => st
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, n, _, ps, _, _, _) = f
+    val ok: Bool = if Str.eq(Sym.str(n), "init") then true else ps match
+      case Coll.Nil => true
+      case Coll.Cons(p, _) =>
+        val Ast.Binder(_, _, pt) = p
+        Ty.sameTy(sty, pt)
+    Ty.selfAgree(sty, if ok then st else Ty.clash(st, Ty.StateType(line, n)), rest)
+
+// the same type by name and arguments (lengths and region lists are not part of the state's shape)
+def Ty.sameTy(a: Ast.Ty, b: Ast.Ty): Bool =
+  val Ast.Ty(_, an, aa, _, _) = a
+  val Ast.Ty(_, bn, ba, _, _) = b
+  Sym.eq(an, bn) && Ty.sameTys(aa, ba)
+
+def Ty.sameTys(xs: Coll.List[Ast.Ty], ys: Coll.List[Ast.Ty]): Bool = xs match
+  case Coll.Nil => ys match
+    case Coll.Nil => true
+    case Coll.Cons(_, _) => false
+  case Coll.Cons(x, xr) => ys match
+    case Coll.Nil => false
+    case Coll.Cons(y, yr) => Ty.sameTy(x, y) && Ty.sameTys(xr, yr)
 
 // a one-shot handler fn returns its op's result type: the op's decl is what the caller gets (Ty.fn checked the body
 // against the fn's own result). a fn for an op T{self} may return T's body: it makes the T (its facts are the op's)

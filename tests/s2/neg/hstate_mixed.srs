@@ -1,0 +1,17 @@
+// expect: error[handler-state-type]
+// tock takes the state as Ptr while init returns a Cell: it would read the state as another type
+capability Hm:
+  def tick(): I64
+  def tock(): I64
+
+handler Hmm for Hm:
+  def init(): Cell[I64] = Cell.new(0)
+  def tick(self: Cell[I64]): I64 = Cell.get(self)
+  def tock(self: Ptr): I64 = 2
+
+def main(): I64 =
+  handle m = Srs.Mut()
+  handle a = Srs.Arena()
+  handle h = Hmm()
+  Hm.tick()
+// expect: --> tests/s2/neg/hstate_mixed.srs:10

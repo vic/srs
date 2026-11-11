@@ -1,0 +1,20 @@
+// expect: error[region-escape]
+// an op result of data type that names no capability is built by the handler fn in the Region its handle site keeps: here b, which the block closes
+enum Od.Pr:
+  case Od.Pr.Mk(a: I64, b: I64)
+
+capability Od:
+  def pair(): Od.Pr
+
+handler Hod for Od:
+  def pair(): Od.Pr = Od.Pr.Mk(3, 4)
+
+def main(): I64 =
+  handle a = Srs.Arena()
+  val s: Od.Pr =
+    handle b = Srs.Arena()
+    handle h = Hod()
+    Od.pair()
+  s match
+    case Od.Pr.Mk(x, y) => x + y
+// expect: --> tests/s2/neg/op_data_escape.srs:15

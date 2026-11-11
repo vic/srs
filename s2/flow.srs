@@ -377,7 +377,7 @@ def Flow.expr(cx: Flow.Cx, st: Flow.St, p: I64, e: Ast.Expr): Flow.Ev = e match
       case Coll.None => if Sym.eq(op, Flow.keyAt(cx)) then Flow.atRead(st2, pa, recv, line, cs, sv) else Flow.Ev(st2, pa, sv)
       case Coll.Some(c) =>
         val Flow.At(st3, q) = Flow.step(st2, pa, c, op, line)
-        Flow.Ev(st3, q, Flow.opSrcs(cx, c, op, sv))
+        Flow.Ev(st3, q, Flow.opSrcs(cx, cs, c, op, sv))
   case Ast.Resume(_, _, x) => Flow.expr(cx, st, p, x)
   case Ast.Bin(_, _, l, rhs) =>
     val Flow.Ev(st2, p2, _) = Flow.expr(cx, st, p, l)
@@ -842,18 +842,30 @@ def Flow.request(st: Flow.St, p: I64, q: Coll.Option[Eff.Req], line: I64): Flow.
       case Coll.None => Flow.At(st, p)
       case Coll.Some(c) => Flow.step(st, p, c, op, line)
 
+// an op result of data type that names no capability (T, not T<self>) was built by the handler fn in the Region its handler
+// keeps (the innermost Region at its handle site, recorded as the pseudo capability site.x): it lives there, so it cannot
+// leave the block that closes that Region
+def Flow.dataTy(es: Coll.List[Ast.Enum], tn: Sym.Sym): Bool =
+  Flow.isEnumName(es, tn) || Str.eq(Sym.str(tn), "Array") || Str.eq(Sym.str(tn), "Cell") || Str.eq(Sym.str(tn), "Str") || Str.eq(Sym.str(tn), "Ptr")
+
+def Flow.siteSrc(cs: Coll.List[Flow.Cap], x: Sym.Sym, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = Flow.capNamed(cs, Eff.dotted("site", x)) match
+  case Coll.None => acc
+  case Coll.Some(s) =>
+    val Flow.Cap(_, rid, _, _) = s
+    Coll.Cons(Flow.SCap(rid), acc)
+
 // the result of op on capability c, its receiver (self in the op's decl): T<self> lives in c; T{self} is bound to c
 // in each state T's facts name, and so lives in c (Flow.SAt); a result that names no capability lives nowhere the op
 // knows of (Fx: an op result names no capability but self)
-def Flow.opSrcs(cx: Flow.Cx, c: Flow.Cap, op: Sym.Sym, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] =
-  val Flow.Cap(_, id, proto, _) = c
-  val Flow.Cx(ps, _, _, _, _, _, _) = cx
+def Flow.opSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], c: Flow.Cap, op: Sym.Sym, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] =
+  val Flow.Cap(cn, id, proto, _) = c
+  val Flow.Cx(ps, _, _, es, _, _, _) = cx
   Flow.opRet(ps, proto, op) match
     case Coll.None => acc
     case Coll.Some(t) =>
       val Ast.Ty(_, tn, _, caps, _) = t
       caps match
-        case Ast.Inferred => acc
+        case Ast.Inferred => if Flow.dataTy(es, tn) then Flow.siteSrc(cs, cn, acc) else acc
         case Ast.Stated(rs) => if Flow.memberSym(Sym.of("self"), rs) then Coll.Cons(Flow.SCap(id), acc) else acc
         case Ast.Chosen(_) => Flow.needsAt(Flow.typeNeeds(cx, tn), id, Coll.Cons(Flow.SCap(id), acc))
 
@@ -885,7 +897,7 @@ def Flow.reqSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], q: Coll.Option[Eff.Req], 
     Flow.innermost(cs, proto) match
       case Coll.None => Coll.Nil
       case Coll.Some(c) =>
-        val r = Flow.opSrcs(cx, c, op, Coll.Nil)
+        val r = Flow.opSrcs(cx, cs, c, op, Coll.Nil)
         r match
           case Coll.Nil => Coll.Nil
           case Coll.Cons(_, _) => Coll.revOnto(sv, r)
@@ -972,7 +984,7 @@ def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
   val Flow.Cx(ps, _, _, _, _, _, _) = cx
   val g = Ast.Fn(line, n, gs, params, Ast.Ty(rl, rn, ras, Ast.Stated(Coll.Nil), rvs), exit, body)
   Flow.opRet(ps, pr, n) match
-    case Coll.None => Coll.None
+    case Coll.None => if Str.eq(Sym.str(n), "init") && Flow.bodyOpens(body) then Coll.Some(f) else Coll.None
     case Coll.Some(t) =>
       val Ast.Ty(_, _, _, caps, _) = t
       caps match
@@ -1526,9 +1538,20 @@ def Flow.stmt(cx: Flow.Cx, st: Flow.St, p: I64, s: Ast.Stmt): Flow.At = s match
       case Coll.Some(proto) =>
         val Flow.At(st2, id) = Flow.fresh(st1)
         val Flow.St(n, fs, cs, env, lp) = st2
-        val st3 = Flow.St(n, fs, Coll.Cons(Flow.Cap(x, id, proto, line), cs), env, lp)
+        val Flow.Cx(_, _, _, _, _, hrows, _) = cx
+        val st3 = Flow.St(n, fs, Flow.withSite(hrows, h, x, line, cs, Coll.Cons(Flow.Cap(x, id, proto, line), cs)), env, lp)
         val st4 = Flow.add(Flow.add(st3, Flow.fCapOf(id, proto)), Flow.fCapName(id, x))
         Flow.At(Flow.add(Flow.add(st4, Flow.fCapLine(id, line)), Flow.fHandle(pa, id)), pa)
+
+// the capabilities after a handle of x by handler h: x, and when h's row has Region the pseudo capability site.x = the innermost Region
+// at the handle site (where the handler builds the data its ops return)
+def Flow.withSite(rows: Eff.Rows, h: Sym.Sym, x: Sym.Sym, line: I64, before: Coll.List[Flow.Cap], after: Coll.List[Flow.Cap]): Coll.List[Flow.Cap] =
+  if Eff.has(rows, h, Sym.of("Region")) then Flow.innermost(before, Sym.of("Region")) match
+    case Coll.None => after
+    case Coll.Some(r) =>
+      val Flow.Cap(_, rid, _, _) = r
+      Coll.Cons(Flow.Cap(Eff.dotted("site", x), rid, Sym.of("Site"), line), after)
+  else after
 
 // ── the protocols as facts: transitions, end states (an end state, or a state whose drop op reaches one), states ──
 def Flow.protoFacts(ps: Coll.List[Ast.Proto], fs: Coll.List[D.Fact]): Coll.List[D.Fact] = ps match

@@ -1,0 +1,28 @@
+// pass: typed handler state: a record that owns its Array and the length (the length lives in the value that owns the array)
+enum Ha.St:
+  case Ha.St.Mk(n: I64, xs: Array[I64](n))
+
+capability Ha:
+  def put(i: I64, v: I64): Unit
+  def get(i: I64): I64
+
+handler Hha for Ha:
+  def init(): Ha.St =
+    val n = 4
+    Ha.St.Mk(n, Array.fill(n, 0))
+  def put(self: Ha.St, i: I64, v: I64): Unit = self match
+    case Ha.St.Mk(n, xs) => if 0 <= i && i < n then Array.put(xs, i, v) else ()
+  def get(self: Ha.St, i: I64): I64 = self match
+    case Ha.St.Mk(n, xs) => if 0 <= i && i < n then xs(i) else 0 - 1
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle a = Srs.Arena()
+  handle h = Hha()
+  Ha.put(1, 20)
+  Ha.put(3, 22)
+  Console.printI64(Ha.get(1) + Ha.get(3))
+  Console.printI64(Ha.get(9))
+  Console.print("\n")
+  0

@@ -1,0 +1,20 @@
+// pass: typed handler state: init returns a Cell[I64] (allocated in the Region of the handle site), every op takes it as self
+capability Tick:
+  def tick(): I64
+
+handler Cnt for Tick:
+  def init(): Cell[I64] = Cell.new(0)
+  def tick(self: Cell[I64]): I64 =
+    Cell.put(self, Cell.get(self) + 1)
+    Cell.get(self)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle a = Srs.Arena()
+  handle t = Cnt()
+  Console.printI64(Tick.tick())
+  Console.printI64(Tick.tick())
+  Console.printI64(Tick.tick())
+  Console.print("\n")
+  0
