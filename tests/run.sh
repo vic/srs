@@ -27,13 +27,28 @@ if timeout 120 $CCS -o "$B/s2c0" bootstrap/s2c-seed.c rt/srs_rt.c \
   && timeout 5 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
 else echo "FAIL s2c fixpoint"; fail=1; fi
 if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; else echo "FAIL s2c seed stale: seed-update"; fail=1; fi
-for t in tests/s2/*.srs; do
-  n=s2c_$(basename "$t" .srs)
-  timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; fail=1; continue; }
-  timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; fail=1; continue; }
+# the test loops run in parallel (xargs -P, GATE_JOBS at once, default one per core): each test is a fn of its file that
+# prints its verdict line(s) into its own file; par prints them in file order, so the log reads as a serial run's. A
+# test fn that exits nonzero (killed, crashed) is a FAIL line, and par fails when any line is a FAIL
+GATE_JOBS=${GATE_JOBS:-$(nproc)}
+export B S2SRC CC
+par() { # fn files...
+  local f=$1 d i=0 x; shift; d=$(mktemp -d "$B/par.XXXXXX")
+  for x in "$@"; do i=$((i + 1)); printf '%s\0%s\0' "$d/$i" "$x"; done \
+    | xargs -0 -n2 -P "$GATE_JOBS" bash -c "$f \"\$2\" > \"\$1\" 2>&1 || echo \"FAIL $f \$2 (exit \$?)\" >> \"\$1\"" _ \
+    || echo "FAIL $f: a test process died (xargs exit $?)" > "$d/died"
+  i=0; for x in "$@"; do i=$((i + 1)); cat "$d/$i" 2>/dev/null; done > "$d/all"; cat "$d/died" >> "$d/all" 2>/dev/null
+  cat "$d/all"; ! grep -q '^FAIL' "$d/all"
+}
+t_comp() {
+  local t=$1 n out code; n=s2c_$(basename "$t" .srs)
+  timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; return 0; }
+  timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; return 0; }
   out=$(timeout 1 "$B/$n"); code=$?
-  if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; fail=1; else echo "ok $n"; fi
-done
+  if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; else echo "ok $n"; fi
+}
+export -f t_comp
+par t_comp tests/s2/*.srs || fail=1
 # the s2 suite (vic 2026-11-09: only s2 survives, tests/s2 stands alone): tests/s2/prog/*.srs compiled by s2c1, run,
 # stdout == .out; tests/s2/neg/*.srs rejected by s2c1 (exit 1) with every "// expect:" text. a test named in
 # tests/s2/todo is not yet in s2c: it prints "todo", and one that passes is a FAIL (the list only shrinks)
@@ -43,13 +58,17 @@ verdict() { # name pass
   if todo "$1"; then if [ "$2" = 1 ]; then echo "FAIL $1 passes: remove it from tests/s2/todo"; fail=1; else echo "todo $1"; fi
   elif [ "$2" = 1 ]; then echo "ok $1"; else echo "FAIL $1 $3"; fail=1; fi
 }
+export S2LIBS
+export -f todo verdict
 # a "// env: A=1 B=" line: the program runs with those variables set (os_env, stack_deep)
-for t in tests/s2/prog/*.srs; do
-  n=$(basename "$t" .srs); m=s2c1_$n; pass=0
+t_prog() {
+  local t=$1 n m pass=0 out; n=$(basename "$t" .srs); m=s2c1_$n
   timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
     && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "prog/$n" $pass
-done
+}
+export -f t_prog
+par t_prog tests/s2/prog/*.srs || fail=1
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
@@ -64,8 +83,8 @@ if [ "${h:-0}" -ge 1 ]; then echo "ok prog/pages_gate huge-page advice $h"; else
 # s2c's main installs Srs.Pages: compiling itself touches ~190 MB, 47k faults at 4 KiB pages, ~550 with huge pages
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1" $S2C 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
 if [ "${h:-0}" -ge 1 ]; then echo "ok s2c huge-page advice $h"; else echo "FAIL s2c no MADV_HUGEPAGE: main must handle Srs.Pages"; fail=1; fi
-for t in tests/s2/neg/*.srs; do
-  n=$(basename "$t" .srs); pass=1
+t_neg() {
+  local t=$1 n pass=1 msg code wants w; n=$(basename "$t" .srs)
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
   wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -eq 1 ] && [ -n "$wants" ] || pass=0
   # "error[code]" is in the message; "--> file:line" is a whole line of it (so :1 does not match :12)
@@ -76,33 +95,39 @@ for t in tests/s2/neg/*.srs; do
     esac
   done <<< "$wants"
   verdict "neg/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
-done
+}
+export -f t_neg
+par t_neg tests/s2/neg/*.srs || fail=1
 # tests/s2/cneg/*.srs: s2c1 accepts them (exit 0) and the C compiler rejects the C with every "// expect:" text: the libc
 # headers make the C compiler check each srs prototype of a libc extern (C11 6.7p4)
-for t in tests/s2/cneg/*.srs; do
-  n=$(basename "$t" .srs); pass=1; m=cneg_$n
+t_cneg() {
+  local t=$1 n pass=1 m msg code wants w; n=$(basename "$t" .srs); m=cneg_$n
   timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || pass=0
   msg=$(timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>&1); code=$?
   wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -ne 0 ] && [ -n "$wants" ] || pass=0
   while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
   verdict "cneg/$n" $pass "cc exit=$code msg=$(printf '%s' "$msg" | head -1)"
-done
+}
+export -f t_cneg
+par t_cneg tests/s2/cneg/*.srs || fail=1
 # the Flow shortcut (Flow.plainFn, vic-6z7p.30): every program of prog/ neg/ and the component tests is compiled with --l2-agree: a fn the shortcut
 # skips is also checked by the engine, and any disagreement prints L2-UNSOUND (the soundness argument is tests/s2/flow_seeds.srs)
 bad=0
-for t in tests/s2/prog/*.srs tests/s2/neg/*.srs; do
-  if timeout 10 "$B/s2c1" --l2-agree $S2LIBS "$t" 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree $t"; bad=1; fi
-done
+t_l2() { if timeout 10 "$B/s2c1" --l2-agree $S2LIBS "$1" 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree $1"; fi; }
+export -f t_l2
+par t_l2 tests/s2/prog/*.srs tests/s2/neg/*.srs || bad=1
 if timeout 60 "$B/s2c1" --l2-agree $S2C 2>&1 >/dev/null | grep -q 'L2-UNSOUND'; then echo "FAIL l2-agree s2c sources"; bad=1; fi
 if [ $bad -eq 0 ]; then echo "ok l2-agree"; else fail=1; fi
 # tests/s2/cok/*.srs: s2c1 accepts them and the C compiler accepts the C (built, never run): our prototype of each libc extern
 # agrees with the real declaration in the libc headers (C11 6.7p4)
-for t in tests/s2/cok/*.srs; do
-  n=$(basename "$t" .srs); pass=1; m=cok_$n
+t_cok() {
+  local t=$1 n pass=1 m msg; n=$(basename "$t" .srs); m=cok_$n
   timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || pass=0
   msg=$(timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>&1) || pass=0
   verdict "cok/$n" $pass "cc msg=$(printf '%s' "$msg" | head -1)"
-done
+}
+export -f t_cok
+par t_cok tests/s2/cok/*.srs || fail=1
 # s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
 # "// expect: msg" is rejected (exit 1) with msg; a test with neither proves nothing (FAIL)
 for t in tests/s2/eval/*.srs; do
