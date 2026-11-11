@@ -2927,3 +2927,81 @@ def Emit.kindOf(i: Mono.Inst): Emit.Kind =
   site match
     case Mono.Top => Emit.KDef
     case Mono.Impl(goal) => Emit.KGiven(goal)
+
+// --mem bytes (vic/c/mem-design.md M2): every constructor site of every instance Mono makes, with its size as Emit
+// lays it out (Emit.caseSize, checked by the _Static_assert of its struct), rounded to the 8-byte arena granule
+enum Emit.SiteB:
+  case Emit.SiteB(line: I64, c: Sym.Sym, bytes: I64)
+
+def Emit.memSites(ds: Coll.List[Ast.Decl], res0: Ty.Result): Coll.List[Emit.SiteB] =
+  val Ty.Result(_, _, s, fs0, _, gvs0) = res0
+  val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
+  val st = Emit.staticsOf(cx0, ds, res0, Emit.roots(cx0, fs0, gvs0))
+  val res = Emit.withStatics(cx0, res0, st)
+  val Ty.Result(_, _, _, fs, _, _) = res
+  Emit.instSites(Emit.withFns(cx0, fs, st), Mono.run(res), Coll.Nil)
+
+def Emit.instSites(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = is match
+  case Coll.Nil => acc
+  case Coll.Cons(i, rest) =>
+    val Mono.Inst(f, _, _) = i
+    val El.Fn(_, _, _, _, _, _, body) = f
+    val acc2: Coll.List[Emit.SiteB] = body match
+      case El.Def(e) => Emit.exSites(cx, Emit.fiOf(cx, i), e, acc)
+      case _ => acc
+    Emit.instSites(cx, rest, acc2)
+
+// one box of case c of its enum at the ground args
+def Emit.newBytes(cx: Emit.Cx, c: Sym.Sym, args: Coll.List[K.Term]): I64 = Emit.caseAt(cx, c) match
+  case Coll.None => 0
+  case Coll.Some(ca) =>
+    val Emit.CaseAt(_, e, cs) = ca
+    val Ast.Enum(_, _, gs, cases) = e
+    val Ast.Case(_, _, fs) = cs
+    Srs.Arena.up(Emit.caseSize(cx, fs, Ty.zipBind(Ty.tparams(gs, Coll.Nil), args, Coll.Nil), Emit.tagWidth(Coll.length(cases))), 8)
+
+def Emit.exSites(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = e match
+  case El.CallFn(_, _, _, _, args) => Emit.exsSites(cx, fi, args, acc)
+  case El.New(line, en, ts, c, _, args) => Emit.exsSites(cx, fi, args, Coll.Cons(Emit.SiteB(line, c, Emit.newBytes(cx, c, Emit.grAll(cx, fi, ts))), acc))
+  case El.Nullary(_, _, _, _) => acc
+  case El.Op(_, _, _, _, args, _) => Emit.exsSites(cx, fi, args, acc)
+  case El.MHandled(_, _, _, _, args, rest, _, _) => Emit.exsSites(cx, fi, Coll.Cons(rest, args), acc)
+  case El.Resume(_, _, x) => Emit.exsSites(cx, fi, Coll.Cons(x, Coll.Nil), acc)
+  case El.TCall(_, _, _, _, args) => Emit.exsSites(cx, fi, args, acc)
+  case El.Bin(_, _, l, x) => Emit.exSites(cx, fi, x, Emit.exSites(cx, fi, l, acc))
+  case El.Un(_, _, x) => Emit.exSites(cx, fi, x, acc)
+  case El.If(_, c, t, x) => Emit.exSites(cx, fi, x, Emit.exSites(cx, fi, t, Emit.exSites(cx, fi, c, acc)))
+  case El.Match(_, x, en, arms) => Emit.armsSites(cx, fi, arms, Emit.exSites(cx, fi, x, acc))
+  case El.Block(_, ss, last) => Emit.exSites(cx, fi, last, Emit.stmtsSites(cx, fi, ss, acc))
+  case El.While(_, c, b) => Emit.exSites(cx, fi, b, Emit.exSites(cx, fi, c, acc))
+  case El.Assign(_, _, x) => Emit.exSites(cx, fi, x, acc)
+  case El.Index(_, _, i) => Emit.exSites(cx, fi, i, acc)
+  case El.Slice(_, x, o) => Emit.exSites(cx, fi, o, Emit.exSites(cx, fi, x, acc))
+  case El.Fill(_, _, n, x, a) => Emit.exSites(cx, fi, x, Emit.exSites(cx, fi, n, acc))
+  case El.Tab(_, _, n, a, _, g) => Emit.exSites(cx, fi, g, Emit.exSites(cx, fi, n, acc))
+  case El.CellNew(_, _, v, a) => Emit.exSites(cx, fi, v, acc)
+  case El.CellGet(_, c) => Emit.exSites(cx, fi, c, acc)
+  case El.CNew(_, _, _) => acc
+  case El.CField(_, c, _, _, _) => Emit.exSites(cx, fi, c, acc)
+  case El.CellPut(_, c, v) => Emit.exSites(cx, fi, v, Emit.exSites(cx, fi, c, acc))
+  case El.ArrPut(_, _, i, v) => Emit.exSites(cx, fi, v, Emit.exSites(cx, fi, i, acc))
+  case El.Blit(_, _, a, b, m) => Emit.exSites(cx, fi, m, Emit.exSites(cx, fi, b, Emit.exSites(cx, fi, a, acc)))
+  case _ => acc
+
+def Emit.exsSites(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Emit.exsSites(cx, fi, rest, Emit.exSites(cx, fi, x, acc))
+
+def Emit.armsSites(cx: Emit.Cx, fi: Emit.Fi, as: Coll.List[El.Arm], acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val El.Arm(_, _, b) = a
+    Emit.armsSites(cx, fi, rest, Emit.exSites(cx, fi, b, acc))
+
+def Emit.stmtsSites(cx: Emit.Cx, fi: Emit.Fi, ss: Coll.List[El.Stmt], acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) => s match
+    case El.Val(_, _, ty, _, e) => Emit.stmtsSites(cx, fi, rest, Emit.exSites(cx, fi, e, acc))
+    case El.Handle(_, _, _, _, args) => Emit.stmtsSites(cx, fi, rest, Emit.exsSites(cx, fi, args, acc))
+    case El.Do(e) => Emit.stmtsSites(cx, fi, rest, Emit.exSites(cx, fi, e, acc))
+

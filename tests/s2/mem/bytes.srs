@@ -1,0 +1,19 @@
+// mem: bytes as C lays out a box: a Bool sits beside the tag, a Str is 16 bytes; a generic def reports its largest instance
+enum MG [A: Type]:
+  case MG(x: A)
+
+enum MS:
+  case MS(s: Str, b: Bool, n: I64)
+
+def MG.wrap [A: Type] (x: A): MG[A] = MG(x)
+
+def MG.n(m: MS): I64 = m match
+  case MS(_, _, n) => n
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = MG.wrap(1)
+  val b = MG.wrap("hi")
+  Console.printI64(MG.n(MS("x", true, 2)))
+  0
