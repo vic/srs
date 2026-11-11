@@ -1,0 +1,18 @@
+// pass: a deep copy cp{s}{r}(l): List<r> lives in r only, not in the regions of its arg: a list built in an inner
+// Arena is copied out and read after the Arena ended
+def cp {s: Region} {r: Region} (l: List): List<r> =
+  l match
+    case Nil => Nil
+    case Cons(h, t) => Cons(h, cp{s, r}(t))
+
+def load {o: Region} (): List<o> =
+  handle tmp = Srs.Arena()
+  val x = build{tmp}(4)
+  cp{tmp, o}(x)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  Console.printI64(sum(load{sess}()))
+  Console.print("\n")
+  0

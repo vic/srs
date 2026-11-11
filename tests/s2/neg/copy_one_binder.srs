@@ -1,0 +1,13 @@
+// expect: error[region-escape]
+// expect: 'tmp'
+// a data result List<r> of a def with one Region binder: an unannotated param may live in any region, so the body
+// cannot hand it back as a value of r (else a list of the caller's inner Arena would pass as a value of r)
+def idr {r: Region} (l: List): List<r> = l
+
+def load {o: Region} (): List<o> =
+  handle tmp = Srs.Arena()
+  idr{o}(build{tmp}(4))
+def main(): I64 =
+  handle io = Srs.Console()
+  handle sess = Srs.Heap()
+  sum(load{sess}())

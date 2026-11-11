@@ -1,0 +1,10 @@
+// expect: error[capability-bound]
+// expect: 't'
+// two Region binders, result List<o>, the body hands the param back: the param may live in t (an unannotated data param
+// may live in any binder of its def), so it is not a value of o. the soundness of Flow.foreignBinder rests on this
+def pass {o: Region} {t: Region} (l: List): List<o> = l
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Heap()
+  handle b = Srs.Arena()
+  sum(pass{a, b}(build{b}(2)))

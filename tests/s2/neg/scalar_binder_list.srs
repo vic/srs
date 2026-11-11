@@ -1,0 +1,11 @@
+// expect: error[region-escape]
+// a pattern binder of a type that holds a region (the tail t: List) keeps the regions of the scrutinee; only a binder of a
+// scalar type (h: I64) holds nothing
+def load(): List =
+  handle tmp = Srs.Arena()
+  build{tmp}(3) match
+    case Nil => Nil
+    case Cons(h, t) => t
+def main(): I64 =
+  handle io = Srs.Console()
+  sum(load())

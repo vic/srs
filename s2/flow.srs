@@ -470,12 +470,73 @@ def Flow.arms(cx: Flow.Cx, st: Flow.St, ps: I64, m: I64, sv: Coll.List[Flow.Src]
   case Coll.Nil => Flow.Ev(st, m, acc)
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, pat, b) = a
+    val Flow.Cx(_, _, _, es, _, _, _) = cx
     val Flow.St(_, _, _, env0, _) = st
     val Flow.At(st1, a0) = Flow.next(st, ps)
     val Flow.Ids(st1b, ids) = Flow.declare(st1, Flow.patBinds(pat), Coll.None, Coll.Nil)
-    val Flow.At(st2, a1) = Flow.assignAll(st1b, a0, ids, sv, Flow.inLoop(st1b))
+    val Flow.At(st2, a1) = Flow.assignPat(es, st1b, a0, ids, Flow.patFields(es, pat), sv)
     val Flow.Ev(st3, pa, svb) = Flow.expr(cx, st2, a1, b)
     Flow.arms(cx, Flow.edge(Flow.withEnv(st3, env0), pa, m), ps, m, sv, rest, Coll.revOnto(svb, acc))
+
+
+// pattern binders hold what the scrutinee holds, except a binder of a scalar type: it cannot reach a region
+def Flow.assignPat(es: Coll.List[Ast.Enum], st: Flow.St, p: I64, ids: Coll.List[I64], fs: Coll.List[Ast.Binder], sv: Coll.List[Flow.Src]): Flow.At = ids match
+  case Coll.Nil => Flow.At(st, p)
+  case Coll.Cons(i, irest) => fs match
+    case Coll.Nil => Flow.assignAll(st, p, ids, sv, Flow.inLoop(st))
+    case Coll.Cons(f, frest) =>
+      val Ast.Binder(_, _, ty) = f
+      val Ast.Ty(_, tn, targs, _, _) = ty
+      val held = if Flow.scalarTy(es, tn, targs, Coll.Nil) then Coll.Nil else sv
+      val Flow.At(st1, q) = Flow.assignAll(st, p, Coll.Cons(i, Coll.Nil), held, Flow.inLoop(st))
+      Flow.assignPat(es, st1, q, irest, frest, sv)
+
+// a type whose values hold no region: a word type, or a plain enum (no type parameters, not recursive) of fields of such types
+def Flow.scalarTy(es: Coll.List[Ast.Enum], tn: Sym.Sym, targs: Coll.List[Ast.Ty], seen: Coll.List[Sym.Sym]): Bool = targs match
+  case Coll.Cons(_, _) => false
+  case Coll.Nil =>
+    if Sym.eq(tn, Sym.of("I64")) || Sym.eq(tn, Sym.of("Bool")) || Sym.eq(tn, Sym.of("Unit")) || Sym.eq(tn, Sym.of("U32")) || Sym.eq(tn, Sym.of("U64")) || Sym.eq(tn, Sym.of("U8")) || Sym.eq(tn, Sym.of("I32")) then true
+    else if Flow.memberSym(tn, seen) then false
+    else Flow.scalarEnum(es, es, tn, Coll.Cons(tn, seen))
+
+def Flow.scalarEnum(all: Coll.List[Ast.Enum], es: Coll.List[Ast.Enum], tn: Sym.Sym, seen: Coll.List[Sym.Sym]): Bool = es match
+  case Coll.Nil => false
+  case Coll.Cons(e, rest) =>
+    val Ast.Enum(_, n, gs, cases) = e
+    if Sym.eq(n, tn) then
+      gs match
+        case Coll.Nil => Flow.scalarCases(all, cases, seen)
+        case Coll.Cons(_, _) => false
+    else Flow.scalarEnum(all, rest, tn, seen)
+
+def Flow.scalarCases(all: Coll.List[Ast.Enum], cases: Coll.List[Ast.Case], seen: Coll.List[Sym.Sym]): Bool = cases match
+  case Coll.Nil => true
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, fs) = c
+    if Flow.scalarFields(all, fs, seen) then Flow.scalarCases(all, rest, seen) else false
+
+def Flow.scalarFields(all: Coll.List[Ast.Enum], fs: Coll.List[Ast.Binder], seen: Coll.List[Sym.Sym]): Bool = fs match
+  case Coll.Nil => true
+  case Coll.Cons(f, rest) =>
+    val Ast.Binder(_, _, ty) = f
+    val Ast.Ty(_, tn, targs, _, _) = ty
+    if Flow.scalarTy(all, tn, targs, seen) then Flow.scalarFields(all, rest, seen) else false
+
+// the fields of constructor c
+def Flow.ctorFields(es: Coll.List[Ast.Enum], c: Sym.Sym): Coll.List[Ast.Binder] = es match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(e, rest) =>
+    val Ast.Enum(_, _, _, cases) = e
+    Flow.caseFields(cases, c, es, rest)
+
+def Flow.caseFields(cases: Coll.List[Ast.Case], c: Sym.Sym, es: Coll.List[Ast.Enum], rest: Coll.List[Ast.Enum]): Coll.List[Ast.Binder] = cases match
+  case Coll.Nil => Flow.ctorFields(rest, c)
+  case Coll.Cons(k, more) =>
+    val Ast.Case(_, n, fs) = k
+    if Sym.eq(n, c) then fs else Flow.caseFields(more, c, es, rest)
+def Flow.patFields(es: Coll.List[Ast.Enum], p: Ast.Pat): Coll.List[Ast.Binder] = p match
+  case Ast.PCase(c, _) => Flow.ctorFields(es, c)
+  case Ast.PAny => Coll.Nil
 
 // the names a pattern binds (a wildcard binds none)
 def Flow.patBinds(p: Ast.Pat): Coll.List[Sym.Sym] = p match
@@ -490,6 +551,16 @@ enum Flow.Src:
   case Flow.SAt(c: I64, s: Sym.Sym)
   case Flow.SVar(b: I64)
 
+
+// a Region binder of the def that the result bound rs does not name: an unannotated data param may live in it
+// (Flow.paramSrcs), so the body is checked not to return anything made from a param, and a data result T<rs> lives in rs
+// only. without one (a def of the one binder r: l: List -> List<r> = l) a param is taken to live in r and the check
+// proves nothing: the result keeps its args' regions
+def Flow.foreignBinder(rbs: Coll.List[Flow.CapB], rs: Coll.List[Sym.Sym]): Bool = rbs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) =>
+    val Flow.CapB(x, _, _) = b
+    if Flow.memberSym(x, rs) then Flow.foreignBinder(rest, rs) else true
 // the result of a call of g, args' sources svs
 def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]]): Coll.List[Flow.Src] =
   val Flow.Cx(ps, _, _, es, _, _, _) = cx
@@ -505,7 +576,11 @@ def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, c
   // a result T<rs> lives in the caller capabilities rs's binders take, whatever T is: a Str or Ptr result too (g's body
   // is checked to keep it there, Flow.def)
   rcaps match
-    case Ast.Stated(rs) => if data then base else Flow.capSrcs(Flow.binderIds(cs, chosen, Flow.capBs(ps, gs, 0, Coll.Nil), rs, Coll.Nil), base)
+    case Ast.Stated(rs) =>
+      val bs = Flow.capBs(ps, gs, 0, Coll.Nil)
+      val ids = Flow.binderIds(cs, chosen, bs, rs, Coll.Nil)
+      if data then (if Flow.foreignBinder(Flow.regionBs(bs, Coll.Nil), rs) then Flow.capSrcs(ids, Coll.Nil) else base)
+      else Flow.capSrcs(ids, base)
     case Ast.Inferred => base
     case Ast.Chosen(_) => base
 
