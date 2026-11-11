@@ -278,6 +278,10 @@ extern def I64.of(x: U32): I64
 extern def Str.u32le(s: Str, i: I64): U32
 extern def Str.u64le(s: Str, i: I64): U64
 extern def I64.ofU64(x: U64): I64
+// a sorts before b by bytes as unsigned values, a proper prefix first (memcmp); byte c is in s[i, e), i and e clamped
+// to [0, Str.len(s)) (memchr). Static inline (Emit.strPrims)
+extern def Str.less(a: Str, b: Str): Bool
+extern def Str.has(s: Str, c: I64, i: I64, e: I64): Bool
 
 // R0a bytes: U8 is storage only (an Array[U8](n) element), with no literal and no operator (C promotes uint8_t to
 // int). U8.of keeps the low 8 bits. Str.ofBytes views the n bytes of xs as a Str with no copy, so the Str lives in
