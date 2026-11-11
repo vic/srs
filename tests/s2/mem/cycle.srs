@@ -1,0 +1,16 @@
+// mem: mutual recursion: the entry of the cycle has two call sites, the rest is many through its caller
+enum MT:
+  case MT(v: I64)
+
+def MT.v(t: MT): I64 = t match
+  case MT(v) => v
+
+def MT.a(n: I64): I64 = if n == 0 then 0 else MT.b(n - 1)
+
+def MT.b(n: I64): I64 = MT.v(MT(n)) + MT.a(n)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(MT.a(3))
+  0

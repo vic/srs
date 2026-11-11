@@ -401,6 +401,79 @@ enum S2c.Mode:
   case S2c.StoreCheck
   // --fragment: the C fragment gate (s2/elgate.srs): the table of kinds; exit 1 on a permanent kind
   case S2c.Fragment
+  // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
+  case S2c.MemAll
+
+// --mem: "region x file:line handler", then "  file:line ctor once" or "  file:line ctor many: why", then the total
+def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
+  case Mem.RulesBad(rel) => S2c.internal("mem", rel)
+  case Mem.Ok(bs) =>
+    val S2c.MemCount(once, many) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0))
+    Console.print("total: ")
+    Console.printI64(once)
+    Console.print(" once, ")
+    Console.printI64(many)
+    Console.print(" many\n")
+    0
+
+enum S2c.MemCount:
+  case S2c.MemCount(once: I64, many: I64)
+
+def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemCount): S2c.MemCount = bs match
+  case Coll.Nil => c
+  case Coll.Cons(b, rest) =>
+    val Mem.Block(line, x, h, rows) = b
+    Console.print("region ")
+    Console.print(Sym.str(x))
+    Console.print(" ")
+    S2c.place(fs, line)
+    Console.print(" ")
+    Console.print(Sym.str(h))
+    Console.print("\n")
+    S2c.memBlocks(fs, rest, S2c.memRows(fs, rows, c))
+
+def S2c.memRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], c: S2c.MemCount): S2c.MemCount = rows match
+  case Coll.Nil => c
+  case Coll.Cons(r, rest) =>
+    val Mem.Row(line, ctor, m) = r
+    val S2c.MemCount(once, many) = c
+    Console.print("  ")
+    S2c.place(fs, line)
+    Console.print(" ")
+    Console.print(Sym.str(ctor))
+    m match
+      case Mem.Once =>
+        Console.print(" once\n")
+        S2c.memRows(fs, rest, S2c.MemCount(once + 1, many))
+      case Mem.Many(why) =>
+        Console.print(" many: ")
+        S2c.memWhy(why)
+        Console.print("\n")
+        S2c.memRows(fs, rest, S2c.MemCount(once, many + 1))
+
+def S2c.memWhy(w: Mem.Why): Unit = w match
+  case Mem.InLoop => Console.print("in a loop")
+  case Mem.Sites(f, n) =>
+    Console.print(Sym.str(f))
+    Console.print(" called at ")
+    Console.printI64(n)
+    Console.print(" sites")
+  case Mem.LoopCalled(f) =>
+    Console.print(Sym.str(f))
+    Console.print(" called in a loop")
+  case Mem.Via(f) =>
+    Console.print("called from ")
+    Console.print(Sym.str(f))
+    Console.print(" (many)")
+
+// file:line of a program line (lines are numbered across the input files)
+def S2c.place(fs: Coll.List[S2c.File], line: I64): Unit = S2c.fileOf(fs, line) match
+  case Coll.Some(f) =>
+    val S2c.File(p, base, _) = f
+    Console.print(p)
+    Console.print(":")
+    Console.printI64(line - base + 1)
+  case Coll.None => Console.printI64(line)
 
 // --fragment: the table of every kind (stdout); the C leaves the fragment where a permanent kind is found: exit 1
 def S2c.fragment(fs: Coll.List[S2c.File], vs: Coll.List[Elgate.V]): I64 =
@@ -425,6 +498,7 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.HashAll =>
     Hs.print(ds)
     0
+  case S2c.MemAll => S2c.mem(fs, Mem.report(ds))
   case S2c.Fragment =>
     S2c.fragment(fs, Elgate.run(ds, res))
   case S2c.EmitAgree =>
@@ -465,6 +539,7 @@ def S2c.args(): S2c.Args =
   else if Args.count() > 1 && Str.eq(Args.at(1), "--hash") then S2c.Args(S2c.HashAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--fragment") then S2c.Args(S2c.Fragment, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--mem") then S2c.Args(S2c.MemAll, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--l2-agree") then S2c.Args(S2c.EmitAgree, 2)
   else S2c.Args(S2c.EmitC, 1)
 

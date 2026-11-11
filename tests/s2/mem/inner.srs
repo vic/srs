@@ -1,0 +1,24 @@
+// mem: a def that opens its own region fills it once per life even when the def runs twice; a def nobody calls is
+// not reported, nor is its region; a def with no handle fills each region its callers run it in
+enum MB:
+  case MB(v: I64)
+
+def MB.get(b: MB): I64 = b match
+  case MB(v) => v
+
+def MB.mk(x: I64): MB = MB(x)
+
+def MB.work(x: I64): I64 =
+  handle s = Srs.Arena()
+  MB.get(MB.mk(x))
+
+def MB.unused(x: I64): I64 =
+  handle u = Srs.Arena()
+  MB.get(MB(x + 1))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val p = MB(5)
+  Console.printI64(MB.work(1) + MB.work(2) + MB.get(p))
+  0

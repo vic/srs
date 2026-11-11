@@ -1,0 +1,16 @@
+// mem: one constructor in main fills main's region once; a nullary case allocates nothing
+enum MP:
+  case MP(a: I64, b: I64)
+  case MNone
+
+def MP.sum(p: MP): I64 = p match
+  case MP(a, b) => a + b
+  case MNone => 0
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val p = MP(1, 2)
+  val q = MNone
+  Console.printI64(MP.sum(p) + MP.sum(q))
+  0
