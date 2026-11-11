@@ -55,6 +55,9 @@ ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v stra
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
 if [ ! -x "${ST:-}" ]; then echo "FAIL prog/out_big: strace missing"; fail=1
 elif [ "${w:-0}" -gt 1 ]; then echo "ok prog/out_big writes $w"; else echo "FAIL prog/out_big writes ${w:-none}, want > 1"; fail=1; fi
+# Arena chunks come from srs_pages, advised for huge pages: prog/alloc_chunks fills more than one 1 MiB chunk
+h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_alloc_chunks" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
+if [ "${h:-0}" -ge 1 ]; then echo "ok prog/alloc_chunks huge-page advice $h"; else echo "FAIL prog/alloc_chunks no MADV_HUGEPAGE"; fail=1; fi
 for t in tests/s2/neg/*.srs; do
   n=$(basename "$t" .srs); pass=1
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?

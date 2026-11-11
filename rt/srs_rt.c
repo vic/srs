@@ -104,9 +104,30 @@ srs_str rt_arg(int64_t i) {
 typedef struct chunk { struct chunk* next; size_t used, cap; } chunk;
 typedef struct { chunk* head; } arena;
 enum { CHUNK = 1 << 20 };
-// freed CHUNK-size chunks (A14), taken before malloc: their pages are already faulted in. One list per process: the
-// program runs one thread. Bigger chunks go back to malloc
+// freed CHUNK-size chunks (A14), taken before new pages: their pages are already faulted in. One list per process: the
+// program runs one thread. Bigger chunks come from malloc and go back to it
 static chunk* g_spare;
+
+// ── pages for the program's lifetime (srs_cap.h): bumped out of 64 MiB reservations that are advised for transparent
+// huge pages, so one fault maps 2 MiB where it maps 4 KiB from malloc. Never returned: CHUNK chunks end in g_spare.
+// Reserved, not committed: the address space grows by one reservation at a time, untouched pages cost nothing
+enum { PAGES_RESERVE = 64 << 20, HUGE_PAGE = 2 << 20 };
+static char *g_pages, *g_pages_end;
+void* srs_pages(int64_t size) {
+  size_t n = ((size_t)size + 4095) & ~(size_t)4095;
+  if ((size_t)(g_pages_end - g_pages) < n) {
+    size_t want = n > PAGES_RESERVE ? (n + HUGE_PAGE - 1) & ~(size_t)(HUGE_PAGE - 1) : PAGES_RESERVE;
+    char* p = mmap(0, want + HUGE_PAGE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) return 0;
+    // huge pages need 2 MiB alignment: the reservation starts at the first boundary, the pages under it stay unused
+    char* a = (char*)(((uintptr_t)p + HUGE_PAGE - 1) & ~(uintptr_t)(HUGE_PAGE - 1));
+    madvise(a, want, MADV_HUGEPAGE);
+    g_pages = a; g_pages_end = a + want;
+  }
+  void* r = g_pages;
+  g_pages += n;
+  return r;
+}
 #ifdef SNX_CENSUS
 // census: live malloc'd chunks (spare ones included, they stay allocated) and their bytes with header
 static int64_t g_cz_chunks, g_cz_bytes;
@@ -130,7 +151,7 @@ void* rt_arena_alloc(void* self, int64_t size) {
   size_t n = ((size_t)size + 7) & ~(size_t)7;  // 8-byte granule, as the inline bump (s2/emit.srs Emit.allocFast)
   if (!a->head || a->head->used + n > a->head->cap) {
     size_t cap = n > CHUNK ? n : CHUNK;
-    chunk* c = cap == CHUNK && g_spare ? g_spare : malloc(sizeof(chunk) + cap);
+    chunk* c = cap != CHUNK ? malloc(sizeof(chunk) + cap) : g_spare ? g_spare : srs_pages(sizeof(chunk) + CHUNK);
     if (!c) { fputs("srs: out of memory\n", stderr); exit(70); }
     if (c == g_spare) g_spare = c->next;
 #ifdef SNX_CENSUS
