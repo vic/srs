@@ -70,6 +70,8 @@ enum Ty.Clash:
   case Ty.LenUnnamed(line: I64, xs: Sym.Sym)
   // A1b: Array.put of a value that is not a scalar
   case Ty.PutData(line: I64, xs: Sym.Sym)
+  // a ctor pattern binder named like a declared ctor: a nested pattern, not supported (a binder is always a variable)
+  case Ty.NestedPattern(line: I64, x: Sym.Sym)
 
 // a {} goal of a trait at a call (the binder's type under the call's type args), the locals in scope there and the chosen
 // name if f{x}(...) wrote one: resolved after the whole program, with the final substitution
@@ -1181,6 +1183,13 @@ def Ty.armsSame(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ts: K.T
     val Ty.AEx(st1, _, ea) = Ty.arm(cx, st, bs, ts, a, Coll.Some(t))
     Ty.armsSame(cx, st1, bs, line, ts, es, rest, t, Coll.Cons(ea, acc))
 
+// a sub-pattern is a variable binder: one named like a declared ctor is a nested pattern the writer meant as a test
+def Ty.nestedBinder(cx: Ty.Cx, st: Ty.St, line: I64, xs: Coll.List[Sym.Sym]): Ty.St = xs match
+  case Coll.Nil => st
+  case Coll.Cons(x, rest) => Ty.caseOf(cx, x) match
+    case Coll.Some(_) => Ty.nestedBinder(cx, Ty.clash(st, Ty.NestedPattern(line, x)), line, rest)
+    case Coll.None => Ty.nestedBinder(cx, st, line, rest)
+
 // an arm: its type and its elaborated form
 enum Ty.AEx:
   case Ty.AEx(st: Ty.St, t: K.Term, a: El.Arm)
@@ -1196,7 +1205,7 @@ def Ty.arm(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], ts: K.Term, a: Ast.Arm,
         val Ty.CaseOf(e, cs) = co
         val Ast.Case(_, _, fields) = cs
         val Ty.Open(st1, tv, vars) = Ty.openEnum(st, e)
-        val st1b = if Coll.length(binds) == Coll.length(fields) then st1 else Ty.clash(st1, Ty.PatArity(line, c))
+        val st1b = Ty.nestedBinder(cx, (if Coll.length(binds) == Coll.length(fields) then st1 else Ty.clash(st1, Ty.PatArity(line, c))), line, binds)
         val st2 = Ty.expect(st1b, line, ts, Ty.enumTerm(e, vars))
         // A1: each I64 field binder has an identity (not in a loop), and the field types name lengths by it
         val Ty.Cx(_, _, _, _, _, _, _, _, _, arr, idx) = cx

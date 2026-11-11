@@ -1,0 +1,16 @@
+// pass: a sub-pattern that names no constructor is a variable binder; matching an inner enum is a second match
+enum E:
+  case E.A
+  case E.B
+enum W:
+  case W.W1(e: E)
+def f(w: W): I64 = w match
+  case W.W1(x) => x match
+    case E.A => 1
+    case E.B => 0
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(f(W.W1(E.A)) + 10 * f(W.W1(E.B)))
+  Console.print("\n")
+  0

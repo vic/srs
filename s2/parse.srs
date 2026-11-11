@@ -807,7 +807,7 @@ def Parse.patVal(ts: Coll.List[Lex.Tok], vline: I64, line: I64, acc: Coll.List[A
     case Parse.Err(l, w) => Parse.Err(l, w)
     case Parse.Ok(_, t2) => Parse.names(t2, ")", Coll.Nil) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(bs, t3) => Parse.op(t3, "=") match
+      case Parse.Ok(bs, t3) => if Parse.nestedPat(bs) then Parse.Err(vline, "a nested pattern is not supported: bind it, then match: case W.W1(e) => e match ...") else Parse.op(t3, "=") match
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(_, t4) => Parse.rhs(t4) match
           case Parse.Err(l, w) => Parse.Err(l, w)
@@ -908,6 +908,13 @@ def Parse.arms(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Arm]): Parse.R[Coll.Li
           case Parse.Err(l, w) => Parse.Err(l, w)
           case Parse.Ok(b, t4) => Parse.arms(Parse.endLine(t4), Coll.Cons(Ast.Arm(line, p, b), acc))
 
+// a ctor pattern's sub-patterns are binders (names): a dotted name is a nested pattern, which is not supported
+def Parse.nestedPat(bs: Coll.List[Sym.Sym]): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(x, rest) => Parse.dottedName(Sym.str(x), 0, Str.len(Sym.str(x))) || Parse.nestedPat(rest)
+
+def Parse.dottedName(s: Str, i: I64, n: I64): Bool = if i == n then false else if Str.at(s, i) == 46 then true else Parse.dottedName(s, i + 1, n)
+
 // _ | Name [(names)]
 def Parse.pat(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Pat] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
@@ -916,7 +923,7 @@ def Parse.pat(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Pat] = Parse.ident(ts) match
     else if Parse.isOp(t1, "(") then
       Parse.names(Parse.next(t1), ")", Coll.Nil) match
         case Parse.Err(l, w) => Parse.Err(l, w)
-        case Parse.Ok(bs, t2) => Parse.Ok(Ast.PCase(c, bs), t2)
+        case Parse.Ok(bs, t2) => if Parse.nestedPat(bs) then Parse.Err(Parse.line(ts), "a nested pattern is not supported: bind it, then match: case W.W1(e) => e match ...") else Parse.Ok(Ast.PCase(c, bs), t2)
     else Parse.Ok(Ast.PCase(c, Coll.Nil), t1)
 
 // if c then rhs [NL] else rhs

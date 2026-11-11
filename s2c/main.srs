@@ -169,6 +169,7 @@ def S2c.showClashes(fs: Coll.List[S2c.File], s: K.Subst, cs: Coll.List[Ty.Clash]
       case Ty.PutData(l, x) => S2c.diag(fs, "put-data", l, "only a scalar (I64, Bool, U32, U64, U8) goes in a slot of the array", S2c.Name(x), "region data in a slot needs a flow rule that is not there yet")
       case Ty.SliceUnproved(l, f) => S2c.diag(fs, "slice-unproved", l, "the slice bounds are not proved for", S2c.Name(f), "test them first: if 0 <= off && 0 <= m && m <= n && off <= n - m then Array.slice(xs, off, m) else ...")
       case Ty.LenUnnamed(l, x) => S2c.diag(fs, "length-unnamed", l, "no local in scope holds the length of the array", S2c.Name(x), "keep the length binder n in scope (a param, a val or a field)")
+      case Ty.NestedPattern(l, x) => S2c.diag(fs, "nested-pattern", l, "a sub-pattern is a variable, and this one is named like a constructor", S2c.Name(x), "bind it, then match: case W.W1(e) => e match ...")
     S2c.showClashes(fs, s, rest)
 
 def S2c.showTl(fs: Coll.List[S2c.File], es: Coll.List[Tl.Err]): Unit = es match

@@ -1,0 +1,12 @@
+// expect: error[nested-pattern]
+// a sub-pattern named like a declared constructor is a nested pattern, not a variable
+enum U:
+  case Ua
+  case Ub
+enum W:
+  case W3(u: U)
+def f(w: W): I64 = w match
+  case W3(Ua) => 1
+  case _ => 0
+def main(): I64 = 0
+// expect: --> tests/s2/neg/pat_nested_unqualified.srs:9

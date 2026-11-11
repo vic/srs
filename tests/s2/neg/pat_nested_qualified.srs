@@ -1,0 +1,11 @@
+// expect: a nested pattern is not supported
+// a sub-pattern is a variable: a dotted name is a nested pattern, rejected at parse time
+enum E:
+  case E.A
+  case E.B
+enum W:
+  case W.W1(e: E)
+def f(w: W): I64 = w match
+  case W.W1(E.A) => 1
+  case _ => 0
+def main(): I64 = 0
