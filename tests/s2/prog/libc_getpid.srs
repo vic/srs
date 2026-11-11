@@ -1,0 +1,14 @@
+// pass: a libc extern is called inside a handler named Srs.*, the way Srs.Files calls rt_read_file
+extern "libc" def getpid(): I32
+
+capability Pid:
+  def get(): I64
+
+handler Srs.Pid for Pid:
+  def get(): I64 = I64.ofI32(getpid())
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle p = Srs.Pid()
+  if Pid.get() > 0 then Console.print("ok\n") else Console.print("bad\n")
+  0

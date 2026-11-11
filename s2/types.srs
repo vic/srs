@@ -58,6 +58,8 @@ enum Ty.Clash:
   case Ty.GivenRow(line: I64, p: Sym.Sym)
   // an rt_* extern called outside the fns of a handler named Srs.*
   case Ty.RtOutsideSrs(line: I64, f: Sym.Sym)
+  // a libc extern called outside the fns of a handler named Srs.*
+  case Ty.LibcOutsideHandler(line: I64, f: Sym.Sym)
   // run-time code names a top-level val (a compile-time value)
   case Ty.ValAtRunTime(line: I64, x: Sym.Sym)
   // an int literal outside its type t (a U32 above 2^32 - 1)
@@ -1899,7 +1901,7 @@ def Ty.protoCaps(ps: Coll.List[Ast.Proto], bs: Coll.List[Ast.Binder], acc: Coll.
     val Ast.Ty(_, n, _, _, _) = t
     Ty.protoCaps(ps, rest, if Ty.isProto(ps, n) then Coll.Cons(Eff.Cap(n, x), acc) else acc)
 
-// a call of an rt_* extern anywhere but a Srs.* handler body
+// a call of an rt_* or libc extern anywhere but a Srs.* handler body
 def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
   val Ty.Cx(_, _, _, _, _, mode, _, _, _, _, idx) = cx
   val Ast.Fn(_, n, _, _, _, _, body) = g
@@ -1907,11 +1909,21 @@ def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
   val rt: Bool = body match
     case Ast.Extern(_) => Str.len(s) > 3 && Str.eq(Str.slice(s, 0, 3), "rt_")
     case _ => false
+  val libc: Bool = body match
+    case Ast.Extern(abi) => abi match
+      case Ast.AbiLibc => true
+      case Ast.AbiSrs => false
+    case _ => false
   mode match
     case Ty.Run(by) => by match
       case Ty.Srs => st
-      case _ => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
-    case Ty.Comptime => if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n)) else st
+      case _ => Ty.outsideSrs(st, line, n, rt, libc)
+    case Ty.Comptime => Ty.outsideSrs(st, line, n, rt, libc)
+
+def Ty.outsideSrs(st: Ty.St, line: I64, n: Sym.Sym, rt: Bool, libc: Bool): Ty.St =
+  if rt then Ty.clash(st, Ty.RtOutsideSrs(line, n))
+  else if libc then Ty.clash(st, Ty.LibcOutsideHandler(line, n))
+  else st
 
 // a callee's row as this body passes it: at compile time the compiler owns Region (vic Q-U4), so no capability for it
 def Ty.runRow(cx: Ty.Cx, cs: Coll.List[Eff.Cap]): Coll.List[Eff.Cap] =

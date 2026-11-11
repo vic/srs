@@ -1,8 +1,6 @@
 // expect: conflicting types
-// getpid returns int: declared I64 here, so the C compiler rejects it against <unistd.h>
+// getpid returns int: declared I64 here, so the C compiler rejects it against <unistd.h>. The declaration alone is checked:
+// a libc extern is called only inside a Srs.* handler, so this program never calls it
 extern "libc" def getpid(): I64
 
-def main(): I64 =
-  handle io = Srs.Console()
-  Console.printI64(getpid())
-  0
+def main(): I64 = 0
