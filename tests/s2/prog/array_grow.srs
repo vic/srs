@@ -1,0 +1,32 @@
+// pass: a growable int vector as loop params (cap, xs: Array[I64](cap)): when full, a new array of twice the length is filled, the old one copied in (the copy
+// condition proves both indices), and the loop is called again with (m, ys): the length and the array are rebound together
+def G.copy(n: I64, xs: Array[I64](n), m: I64, ys: Array[I64](m), i: I64): Unit =
+  if 0 <= i && i < n && i < m then
+    Array.put(ys, i, xs(i))
+    G.copy(n, xs, m, ys, i + 1)
+  else ()
+
+// push 0..k-1, doubling when full; sum at the end
+def G.run(cap: I64, xs: Array[I64](cap), len: I64, k: I64): I64 =
+  if len >= k then G.sum(cap, xs, len, 0, 0)
+  else if 0 <= len && len < cap then
+    Array.put(xs, len, len * 3)
+    G.run(cap, xs, len + 1, k)
+  else
+    val m = cap * 2
+    val ys = Array.fill(m, 0)
+    G.copy(cap, xs, m, ys, 0)
+    G.run(m, ys, len, k)
+
+def G.sum(cap: I64, xs: Array[I64](cap), len: I64, i: I64, acc: I64): I64 =
+  if 0 <= i && i < len && i < cap then G.sum(cap, xs, len, i + 1, acc + xs(i)) else acc
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val c0 = 4
+  val xs0 = Array.fill(c0, 0)
+  Console.printI64(G.run(c0, xs0, 0, 1000))
+  Console.print("\n")
+  0
