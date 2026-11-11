@@ -110,12 +110,15 @@ def D.indexCols(cols: Coll.BTree[Coll.BTree[Coll.List[D.Row]]], row: D.Row, t: C
       val col = Coll.bPushT(Coll.bValOr(n, c, Coll.BTip), D.vhash(v), row)
       D.indexCols(if Coll.bIsNode(n) then Coll.bRep(cols, c, col) else Coll.bIns(cols, c, col), row, t, rest)
 
-// row added (the caller checked its tuple is new)
-def D.add(rl: D.Rel, row: D.Row): D.Rel =
+// rl with row added, None when rl has its tuple already: one hash and one find serve the test and the insert
+def D.addNew(rl: D.Rel, row: D.Row): Coll.Option[D.Rel] =
   val D.Rel(ic, set, cols, all, rc, fr) = rl
   val t = D.tupleOf(row)
   val h = D.tupleHash(t)
-  D.Rel(ic, Coll.bPushT(set, h, row), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1)
+  val n = Coll.bFind(set, h)
+  val b = Coll.bValOr(n, h, Coll.Nil)
+  if D.inRows(b, t) then Coll.None
+  else Coll.Some(D.Rel(ic, if Coll.bIsNode(n) then Coll.bRep(set, h, Coll.Cons(row, b)) else Coll.bIns(set, h, Coll.Cons(row, Coll.Nil)), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1))
 
 // the rows an atom may match under a probe (a superset: the match checks values)
 def D.cands(rl: D.Rel, p: D.Probe): Coll.List[D.Row] =
@@ -357,8 +360,9 @@ def D.heads(rels: Coll.IMap[D.Rel], h: D.CAtom, rule: D.CRule, rd: I64, envs: Co
     D.inst(e, args, Coll.Nil) match
       case Coll.None => D.heads(rels, h, rule, rd, rest)
       case Coll.Some(t) =>
-        val rl = D.relOf(rels, rel)
-        if D.has(rl, t) then D.heads(rels, h, rule, rd, rest) else D.heads(Coll.insert(rels, rel, D.add(rl, D.Made(rd, rule, t))), h, rule, rd, rest)
+        D.addNew(D.relOf(rels, rel), D.Made(rd, rule, t)) match
+          case Coll.None => D.heads(rels, h, rule, rd, rest)
+          case Coll.Some(rl) => D.heads(Coll.insert(rels, rel, rl), h, rule, rd, rest)
 
 // the envs whose negated atoms all fail: each tuple is in no round of its relation (a lower stratum, complete)
 def D.negOk(rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], e: Coll.IMap[D.Val]): Bool = negs match
@@ -685,8 +689,10 @@ def D.load(tab: Coll.List[D.RelRef], fs: Coll.List[D.Fact], rels: Coll.IMap[D.Re
     val D.Fact(rel, vals) = f
     val D.With(tab2, ref) = D.internId(tab, rel)
     val id = D.idOfRef(ref)
-    val rl = D.relOf(rels, id)
-    D.load(tab2, rest, if D.has(rl, vals) then rels else Coll.insert(rels, id, D.add(rl, D.Input(vals))))
+    val rels2: Coll.IMap[D.Rel] = D.addNew(D.relOf(rels, id), D.Input(vals)) match
+      case Coll.None => rels
+      case Coll.Some(rl) => Coll.insert(rels, id, rl)
+    D.load(tab2, rest, rels2)
 
 // a program's result: its model, or why it is not a program (an unsafe rule, a cycle through negation)
 enum D.Result:
