@@ -61,6 +61,9 @@ h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_alloc_chunks
 if [ "${h:-0}" -eq 0 ]; then echo "ok prog/alloc_chunks no advice without Pages"; else echo "FAIL prog/alloc_chunks advised $h without Pages"; fail=1; fi
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_pages_gate" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
 if [ "${h:-0}" -ge 1 ]; then echo "ok prog/pages_gate huge-page advice $h"; else echo "FAIL prog/pages_gate no MADV_HUGEPAGE"; fail=1; fi
+# s2c's main installs Srs.Pages: compiling itself touches ~190 MB, 47k faults at 4 KiB pages, ~550 with huge pages
+h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1" $S2C 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
+if [ "${h:-0}" -ge 1 ]; then echo "ok s2c huge-page advice $h"; else echo "FAIL s2c no MADV_HUGEPAGE: main must handle Srs.Pages"; fail=1; fi
 for t in tests/s2/neg/*.srs; do
   n=$(basename "$t" .srs); pass=1
   msg=$(timeout 2 "$B/s2c1" $S2LIBS "$t" 2>&1 >/dev/null); code=$?
