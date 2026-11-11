@@ -315,7 +315,7 @@ enum S2c.Flowed:
   case S2c.FlowBad(rel: Sym.Sym)
 
 def S2c.flowCx(ds: Coll.List[Ast.Decl], rows: Eff.Rows, ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], fs: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.List[Ast.TypeDecl]): Flow.Cx = ds match
-  case Coll.Nil => Flow.Cx(ps, hs, fs, es, ts, rows, Eff.syms())
+  case Coll.Nil => Flow.Cx(ps, hs, Ty.idxFns(fs, Coll.sEmpty()), es, ts, rows, Eff.syms())
   case Coll.Cons(d, rest) => d match
     case Ast.DProto(p) => S2c.flowCx(rest, rows, Coll.Cons(p, ps), hs, fs, es, ts)
     case Ast.DHandler(h) => S2c.flowCx(rest, rows, ps, Coll.Cons(h, hs), fs, es, ts)
