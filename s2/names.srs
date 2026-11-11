@@ -130,9 +130,9 @@ def Names.fSameI(n: I64): D.Fact = Names.f2(Names.RSame, Names.i(n), Names.i(n))
 // the walk: the next declaration id and the facts
 // the trigger names (A1), hashed once per program in Names.facts
 enum Names.Keys:
-  case Names.Keys(arr: Sym.Sym, fill: Sym.Sym, tab: Sym.Sym, at: Sym.Sym)
+  case Names.Keys(arr: Sym.Sym, fill: Sym.Sym, tab: Sym.Sym, at: Sym.Sym, put: Sym.Sym)
 
-def Names.keys(): Names.Keys = Names.Keys(Sym.of("Array"), Sym.of("Array.fill"), Sym.of("Array.tabulate"), Sym.of("at"))
+def Names.keys(): Names.Keys = Names.Keys(Sym.of("Array"), Sym.of("Array.fill"), Sym.of("Array.tabulate"), Sym.of("at"), Sym.of("Array.put"))
 
 enum Names.St:
   case Names.St(next: I64, facts: Coll.List[D.Fact], ks: Names.Keys)
@@ -242,12 +242,12 @@ def Names.tyIn(t: Ast.Ty, tps: Coll.List[Sym.Sym], ls: Coll.List[Sym.Sym], st: N
 
 def Names.arrTy(n: Sym.Sym, line: I64, st: Names.St): Names.St =
   val Names.St(_, _, ks) = st
-  val Names.Keys(a, _, _, _) = ks
+  val Names.Keys(a, _, _, _, _) = ks
   if Sym.eq(n, a) then Names.add(st, Names.fArrUse(line)) else st
 
 def Names.arrCall(n: Sym.Sym, line: I64, st: Names.St): Names.St =
   val Names.St(_, _, ks) = st
-  val Names.Keys(_, f, t, _) = ks
+  val Names.Keys(_, f, t, _, _) = ks
   if Sym.eq(n, f) || Sym.eq(n, t) then Names.add(st, Names.fArrUse(line)) else st
 
 // no ArrUse row = the program names no Array

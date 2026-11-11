@@ -1,0 +1,12 @@
+// expect: error[put-data]
+// a var array has no home: it may be assigned an array of another region (here a param), so it takes scalars only
+enum Ap.E:
+  case Ap.A
+  case Ap.B(x: I64)
+def Ap.f(n: I64, ys: Array[Ap.E](n)): Unit =
+  handle r = Srs.Arena()
+  val i = 0
+  var xs = Array.fill(n, Ap.A)
+  xs = ys
+  if 0 <= i && i < n then Array.put(xs, i, Ap.B(1)) else ()
+def main(): I64 = 0

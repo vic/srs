@@ -102,6 +102,9 @@ enum Ty.Bind:
   case Ty.Fact(a: Ty.Atom)
   // inside a while body or the rest of a multi-shot handle a binding runs more than once per call: no new identity
   case Ty.Loop
+  // Array.put of data: x was bound in this fn by Array.fill or Array.tabulate (placed before its Ty.Bind in bs), so its slots live in
+  // the Region of that call and Flow checks what a put stores against it (Flow.Bnd home); any other array keeps put-data
+  case Ty.Home(x: Sym.Sym)
 
 // the facts an if condition gives (signed I64 compares of immutable locals, no arithmetic but b - c): 0 <= a; a < b;
 // a <= b; a <= b - c
@@ -188,6 +191,7 @@ def Ty.lookup(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs matc
     case Ty.Val(y, t, _) => if Sym.eq(x, y) then Coll.Some(t) else Ty.lookup(rest, x)
     case Ty.Fact(_) => Ty.lookup(rest, x)
     case Ty.Loop => Ty.lookup(rest, x)
+    case Ty.Home(_) => Ty.lookup(rest, x)
 
 // a [] binder in tv (a type name: never a value's identity)
 def Ty.lookupTy(bs: Coll.List[Ty.Bind], x: Sym.Sym): Coll.Option[K.Term] = bs match
@@ -231,6 +235,20 @@ def Ty.atomEq(f: Ty.Atom, a: Ty.Atom): Bool = f match
   case Ty.LeSub(x, y, z) => a match
     case Ty.LeSub(u, v, w) => x == u && y == v && z == w
     case _ => false
+
+// x is an array bound in this fn by Array.fill or Array.tabulate (its innermost binding carries a Ty.Home)
+def Ty.homeOf(bs: Coll.List[Ty.Bind], x: Sym.Sym): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) => b match
+    case Ty.Home(y) => if Sym.eq(x, y) then true else Ty.homeOf(rest, x)
+    case Ty.Bind(y, _) => if Sym.eq(x, y) then false else Ty.homeOf(rest, x)
+    case Ty.Val(y, _, _) => if Sym.eq(x, y) then false else Ty.homeOf(rest, x)
+    case _ => Ty.homeOf(rest, x)
+
+// val x = Array.fill(...) or Array.tabulate(...): a var could be assigned another array later, so it has no home
+def Ty.isNewArray(e: Ast.Expr): Bool = e match
+  case Ast.Call(_, f, _, _, _) => Str.eq(Sym.str(f), "Array.fill") || Str.eq(Sym.str(f), "Array.tabulate")
+  case _ => false
 
 def Ty.inLoop(bs: Coll.List[Ty.Bind]): Bool = bs match
   case Coll.Nil => false
@@ -783,7 +801,7 @@ def Ty.arrPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sy
                 val Ty.ArrT(a, n) = at
                 val Ty.Ex(st1, _, eI) = Ty.expr(cx, st, bs, ix, Coll.Some(Ty.con("I64")))
                 val Ty.Ex(st2, ta, eV) = Ty.expr(cx, st1, bs, ev, Coll.Some(a))
-                val st3 = if Ty.isScalar(Ty.subst(st2), ta) then st2 else Ty.clash(st2, Ty.PutData(line, x))
+                val st3 = if Ty.isScalar(Ty.subst(st2), ta) || Ty.homeOf(bs, x) then st2 else Ty.clash(st2, Ty.PutData(line, x))
                 Ty.lit(Ty.needMut(cx, Ty.proved(st3, bs, line, x, n, ix), bs, line), line, Ty.con("Unit"), want, El.ArrPut(line, x, eI, eV))
               case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Mismatch(line, t, Ty.con("Array"))), bs, xs), line)
             case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, x)), bs, xs), line)
@@ -1442,7 +1460,8 @@ def Ty.bindStmt(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, sl: I64
     case Coll.None => te
     case Coll.Some(w) => w
   val Ty.Bound(st2, b) = Ty.bindVal(arr, st1, bs, x, tx, mut, e)
-  Ty.block(cx, st2, Coll.Cons(b, bs), line, rest, last, want, Coll.Cons(El.Val(sl, x, tx, mut, ee), acc))
+  val bs2 = if !mut && Ty.isNewArray(e) then Coll.Cons(Ty.Home(x), Coll.Cons(b, bs)) else Coll.Cons(b, bs)
+  Ty.block(cx, st2, bs2, line, rest, last, want, Coll.Cons(El.Val(sl, x, tx, mut, ee), acc))
 
 enum Ty.Bound:
   case Ty.Bound(st: Ty.St, b: Ty.Bind)

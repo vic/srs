@@ -1,0 +1,20 @@
+// pass: T2 Array.put of data into an array allocated here (Array.fill): the slot lives in the array's Region, so the
+// value may live in that Region (ss) or in an outer one (ss2 is in the inner region r2, s lives in r)
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 3
+  val i = 0
+  val bs = Array.fill(n, U8.of(104))
+  val s = Str.ofBytes(n, bs)
+  val ss = Array.fill(n, "")
+  if 0 <= i && i < n then Array.put(ss, i, s) else ()
+  if 0 <= i && i < n then Console.print(ss(i)) else ()
+  Console.print("\n")
+  handle r2 = Srs.Arena()
+  val ss2 = Array.fill(n, "")
+  if 0 <= i && i < n then Array.put(ss2, i, s) else ()
+  if 0 <= i && i < n then Console.print(ss2(i)) else ()
+  Console.print("\n")
+  0

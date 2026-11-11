@@ -1,0 +1,14 @@
+// expect: error[put-data]
+// only an array allocated in this function (Array.fill) takes data: this one is the result of a call
+enum Ap.E:
+  case Ap.A
+  case Ap.B(x: I64)
+def Ap.mk {r: Region} (n: I64): Array[Ap.E](n)<r> = Array.fill(n, Ap.A)
+def main(): I64 =
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 2
+  val ys = Ap.mk(n)
+  val i = 0
+  if 0 <= i && i < n then Array.put(ys, i, Ap.B(1)) else ()
+  0
