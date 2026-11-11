@@ -103,7 +103,7 @@ def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   else if Parse.isKw(ts, "extern") then
     Parse.externAbi(Parse.next(ts)) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(abi, t0) => Parse.kw(t0, "def") match
+      case Parse.Ok(abi, t0) => if Parse.isKw(t0, "struct") then Parse.cstruct(abi, Parse.line(ts), Parse.next(t0)) else Parse.kw(t0, "def") match
         case Parse.Err(l, w) => Parse.Err(l, w)
         case Parse.Ok(_, t1) => Parse.wrapFn(Parse.libcName(abi, Parse.fn(t1, Parse.line(ts), Parse.FExtern(abi))))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
@@ -255,6 +255,35 @@ def Parse.libcName(abi: Ast.Abi, rf: Parse.R[Ast.Fn]): Parse.R[Ast.Fn] = rf matc
       if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc extern names a C function: no '.' in its name") else rf
 
 def Parse.hasDot(s: Str, i: I64, n: I64): Bool = if i == n then false else if Str.at(s, i) == 46 then true else Parse.hasDot(s, i + 1, n)
+
+// extern "libc" struct name: an indented block of `field: I32|I64|U32|U64` lines; name is the C struct's tag (no `.`)
+def Parse.cstruct(abi: Ast.Abi, line: I64, ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] = abi match
+  case Ast.AbiLibc => Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(name, t1) =>
+      if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc struct names a C struct: no '.' in its name")
+      else Parse.layoutOpen(t1) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t2) => Parse.cfields(t2, Coll.Nil) match
+          case Parse.Err(l, w) => Parse.Err(l, w)
+          case Parse.Ok(fs, t3) => Parse.Ok(Ast.DType(Ast.TypeDecl(line, name, Coll.Nil, Coll.Nil, Ast.CStruct(fs))), t3)
+  case Ast.AbiLibcVar => Parse.Err(line, "a libc struct takes no `...`")
+  case Ast.AbiSrs => Parse.Err(line, "a struct is declared only as extern \"libc\" struct name:")
+
+def Parse.cfields(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.CField]): Parse.R[Coll.List[Ast.CField]] =
+  if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
+  else Parse.ident(ts) match
+    case Parse.Err(l, w) => Parse.Err(l, w)
+    case Parse.Ok(name, t1) => Parse.op(t1, ":") match
+      case Parse.Err(l, w) => Parse.Err(l, w)
+      case Parse.Ok(_, t2) => Parse.ty(t2) match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(ty, t3) =>
+          val Ast.Ty(_, tn, targs, _, _) = ty
+          if Coll.length(targs) == 0 && Parse.cfieldTy(Sym.str(tn)) then Parse.cfields(Parse.endLine(t3), Coll.Cons(Ast.CField(Parse.line(ts), name, ty), acc))
+          else Parse.Err(Parse.line(ts), "a libc struct field of type I32, I64, U32 or U64")
+
+def Parse.cfieldTy(s: Str): Bool = Str.eq(s, "I32") || Str.eq(s, "I64") || Str.eq(s, "U32") || Str.eq(s, "U64")
 
 // the ABI of an extern body; a def's body is replaced by Parse.bodyOf, its placeholder is the srs ABI
 def Parse.abiOf(k: Parse.FnKind): Ast.Abi = k match

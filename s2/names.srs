@@ -188,6 +188,7 @@ def Names.decl(d: Ast.Decl, st: Names.St): Names.St = d match
       case Ast.Alias(t) => Names.tyIn(t, tps, ls, st1)
       case Ast.TyMatch(s, arms) => Names.tyArms(arms, tps, ls, Names.tyIn(s, tps, ls, st1))
       case Ast.ValMatch(_, arms) => Names.valArms(arms, tps, ls, st1)
+      case Ast.CStruct(_) => Names.declare(st1, Names.NCall, Eff.dotted(Sym.str(name), Sym.of("new")), line)
   // a given names its trait head (in its [] binders); its methods are checked in them
   case Ast.DGiven(g) =>
     val Ast.Given(_, gs, head, fs) = g

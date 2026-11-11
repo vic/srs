@@ -189,6 +189,13 @@ enum Ast.TBody:
   case Ast.Alias(t: Ast.Ty)
   case Ast.TyMatch(scrut: Ast.Ty, arms: Coll.List[Ast.TyArm])
   case Ast.ValMatch(x: Sym.Sym, arms: Coll.List[Ast.ValArm])
+  // extern "libc" struct Libc.<C name>: the fields srs reads of a C struct, each I32, I64, U32 or U64; the value is a pointer to
+  // sizeof(struct <C name>) bytes (a nominal type with no body of its own)
+  case Ast.CStruct(fields: Coll.List[Ast.CField])
+
+// a field of a libc struct: its C name and its srs type
+enum Ast.CField:
+  case Ast.CField(line: I64, name: Sym.Sym, ty: Ast.Ty)
 
 // type Name groups (value binders) = body
 enum Ast.TypeDecl:
@@ -883,26 +890,9 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     Ast.fns(fs, Ast.step())
   case Ast.DType(td) =>
     val Ast.TypeDecl(_, name, gs, vals, body) = td
-    Console.print("type ")
-    Ast.sym(name)
-    Ast.groups(gs)
-    vals match
-      case Coll.Nil => ()
-      case Coll.Cons(_, _) =>
-        Console.print(" (")
-        Ast.binders(vals)
-        Console.print(")")
-    Console.print(" = ")
     body match
-      case Ast.Alias(t) => Ast.ty(t)
-      case Ast.TyMatch(s, arms) =>
-        Ast.ty(s)
-        Console.print(" match")
-        Ast.tyArms(arms)
-      case Ast.ValMatch(x, arms) =>
-        Ast.sym(x)
-        Console.print(" match")
-        Ast.valArms(arms)
+      case Ast.CStruct(fs) => Ast.cstruct(name, fs)
+      case _ => Ast.typeDecl(name, gs, vals, body)
 
 def Ast.tyArms(xs: Coll.List[Ast.TyArm]): Unit = xs match
   case Coll.Nil => ()
@@ -944,3 +934,44 @@ def Ast.print(ds: Coll.List[Ast.Decl]): Unit = ds match
       case Coll.Cons(_, _) =>
         Console.print("\n")
         Ast.print(t)
+
+// type Name groups (value binders) = body
+def Ast.typeDecl(name: Sym.Sym, gs: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody): Unit =
+    Console.print("type ")
+    Ast.sym(name)
+    Ast.groups(gs)
+    vals match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) =>
+        Console.print(" (")
+        Ast.binders(vals)
+        Console.print(")")
+    Console.print(" = ")
+    body match
+      case Ast.Alias(t) => Ast.ty(t)
+      case Ast.TyMatch(s, arms) =>
+        Ast.ty(s)
+        Console.print(" match")
+        Ast.tyArms(arms)
+      case Ast.ValMatch(x, arms) =>
+        Ast.sym(x)
+        Console.print(" match")
+        Ast.valArms(arms)
+      case Ast.CStruct(_) => ()
+
+// extern "libc" struct Libc.name:, one field per line
+def Ast.cstruct(name: Sym.Sym, fs: Coll.List[Ast.CField]): Unit =
+  Console.print("extern \"libc\" struct ")
+  Ast.sym(name)
+  Console.print(":")
+  Ast.cfields(fs)
+
+def Ast.cfields(fs: Coll.List[Ast.CField]): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, rest) =>
+    val Ast.CField(_, n, t) = f
+    Ast.line(Ast.step())
+    Ast.sym(n)
+    Console.print(": ")
+    Ast.ty(t)
+    Ast.cfields(rest)

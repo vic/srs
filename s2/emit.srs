@@ -96,6 +96,8 @@ def Emit.cxDecls(ds: Coll.List[Ast.Decl], cx: Emit.Cx): Emit.Cx = ds match
         val Ast.TypeDecl(_, n, _, _, body) = td
         body match
           case Ast.Alias(t) => Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, hp, al, Coll.sInsert(nm, n, Ty.term(t, Coll.Nil)), sc))
+          // an extern "libc" struct: its C type is a pointer to the header struct (Emit.ctype reads the CStruct. marker)
+          case Ast.CStruct(_) => Emit.cxDecls(rest, Emit.Cx(s, fns, cs, es, ps, hp, al, Coll.sInsert(nm, n, K.Con(Eff.dotted("CStruct", n), Coll.Nil)), sc))
           case _ => Emit.cxDecls(rest, cx)
       case _ => Emit.cxDecls(rest, cx)
 
@@ -214,6 +216,7 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.eq(x, "U8") then Console.print("uint8_t")
     else if Str.eq(x, "I32") then Console.print("int32_t")
     else if Str.eq(x, "CStr") then Console.print("const char*")
+    else if Str.len(x) > 8 && Str.eq(Str.slice(x, 0, 8), "CStruct.") then Emit.cstructPtr(Str.slice(x, 8, Str.len(x)))
     else if Str.eq(x, "U64") then Console.print("uint64_t")
     // A1: Array[A](n) is one pointer to its elements (no header); Cell[A] a pointer to its word
     else if Str.eq(x, "Array") || Str.eq(x, "Cell") then Emit.arrayC(cx, args)
@@ -353,6 +356,23 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print(")); *cp_ = (")
     Emit.ex(cx, fi, env, Emit.Inner, v)
     Console.print("); cp_; })")
+  // extern "libc" struct: a call of the emitted srs_cnew_<name> (Emit.cnewFns): sizeof(struct name) zeroed bytes in the Region; a field is read through the real header struct
+  case El.CNew(_, reg, name) =>
+    Console.print("srs_cnew_")
+    Emit.cid(name)
+    Console.print("(")
+    Emit.local(Emit.vs(env), reg)
+    Console.print(")")
+  case El.CField(_, c, name, field, t) =>
+    Console.print("((")
+    Emit.ctype(cx, Emit.gr(cx, fi, t))
+    Console.print(")(((struct ")
+    Emit.cid(name)
+    Console.print("*)(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print("))->")
+    Console.print(Sym.str(field))
+    Console.print("))")
   case El.CellGet(_, c) =>
     Console.print("(*(")
     Emit.ex(cx, fi, env, Emit.Inner, c)
@@ -1071,6 +1091,8 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.Tab(_, _, n, a, _, g) => Emit.exTys(cx, fi, g, Emit.exTys(cx, fi, n, Coll.Cons(Emit.gr(cx, fi, a), acc)))
   case El.CellNew(_, _, v, a) => Emit.exTys(cx, fi, v, Coll.Cons(Emit.gr(cx, fi, a), acc))
   case El.CellGet(_, c) => Emit.exTys(cx, fi, c, acc)
+  case El.CNew(_, _, _) => acc
+  case El.CField(_, c, _, _, _) => Emit.exTys(cx, fi, c, acc)
   case El.CellPut(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
   case _ => acc
@@ -1348,10 +1370,104 @@ def Emit.isVarAbi(abi: Ast.Abi): Bool = abi match
   case Ast.AbiLibcVar => true
   case _ => false
 
+def Emit.cid(n: Sym.Sym): Unit = Console.print(Sym.str(n))
+
+def Emit.cstructPtr(s: Str): Unit =
+  Console.print("struct ")
+  Console.print(s)
+  Console.print("*")
+
+
+
+// the allocation of an extern "libc" struct, as a function so no statement expression is emitted at the use: only for the structs
+// a program creates (Seen.cs holds their names)
+def Emit.cnewFns(cx: Emit.Cx, ds: Coll.List[Ast.Decl], cs: Coll.ISet): Unit = ds match
+  case Coll.Nil => ()
+  case Coll.Cons(d, rest) =>
+    d match
+      case Ast.DType(td) =>
+        val Ast.TypeDecl(_, name, _, _, body) = td
+        body match
+          case Ast.CStruct(_) => if Coll.setHas(cs, Sym.hash(name)) then Emit.cnewFn(cx, name) else ()
+          case _ => ()
+      case _ => ()
+    Emit.cnewFns(cx, rest, cs)
+
+def Emit.cnewFn(cx: Emit.Cx, name: Sym.Sym): Unit =
+  Console.print("static inline struct ")
+  Emit.cid(name)
+  Console.print("* srs_cnew_")
+  Emit.cid(name)
+  Console.print("(srs_cap* c) { struct ")
+  Emit.cid(name)
+  Console.print("* p = (struct ")
+  Emit.cid(name)
+  Console.print("*)")
+  Emit.allocOpenC(cx)
+  Console.print("(int64_t)sizeof(struct ")
+  Emit.cid(name)
+  Console.print(")); memset(p, 0, sizeof(struct ")
+  Emit.cid(name)
+  Console.print(")); return p; }\n")
+
+// the allocator call open for the capability param c (as Emit.allocOpen for a local)
+def Emit.allocOpenC(cx: Emit.Cx): Unit =
+  val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
+  al match
+    case Emit.Inline => Console.print("srs_alloc(c, ")
+    case Emit.VTable =>
+      Console.print("((void*(*)(void*, int64_t))(c->vt[")
+      Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
+      Console.print("]))(c->self, ")
+
+// each declared libc struct field is checked against the real header: its C type must be the srs type's C type (C11 _Generic in a
+// static assert), and a field the struct does not have is the C compiler's "no member named"
+def Emit.cstructChecks(cx: Emit.Cx, ds: Coll.List[Ast.Decl]): Unit = ds match
+  case Coll.Nil => ()
+  case Coll.Cons(d, rest) =>
+    d match
+      case Ast.DType(td) =>
+        val Ast.TypeDecl(_, name, _, _, body) = td
+        body match
+          case Ast.CStruct(fs) => Emit.cfieldChecks(cx, name, fs)
+          case _ => ()
+      case _ => ()
+    Emit.cstructChecks(cx, rest)
+
+def Emit.cfieldChecks(cx: Emit.Cx, name: Sym.Sym, fs: Coll.List[Ast.CField]): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, rest) =>
+    val Ast.CField(_, fname, fty) = f
+    val Ast.Ty(_, tn, _, _, _) = fty
+    Console.print("_Static_assert(_Generic(((struct ")
+    Emit.cid(name)
+    Console.print("*)0)->")
+    Console.print(Sym.str(fname))
+    Console.print(", ")
+    Emit.ctype(cx, K.Con(tn, Coll.Nil))
+    Console.print(": 1, default: 0), \"libc struct ")
+    Emit.cid(name)
+    Console.print(".")
+    Console.print(Sym.str(fname))
+    Console.print(" is not ")
+    Console.print(Sym.str(tn))
+    Console.print("\");\n")
+    Emit.cfieldChecks(cx, name, rest)
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
-def Emit.libcHeaders(fs: Coll.List[El.Fn]): Unit =
-  if Emit.anyLibc(fs) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
+def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl]): Unit =
+  if Emit.anyLibc(fs) || Emit.anyCStruct(ds) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
+
+// a program that declares an extern "libc" struct includes the libc headers: the C compiler checks every field against them
+def Emit.anyCStruct(ds: Coll.List[Ast.Decl]): Bool = ds match
+  case Coll.Nil => false
+  case Coll.Cons(d, rest) => d match
+    case Ast.DType(td) =>
+      val Ast.TypeDecl(_, _, _, _, body) = td
+      body match
+        case Ast.CStruct(_) => true
+        case _ => Emit.anyCStruct(rest)
+    case _ => Emit.anyCStruct(rest)
 
 def Emit.anyLibc(fs: Coll.List[El.Fn]): Bool = fs match
   case Coll.Nil => false
@@ -2422,6 +2538,10 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.Tab(_, _, n, _, _, g) => Emit.seenE(cx, g, Emit.seenE(cx, n, s))
   case El.CellNew(_, _, v, _) => Emit.seenE(cx, v, s)
   case El.CellGet(_, c) => Emit.seenE(cx, c, s)
+  case El.CNew(_, _, n) =>
+    val Emit.Seen(ps, called, hn, cs, ex) = s
+    Emit.Seen(ps, called, hn, Coll.setAdd(cs, Sym.hash(n)), ex)
+  case El.CField(_, c, _, _, _) => Emit.seenE(cx, c, s)
   case El.CellPut(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
   case _ => s
@@ -2578,6 +2698,8 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.Tab(l, r, n, a, i, g) => El.Tab(l, r, Emit.dropE(m, xs, n), a, i, Emit.dropE(m, xs, g))
   case El.CellNew(l, r, v, a) => El.CellNew(l, r, Emit.dropE(m, xs, v), a)
   case El.CellGet(l, c) => El.CellGet(l, Emit.dropE(m, xs, c))
+  case El.CNew(l, r, n) => El.CNew(l, r, n)
+  case El.CField(l, c, n, f, t) => El.CField(l, Emit.dropE(m, xs, c), n, f, t)
   case El.CellPut(l, c, v) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
   case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
   case _ => e
@@ -2640,7 +2762,8 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   val ens = Emit.closeEnums(cx, Emit.instTys(cx, is, Emit.hfnTys(hs, Coll.Nil)), Coll.BTip, Coll.Nil)
   Console.print("// DO-NOT-EDIT. Generated by srs (s2/emit.srs).\n")
   Console.print("#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n")
-  Emit.libcHeaders(fs)
+  Emit.libcHeaders(fs, ds)
+  Emit.cstructChecks(cx, ds)
   Console.print("typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
   Emit.strPrims()
   Emit.wordPrims()
@@ -2661,6 +2784,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
   al match
     case Emit.Inline => Emit.allocFast(cx)
     case Emit.VTable => ()
+  Emit.cnewFns(cx, ds, cs)
   Emit.bodies(cx, hs, is)
   Emit.handlers(cx, Emit.oneShot(hsu), Emit.Code)
   if Emit.hasMain(cx) then Console.print("int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n") else ()

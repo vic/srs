@@ -1,0 +1,21 @@
+// pass: an extern "libc" struct value is sizeof(struct flock) bytes in the caller's Region, zeroed, and a field is read through the
+// real header struct (s.l_start() is ((int64_t)(((struct flock*)p)->l_start)))
+extern "libc" struct flock:
+  l_start: I64
+  l_len: I64
+  l_pid: I32
+
+def Cs.size(s: flock): I64 = s.l_start()
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = flock.new()
+  val b = flock.new()
+  Console.printI64(Cs.size(a))
+  Console.print("\n")
+  Console.printI64(b.l_len())
+  Console.print("\n")
+  Console.printI64(I64.ofI32(b.l_pid()))
+  Console.print("\n")
+  0

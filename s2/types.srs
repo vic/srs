@@ -332,9 +332,9 @@ def Ty.caseIn(cs: Coll.List[Ast.Case], e: Ast.Enum, f: Sym.Sym): Coll.Option[Ast
 // the program's defs and cases by name, built once with the Cx: the first of a name wins, as Ty.fnNamed and
 // Ty.caseNamed find it in the lists
 enum Ty.Idx:
-  case Ty.Idx(fns: Coll.SMap[Ast.Fn], cases: Coll.SMap[Ty.CaseOf])
+  case Ty.Idx(fns: Coll.SMap[Ast.Fn], cases: Coll.SMap[Ty.CaseOf], structs: Coll.SMap[Ast.TypeDecl])
 
-def Ty.idxOf(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum]): Ty.Idx = Ty.Idx(Ty.idxFns(fns, Coll.sEmpty()), Ty.idxEnums(es, Coll.sEmpty()))
+def Ty.idxOf(fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ts: Coll.SMap[Ast.TypeDecl]): Ty.Idx = Ty.Idx(Ty.idxFns(fns, Coll.sEmpty()), Ty.idxEnums(es, Coll.sEmpty()), ts)
 
 def Ty.idxFns(fs: Coll.List[Ast.Fn], m: Coll.SMap[Ast.Fn]): Coll.SMap[Ast.Fn] = fs match
   case Coll.Nil => m
@@ -361,12 +361,12 @@ def Ty.sFirst [V: Type] (m: Coll.SMap[V], s: Sym.Sym, v: V): Coll.SMap[V] = Coll
 
 def Ty.fnOf(cx: Ty.Cx, f: Sym.Sym): Coll.Option[Ast.Fn] =
   val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
-  val Ty.Idx(fs, _) = idx
+  val Ty.Idx(fs, _, _) = idx
   Coll.sLookup(fs, f)
 
 def Ty.caseOf(cx: Ty.Cx, f: Sym.Sym): Coll.Option[Ty.CaseOf] =
   val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
-  val Ty.Idx(_, cs) = idx
+  val Ty.Idx(_, cs, _) = idx
   Coll.sLookup(cs, f)
 
 // the enum's type at fresh vars: E[v1..vn], with the binders bound for its fields
@@ -552,6 +552,7 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
     else if Str.eq(fs, "Array.fill") then Ty.fill(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Array.tabulate") then Ty.tabulate(cx, st, bs, line, f, targs, xs, want)
     else if Str.eq(fs, "Cell.new") then Ty.cellNew(cx, st, bs, line, f, xs, want)
+    else if Ty.isCNew(cx, f) then Ty.cstructNew(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Array.put") then Ty.arrPut(cx, st, bs, line, f, xs, want)
@@ -565,6 +566,56 @@ def Ty.isScalar(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
     val x = Sym.str(n)
     Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64") || Str.eq(x, "U8"))
   case _ => false
+
+// extern "libc" struct Libc.name: `Libc.name.new()` allocates sizeof(struct name) bytes in the innermost Region (as Cell.new); a field is
+// read by `s.field()` (Ty.method). Ty.Idx.structs holds the declared structs
+def Ty.cstructOfNew(cx: Ty.Cx, f: Sym.Sym): Coll.Option[Sym.Sym] =
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
+  val Ty.Idx(_, _, ss) = idx
+  val s = Sym.str(f)
+  val n = Str.len(s)
+  if n > 4 && Str.eq(Str.slice(s, n - 4, n), ".new") then
+    val tn = Sym.of(Str.slice(s, 0, n - 4))
+    Coll.sLookup(ss, tn) match
+      case Coll.Some(_) => Coll.Some(tn)
+      case Coll.None => Coll.None
+  else Coll.None
+
+def Ty.isCNew(cx: Ty.Cx, f: Sym.Sym): Bool = Ty.cstructOfNew(cx, f) match
+  case Coll.Some(_) => true
+  case Coll.None => false
+
+def Ty.cstructNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Nil => Ty.cstructOfNew(cx, f) match
+    case Coll.Some(tn) =>
+      val Ty.RegAt(st1, reg) = Ty.regionAt(cx, st, bs, line)
+      Ty.lit(st1, line, K.Con(tn, Coll.Nil), want, El.CNew(line, reg, tn))
+    case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, f)), bs, xs), line)
+  case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// s.field(): a field of the libc struct type of the local s
+def Ty.cfield(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, tn: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Coll.Option[Ty.Ex] =
+  val Ty.Cx(_, _, _, _, _, _, _, _, _, _, idx) = cx
+  val Ty.Idx(_, _, ss) = idx
+  Coll.sLookup(ss, tn) match
+    case Coll.None => Coll.None
+    case Coll.Some(td) =>
+      val Ast.TypeDecl(_, _, _, _, body) = td
+      body match
+        case Ast.CStruct(fs) => Ty.cfieldIn(cx, st, bs, line, recv, tn, op, xs, want, fs)
+        case _ => Coll.None
+
+def Ty.cfieldIn(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, tn: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term], fs: Coll.List[Ast.CField]): Coll.Option[Ty.Ex] = fs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(f, rest) =>
+    val Ast.CField(_, fname, fty) = f
+    if Sym.eq(fname, op) then
+      val ft = Ty.term(fty, bs)
+      val st1 = xs match
+        case Coll.Nil => st
+        case Coll.Cons(_, _) => Ty.clash(st, Ty.Arity(line, op))
+      Coll.Some(Ty.lit(st1, line, ft, want, El.CField(line, El.Local(line, recv), tn, fname, ft)))
+    else Ty.cfieldIn(cx, st, bs, line, recv, tn, op, xs, want, rest)
 
 def Ty.cellNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
   case Coll.Cons(ev, r1) => r1 match
@@ -1039,7 +1090,10 @@ def Ty.callCase(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, co: Ty.
 def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym.Sym, op: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex =
   val Ty.Cx(_, _, ps, _, trs, _, _, _, _, _, idx) = cx
   Ty.lookup(bs, recv) match
-    case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, recv)), bs, xs), line)
+    case Coll.None =>
+      // struct.new(): a name that is a declared extern "libc" struct, not a local (a lowercase C tag parses as a method call)
+      if Str.eq(Sym.str(op), "new") && Ty.isCNew(cx, Eff.dotted(Sym.str(recv), op)) then Ty.cstructNew(cx, st, bs, line, Eff.dotted(Sym.str(recv), op), xs, want)
+      else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Unknown(line, recv)), bs, xs), line)
     case Coll.Some(rt) => K.walk(Ty.subst(st), rt) match
       case K.Con(tn, targs) => Ty.protoOp(ps, tn, op) match
         case Coll.Some(o) =>
@@ -1053,10 +1107,12 @@ def Ty.method(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, recv: Sym
             val Ast.Fn(_, _, _, mps, mret, _, _) = m
             val Ty.Caps(st1, caps) = Ty.rowCaps(cx, st, bs, line, Ty.methodCaps(ps, trs, tn, op), Coll.Nil)
             Ty.callSig(cx, st1, bs, line, Ty.TraitOp(caps), rt, op, mps, mret, Ty.zipBind(Ty.tparams(tgs, Coll.Nil), targs, Coll.Nil), xs, want)
-          // xs.at(j) on an array (A1)
+          // xs.at(j) on an array (A1); s.field() on an extern "libc" struct
           case Coll.None => Ty.arrayOf(Ty.subst(st), rt) match
             case Coll.Some(at) => if Str.eq(Sym.str(op), "at") then Ty.atCall(cx, st, bs, line, recv, at, xs, want) else Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
-            case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
+            case Coll.None => Ty.cfield(cx, st, bs, line, recv, tn, op, xs, want) match
+              case Coll.Some(ex) => ex
+              case Coll.None => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
       case _ => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.NoOp(line, op)), bs, xs), line)
 
 def Ty.subst(st: Ty.St): K.Subst =
@@ -1511,19 +1567,23 @@ def Ty.evidence(gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List
 enum Ty.Result:
   case Ty.Result(clashes: Coll.List[Ty.Clash], insts: Coll.List[Ty.Inst], s: K.Subst, fns: Coll.List[El.Fn], hs: Coll.List[El.Handler], gvs: Coll.List[El.Given])
 
-def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], vals: Coll.SMap[Bool]): Ty.Cx = ds match
-  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none(), vals, Names.NoArrays, Ty.idxOf(fns, es))
+def Ty.cxOf(ds: Coll.List[Ast.Decl], fns: Coll.List[Ast.Fn], es: Coll.List[Ast.Enum], ps: Coll.List[Ast.Proto], hs: Coll.List[Ast.Handler], trs: Coll.List[Ast.Trait], vals: Coll.SMap[Bool], ts: Coll.SMap[Ast.TypeDecl]): Ty.Cx = ds match
+  case Coll.Nil => Ty.Cx(fns, es, ps, hs, trs, Ty.Run(Ty.User), Coll.sEmpty(), Eff.none(), vals, Names.NoArrays, Ty.idxOf(fns, es, ts))
   case Coll.Cons(d, rest) => d match
-    case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs, vals)
+    case Ast.DFn(f) => Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs, vals, ts)
     case Ast.DVal(f) =>
       val Ast.Fn(_, vn, _, _, _, _, _) = f
-      Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs, Coll.sInsert(vals, vn, true))
-    case Ast.DEnum(e) => Ty.cxOf(rest, fns, Coll.Cons(e, es), ps, hs, trs, vals)
-    case Ast.DProto(p) => Ty.cxOf(rest, fns, es, Coll.Cons(p, ps), hs, trs, vals)
-    case Ast.DHandler(h) => Ty.cxOf(rest, fns, es, ps, Coll.Cons(h, hs), trs, vals)
-    case Ast.DTrait(t) => Ty.cxOf(rest, fns, es, ps, hs, Coll.Cons(t, trs), vals)
-    case Ast.DGiven(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals)
-    case Ast.DType(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals)
+      Ty.cxOf(rest, Coll.Cons(f, fns), es, ps, hs, trs, Coll.sInsert(vals, vn, true), ts)
+    case Ast.DEnum(e) => Ty.cxOf(rest, fns, Coll.Cons(e, es), ps, hs, trs, vals, ts)
+    case Ast.DProto(p) => Ty.cxOf(rest, fns, es, Coll.Cons(p, ps), hs, trs, vals, ts)
+    case Ast.DHandler(h) => Ty.cxOf(rest, fns, es, ps, Coll.Cons(h, hs), trs, vals, ts)
+    case Ast.DTrait(t) => Ty.cxOf(rest, fns, es, ps, hs, Coll.Cons(t, trs), vals, ts)
+    case Ast.DGiven(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals, ts)
+    case Ast.DType(td) =>
+      val Ast.TypeDecl(_, tn, _, _, tb) = td
+      tb match
+        case Ast.CStruct(_) => Ty.cxOf(rest, fns, es, ps, hs, trs, vals, Coll.sInsert(ts, tn, td))
+        case _ => Ty.cxOf(rest, fns, es, ps, hs, trs, vals, ts)
 
 // the compiler's check: aliases expanded (Tl), effect rows, then types; the one entry for s2c and the tests
 enum Ty.Typed:
@@ -1542,7 +1602,7 @@ def Ty.typed(ds: Coll.List[Ast.Decl], arr: Names.Arrays): Ty.Typed =
 // the fns with effects first (s2/pure.srs): a top-level val may call none of them
 // tgs: the {} goals of the types the defs name (Tl.typeGoals), resolved with the goals of the calls; rows: Eff.rows(ds)
 def Ty.checkWith(ds: Coll.List[Ast.Decl], tgs: Coll.List[Tl.Goal], rows: Eff.Rows, arr: Names.Arrays): Ty.Result =
-  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _, vals0, _, idx) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.sEmpty())
+  val Ty.Cx(fns0, es0, ps0, hs0, trs0, mode0, _, _, vals0, _, idx) = Ty.cxOf(ds, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.Nil, Coll.sEmpty(), Coll.sEmpty())
   val nom = Ty.nominals(ds, Coll.sEmpty())
   val pr = if Ty.hasVal(ds) then Pure.impure(ds, rows) else Pure.Got(Coll.sEmpty())
   val imp: Coll.SMap[Bool] = pr match
@@ -2014,6 +2074,8 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.Tab(_, _, n, _, _, g) => Ty.mhNone(st, Coll.Cons(n, Coll.Cons(g, Coll.Nil)))
       case El.CellNew(_, _, v, _) => Ty.mhNone(st, Coll.Cons(v, Coll.Nil))
       case El.CellGet(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
+      case El.CNew(_, _, _) => Ty.mhNone(st, Coll.Nil)
+      case El.CField(_, c, _, _, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.CellPut(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case El.ArrPut(_, _, i, v) => Ty.mhNone(st, Coll.Cons(i, Coll.Cons(v, Coll.Nil)))
       case _ => st

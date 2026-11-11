@@ -304,6 +304,7 @@ def Tl.reduce(cx: Tl.Cx, sub: Coll.List[Tl.Bt], cv: Coll.List[Tl.Bv], n: Sym.Sym
   case Ast.TyMatch(scrut, arms) =>
     val Tl.W(s, es2) = Tl.ty(cx, sub, cv, scrut, fuel - 1, es)
     Tl.tyArm(cx, sub, cv, n, line, s, arms, fuel, es2)
+  case Ast.CStruct(_) => Tl.W(Ast.Ty(line, n, Coll.Nil, Ast.Inferred, Coll.Nil), es)
   case Ast.ValMatch(x, arms) => Tl.bvLookup(cv, x) match
     case Coll.None => Tl.W(Ast.Ty(line, n, Coll.Nil, Ast.Inferred, Coll.Nil), Coll.Cons(Tl.BadVal(line, n), es))
     case Coll.Some(v) => Tl.valArm(cx, sub, cv, n, line, v, arms, fuel, es)

@@ -1,0 +1,8 @@
+// expect: error[region-escape]
+// a struct lives in the Region it was allocated in
+extern "libc" struct flock:
+  l_start: I64
+def Cs.leak(): flock =
+  handle r = Srs.Arena()
+  flock.new()
+def main(): I64 = 0

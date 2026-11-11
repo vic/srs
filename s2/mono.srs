@@ -219,6 +219,8 @@ def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[M
   case El.Tab(_, _, n, _, _, g) => Mono.calls(s, sub, g, Mono.calls(s, sub, n, acc))
   case El.CellNew(_, _, v, _) => Mono.calls(s, sub, v, acc)
   case El.CellGet(_, c) => Mono.calls(s, sub, c, acc)
+  case El.CNew(_, _, _) => acc
+  case El.CField(_, c, _, _, _) => Mono.calls(s, sub, c, acc)
   case El.CellPut(_, c, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, c, acc))
   case El.ArrPut(_, _, i, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, i, acc))
   case _ => acc
