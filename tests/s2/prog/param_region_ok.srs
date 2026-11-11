@@ -1,9 +1,9 @@
-// pass: ^<s> narrows a data param to s: freeing r does not kill it; an unannotated param read before the free is alive
-def work {r: Region} {s: Region} <r: Open> (a: List^<s>, b: List): I64 <r: Freed> =
+// pass: <s> narrows a data param to s: freeing r does not kill it; an unannotated param read before the free is alive
+def work {r: Region} {s: Region} <r: Open> (a: List<s>, b: List): I64 <r: Freed> =
   val n = sum(b)
   r.free()
   sum(a) + n
-def keep {s: Region} {t: Region} (a: List^<s>): List^<s> = a
+def keep {s: Region} {t: Region} (a: List<s>): List<s> = a
 def main(): I64 =
   handle io = Srs.Console()
   handle sess = Srs.Heap()

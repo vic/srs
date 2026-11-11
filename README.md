@@ -138,13 +138,13 @@ Calling `print(Box(41))` automatically resolves and links the requisite given in
 ## Safe Memory & Resource Management
 
 ### 1. GC-Free Memory Regions
-In srs, data lifetime is bound to a region capability `{r: Region}` passed as evidence. You can specify precise region annotations on types using `^<r>`:
+In srs, data lifetime is bound to a region capability `{r: Region}` passed as evidence. You can specify precise region annotations on types using a region list glued to the type, `T<r>`:
 
 ```scala
 def build {r: Region} (n: I64): List =
   if n == 0 then Nil else Cons(n, build(n - 1))
 
-val q: Opt[I64]^<r> = Some(5)
+val q: Opt[I64]<r> = Some(5)
 ```
 
 Regions can be freed explicitly. The compiler enforces strict lifetime safety: access after region deallocation or escaping references are rejected at compile time.

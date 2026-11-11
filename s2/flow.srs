@@ -13,7 +13,7 @@ enum Flow.Cap:
 
 // a value binding in scope (a val, var, param or pattern binder): its name, its id (unique in the fn: the facts name a
 // binding by its id, so an inner binding never stands for an outer one of the same name), and the capabilities its
-// stated ^<rs> names (resolved where it is declared): every value it gets, at its declaration or by an assignment, must
+// stated <rs> names (resolved where it is declared): every value it gets, at its declaration or by an assignment, must
 // live in them
 enum Flow.Bnd:
   case Flow.Bnd(name: Sym.Sym, id: I64, bound: Coll.Option[Coll.List[I64]])
@@ -76,7 +76,7 @@ enum Flow.Clash:
   case Flow.Stale(line: I64, x: Sym.Sym)
   // an outer capability not in the same state at a multi-shot resume point and at the end of the rest (vic Q-M4)
   case Flow.MsState(line: I64, cap: Sym.Sym)
-  // a value lives in (^<...>) or is bound to (a fact) a capability its type does not name; cap = that capability
+  // a value lives in (<...>) or is bound to (a fact) a capability its type does not name; cap = that capability
   case Flow.Bound(line: I64, cap: Sym.Sym)
 
 // every relation of Flow.rules and Flow.facts; Flow.relSym is the only place a relation name is a string
@@ -140,7 +140,7 @@ enum Flow.Rel:
   case Flow.RLeft
   // a binding that holds a value whose capability a block end closed (any binding: an outer val or var too)
   case Flow.RLost
-  // a stated ^<...> bound: slot k's sources, its allowed capabilities, its line, the clash
+  // a stated <...> bound: slot k's sources, its allowed capabilities, its line, the clash
   case Flow.RBSrc
   case Flow.RBVar
   case Flow.RInB
@@ -502,7 +502,7 @@ def Flow.callSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], f: Sym.Sym, g: Ast.Fn, c
   // (vic-m5r.15)
   val data = Flow.isEnumName(es, rn) || Ty.memberSym(rn, Ty.tparams(gs, Coll.Nil)) || Sym.eq(rn, Flow.keyArr(cx))
   val base = if data then Flow.dataSrcs(cx, cs, f, gs, chosen, svs, ns) else Flow.factSrcs(cx, cs, chosen, gs, ns, Coll.Nil)
-  // a result T^<rs> lives in the caller capabilities rs's binders take, whatever T is: a Str or Ptr result too (g's body
+  // a result T<rs> lives in the caller capabilities rs's binders take, whatever T is: a Str or Ptr result too (g's body
   // is checked to keep it there, Flow.def)
   rcaps match
     case Ast.Stated(rs) => if data then base else Flow.capSrcs(Flow.binderIds(cs, chosen, Flow.capBs(ps, gs, 0, Coll.Nil), rs, Coll.Nil), base)
@@ -595,7 +595,7 @@ def Flow.srcFacts(st: Flow.St, a: I64, x: I64, sv: Coll.List[Flow.Src]): Flow.St
     case Flow.SAt(c, s) => Flow.srcFacts(Flow.add(Flow.add(st, Flow.fAssign(a, x, c)), Flow.fAssignAt(a, x, c, s)), a, x, rest)
     case Flow.SVar(y) => Flow.srcFacts(Flow.add(st, Flow.fAssignFrom(a, x, y)), a, x, rest)
 
-// x: T^<rs> = v (val, var): v's sources must be capabilities of rs (Flow.bound), and x lives in rs (the stated fact)
+// x: T<rs> = v (val, var): v's sources must be capabilities of rs (Flow.bound), and x lives in rs (the stated fact)
 def Flow.bindAnn(cx: Flow.Cx, st: Flow.St, p: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], v: Ast.Expr, line: I64): Flow.At = ann match
   case Coll.None => Flow.bindVal(cx, st, p, x, v)
   case Coll.Some(t) =>
@@ -611,7 +611,7 @@ def Flow.bindAnn(cx: Flow.Cx, st: Flow.St, p: I64, x: Sym.Sym, ann: Coll.Option[
         val ids = Flow.capIds(cs, rs, Coll.Nil)
         Flow.declareAt(Flow.bound(st2, a, ids, sv, line), a, x, Coll.Some(ids), Flow.capSrcs(ids, sv))
 
-// the capabilities ^<rs> names, as sources
+// the capabilities <rs> names, as sources
 def Flow.boundSrcs(cs: Coll.List[Flow.Cap], caps: Ast.Caps, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] = caps match
   case Ast.Inferred => acc
   case Ast.Chosen(_) => acc
@@ -646,7 +646,7 @@ def Flow.boundSrc(st: Flow.St, a: I64, k: I64, sv: Coll.List[Flow.Src]): Flow.St
     case Flow.SAt(c, _) => Flow.boundSrc(Flow.add(st, Flow.fact2(Flow.RBSrc, Flow.i(k), Flow.i(c))), a, k, rest)
     case Flow.SVar(y) => Flow.boundSrc(Flow.add(st, Flow.fact3(Flow.RBVar, Flow.i(a), Flow.i(k), Flow.i(y))), a, k, rest)
 
-// a call of g: an arg for a param T^<rs> must live in the caller capabilities rs's binders take, and an arg for a param
+// a call of g: an arg for a param T<rs> must live in the caller capabilities rs's binders take, and an arg for a param
 // of a type with facts must be bound to the caller capability the fact's binder takes (g's body trusts both:
 // Flow.paramSrcs); the check is at a fresh point after the args
 def Flow.argBounds(cx: Flow.Cx, st: Flow.St, p: I64, g: Ast.Fn, chosen: Coll.List[Sym.Sym], svs: Coll.List[Coll.List[Flow.Src]], line: I64): Flow.At =
@@ -772,9 +772,9 @@ def Flow.needSrcs(cs: Coll.List[Flow.Cap], chosen: Coll.List[Sym.Sym], bs: Coll.
         val Flow.Cap(_, id, _, _) = x
         Flow.needSrcs(cs, chosen, bs, rest, Coll.Cons(Flow.SAt(id, s), acc))
 
-// each param x: T of a def holds what T says: the def's own binder for each fact of T, the capabilities of ^<rs>. a data
-// param (an enum, or a [] binder of the def) with no ^<rs> may live in any region binder of its def (the mirror of a
-// data result, Flow.dataSrcs): the caller chooses; ^<rs> narrows it. rbs = the def's Region binders
+// each param x: T of a def holds what T says: the def's own binder for each fact of T, the capabilities of <rs>. a data
+// param (an enum, or a [] binder of the def) with no <rs> may live in any region binder of its def (the mirror of a
+// data result, Flow.dataSrcs): the caller chooses; <rs> narrows it. rbs = the def's Region binders
 def Flow.paramSrcs(cx: Flow.Cx, st: Flow.St, p: I64, gs: Coll.List[Ast.Group], bs: Coll.List[Flow.CapB], rbs: Coll.List[Flow.CapB], params: Coll.List[Ast.Binder]): Flow.At = params match
   case Coll.Nil => Flow.At(st, p)
   case Coll.Cons(b, rest) =>
@@ -842,7 +842,7 @@ def Flow.request(st: Flow.St, p: I64, q: Coll.Option[Eff.Req], line: I64): Flow.
       case Coll.None => Flow.At(st, p)
       case Coll.Some(c) => Flow.step(st, p, c, op, line)
 
-// the result of op on capability c, its receiver (self in the op's decl): T^<self> lives in c; T{self} is bound to c
+// the result of op on capability c, its receiver (self in the op's decl): T<self> lives in c; T{self} is bound to c
 // in each state T's facts name, and so lives in c (Flow.SAt); a result that names no capability lives nowhere the op
 // knows of (Fx: an op result names no capability but self)
 def Flow.opSrcs(cx: Flow.Cx, c: Flow.Cap, op: Sym.Sym, acc: Coll.List[Flow.Src]): Coll.List[Flow.Src] =
@@ -891,7 +891,7 @@ def Flow.reqSrcs(cx: Flow.Cx, cs: Coll.List[Flow.Cap], q: Coll.Option[Eff.Req], 
           case Coll.Cons(_, _) => Coll.revOnto(sv, r)
 
 // ── a handler fn returns what its op says (bead vic-de9x.15): Ty types it as the op's result; here, a fn of an op whose
-// result lives in self (T^<self>, T{self}) is checked as a def whose result lives in no capability its body names. self,
+// result lives in self (T<self>, T{self}) is checked as a def whose result lives in no capability its body names. self,
 // the receiver, is not one of them (the caller gives the result self, Flow.opSrcs); the handler's row (the capabilities
 // its handle site keeps, in no known state) is in scope, so memory of an outer region, a value bound to another
 // capability, or memory of a region the body opens is error[capability-bound]. an arg may be returned: the caller keeps
@@ -917,7 +917,7 @@ def Flow.checkOps(p: Flow.Plans, cx: Flow.Cx, pr: Sym.Sym, row: Coll.List[Ast.Bi
       case Flow.RulesNegCycle(rel) => Flow.RulesNegCycle(rel)
       case Flow.RulesIllTyped(rel) => Flow.RulesIllTyped(rel)
 
-// fn f of op n as the def Flow checks, its result ^<> (in no capability); none when op n's result names no capability
+// fn f of op n as the def Flow checks, its result <> (in no capability); none when op n's result names no capability
 // (it lives nowhere the op knows of)
 def Flow.opFn(cx: Flow.Cx, pr: Sym.Sym, f: Ast.Fn): Coll.Option[Ast.Fn] =
   val Ast.Fn(line, n, gs, params, ret, exit, body) = f
@@ -1618,7 +1618,7 @@ def Flow.facts(cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Coll.List[D.
       val Flow.At(st1p, p0) = Flow.paramSrcs(cx, st1, 0, gs, bs, Flow.regionBs(bs, Coll.Nil), params)
       Flow.expr(cx, st1p, p0, e)
   val Flow.Ev(st2r, e, sv) = walked
-  // a result T^<rs>: the body's value must live in rs
+  // a result T<rs>: the body's value must live in rs
   val Ast.Ty(_, _, _, rcaps, _) = ret
   val st2: Flow.St = rcaps match
     case Ast.Inferred => st2r
@@ -1779,7 +1779,7 @@ def Flow.factRules(): Coll.List[D.Rule] =
   val stale = Flow.rule(Flow.RStale, Flow.l2(8, 16), Flow.l2(Flow.pos(Flow.RLeft, Flow.l3(0, 14, 3)), Flow.pos(Flow.RReadAt, Flow.l4(0, 14, 8, 16))))
   Coll.Cons(ha1, Coll.Cons(ha2, Coll.Cons(ha3, Coll.Cons(left1, Coll.Cons(left2, Coll.Cons(left3, Flow.l1(stale)))))))
 
-// a stated bound ^<...> (slot k 13) whose source is a capability it does not name; an arg of a fact type (slot k) bound
+// a stated bound <...> (slot k 13) whose source is a capability it does not name; an arg of a fact type (slot k) bound
 // to another capability than the one its param's fact names
 def Flow.boundRules(): Coll.List[D.Rule] =
   val bnd1 = Flow.rule(Flow.RBoundBad, Flow.l2(8, 9), Flow.l4(Flow.pos(Flow.RBSrc, Flow.l2(13, 3)), Flow.neg(Flow.RInB, Flow.l2(13, 3)), Flow.pos(Flow.RBLine, Flow.l2(13, 8)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))
@@ -1789,7 +1789,7 @@ def Flow.boundRules(): Coll.List[D.Rule] =
   Flow.l4(bnd1, bnd2, fb1, fb2)
 
 // D runs every rule it is given, per def: a rule group runs only for a def with its seed facts (a
-// block end that closes a capability, a value bound to a capability state, a stated ^<...> bound); without them it
+// block end that closes a capability, a value bound to a capability state, a stated <...> bound); without them it
 // derives nothing
 enum Flow.Seeds:
   case Flow.Seeds(close: Bool, at: Bool, bound: Bool)

@@ -1,11 +1,11 @@
 // expect: error[capability-bound]
-// a handler op whose decl says Ptr^<self> returns memory of another region (the Region its handle site keeps): the
+// a handler op whose decl says Ptr<self> returns memory of another region (the Region its handle site keeps): the
 // caller would track it in the pool only, and read it after that region ends
 capability Pool:
   state Open, Shut
   start Open
   stop Shut
-  def take <Open> (n: I64): Ptr^<self> <Open>
+  def take <Open> (n: I64): Ptr<self> <Open>
   def shut <Open> (): Unit <Shut>
   drop shut
 

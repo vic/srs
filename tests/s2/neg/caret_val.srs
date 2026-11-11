@@ -1,10 +1,10 @@
 // expect: error[use-after-free]
-// ^<tmp> on a val type is a fact: the value lives in tmp, so a read after tmp.free() is dead
+// <tmp> on a val type is a fact: the value lives in tmp, so a read after tmp.free() is dead
 extern def peekw(p: Ptr): I64
 def main(): I64 =
   handle io = Srs.Console()
   handle tmp = Srs.Arena()
-  val p: Ptr^<tmp> = tmp.alloc(8)
+  val p: Ptr<tmp> = tmp.alloc(8)
   tmp.free()
   peekw(p)
 // expect: --> tests/s2/neg/caret_val.srs:9

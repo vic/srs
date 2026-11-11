@@ -1,10 +1,10 @@
 // expect: error[use-after-free]
-// a handler op Ptr^<self> may return its arg: a request P.op(q) keeps q's region, as c.op(q) does
+// a handler op Ptr<self> may return its arg: a request P.op(q) keeps q's region, as c.op(q) does
 capability Pool:
   state Open, Shut
   start Open
   stop Shut
-  def keep <Open> (q: Ptr): Ptr^<self> <Open>
+  def keep <Open> (q: Ptr): Ptr<self> <Open>
   def shut <Open> (): Unit <Shut>
   drop shut
 

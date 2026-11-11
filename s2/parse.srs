@@ -1,7 +1,7 @@
 // s2 P6 FRONT (vic-m5r.27, vic/c/s2-front-spec.md): the parser, recursive descent over Lex tokens into the s2 Ast, as
 // s1/parse.srs. each production returns Parse.Ok(value, rest) or Parse.Err(line, what was expected): an error is data.
 // this rung: def, extern def, enum, protocol (states, start, end, drop, ops, rule defs), handler; binder groups
-// [] {} <>; exit facts; types T[args]^<caps>; every expression and statement s1 parses except forall/exists.
+// [] {} <>; exit facts; types T[args]<caps>; every expression and statement s1 parses except forall/exists.
 
 enum Parse.R [A: Type]:
   case Parse.Ok(v: A, ts: Coll.List[Lex.Tok])
@@ -403,7 +403,7 @@ def Parse.terms(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Term]): Parse.R[Coll.
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(t, t1) => if Parse.isOp(t1, ",") then Parse.terms(Parse.next(t1), Coll.Cons(t, acc)) else Parse.terms(t1, Coll.Cons(t, acc))
 
-// ty := name [ [ty, ...] ] [ (expr, ...) ] [ ^<names> ]: type args, compile-time value args, caps
+// ty := name [ [ty, ...] ] [ (expr, ...) ] [<names>]: type args, compile-time value args, caps (a region list: a < glued to the type)
 def Parse.ty(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(name, t1) =>
@@ -415,11 +415,8 @@ def Parse.ty(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ident(ts) match
         tvals match
           case Parse.Err(l, w) => Parse.Err(l, w)
           case Parse.Ok(vals, t3) =>
-            if Parse.isOp(t3, "^") then
-              Parse.op(Parse.next(t3), "<") match
-                case Parse.Err(l, w) => Parse.Err(l, w)
-                case Parse.Ok(_, t4) => Parse.caps(Parse.line(ts), name, args, vals, t4)
-            else if Parse.isGlued(t3) then Parse.caps(Parse.line(ts), name, args, vals, Parse.next(t3))
+            if Parse.isGlued(t3) then Parse.caps(Parse.line(ts), name, args, vals, Parse.next(t3))
+            else if Parse.isOp(t3, "^") then Parse.Err(Parse.line(t3), "a region list: write T<r>, with the < glued to the type")
             else Parse.Ok(Ast.Ty(Parse.line(ts), name, args, Ast.Inferred, vals), t3)
 
 // the names of a region list, after its <, up to > (the type's caps)
@@ -588,7 +585,7 @@ def Parse.capDef(ts: Coll.List[Lex.Tok], line: I64): Parse.R[Parse.COp] = Parse.
               case Parse.Err(l, w) => Parse.Err(l, w)
               case Parse.Ok(mv, _) => Parse.Ok(Parse.COp(line, name, ps, ret, mv), t6)
 
-// an op result: ty, or ty{names} (the receiver takes the type's {} binders: View{self}); a type with ^<...> takes no {}
+// an op result: ty, or ty{names} (the receiver takes the type's {} binders: View{self}); a type with <...> takes no {}
 def Parse.opRet(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ty(ts) match
   case Parse.Err(l, w) => Parse.Err(l, w)
   case Parse.Ok(t, t1) =>
@@ -598,7 +595,7 @@ def Parse.opRet(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Ty] = Parse.ty(ts) match
         case Ast.Inferred => Parse.names(Parse.next(t1), "}", Coll.Nil) match
           case Parse.Err(l2, w) => Parse.Err(l2, w)
           case Parse.Ok(cs, t2) => Parse.Ok(Ast.Ty(l, n, args, Ast.Chosen(cs), vals), t2)
-        case _ => Parse.Err(Parse.line(t1), "an exit state <B> (a type with ^<...> takes no {...})")
+        case _ => Parse.Err(Parse.line(t1), "an exit state <B> (a type with <...> takes no {...})")
     else Parse.Ok(t, t1)
 
 // the entry facts of a capability def: none, <A> (a state), or <s r t> (s moves to t by relation r)

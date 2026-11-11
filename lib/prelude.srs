@@ -20,12 +20,12 @@ extern def rt_heap_new(): Ptr
 extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
 extern def rt_heap_free(self: Ptr): Unit
 
-// Memory region = effect. Open until free; values captured by a region die at free, alloc's memory too (^<self>).
+// Memory region = effect. Open until free; values captured by a region die at free, alloc's memory too (<self>).
 capability Region:
   state Open, Freed
   start Open
   stop Freed
-  def alloc <Open> (size: I64): Ptr^<self> <Open>
+  def alloc <Open> (size: I64): Ptr<self> <Open>
   def free <Open> (): Unit <Freed>
   drop free
 
@@ -64,7 +64,7 @@ extern def I64.ofU64(x: U64): I64
 // the region of xs
 extern def U8.of(x: I64): U8
 extern def I64.ofU8(x: U8): I64
-extern def Str.ofBytes {r: Region} (n: I64, xs: Array[U8](n)^<r>): Str^<r>
+extern def Str.ofBytes {r: Region} (n: I64, xs: Array[U8](n)<r>): Str<r>
 
 // rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
 def U32.rotr(x: U32, n: I64): U32 = (x >> n) | (x << (32 - n))

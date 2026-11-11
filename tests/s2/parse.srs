@@ -22,7 +22,7 @@ def main(): I64 =
   PT.run("def k(): I64 = 10 - 3 - 2\ndef m(b: Bool): I64 =\n  if b then 1\n  else 2\n")
   PT.run("trait Ho.Fold [F: Type] [A: Type] [B: Type]:\n  def step(acc: B, x: A): B\n\ngiven Ho.Fold[Ho.Sum, I64, I64]:\n  def step(acc: I64, x: I64): I64 = acc + x\n\ngiven [A: Type] {o: Ord[A]} Ord[List[A]]:\n  def cmp(a: A, b: A): I64 = 0\n")
   PT.run("spec def twoOf(n: I64): I64 = n + n\n")
-  PT.run("type Bits (n: I64) = n match\n  case 8 => Bool\n  case _ => I64\n\ntype Twice (n: I64) = Bits(n * 2)\n\ntype TPick (b: Bool) = b match\n  case true => Str\n  case false => I64\n\ntype Wide [A: Type] = A match\n  case Bool => I64\n  case I64 => I64\n\ntype OpenFile {f: File} <at(f, Opened)> = Ptr\n\ndef tb3(x: Bits(dbl(4))^<r>): Bool = !x\n")
+  PT.run("type Bits (n: I64) = n match\n  case 8 => Bool\n  case _ => I64\n\ntype Twice (n: I64) = Bits(n * 2)\n\ntype TPick (b: Bool) = b match\n  case true => Str\n  case false => I64\n\ntype Wide [A: Type] = A match\n  case Bool => I64\n  case I64 => I64\n\ntype OpenFile {f: File} <at(f, Opened)> = Ptr\n\ndef tb3(x: Bits(dbl(4))<r>): Bool = !x\n")
   PT.run("type Id = [A: Type] =>> A\n")
   PT.run("def g(b: Bool): I64 =\n  if b then\n    val x = 1\n    x\n  else 2\n")
   PT.run("def f(): I64 =\n  val x = (1 + \n  x\n")

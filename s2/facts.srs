@@ -22,7 +22,7 @@ enum Fx.Clash:
   case Fx.RuleOp(line: I64, op: Sym.Sym)
   // R2a unambiguous protocols: op goes from state s to two states (a run-time outcome the program would choose)
   case Fx.Ambiguous(line: I64, op: Sym.Sym, s: Sym.Sym)
-  // an op result T^<x> where x is not self (the receiver is the only capability an op names)
+  // an op result T<x> where x is not self (the receiver is the only capability an op names)
   case Fx.OpCap(line: I64, x: Sym.Sym)
   // an op result T{...} that does not give each {} binder of T, a binder of this capability, the receiver self
   case Fx.OpChoice(line: I64, t: Sym.Sym)
@@ -75,7 +75,7 @@ enum Fx.Rel:
   case Fx.RTr
   case Fx.RSameS
   case Fx.RAmbigAt
-  // op results: ^<x> names, T{...} choices and their count, the {} binders of each type, the name self
+  // op results: <x> names, T{...} choices and their count, the {} binders of each type, the name self
   case Fx.RResCap
   case Fx.RResChoice
   case Fx.RResCount
@@ -178,7 +178,7 @@ def Fx.rules(): Coll.List[D.Rule] =
   // unambiguous protocols: one op from one state has one target (vars: p 0, op 1, s 2, t 3, line 4, t2 5, line2 6)
   val ambig = Fx.rule(Fx.RAmbigAt, Fx.l3(4, 1, 2), Fx.l3(Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 5, 6))), Fx.n(Fx.RSameS, Fx.vs(Fx.l2(3, 5)))))
   val d = Fx.l5(clauseArity, unsafe, ruleUnknown, ruleOp, ambig)
-  // an op result names only its receiver: ^<self>, and T{self, ...} with one self per {} binder of T, each a binder of
+  // an op result names only its receiver: <self>, and T{self, ...} with one self per {} binder of T, each a binder of
   // this capability (vars: p 0, T 1, i 2, x 3, line 4, n 5)
   val opCap = Fx.rule(Fx.ROpCapAt, Fx.l2(4, 3), Fx.l2(Fx.p(Fx.RResCap, Fx.vs(Fx.l3(0, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
   val choiceSelf = Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResChoice, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
@@ -246,7 +246,7 @@ def Fx.opsF(p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
     val Ast.Op(line, n, _, ret, trs) = o
     Fx.opsF(p, rest, Fx.resF(p, line, ret, Fx.trsF(p, n, line, trs, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))))
 
-// where an op result of capability p lives: fxResCap(p, x, line) per name of ^<...>; fxResChoice(p, T, i, x, line) per
+// where an op result of capability p lives: fxResCap(p, x, line) per name of <...>; fxResChoice(p, T, i, x, line) per
 // name of T{...} and fxResCount(p, T, n, line)
 def Fx.resF(p: Sym.Sym, line: I64, ret: Ast.Ty, st: Fx.St): Fx.St =
   val Ast.Ty(_, t, _, caps, _) = ret
