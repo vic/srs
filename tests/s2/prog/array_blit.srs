@@ -1,0 +1,32 @@
+// pass: Array.blit copies a string into an Array[U8] from slot at, the bounds proved by the guard (0 <= at, 0 <= m, m <= n,
+// at <= n - m); the strings die in a region of their own first, since the bytes are copied. Str.ofBytes views the result
+def B.put(n: I64, xs: Array[U8](n), at: I64, s: Str): I64 =
+  val m = Str.len(s)
+  if 0 <= at && 0 <= m && m <= n && at <= n - m then
+    Array.blit(xs, at, s, m)
+    at + m
+  else at
+
+def B.three(n: I64, xs: Array[U8](n)): I64 =
+  val a = B.put(n, xs, 0, "ab")
+  val b = B.put(n, xs, a, "cde")
+  B.put(n, xs, b, "fghij")
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 12
+  val xs = Array.fill(n, U8.of(0))
+  val len = B.three(n, xs)
+  val v = Str.ofBytes(n, xs)
+  Console.print(Str.slice(v, 0, len))
+  Console.print("\n")
+  Console.printI64(len)
+  Console.print("\n")
+  // a string too long for the room is refused by the guard, nothing is written
+  Console.printI64(B.put(n, xs, 10, "xyz"))
+  Console.print("\n")
+  Console.print(Str.slice(v, 0, len))
+  Console.print("\n")
+  0

@@ -54,6 +54,8 @@ enum El.Expr:
   case El.CellPut(line: I64, c: El.Expr, v: El.Expr)
   // A1b: Array.put(xs, i, v) writes one scalar slot of the local array xs, i proved in [0, n) (C xs[i] = v)
   case El.ArrPut(line: I64, xs: Sym.Sym, i: El.Expr, v: El.Expr)
+  // Array.blit(xs, at, s, m): copies min(m, len s) bytes of s into the local Array[U8] xs from at, at and m proved in range (Ty.blit)
+  case El.Blit(line: I64, xs: Sym.Sym, at: El.Expr, s: El.Expr, m: El.Expr)
   // an expression that did not type (its clash is in the result): emit never runs on a program with clashes
   case El.Bad(line: I64)
 

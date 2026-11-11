@@ -393,6 +393,17 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print("] = (")
     Emit.ex(cx, fi, env, Emit.Inner, v)
     Console.print("), (int64_t)0)")
+  // Ty.blit: the copy is in range for every s, so a plain memcpy of min(m, len s) bytes
+  case El.Blit(_, x, a, b, m) =>
+    Console.print("(Array__blit(&")
+    Emit.local(Emit.vs(env), x)
+    Console.print("[")
+    Emit.ex(cx, fi, env, Emit.Inner, a)
+    Console.print("], ")
+    Emit.ex(cx, fi, env, Emit.Inner, b)
+    Console.print(", ")
+    Emit.ex(cx, fi, env, Emit.Inner, m)
+    Console.print("), (int64_t)0)")
   // A1: the index is proved in range (Ty.index): a plain load, no branch
   case El.Index(_, x, i) =>
     Emit.local(Emit.vs(env), x)
@@ -1096,6 +1107,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CField(_, c, _, _, _) => Emit.exTys(cx, fi, c, acc)
   case El.CellPut(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
+  case El.Blit(_, _, a, b, m) => Emit.exTys(cx, fi, m, Emit.exTys(cx, fi, b, Emit.exTys(cx, fi, a, acc)))
   case _ => acc
 
 def Emit.exsTys(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
@@ -1591,6 +1603,7 @@ def Emit.strPrims(): Unit =
   Console.print("  return (srs_str){s.p + b, e - b};\n}\n")
   Console.print("static inline bool Str__eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }\n")
   Console.print("static inline srs_str Str__ofBytes(void* r, int64_t n, uint8_t* xs) { return (srs_str){xs, n}; }\n")
+  Console.print("static inline void Array__blit(uint8_t* d, srs_str s, int64_t m) { int64_t k = m < s.n ? m : s.n; if (k > 0) memcpy(d, s.p, (size_t)k); }\n")
 
 def Emit.ptrs(tps: Coll.List[Sym.Sym], acc: Coll.List[Ty.Bind]): Coll.List[Ty.Bind] = tps match
   case Coll.Nil => acc
@@ -2601,6 +2614,7 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.CField(_, c, _, _, _) => Emit.seenE(cx, c, s)
   case El.CellPut(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
+  case El.Blit(_, _, a, b, m) => Emit.seenE(cx, m, Emit.seenE(cx, b, Emit.seenE(cx, a, s)))
   case _ => s
 
 def Emit.seenEs(cx: Emit.Cx, xs: Coll.List[El.Expr], s: Emit.Seen): Emit.Seen = xs match
@@ -2759,6 +2773,7 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.CField(l, c, n, f, t) => El.CField(l, Emit.dropE(m, xs, c), n, f, t)
   case El.CellPut(l, c, v) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
   case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
+  case El.Blit(l, x, a, b, k) => El.Blit(l, x, Emit.dropE(m, xs, a), Emit.dropE(m, xs, b), Emit.dropE(m, xs, k))
   case _ => e
 
 def Emit.dropEs(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match
