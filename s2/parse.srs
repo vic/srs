@@ -101,9 +101,11 @@ def Parse.decls(ts: Coll.List[Lex.Tok], acc: Coll.List[Ast.Decl]): Parse.R[Coll.
 def Parse.decl(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Decl] =
   if Parse.isKw(ts, "def") then Parse.wrapFn(Parse.fn(Parse.next(ts), Parse.line(ts), Parse.FDef))
   else if Parse.isKw(ts, "extern") then
-    Parse.kw(Parse.next(ts), "def") match
+    Parse.externAbi(Parse.next(ts)) match
       case Parse.Err(l, w) => Parse.Err(l, w)
-      case Parse.Ok(_, t1) => Parse.wrapFn(Parse.fn(t1, Parse.line(ts), Parse.FExtern))
+      case Parse.Ok(abi, t0) => Parse.kw(t0, "def") match
+        case Parse.Err(l, w) => Parse.Err(l, w)
+        case Parse.Ok(_, t1) => Parse.wrapFn(Parse.libcName(abi, Parse.fn(t1, Parse.line(ts), Parse.FExtern(abi))))
   else if Parse.isKw(ts, "enum") then Parse.enumDecl(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "capability") then Parse.proto(Parse.next(ts), Parse.line(ts))
   else if Parse.isKw(ts, "handler") then Parse.handler(Parse.next(ts), Parse.line(ts))
@@ -232,9 +234,32 @@ def Parse.defs(ts: Coll.List[Lex.Tok], sig: Bool, acc: Coll.List[Ast.Fn]): Parse
   if Parse.isDedent(ts) then Parse.Ok(Coll.rev(acc), Parse.next(ts))
   else Parse.kw(ts, "def") match
     case Parse.Err(l, w) => Parse.Err(l, w)
-    case Parse.Ok(line, t1) => Parse.fn(t1, line, if sig then Parse.FExtern else Parse.FDef) match
+    case Parse.Ok(line, t1) => Parse.fn(t1, line, if sig then Parse.FExtern(Ast.AbiSrs) else Parse.FDef) match
       case Parse.Err(l, w) => Parse.Err(l, w)
       case Parse.Ok(f, t2) => Parse.defs(Parse.endLine(t2), sig, Coll.Cons(f, acc))
+
+// extern ["libc"] def: the ABI word after `extern`
+def Parse.externAbi(ts: Coll.List[Lex.Tok]): Parse.R[Ast.Abi] = Parse.peek(ts) match
+  case Lex.TStr(s, l) =>
+    if Str.eq(s, "libc") then Parse.Ok(Ast.AbiLibc, Parse.next(ts))
+    else Parse.Err(l, "an extern ABI: write extern \"libc\" def or extern def")
+  case _ => Parse.Ok(Ast.AbiSrs, ts)
+
+// a libc extern names a C function: no `.` in its name
+def Parse.libcName(abi: Ast.Abi, rf: Parse.R[Ast.Fn]): Parse.R[Ast.Fn] = rf match
+  case Parse.Err(l, w) => Parse.Err(l, w)
+  case Parse.Ok(f, t) => abi match
+    case Ast.AbiSrs => rf
+    case Ast.AbiLibc =>
+      val Ast.Fn(line, name, _, _, _, _, _) = f
+      if Parse.hasDot(Sym.str(name), 0, Str.len(Sym.str(name))) then Parse.Err(line, "a libc extern names a C function: no '.' in its name") else rf
+
+def Parse.hasDot(s: Str, i: I64, n: I64): Bool = if i == n then false else if Str.at(s, i) == 46 then true else Parse.hasDot(s, i + 1, n)
+
+// the ABI of an extern body; a def's body is replaced by Parse.bodyOf, its placeholder is the srs ABI
+def Parse.abiOf(k: Parse.FnKind): Ast.Abi = k match
+  case Parse.FExtern(abi) => abi
+  case Parse.FDef => Ast.AbiSrs
 
 def Parse.wrapFn(rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
   case Parse.Err(l, w) => Parse.Err(l, w)
@@ -243,7 +268,7 @@ def Parse.wrapFn(rf: Parse.R[Ast.Fn]): Parse.R[Ast.Decl] = rf match
 // which def: a def with a body, an extern def (or a trait method: no body)
 enum Parse.FnKind:
   case Parse.FDef
-  case Parse.FExtern
+  case Parse.FExtern(abi: Ast.Abi)
 
 // def name groups (params) groups : ty [<atoms>] [= rhs]
 def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn] = Parse.ident(ts) match
@@ -260,11 +285,11 @@ def Parse.fn(ts: Coll.List[Lex.Tok], line: I64, k: Parse.FnKind): Parse.R[Ast.Fn
             case Parse.Err(l, w) => Parse.Err(l, w)
             case Parse.Ok(ret, t6) => Parse.exitFacts(t6) match
               case Parse.Err(l, w) => Parse.Err(l, w)
-              case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern), k)
+              case Parse.Ok(exit, t7) => Parse.fnBody(t7, Ast.Fn(line, name, gs, ps, ret, exit, Ast.Extern(Parse.abiOf(k))), k)
 
 // the body of a def by its kind
 def Parse.fnBody(ts: Coll.List[Lex.Tok], f: Ast.Fn, k: Parse.FnKind): Parse.R[Ast.Fn] = k match
-  case Parse.FExtern => Parse.Ok(f, ts)
+  case Parse.FExtern(_) => Parse.Ok(f, ts)
   case Parse.FDef => Parse.bodyOf(ts, f)
 
 // [NL IND clauses DED] = rhs (s1/parse.srs:88-89: the clauses sit between the signature and =)

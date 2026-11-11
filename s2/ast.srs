@@ -118,9 +118,15 @@ enum Ast.Clause:
   case Ast.ProofInduction(line: I64, x: Sym.Sym)
   case Ast.ProofLean(line: I64, s: Str)
 
+// the C ABI of an extern: Srs = the srs runtime (prototype from the srs signature only); Libc = a libc function
+// (the libc headers are included and the srs prototype must agree with them: C11 6.7p4, else the C compile fails)
+enum Ast.Abi:
+  case Ast.AbiSrs
+  case Ast.AbiLibc
+
 enum Ast.Body:
   case Ast.Def(cs: Coll.List[Ast.Clause], e: Ast.Expr)
-  case Ast.Extern
+  case Ast.Extern(abi: Ast.Abi)
 
 enum Ast.Fn:
   case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
@@ -617,7 +623,7 @@ def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
 def Ast.fn(f: Ast.Fn, ind: I64): Unit =
   val Ast.Fn(_, _, _, _, _, _, body) = f
   body match
-    case Ast.Extern => Console.print("extern ")
+    case Ast.Extern(_) => Console.print("extern ")
     case Ast.Def(_, _) => ()
   Ast.fnSig(f, ind)
 
@@ -659,7 +665,7 @@ def Ast.fnSigK(f: Ast.Fn, ind: I64, k: Coll.Option[Sym.Sym]): Unit =
       Ast.atoms(exit)
       Console.print(">")
   body match
-    case Ast.Extern => ()
+    case Ast.Extern(_) => ()
     case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
 
 // = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)

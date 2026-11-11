@@ -78,7 +78,7 @@ def Ev.wordFn(f: Ast.Fn): Bool =
 
 def Ev.wordBody(b: Ast.Body): Bool = b match
   case Ast.Def(_, e) => Ev.wordExpr(e)
-  case Ast.Extern => false
+  case Ast.Extern(_) => false
 
 def Ev.wordExpr(e: Ast.Expr): Bool = e match
   case Ast.Call(_, _, targs, _, xs) => Ev.wordTys(targs) || Ev.wordExprs(xs)
@@ -196,7 +196,7 @@ def Ev.call(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64
             val env3 = Ev.bindAll(ps, vs, Coll.Nil)
             body match
               case Ast.Def(_, b) => Ev.result(Ev.expr(cx, g, env3, fuel2 - 1, b), env2)
-              case Ast.Extern => Ev.extern(line, g, vs, env2, fuel2)
+              case Ast.Extern(_) => Ev.extern(line, g, vs, env2, fuel2)
 
 // the callee's value with the caller's locals
 def Ev.result(res: Ev.R, env: Coll.List[Ev.Bind]): Ev.R = res match

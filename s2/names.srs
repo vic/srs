@@ -287,7 +287,7 @@ def Names.fn(f: Ast.Fn, outer: Coll.List[Sym.Sym], st: Names.St): Names.St =
   // a length in a param type or the result names a param (Array[A](n), A1)
   val st1 = Names.tyIn(ret, tps, locals, Names.binderTysIn(params, tps, locals, Names.groupTys(gs, tps, st)))
   body match
-    case Ast.Extern => st1
+    case Ast.Extern(_) => st1
     case Ast.Def(cs, e) => Names.expr(e, locals, tps, Names.clauses(cs, locals, tps, st1))
 
 // the types of the {} binders (a {} binder names a trait or a protocol)

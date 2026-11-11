@@ -1352,7 +1352,7 @@ def Ty.fn(cx: Ty.Cx, st0: Ty.St, f: Ast.Fn, row: Coll.List[Eff.Cap]): Ty.FnEx =
   val eps = Ty.elParams(ps, tv, Coll.Nil)
   val st = Ty.fnShape(cx, st0b, line, tps, ps, ret)
   body match
-    case Ast.Extern => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern))
+    case Ast.Extern(abi) => Ty.FnEx(st, El.Fn(line, name, tps, caps, eps, rt, El.Extern(abi)))
     case Ast.Def(_, e) =>
       val Ty.Ex(st1, _, eb) = Ty.expr(cx, st, bs, e, Coll.Some(rt))
       Ty.FnEx(Ty.mhPlace(st1, eb), El.Fn(line, name, tps, caps, eps, rt, El.Def(eb)))
@@ -1680,7 +1680,7 @@ def Ty.shapeFns(cx: Ty.Cx, st: Ty.St, p: Sym.Sym, todo: Coll.List[Sym.Sym], seen
           val Ast.Fn(_, _, _, _, _, _, body) = g
           val k = Eff.dotted("eff", p)
           val st1 = body match
-            case Ast.Extern => st
+            case Ast.Extern(_) => st
             case Ast.Def(_, e) => e match
               case Ast.Block(_, ss, last) => Ty.shape(cx, st, k, p, ss, last)
               case _ => Ty.shapeTop(cx, st, k, p, e)
@@ -1698,7 +1698,7 @@ def Ty.cpsCalls(cx: Ty.Cx, p: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[S
 
 def Ty.cpsCallsB(cx: Ty.Cx, p: Sym.Sym, b: Ast.Body, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = b match
   case Ast.Def(_, e) => Ty.cpsCallsE(cx, p, e, acc)
-  case Ast.Extern => acc
+  case Ast.Extern(_) => acc
 
 // the CPS fns e calls in a cut position: whole, the arms of an if, a block's statements and last (bead vic-tecg: last too)
 def Ty.cpsCallsE(cx: Ty.Cx, p: Sym.Sym, e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
@@ -1905,7 +1905,7 @@ def Ty.rtCall(cx: Ty.Cx, st: Ty.St, line: I64, g: Ast.Fn): Ty.St =
   val Ast.Fn(_, n, _, _, _, _, body) = g
   val s = Sym.str(n)
   val rt: Bool = body match
-    case Ast.Extern => Str.len(s) > 3 && Str.eq(Str.slice(s, 0, 3), "rt_")
+    case Ast.Extern(_) => Str.len(s) > 3 && Str.eq(Str.slice(s, 0, 3), "rt_")
     case _ => false
   mode match
     case Ty.Run(by) => by match
@@ -2270,7 +2270,7 @@ def Ty.externs(fs: Coll.List[Ast.Fn], m: Coll.SMap[Bool]): Coll.SMap[Bool] = fs 
   case Coll.Cons(g, rest) =>
     val Ast.Fn(_, n, _, _, _, _, body) = g
     val m2 = body match
-      case Ast.Extern => Coll.sInsert(m, n, true)
+      case Ast.Extern(_) => Coll.sInsert(m, n, true)
       case _ => m
     Ty.externs(rest, m2)
 

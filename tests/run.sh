@@ -71,6 +71,16 @@ for t in tests/s2/neg/*.srs; do
   done <<< "$wants"
   verdict "neg/$n" $pass "exit=$code msg=$(printf '%s' "$msg" | head -1)"
 done
+# tests/s2/cneg/*.srs: s2c1 accepts them (exit 0) and the C compiler rejects the C with every "// expect:" text: the libc
+# headers make the C compiler check each srs prototype of a libc extern (C11 6.7p4)
+for t in tests/s2/cneg/*.srs; do
+  n=$(basename "$t" .srs); pass=1; m=cneg_$n
+  timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || pass=0
+  msg=$(timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c 2>&1); code=$?
+  wants=$(sed -n "s|^// expect: ||p" "$t"); [ $code -ne 0 ] && [ -n "$wants" ] || pass=0
+  while IFS= read -r w; do case "$msg" in *"$w"*) ;; *) pass=0;; esac; done <<< "$wants"
+  verdict "cneg/$n" $pass "cc exit=$code msg=$(printf '%s' "$msg" | head -1)"
+done
 # s2c --eval (the comptime evaluator): each "// eval: name value" line is printed; a test whose first line is
 # "// expect: msg" is rejected (exit 1) with msg; a test with neither proves nothing (FAIL)
 for t in tests/s2/eval/*.srs; do

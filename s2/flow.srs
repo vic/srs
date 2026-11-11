@@ -1613,7 +1613,7 @@ def Flow.facts(cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Coll.List[D.
   val Flow.St(_, _, caps, _, _) = st0
   val st1 = Flow.worlds(ps, st0, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Entry)
   val walked: Flow.Ev = body match
-    case Ast.Extern => Flow.Ev(st1, 0, Coll.Nil)
+    case Ast.Extern(_) => Flow.Ev(st1, 0, Coll.Nil)
     case Ast.Def(_, e) =>
       val Flow.At(st1p, p0) = Flow.paramSrcs(cx, st1, 0, gs, bs, Flow.regionBs(bs, Coll.Nil), params)
       Flow.expr(cx, st1p, p0, e)
@@ -1624,7 +1624,7 @@ def Flow.facts(cx: Flow.Cx, f: Ast.Fn, row: Coll.List[Ast.Binder]): Coll.List[D.
     case Ast.Inferred => st2r
     case Ast.Chosen(_) => st2r
     case Ast.Stated(rs) => body match
-      case Ast.Extern => st2r
+      case Ast.Extern(_) => st2r
       case Ast.Def(_, _) => Flow.bound(st2r, e, Flow.capIds(caps, rs, Coll.Nil), sv, line)
   val st3 = Flow.worlds(ps, st2, Coll.rev(caps), bs, atoms, exit, as, 0, Flow.Exit(e))
   val st4 = as match

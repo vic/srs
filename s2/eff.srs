@@ -169,7 +169,7 @@ def Eff.cxOf(ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds match
 def Eff.calleeOf(f: Ast.Fn): Eff.Callee =
   val Ast.Fn(_, _, gs, _, _, _, body) = f
   body match
-    case Ast.Extern => Ty.evidence(gs, Coll.Nil) match
+    case Ast.Extern(_) => Ty.evidence(gs, Coll.Nil) match
       case Coll.Nil => Eff.Leaf
       case Coll.Cons(_, _) => Eff.Runs
     case _ => Eff.Runs

@@ -251,7 +251,7 @@ def Hs.fn(cx: Hs.Cx, f: Ast.Fn): Hs.Tk =
   val Hs.W(g2, env2) = Hs.binders(cx, Hs.W(Hs.add(g1, Coll.length(ps)), env1), ps)
   val g3 = Hs.atoms(cx, env2, Hs.ty(cx, env2, g2, ret), exit)
   body match
-    case Ast.Extern => Hs.add(g3, 70)
+    case Ast.Extern(_) => Hs.add(g3, 70)
     case Ast.Def(cs, e) => Hs.clauses(cx, env2, Hs.expr(cx, env2, Hs.add(g3, 71), e), cs)
 
 // an enum: its groups, then each case's fields (the field and case names are metadata: positions only)
@@ -292,7 +292,7 @@ def Hs.refs(d: Hs.D, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = d match
     val Ast.Fn(_, _, _, _, _, _, body) = f
     body match
       case Ast.Def(_, e) => Hs.eRefs(e, acc)
-      case Ast.Extern => acc
+      case Ast.Extern(_) => acc
   case Hs.DE(e) =>
     val Ast.Enum(_, _, _, cases) = e
     Hs.caseRefs(cases, acc)
@@ -498,7 +498,7 @@ def Hs.split(ds: Coll.List[Ast.Decl], sp: Hs.Split): Hs.Split = ds match
       case Ast.DFn(f) =>
         val Ast.Fn(_, n, _, _, _, _, body) = f
         val isExt: Bool = body match
-          case Ast.Extern => true
+          case Ast.Extern(_) => true
           case _ => false
         if isExt then Hs.split(rest, sp) else Hs.split(rest, Hs.Split(es, eo, Coll.sInsert(fs, n, Hs.DF(f)), Coll.Cons(n, fo)))
       case _ => Hs.split(rest, sp)
