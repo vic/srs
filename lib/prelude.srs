@@ -59,6 +59,13 @@ extern def Str.u32le(s: Str, i: I64): U32
 extern def Str.u64le(s: Str, i: I64): U64
 extern def I64.ofU64(x: U64): I64
 
+// R0a bytes: U8 is storage only (an Array[U8](n) element), with no literal and no operator (C promotes uint8_t to
+// int). U8.of keeps the low 8 bits. Str.ofBytes views the n bytes of xs as a Str with no copy, so the Str lives in
+// the region of xs
+extern def U8.of(x: I64): U8
+extern def I64.ofU8(x: U8): I64
+extern def Str.ofBytes {r: Region} (n: I64, xs: Array[U8](n)^<r>): Str^<r>
+
 // rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
 def U32.rotr(x: U32, n: I64): U32 = (x >> n) | (x << (32 - n))
 def U32.rotl(x: U32, n: I64): U32 = (x << n) | (x >> (32 - n))

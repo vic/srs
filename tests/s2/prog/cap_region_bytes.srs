@@ -1,0 +1,23 @@
+// pass: R0a Str.ofBytes carries a Region binder {r: Region}, but it is an extern: it names no region the caller chooses, so
+// the program stays static in Region (s2/emit.srs Emit.fnNamesRegion; tests/run.sh greps the C: no row takes a Region
+// param). Cb.build allocates a list in the static Region; main passes that same Region to Str.ofBytes
+enum Cb.L:
+  case Cb.Nil
+  case Cb.Cons(h: I64, t: Cb.L)
+
+def Cb.build(i: I64, acc: Cb.L): Cb.L = if i == 0 then acc else Cb.build(i - 1, Cb.Cons(i, acc))
+
+def Cb.sum(l: Cb.L, a: I64): I64 = l match
+  case Cb.Nil => a
+  case Cb.Cons(h, t) => Cb.sum(t, a + h)
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val n = 3
+  val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+  Console.printI64(Cb.sum(Cb.build(100, Cb.Nil), 0))
+  Console.print("\n")
+  Console.print(Str.ofBytes(n, xs))
+  Console.print("\n")
+  0

@@ -1,0 +1,19 @@
+// pass: R0a bytes: U8 is a storage type (no operators); Array[U8](n) holds bytes; Str.ofBytes views n bytes as a Str
+// that lives in the region of the array (no copy)
+enum By.Ch:
+  case By.Ch
+
+given Array.Gen[By.Ch, U8]:
+  def at(i: I64): U8 = U8.of(104 + i * 1)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val n = 3
+  val xs: Array[U8](n) = Array.tabulate[By.Ch](n)
+  val s = Str.ofBytes(n, xs)
+  Console.print(s)
+  Console.print("\n")
+  Console.printI64(I64.ofU8(U8.of(300)))
+  Console.print("\n")
+  0

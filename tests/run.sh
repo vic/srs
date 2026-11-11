@@ -134,11 +134,11 @@ if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_main_call.c" && ! grep -q 's_
 # their params, so the grep is on the rows f_*). compiled with the prelude alone: tests/s2/prog/list.lib writes a {r: Region}
 # binder, which keeps the param in every program that loads it. each is also run: its output must be its .out
 rowreg='f_[A-Za-z0-9_]*(srs_cap\* p_eff__Region'
-for n in one heap two named nested handler trait traitg given givenfn; do
+for n in one heap bytes two named nested handler trait traitg given givenfn; do
   t=tests/s2/prog/cap_region_$n; c="$B/s2c_rg_$n.c"
   if timeout 5 "$B/s2c1" lib/prelude.srs "$t.srs" > "$c" && timeout 60 $CC -o "$B/s2c_rg_$n" "$c" rt/srs_rt.c && [ "$(timeout 1 "$B/s2c_rg_$n")" = "$(cat "$t.out")" ]; then
     case $n in
-      one|heap) if ! grep -q "$rowreg" "$c" && grep -q '^static srs_cap s_eff__Region = ' "$c"; then echo "ok s2c static Region $n: no param"; else echo "FAIL s2c static Region $n: param kept"; fail=1; fi;;
+      one|heap|bytes) if ! grep -q "$rowreg" "$c" && grep -q '^static srs_cap s_eff__Region = ' "$c"; then echo "ok s2c static Region $n: no param"; else echo "FAIL s2c static Region $n: param kept"; fail=1; fi;;
       *) if grep -q "$rowreg" "$c" && ! grep -q 's_eff__Region' "$c"; then echo "ok s2c Region $n: param kept"; else echo "FAIL s2c Region $n: made static"; fail=1; fi;;
     esac
   else echo "FAIL s2c Region $n (build or output)"; fail=1; fi
