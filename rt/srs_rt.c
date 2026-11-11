@@ -113,7 +113,7 @@ static chunk* g_spare;
 // Reserved, not committed: the address space grows by one reservation at a time, untouched pages cost nothing
 enum { PAGES_RESERVE = 64 << 20, HUGE_PAGE = 2 << 20 };
 static char *g_pages, *g_pages_end;
-void* srs_pages(int64_t size) {
+__attribute__((noinline)) void* srs_pages(int64_t size) {
   size_t n = ((size_t)size + 4095) & ~(size_t)4095;
   if ((size_t)(g_pages_end - g_pages) < n) {
     size_t want = n > PAGES_RESERVE ? (n + HUGE_PAGE - 1) & ~(size_t)(HUGE_PAGE - 1) : PAGES_RESERVE;
