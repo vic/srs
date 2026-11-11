@@ -409,18 +409,20 @@ enum S2c.Mode:
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
   case Mem.Ok(bs) =>
-    val S2c.MemCount(once, onceB, many) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0))
+    val S2c.MemCount(once, onceB, many, die) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0, 0))
     Console.print("total: ")
     Console.printI64(once)
     Console.print(" once ")
     Console.printI64(onceB)
     Console.print(" B, ")
     Console.printI64(many)
-    Console.print(" many\n")
+    Console.print(" many, ")
+    Console.printI64(die)
+    Console.print(" die\n")
     0
 
 enum S2c.MemCount:
-  case S2c.MemCount(once: I64, onceB: I64, many: I64)
+  case S2c.MemCount(once: I64, onceB: I64, many: I64, die: I64)
 
 def S2c.memBytes(b: Coll.Option[I64]): I64 = b match
   case Coll.Some(n) =>
@@ -429,6 +431,15 @@ def S2c.memBytes(b: Coll.Option[I64]): I64 = b match
     Console.print(" B")
     n
   case Coll.None => 0
+
+// ", dies" or ", escapes" and the line end; 1 for a site that dies
+def S2c.memDeath(dies: Bool): I64 =
+  if dies then
+    Console.print(", dies\n")
+    1
+  else
+    Console.print(", escapes\n")
+    0
 
 def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemCount): S2c.MemCount = bs match
   case Coll.Nil => c
@@ -446,8 +457,8 @@ def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemC
 def S2c.memRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], c: S2c.MemCount): S2c.MemCount = rows match
   case Coll.Nil => c
   case Coll.Cons(r, rest) =>
-    val Mem.Row(line, ctor, bytes, m) = r
-    val S2c.MemCount(once, onceB, many) = c
+    val Mem.Row(line, ctor, bytes, dies, m) = r
+    val S2c.MemCount(once, onceB, many, die) = c
     Console.print("  ")
     S2c.place(fs, line)
     Console.print(" ")
@@ -455,13 +466,12 @@ def S2c.memRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], c: S2c.MemCou
     val n = S2c.memBytes(bytes)
     m match
       case Mem.Once =>
-        Console.print(" once\n")
-        S2c.memRows(fs, rest, S2c.MemCount(once + 1, onceB + n, many))
+        Console.print(" once")
+        S2c.memRows(fs, rest, S2c.MemCount(once + 1, onceB + n, many, die + S2c.memDeath(dies)))
       case Mem.Many(why) =>
         Console.print(" many: ")
         S2c.memWhy(why)
-        Console.print("\n")
-        S2c.memRows(fs, rest, S2c.MemCount(once, onceB, many + 1))
+        S2c.memRows(fs, rest, S2c.MemCount(once, onceB, many + 1, die + S2c.memDeath(dies)))
 
 def S2c.memWhy(w: Mem.Why): Unit = w match
   case Mem.InLoop => Console.print("in a loop")

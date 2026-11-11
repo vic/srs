@@ -173,17 +173,20 @@ memrun() { # test libs...
   out=$(timeout 2 "$B/s2c1" --mem "$@" "$t" 2>/dev/null) || return 0
   [ "$(printf '%s\n' "$out" | grep -c '^region ')" = 1 ] || return 0
   once=$(printf '%s\n' "$out" | grep '^  ' | awk '{print $2}' | sort | uniq -u | while read -r x; do
-    printf '%s\n' "$out" | grep -Eq "^  [^ ]+ $x( [0-9]+ B)? once$" && echo "$x"; done)
+    printf '%s\n' "$out" | grep -Eq "^  [^ ]+ $x( [0-9]+ B)? once(, (dies|escapes))?$" && echo "$x"; done)
   [ -n "$once" ] || return 0
   pass=1; why=""
   if czc "$n" "$t" "$@"; then
     cz=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/cz_$n" 2>&1 >/dev/null)
     for x in $once; do c=$(czn "$cz" "$x"); [ "$c" -le 1 ] || { pass=0; why="$why $x=$c"; }; done
   else pass=0; why="census build"; fi
-  verdict "memrun/$n" $pass "once but allocated:$why"
+  memruns="$memruns $n "; verdict "memrun/$n" $pass "once but allocated:$why"
 }
+memruns=" "
 for t in tests/s2/prog/*.srs; do memrun "$t" $S2LIBS; done
 for t in tests/s2/mem/*.srs; do memrun "$t" lib/prelude.srs; done
+# armed: mem/once has one once site by construction, so a --mem format the check cannot read fails here
+case "$memruns" in *" mem_once "*) echo "ok memrun armed (mem_once checked)";; *) echo "FAIL memrun unarmed: mem_once not checked"; fail=1;; esac
 # s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
 # a trailing byte each read as bad (a miss)
 S2STORE="$B/store-s2"; rm -rf "$S2STORE"
