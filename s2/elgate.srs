@@ -12,6 +12,7 @@ enum Elgate.Kind:
   case Elgate.Exit
   case Elgate.AddrOf
   case Elgate.VtableCall
+  case Elgate.VtableSlot
 
 // the El constructor that produces the form
 enum Elgate.Con:
@@ -32,7 +33,7 @@ enum Elgate.V:
   case Elgate.V(k: Elgate.Kind, c: Elgate.Con, line: I64, fn: Sym.Sym)
 
 def Elgate.kinds(): Coll.List[Elgate.Kind] =
-  Coll.Cons(Elgate.StmtExpr, Coll.Cons(Elgate.AutoType, Coll.Cons(Elgate.GotoOut, Coll.Cons(Elgate.FnPtrCall, Coll.Cons(Elgate.Exit, Coll.Cons(Elgate.AddrOf, Coll.Cons(Elgate.VtableCall, Coll.Nil)))))))
+  Coll.Cons(Elgate.StmtExpr, Coll.Cons(Elgate.AutoType, Coll.Cons(Elgate.GotoOut, Coll.Cons(Elgate.FnPtrCall, Coll.Cons(Elgate.Exit, Coll.Cons(Elgate.AddrOf, Coll.Cons(Elgate.VtableCall, Coll.Cons(Elgate.VtableSlot, Coll.Nil))))))))
 
 def Elgate.cons(): Coll.List[Elgate.Con] =
   Coll.Cons(Elgate.CMatch, Coll.Cons(Elgate.CArm, Coll.Cons(Elgate.CPatBind, Coll.Cons(Elgate.CBlock, Coll.Cons(Elgate.CWhile, Coll.Cons(Elgate.CNew, Coll.Cons(Elgate.COp, Coll.Cons(Elgate.CMHandled, Coll.Cons(Elgate.CTail, Coll.Cons(Elgate.CResume, Coll.Cons(Elgate.CHandle, Coll.Cons(Elgate.CCall, Coll.Nil))))))))))))
@@ -45,6 +46,7 @@ def Elgate.kindN(k: Elgate.Kind): I64 = k match
   case Elgate.Exit => 4
   case Elgate.AddrOf => 5
   case Elgate.VtableCall => 6
+  case Elgate.VtableSlot => 7
 
 def Elgate.kindS(k: Elgate.Kind): Str = k match
   case Elgate.StmtExpr => "stmt-expr"
@@ -54,6 +56,7 @@ def Elgate.kindS(k: Elgate.Kind): Str = k match
   case Elgate.Exit => "exit"
   case Elgate.AddrOf => "address-of"
   case Elgate.VtableCall => "vtable-call (allowed)"
+  case Elgate.VtableSlot => "vtable-slot"
 
 def Elgate.conN(c: Elgate.Con): I64 = c match
   case Elgate.CMatch => 0
@@ -90,6 +93,7 @@ def Elgate.add(acc: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, l: I64, 
 def Elgate.permanent(k: Elgate.Kind): Bool = k match
   case Elgate.FnPtrCall => true
   case Elgate.Exit => true
+  case Elgate.VtableSlot => true
   case _ => false
 
 // the walk: fn = the instance's name, tail = e is in tail position of a def instance (Emit.body, Emit.block, Emit.arms)
@@ -188,11 +192,20 @@ def Elgate.fns(cx: Emit.Cx, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Col
       case El.Extern => acc
     Elgate.fns(cx, rest, a1)
 
+// every vtable slot's fn prototype is what the op call passes (env/self pointer + op params): a handler whose slots are
+// the h_ fns themselves (Emit.slotPre = h_) must have no fn taking capability params
+def Elgate.slots(hn: Sym.Sym, direct: Bool, fs: Coll.List[El.Fn], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val El.Fn(l, name, _, caps, _, _, _) = f
+    val bad = direct && Coll.length(caps) > 0 && !Str.eq(Sym.str(name), "init")
+    Elgate.slots(hn, direct, rest, if bad then Elgate.add(acc, Elgate.VtableSlot, Elgate.CHandle, l, hn) else acc)
+
 def Elgate.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = hs match
   case Coll.Nil => acc
   case Coll.Cons(h, rest) =>
-    val El.Handler(_, _, fs, _) = h
-    Elgate.handlers(cx, rest, Elgate.fns(cx, fs, acc))
+    val El.Handler(hn, _, fs, _) = h
+    Elgate.handlers(cx, rest, Elgate.slots(hn, Str.eq(Emit.slotPre(fs), "h_"), fs, Elgate.fns(cx, fs, acc)))
 
 // each mono instance of a def (KDef: a self tail call is a jump) or of a given's method
 def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = is match

@@ -1,0 +1,18 @@
+// pass: a handler fn with a {r: Region} binder takes Region as a row entry of its handler (the binder is the handler's
+// row, not a local declaration): the vtable slot is the w_ wrapper, so the op call Rh.Tally.add(2, 3) supplies the cap
+// (the innermost Region at the handle site) and returns 5, not the garbage of a call with the cap arg missing
+capability Rh.Tally:
+  def add(a: I64, b: I64): I64
+
+handler Rh.Plain for Rh.Tally:
+  def add {r: Region} (a: I64, b: I64): I64 = a + b
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  handle p = Rh.Plain()
+  Console.printI64(Rh.Tally.add(2, 3))
+  Console.printChar(10)
+  Console.printI64(5)
+  Console.printChar(10)
+  0

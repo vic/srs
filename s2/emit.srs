@@ -1872,7 +1872,7 @@ def Emit.vtables(cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
   case Coll.Cons(h, rest) =>
     val El.Handler(hn, p, fs, _) = h
     val Emit.Cx(_, _, _, _, ps, _, _, _, _) = cx
-    val pre: Str = if Emit.hasRow(fs) then "w_" else "h_"
+    val pre: Str = Emit.slotPre(fs)
     Emit.wrappers(cx, hn, fs)
     Console.print("static void* const vt_")
     Emit.id(hn)
@@ -1884,6 +1884,9 @@ def Emit.vtables(cx: Emit.Cx, hs: Coll.List[El.Handler]): Unit = hs match
       case Coll.None => ()
     Console.print(" 0 };\n")
     Emit.vtables(cx, rest)
+
+// the vtable slot prefix: w_ (wrapper: env pointer + op params) for a handler with a row, else the h_ fn itself
+def Emit.slotPre(fs: Coll.List[El.Fn]): Str = if Emit.hasRow(fs) then "w_" else "h_"
 
 // a handler with a row (E1b): every fn takes the same implicit capabilities
 def Emit.hasRow(fs: Coll.List[El.Fn]): Bool = fs match
