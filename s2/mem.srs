@@ -531,7 +531,7 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB], need: Mem.Ne
       val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
       val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), fl, Coll.Nil)
       val mf = Mem.manualFrees(fl, Coll.Nil)
-      val bs = Mem.blocks(md, cs, free, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
+      val bs = Mem.blocks(md, cs, free, Mem.NoIndex, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
       val Mem.IT(defs, next, vars, _, mvs) = it
       val sm = Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
       val rin = Mem.groupN(D.tuples(m, Mem.eSym(Mem.ERin)), Coll.Tip)
@@ -871,16 +871,18 @@ def Mem.vals(xs: Coll.List[Coll.KV[I64]], acc: Coll.List[I64]): Coll.List[I64] =
     val Coll.KV(_, v) = kv
     Mem.vals(rest, Coll.Cons(v, acc))
 
-def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ns: I64, rs: Coll.IMap[Mem.Region], mf: Coll.List[Mem.FreeAt], ids: Coll.List[I64], acc: Coll.List[Mem.Block]): Coll.List[Mem.Block] = ids match
+def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], fc: Mem.FC, ss: Coll.IMap[Mem.Site], ns: I64, rs: Coll.IMap[Mem.Region], mf: Coll.List[Mem.FreeAt], ids: Coll.List[I64], acc: Coll.List[Mem.Block]): Coll.List[Mem.Block] = ids match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
       val Mem.Region(f, line, nm, h, end) = x
       val Mem.Model(_, _, byRegion, _, _, _) = md
-      val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
-      val b = Mem.Block(r, line, f, nm, h, rows, Mem.rowDefs(rows, Coll.sEmpty(), Coll.Nil), Mem.freeLines(mf, f, nm, line, Coll.Nil), end)
-      Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, Coll.Cons(b, acc))
-    case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, acc)
+      val Mem.Rs(rows, fc2) =
+        Mem.rows(md, cs, free, fc, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
+      val b =
+        Mem.Block(r, line, f, nm, h, rows, Mem.rowDefs(rows, Coll.sEmpty(), Coll.Nil), Mem.freeLines(mf, f, nm, line, Coll.Nil), end)
+      Mem.blocks(md, cs, free, fc2, ss, ns, rs, mf, rest, Coll.Cons(b, acc))
+    case Coll.None => Mem.blocks(md, cs, free, fc, ss, ns, rs, mf, rest, acc)
 
 // the defs of rows, each once, in order of first row
 def Mem.rowDefs(rows: Coll.List[Mem.Row], seen: Coll.SMap[Bool], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = rows match
@@ -952,30 +954,55 @@ def Mem.mfStmts(f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Mem.FreeAt])
     case Ast.Do(e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
     case Ast.Check(_, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
 
-def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ids: Coll.List[I64], acc: Coll.List[Mem.Row]): Coll.List[Mem.Row] = ids match
-  case Coll.Nil => Coll.rev(acc)
+// the rows of the sites ids; fc = the first-caller index, built at the first Via site (most programs have none). A
+// site in a loop of its def is many; else its def's reason to be many: its own call sites, a call in a loop, or a
+// caller that is many (Via)
+def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], fc: Mem.FC, ss: Coll.IMap[Mem.Site], ids: Coll.List[I64], acc: Coll.List[Mem.Row]): Mem.Rs = ids match
+  case Coll.Nil => Mem.Rs(Coll.rev(acc), fc)
   case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
     case Coll.Some(x) =>
       val Mem.Site(f, line, ctor, loop) = x
-      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, f, ctor, Mem.bytesAt(md, line, ctor), Mem.dies(md, f, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
-    case Coll.None => Mem.rows(md, cs, free, ss, rest, acc)
+      val Mem.Model(manyDef, loopCall, _, _, _, _) = md
+      if loop then
+        Mem.rows(md, cs, free, fc, ss, rest, Coll.Cons(Mem.rowOf(md, f, line, ctor, Mem.Many(Mem.InLoop)), acc))
+      else if !Mem.isIn(manyDef, f) then
+        Mem.rows(md, cs, free, fc, ss, rest, Coll.Cons(Mem.rowOf(md, f, line, ctor, Mem.Once), acc))
+      else if Mem.count(cs, f) >= 2 then
+        Mem.rows(md, cs, free, fc, ss, rest, Coll.Cons(Mem.rowOf(md, f, line, ctor, Mem.Many(Mem.Sites(f, Mem.count(cs, f)))), acc))
+      else if Mem.isIn(loopCall, f) then
+        Mem.rows(md, cs, free, fc, ss, rest, Coll.Cons(Mem.rowOf(md, f, line, ctor, Mem.Many(Mem.LoopCalled(f))), acc))
+      else
+        val first: Coll.SMap[Sym.Sym] = fc match
+          case Mem.NoIndex => Mem.firstCallers(manyDef, free, Coll.sEmpty())
+          case Mem.Index(m) => m
+        val via = Mem.Many(Mem.Via(Mem.manyCaller(first, f)))
+        Mem.rows(md, cs, free, Mem.Index(first), ss, rest, Coll.Cons(Mem.rowOf(md, f, line, ctor, via), acc))
+    case Coll.None => Mem.rows(md, cs, free, fc, ss, rest, acc)
 
-// a site in a loop of its def, else its def's reason to be many: its own call sites, a call in a loop, or a caller
-// that is many
-def Mem.multOf(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], f: Sym.Sym, loop: Bool): Mem.Mult =
-  val Mem.Model(manyDef, loopCall, _, _, _, _) = md
-  if loop then Mem.Many(Mem.InLoop)
-  else if !Mem.isIn(manyDef, f) then Mem.Once
-  else if Mem.count(cs, f) >= 2 then Mem.Many(Mem.Sites(f, Mem.count(cs, f)))
-  else if Mem.isIn(loopCall, f) then Mem.Many(Mem.LoopCalled(f))
-  else Mem.Many(Mem.Via(Mem.manyCaller(manyDef, free, f)))
+def Mem.rowOf(md: Mem.Model, f: Sym.Sym, line: I64, ctor: Sym.Sym, m: Mem.Mult): Mem.Row =
+  Mem.Row(line, f, ctor, Mem.bytesAt(md, line, ctor), Mem.dies(md, f, line, ctor), m)
 
-// the first free caller of f that is many (the model has one: manyDef(f) came from such a caller)
-def Mem.manyCaller(manyDef: Coll.SMap[Bool], free: Coll.List[Mem.Edge], f: Sym.Sym): Sym.Sym = free match
-  case Coll.Nil => f
+enum Mem.Rs:
+  case Mem.Rs(rows: Coll.List[Mem.Row], fc: Mem.FC)
+
+// the first-caller index: not built yet, or each callee's first free caller that is many (Mem.firstCallers)
+enum Mem.FC:
+  case Mem.NoIndex
+  case Mem.Index(first: Coll.SMap[Sym.Sym])
+
+// the first free caller of f that is many (the model has one: manyDef(f) came from such a caller): one lookup per
+// site, not a scan of every call
+def Mem.manyCaller(first: Coll.SMap[Sym.Sym], f: Sym.Sym): Sym.Sym = Coll.sLookup(first, f) match
+  case Coll.None => f
+  case Coll.Some(a) => a
+
+// for each callee, its first free caller (in call order) that is many: set once per callee
+def Mem.firstCallers(manyDef: Coll.SMap[Bool], es: Coll.List[Mem.Edge], m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym.Sym] = es match
+  case Coll.Nil => m
   case Coll.Cons(e, rest) =>
     val Mem.Edge(a, b) = e
-    if Sym.eq(b, f) && Mem.isIn(manyDef, a) then a else Mem.manyCaller(manyDef, rest, f)
+    if Mem.isIn(manyDef, a) && !Mem.isIn(m, b) then Mem.firstCallers(manyDef, rest, Coll.sInsert(m, b, a))
+    else Mem.firstCallers(manyDef, rest, m)
 
 // the constructor sites by line: each instance of a def adds one entry for its site
 def Mem.siteMap(sb: Coll.List[Emit.SiteB], m: Coll.IMap[Coll.List[Emit.SiteB]]): Coll.IMap[Coll.List[Emit.SiteB]] = sb match
