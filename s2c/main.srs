@@ -411,7 +411,7 @@ enum S2c.Mode:
 // compact: each def that can run in a scratch region and copy its result out (M6a)
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs, pf, vs, ms, rs, cs) =>
+  case Mem.Ok(bs, pf, vs, ms, rs, cs, bad) =>
     Console.print("{\"regions\":[")
     S2c.jRegions(fs, bs, true)
     Console.print("],\"sites\":[")
@@ -435,6 +435,8 @@ def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
     S2c.jReuses(fs, rs, true)
     Console.print("],\"compact\":[")
     S2c.jCompacts(fs, cs, true)
+    Console.print("],\"fail\":[")
+    S2c.jFails(fs, bad, true)
     Console.print("]}\n")
     0
 
@@ -701,21 +703,60 @@ def S2c.jWhy(w: Mem.Why): Unit = w match
     S2c.jSym(f)
     Console.print("}")
 
-def S2c.jReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.Reuse], first: Bool): Unit = rs match
+// each reuse: the match (at, def, var x, case), the box its arm builds (ctor, boxAt), the regions x can hold and the
+// regions the box would be made in, and the verdict: ok, regionShorter (x's region dies before the box's) or
+// regionUnknown (a region set is empty: no proof)
+def S2c.jReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.ReuseRec], first: Bool): Unit = rs match
   case Coll.Nil => ()
-  case Coll.Cons(r, rest) =>
-    val Mem.Reuse(line, x, c, k) = r
+  case Coll.Cons(rr, rest) =>
+    val Mem.ReuseRec(r, xr, br, v) = rr
+    val Mem.Reuse(line, f, x, c, k, at) = r
     S2c.jSep(first)
     Console.print("{\"at\":")
     S2c.jAt(fs, line)
+    Console.print(",\"def\":")
+    S2c.jSym(f)
     Console.print(",\"var\":")
     S2c.jSym(x)
     Console.print(",\"case\":")
     S2c.jSym(c)
     Console.print(",\"ctor\":")
     S2c.jSym(k)
+    Console.print(",\"boxAt\":")
+    S2c.jAt(fs, at)
+    Console.print(",\"varRegions\":[")
+    S2c.jInts(xr, true)
+    Console.print("],\"boxRegions\":[")
+    S2c.jInts(br, true)
+    Console.print("],\"verdict\":")
+    S2c.jRV(v)
     Console.print("}")
     S2c.jReuses(fs, rest, false)
+
+def S2c.jRV(v: Mem.RV): Unit = v match
+  case Mem.ROk => Console.print("\"ok\"")
+  case Mem.RUnknown => Console.print("\"regionUnknown\"")
+  case Mem.RShorter(a, b) =>
+    Console.print("\"regionShorter\",\"varRegion\":")
+    Console.printI64(a)
+    Console.print(",\"boxRegion\":")
+    Console.printI64(b)
+
+// each failed sanity check: the check and the site it names; empty on every program
+def S2c.jFails(fs: Coll.List[S2c.File], xs: Coll.List[Mem.Fail], first: Bool): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(x, rest) =>
+    val Mem.Fail(c, f, line, k) = x
+    S2c.jSep(first)
+    c match
+      case Mem.CNoRegion => Console.print("{\"check\":\"siteNoRegion\",\"def\":")
+    S2c.jSym(f)
+    Console.print(",\"at\":")
+    S2c.jAt(fs, line)
+    Console.print(",\"ctor\":")
+    S2c.jSym(k)
+    Console.print("}")
+    S2c.jFails(fs, rest, false)
 
 def S2c.jCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact], first: Bool): Unit = cs match
   case Coll.Nil => ()

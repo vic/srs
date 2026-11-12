@@ -271,7 +271,7 @@ enum Mem.FreeAt:
   case Mem.FreeAt(f: Sym.Sym, line: I64, x: Sym.Sym)
 
 enum Mem.Report:
-  case Mem.Ok(bs: Coll.List[Mem.Block], pf: Coll.List[Mem.FreeAt], vs: Coll.List[Mem.VarRec], ms: Coll.List[Mem.MoveRec], rs: Coll.List[Mem.Reuse], cs: Coll.List[Mem.Compact])
+  case Mem.Ok(bs: Coll.List[Mem.Block], pf: Coll.List[Mem.FreeAt], vs: Coll.List[Mem.VarRec], ms: Coll.List[Mem.MoveRec], rs: Coll.List[Mem.ReuseRec], cs: Coll.List[Mem.Compact], bad: Coll.List[Mem.Fail])
   case Mem.RulesBad(rel: Sym.Sym)
 
 // what the model says, by name or id
@@ -291,8 +291,9 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   val Mem.EW(efs, _, esites) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), Coll.revOnto(Mem.asDecls(dfs, Coll.Nil), ds))
   val it = Mem.interned(Coll.revOnto(Mem.fnSeeds(dfs, true, Mem.fnSeeds(fl, false, Coll.Nil)), efs))
   val all0 = Coll.revOnto(facts, Coll.revOnto(Mem.factsOf(it), Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil))))
-  val all = Mem.esmFacts(esites, Mem.sitesByDef(sites, 0, ns, Coll.sEmpty()), all0)
-  D.solve(Coll.revOnto(Coll.rev(Mem.rules()), Coll.revOnto(Coll.rev(Mem.eRules()), Coll.revOnto(Coll.rev(Mem.sharedRules()), Coll.revOnto(Coll.rev(Mem.rinRules()), Coll.revOnto(Coll.rev(Mem.moveRules()), Mem.sRules()))))), all) match
+  val byDef = Mem.sitesByDef(sites, 0, ns, Coll.sEmpty())
+  val all = Mem.esmFacts(esites, byDef, all0)
+  D.solve(Coll.revOnto(Coll.rev(Mem.rules()), Coll.revOnto(Coll.rev(Mem.eRules()), Coll.revOnto(Coll.rev(Mem.sharedRules()), Coll.revOnto(Coll.rev(Mem.rinRules()), Coll.revOnto(Coll.rev(Mem.moveRules()), Coll.revOnto(Coll.rev(Mem.failRules()), Mem.sRules())))))), all) match
     case D.Solved(m) =>
       val esc = Mem.marks(esites, Mem.idSet(D.tuples(m, Mem.eSym(Mem.EEsc)), Coll.Tip), true, Coll.Nil)
       val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), esc)
@@ -302,14 +303,15 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
       val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
       val mf = Mem.manualFrees(fl, Coll.Nil)
       val bs = Mem.blocks(md, cs, free, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
-      val Mem.IT(_, _, vars, _, mvs) = it
+      val Mem.IT(defs, _, vars, _, mvs) = it
       val sm = Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
       val rin = Mem.groupN(D.tuples(m, Mem.eSym(Mem.ERin)), Coll.Tip)
       val vrs = Mem.varRecs(vars, rin, sm, Coll.Nil)
       val Mem.Sh7(_, _, shared) = sm
       val mv0 = Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
-      val mrs = Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip), Coll.Nil)
-      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.byReuseLine(reuse), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
+      val outl = Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip)
+      val mrs = Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, outl, Coll.Nil)
+      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -632,6 +634,8 @@ enum Mem.ERel:
   case Mem.EMArg
   case Mem.EMRes
   case Mem.EOwn
+  case Mem.EHasOwn
+  case Mem.ENoRegion
 
 def Mem.eSym(r: Mem.ERel): Sym.Sym = r match
   case Mem.EFlow => Sym.of("eflow")
@@ -654,6 +658,8 @@ def Mem.eSym(r: Mem.ERel): Sym.Sym = r match
   case Mem.EMArg => Sym.of("emarg")
   case Mem.EMRes => Sym.of("emres")
   case Mem.EOwn => Sym.of("eown")
+  case Mem.EHasOwn => Sym.of("ehasOwn")
+  case Mem.ENoRegion => Sym.of("enoRegion")
 
 // a node: kind (Mem.kVar, kSite, kCall, kRet), its def, its key (a name, a site id, a line, 0)
 enum Mem.Node:
@@ -1062,6 +1068,30 @@ def Mem.fnSeeds(fs: Coll.List[Ast.Fn], dispatch: Bool, acc: Coll.List[Mem.EF]): 
 
 def Mem.sh(xs: Coll.List[D.Arg]): D.Lit = D.Pos(D.Atom(Mem.s7(Mem.RShared7), xs))
 
+// the sanity checks (Doop sanity.dl shape): each relation must be empty on every program. noRegion(E): a site of a
+// reached def whose box has no region (vars: E 14, F 6, N 0, R 12)
+//   hasOwn(N) :- own(N, R)        noRegion(E) :- esiteOf(E, F), reached(F), esiteNode(E, N), !hasOwn(N)
+def Mem.failRules(): Coll.List[D.Rule] =
+  val has = D.Rule(Mem.eAtom(Mem.EHasOwn, Mem.nN()), Mem.lit1(D.Pos(Mem.eAtom(Mem.EOwn, Mem.n1(0, Coll.Cons(Mem.v(12), Coll.Nil))))))
+  val siteOf = D.Pos(Mem.eAtom(Mem.ESiteOf, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(6), Coll.Nil))))
+  val reached = D.Pos(D.Atom(Mem.relSym(Mem.RReached), Coll.Cons(Mem.v(6), Coll.Nil)))
+  val node = D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))
+  val none = D.Rule(Mem.eAtom(Mem.ENoRegion, Coll.Cons(Mem.v(14), Coll.Nil)), Coll.Cons(siteOf, Coll.Cons(reached, Coll.Cons(node, Mem.lit1(D.Neg(Mem.eAtom(Mem.EHasOwn, Mem.nN())))))))
+  Coll.Cons(has, Coll.Cons(none, Coll.Nil))
+
+// a failed sanity check: which check, and the site it names (def, line, ctor)
+enum Mem.Check:
+  case Mem.CNoRegion
+
+enum Mem.Fail:
+  case Mem.Fail(c: Mem.Check, f: Sym.Sym, line: I64, ctor: Sym.Sym)
+
+def Mem.noRegionFails(es: Coll.List[Mem.ESite], bad: Coll.IMap[Bool], acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = es match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(e, rest) =>
+    val Mem.ESite(id, f, line, ctor) = e
+    Mem.noRegionFails(rest, bad, if Mem.hasId(bad, id) then Coll.Cons(Mem.Fail(Mem.CNoRegion, f, line, ctor), acc) else acc)
+
 // the moves across a call: marg(M, G, P) an arg node into its callee's param, mres(X, G, C) a callee's result into its
 // call (vars: M 3, G 6, I 7, C 8, P 0, X 11)
 def Mem.moveRules(): Coll.List[D.Rule] =
@@ -1152,10 +1182,14 @@ def Mem.sharedRules(): Coll.List[D.Rule] =
   val retOf = D.Pos(Mem.eAtom(Mem.ERetOf, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(11), Coll.Nil))))
   val r5 = D.Rule(head, Mem.lits3(retOf, Mem.sh(Coll.Cons(Mem.v(11), Coll.Nil)), D.Pos(Mem.eAtom(Mem.ECallOf, Mem.n1(0, Coll.Cons(Mem.v(6), Coll.Nil))))))
   Coll.Cons(r1, Coll.Cons(r2, Coll.Cons(r3, Coll.Cons(r4, Coll.Cons(r5, Coll.Nil)))))
-
+// a reuse: the match at line in def f, on x, whose arm takes apart case c and builds ctor (a case of the same enum) at line at
 // a reuse: the match at line, on x, whose arm takes apart case c and builds ctor (a case of the same enum)
 enum Mem.Reuse:
-  case Mem.Reuse(line: I64, x: Sym.Sym, c: Sym.Sym, ctor: Sym.Sym)
+  case Mem.Reuse(line: I64, f: Sym.Sym, x: Sym.Sym, c: Sym.Sym, ctor: Sym.Sym, at: I64)
+
+// a box an arm builds: its line and ctor
+enum Mem.Built:
+  case Mem.Built(line: I64, ctor: Sym.Sym)
 
 // shared var nodes by def: def -> the names shared in it
 def Mem.sharedSet(vars: Coll.BMap[Mem.VarOf], ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Coll.SMap[Bool]]): Coll.SMap[Coll.SMap[Bool]] = ts match
@@ -1215,7 +1249,7 @@ def Mem.scanFns(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool
 def Mem.scan(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]], f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = e match
   case Ast.Match(line, s, arms) =>
     val acc2: Coll.List[Mem.Reuse] = s match
-      case Ast.Name(_, x) => if Mem.isShared(sh, f, x) then acc else Mem.armReuse(ce, cx, line, x, arms, acc)
+      case Ast.Name(_, x) => if Mem.isShared(sh, f, x) then acc else Mem.armReuse(ce, cx, f, line, x, arms, acc)
       case _ => acc
     Mem.scanArms(ce, cx, sh, f, arms, Mem.scan(ce, cx, sh, f, s, acc2))
   case Ast.Call(_, _, _, _, args) => Mem.scanAll(ce, cx, sh, f, args, acc)
@@ -1248,36 +1282,78 @@ def Mem.scanStmts(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bo
     case Ast.Do(e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
     case Ast.Check(_, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
 
-def Mem.armReuse(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, line: I64, x: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = arms match
+def Mem.armReuse(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, f: Sym.Sym, line: I64, x: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = arms match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, p, b) = a
     val acc2: Coll.List[Mem.Reuse] = p match
       case Ast.PCase(c, _) =>
         val Mem.Cx(_, ctors, _, _) = cx
-        val k: Coll.Option[Sym.Sym] = if Mem.allocates(ctors, c) then Mem.firstBuild(ce, cx, c, b) else Coll.None
+        val k: Coll.Option[Mem.Built] = if Mem.allocates(ctors, c) then Mem.firstBuild(ce, cx, c, b) else Coll.None
         k match
-          case Coll.Some(kk) => Coll.Cons(Mem.Reuse(line, x, c, kk), acc)
+          case Coll.Some(kk) =>
+            val Mem.Built(at, kc) = kk
+            Coll.Cons(Mem.Reuse(line, f, x, c, kc, at), acc)
           case Coll.None => acc
       case Ast.PAny => acc
-    Mem.armReuse(ce, cx, line, x, rest, acc2)
+    Mem.armReuse(ce, cx, f, line, x, rest, acc2)
 
 // the first box of c's enum that e builds, in evaluation order
-def Mem.firstBuild(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, e: Ast.Expr): Coll.Option[Sym.Sym] = e match
-  case Ast.Call(_, g, _, _, args) =>
+def Mem.firstBuild(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, e: Ast.Expr): Coll.Option[Mem.Built] = e match
+  case Ast.Call(gl, g, _, _, args) =>
     val Mem.Cx(_, ctors, _, _) = cx
     Mem.firstOf(ce, cx, c, args) match
       case Coll.Some(k) => Coll.Some(k)
-      case Coll.None => if Mem.allocates(ctors, g) && Mem.sameEnum(ce, c, g) then Coll.Some(g) else Coll.None
+      case Coll.None => if Mem.allocates(ctors, g) && Mem.sameEnum(ce, c, g) then Coll.Some(Mem.Built(gl, g)) else Coll.None
   case Ast.If(_, _, t, x) => Mem.firstOf(ce, cx, c, Coll.Cons(t, Coll.Cons(x, Coll.Nil)))
   case Ast.Block(_, _, last) => Mem.firstBuild(ce, cx, c, last)
   case _ => Coll.None
 
-def Mem.firstOf(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, es: Coll.List[Ast.Expr]): Coll.Option[Sym.Sym] = es match
+def Mem.firstOf(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, es: Coll.List[Ast.Expr]): Coll.Option[Mem.Built] = es match
   case Coll.Nil => Coll.None
   case Coll.Cons(e, rest) => Mem.firstBuild(ce, cx, c, e) match
     case Coll.Some(k) => Coll.Some(k)
     case Coll.None => Mem.firstOf(ce, cx, c, rest)
+
+// a reuse writes the new box into x's cell, so the box lives in x's region: ok when each region x can hold outlives (or
+// is) each region the box would be made in; unknown when either set is empty (no proof)
+enum Mem.RV:
+  case Mem.ROk
+  case Mem.RShorter(x: I64, box: I64)
+  case Mem.RUnknown
+
+enum Mem.ReuseRec:
+  case Mem.ReuseRec(r: Mem.Reuse, xr: Coll.List[I64], br: Coll.List[I64], v: Mem.RV)
+
+// the region facts of a reuse: x's var node regions (rin) and the regions of its box's M1 site (fills)
+enum Mem.RegionsOf:
+  case Mem.RegionsOf(defs: Coll.SMap[Mem.DefIds], rin: Coll.IMap[Coll.List[I64]], fills: Coll.IMap[Coll.List[I64]], byDef: Coll.SMap[Coll.List[Mem.KSite]], outl: Coll.IMap[Coll.List[I64]])
+
+def Mem.reuseRecs(rs: Coll.List[Mem.Reuse], ro: Mem.RegionsOf, acc: Coll.List[Mem.ReuseRec]): Coll.List[Mem.ReuseRec] = rs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(r, rest) =>
+    val Mem.Reuse(_, f, x, _, k, at) = r
+    val Mem.RegionsOf(defs, rin, fills, byDef, outl) = ro
+    val Mem.DefIds(names, _) = Mem.defIds(defs, f)
+    val xr: Coll.List[I64] = Coll.sLookup(names, x) match
+      case Coll.Some(i) => Mem.idsOf(rin, i)
+      case Coll.None => Coll.Nil
+    val ks: Coll.List[Mem.KSite] = Coll.sLookup(byDef, f) match
+      case Coll.Some(xs) => xs
+      case Coll.None => Coll.Nil
+    val br: Coll.List[I64] = Mem.kFind(ks, at, k) match
+      case Coll.Some(s) => Mem.idsOf(fills, s)
+      case Coll.None => Coll.Nil
+    Mem.reuseRecs(rest, ro, Coll.Cons(Mem.ReuseRec(r, xr, br, Mem.reuseVerdict(xr, br, outl)), acc))
+
+def Mem.reuseVerdict(xr: Coll.List[I64], br: Coll.List[I64], outl: Coll.IMap[Coll.List[I64]]): Mem.RV =
+  if Coll.length(xr) == 0 || Coll.length(br) == 0 then Mem.RUnknown
+  else
+    val s: Mem.Safe = Mem.safeAll(xr, br, outl)
+    s match
+      case Mem.Shorter(a, b) => Mem.RShorter(a, b)
+      case Mem.Outlives => Mem.ROk
+      case Mem.NoStore => Mem.ROk
 
 // reuses by line (line * n + i is unique: i < n)
 def Mem.byReuseLine(rs: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] =
@@ -1287,7 +1363,7 @@ def Mem.byReuseLine(rs: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] =
 def Mem.reuseKeys(rs: Coll.List[Mem.Reuse], n: I64, i: I64, acc: Coll.List[Coll.KV[Mem.Reuse]]): Coll.List[Coll.KV[Mem.Reuse]] = rs match
   case Coll.Nil => acc
   case Coll.Cons(r, rest) =>
-    val Mem.Reuse(line, _, _, _) = r
+    val Mem.Reuse(line, _, _, _, _, _) = r
     Mem.reuseKeys(rest, n, i + 1, Coll.Cons(Coll.KV(line * n + i, r), acc))
 
 def Mem.reuseVals(xs: Coll.List[Coll.KV[Mem.Reuse]], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = xs match
