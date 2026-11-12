@@ -720,48 +720,55 @@ def Mem.allDead(rs: Coll.List[Mem.ESiteR], f: Sym.Sym, line: I64, ctor: Sym.Sym,
 // cell: the reuse table. Report only (M7b writes the C).
 //   shared(N) :- multi(N) | unknown(N) | flow(M, N), shared(M) | argOf(M, G, I, C), shared(M), param(G, I, N)
 //              | argOf(_, G, _, N), shared(ret node of G)
+// the use count of each name a def reads: a Sym map, and its keys newest first
 enum Mem.UC:
-  case Mem.UC(x: Sym.Sym, n: I64)
+  case Mem.UC(m: Coll.SMap[I64], ks: Coll.List[Sym.Sym])
 
-def Mem.ucGet(m: Coll.List[Mem.UC], x: Sym.Sym): I64 = m match
-  case Coll.Nil => 0
-  case Coll.Cons(u, rest) =>
-    val Mem.UC(y, n) = u
-    if Sym.eq(x, y) then n else Mem.ucGet(rest, x)
+def Mem.ucNone(): Mem.UC = Mem.UC(Coll.sEmpty(), Coll.Nil)
 
-// m with x's count set to n
-def Mem.ucSet(m: Coll.List[Mem.UC], x: Sym.Sym, n: I64): Coll.List[Mem.UC] = m match
-  case Coll.Nil => Coll.Cons(Mem.UC(x, n), Coll.Nil)
-  case Coll.Cons(u, rest) =>
-    val Mem.UC(y, _) = u
-    if Sym.eq(x, y) then Coll.Cons(Mem.UC(x, n), rest) else Coll.Cons(u, Mem.ucSet(rest, x, n))
+def Mem.ucCount(m: Coll.SMap[I64], x: Sym.Sym): I64 = Coll.sLookup(m, x) match
+  case Coll.Some(n) => n
+  case Coll.None => 0
 
-def Mem.ucAdd(m: Coll.List[Mem.UC], x: Sym.Sym, k: I64): Coll.List[Mem.UC] = Mem.ucSet(m, x, Mem.ucGet(m, x) + k)
+// u with k added to the count of x
+def Mem.ucAdd(u: Mem.UC, x: Sym.Sym, k: I64): Mem.UC = u match
+  case Mem.UC(m, ks) => Coll.sLookup(m, x) match
+    case Coll.Some(n) => Mem.UC(Coll.sInsert(m, x, n + k), ks)
+    case Coll.None => Mem.UC(Coll.sInsert(m, x, k), Coll.Cons(x, ks))
 
-// a with each count of b added k times
-def Mem.ucSum(a: Coll.List[Mem.UC], b: Coll.List[Mem.UC], k: I64): Coll.List[Mem.UC] = b match
+// u with the count of x raised to n
+def Mem.ucRaise(u: Mem.UC, x: Sym.Sym, n: I64): Mem.UC = u match
+  case Mem.UC(m, ks) => Coll.sLookup(m, x) match
+    case Coll.Some(c) => if n > c then Mem.UC(Coll.sInsert(m, x, n), ks) else u
+    case Coll.None => Mem.UC(Coll.sInsert(m, x, n), Coll.Cons(x, ks))
+
+// a with each count of b (keys of b oldest first) added k times
+def Mem.ucSum(a: Mem.UC, m: Coll.SMap[I64], ks: Coll.List[Sym.Sym], k: I64): Mem.UC = ks match
   case Coll.Nil => a
-  case Coll.Cons(u, rest) =>
-    val Mem.UC(x, n) = u
-    Mem.ucSum(Mem.ucAdd(a, x, n * k), rest, k)
+  case Coll.Cons(x, rest) => Mem.ucSum(Mem.ucAdd(a, x, Mem.ucCount(m, x) * k), m, rest, k)
 
-def Mem.ucMax(a: Coll.List[Mem.UC], b: Coll.List[Mem.UC]): Coll.List[Mem.UC] = b match
+def Mem.ucMax(a: Mem.UC, m: Coll.SMap[I64], ks: Coll.List[Sym.Sym]): Mem.UC = ks match
   case Coll.Nil => a
-  case Coll.Cons(u, rest) =>
-    val Mem.UC(x, n) = u
-    Mem.ucMax(if n > Mem.ucGet(a, x) then Mem.ucSet(a, x, n) else a, rest)
+  case Coll.Cons(x, rest) => Mem.ucMax(Mem.ucRaise(a, x, Mem.ucCount(m, x)), m, rest)
 
-def Mem.uses(e: Ast.Expr, m: Coll.List[Mem.UC]): Coll.List[Mem.UC] = e match
+def Mem.ucSumAll(a: Mem.UC, b: Mem.UC, k: I64): Mem.UC = b match
+  case Mem.UC(m, ks) => Mem.ucSum(a, m, Coll.rev(ks), k)
+
+def Mem.ucMaxAll(a: Mem.UC, b: Mem.UC): Mem.UC = b match
+  case Mem.UC(m, ks) => Mem.ucMax(a, m, Coll.rev(ks))
+
+def Mem.uses(e: Ast.Expr, m: Mem.UC): Mem.UC = e match
   case Ast.Name(_, x) => Mem.ucAdd(m, x, 1)
-  case Ast.Call(_, f, _, _, args) => Mem.usesAll(args, Mem.ucAdd(m, f, 1))
+  // a callee is a def, not a name: it has no count
+  case Ast.Call(_, _, _, _, args) => Mem.usesAll(args, m)
   case Ast.Method(_, r, _, args) => Mem.usesAll(args, Mem.ucAdd(m, r, 1))
   case Ast.Resume(_, _, x) => Mem.uses(x, m)
   case Ast.Bin(_, _, l, r) => Mem.uses(r, Mem.uses(l, m))
   case Ast.Un(_, _, x) => Mem.uses(x, m)
-  case Ast.If(_, c, t, x) => Mem.ucSum(Mem.uses(c, m), Mem.ucMax(Mem.uses(t, Coll.Nil), Mem.uses(x, Coll.Nil)), 1)
-  case Ast.Match(_, s, arms) => Mem.ucSum(Mem.uses(s, m), Mem.armUses(arms, Coll.Nil), 1)
+  case Ast.If(_, c, t, x) => Mem.ucSumAll(Mem.uses(c, m), Mem.ucMaxAll(Mem.uses(t, Mem.ucNone()), Mem.uses(x, Mem.ucNone())), 1)
+  case Ast.Match(_, s, arms) => Mem.ucSumAll(Mem.uses(s, m), Mem.armUses(arms, Mem.ucNone()), 1)
   case Ast.Block(_, ss, last) => Mem.uses(last, Mem.stmtUses(ss, m))
-  case Ast.While(_, c, body) => Mem.ucSum(m, Mem.uses(body, Mem.uses(c, Coll.Nil)), 2)
+  case Ast.While(_, c, body) => Mem.ucSumAll(m, Mem.uses(body, Mem.uses(c, Mem.ucNone())), 2)
   case Ast.Assign(_, _, x) => Mem.uses(x, m)
   case Ast.Quant(_, _, _, _, _) => m
   case Ast.Int(_, _) => m
@@ -769,17 +776,17 @@ def Mem.uses(e: Ast.Expr, m: Coll.List[Mem.UC]): Coll.List[Mem.UC] = e match
   case Ast.Str(_, _) => m
   case Ast.Unit(_) => m
 
-def Mem.usesAll(es: Coll.List[Ast.Expr], m: Coll.List[Mem.UC]): Coll.List[Mem.UC] = es match
+def Mem.usesAll(es: Coll.List[Ast.Expr], m: Mem.UC): Mem.UC = es match
   case Coll.Nil => m
   case Coll.Cons(e, rest) => Mem.usesAll(rest, Mem.uses(e, m))
 
-def Mem.armUses(arms: Coll.List[Ast.Arm], m: Coll.List[Mem.UC]): Coll.List[Mem.UC] = arms match
+def Mem.armUses(arms: Coll.List[Ast.Arm], m: Mem.UC): Mem.UC = arms match
   case Coll.Nil => m
   case Coll.Cons(a, rest) =>
     val Ast.Arm(_, _, body) = a
-    Mem.armUses(rest, Mem.ucMax(m, Mem.uses(body, Coll.Nil)))
+    Mem.armUses(rest, Mem.ucMaxAll(m, Mem.uses(body, Mem.ucNone())))
 
-def Mem.stmtUses(ss: Coll.List[Ast.Stmt], m: Coll.List[Mem.UC]): Coll.List[Mem.UC] = ss match
+def Mem.stmtUses(ss: Coll.List[Ast.Stmt], m: Mem.UC): Mem.UC = ss match
   case Coll.Nil => m
   case Coll.Cons(s, rest) => s match
     case Ast.Val(_, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
@@ -799,11 +806,13 @@ def Mem.s7(r: Mem.SRel7): Sym.Sym = r match
   case Mem.RUnknown7 => Sym.of("eunknown")
   case Mem.RShared7 => Sym.of("eshared")
 
-def Mem.multiFacts(f: Sym.Sym, m: Coll.List[Mem.UC], acc: Coll.List[Mem.EF]): Coll.List[Mem.EF] = m match
+def Mem.multiFacts(f: Sym.Sym, u: Mem.UC, acc: Coll.List[Mem.EF]): Coll.List[Mem.EF] = u match
+  case Mem.UC(m, ks) => Mem.multiKs(f, m, Coll.rev(ks), acc)
+
+def Mem.multiKs(f: Sym.Sym, m: Coll.SMap[I64], ks: Coll.List[Sym.Sym], acc: Coll.List[Mem.EF]): Coll.List[Mem.EF] = ks match
   case Coll.Nil => acc
-  case Coll.Cons(u, rest) =>
-    val Mem.UC(x, n) = u
-    Mem.multiFacts(f, rest, if n >= 2 then Coll.Cons(Mem.FMulti(Mem.nVar(f, x)), acc) else acc)
+  case Coll.Cons(x, rest) =>
+    Mem.multiKs(f, m, rest, if Mem.ucCount(m, x) >= 2 then Coll.Cons(Mem.FMulti(Mem.nVar(f, x)), acc) else acc)
 
 def Mem.paramSeeds(f: Sym.Sym, ps: Coll.List[Ast.Binder], acc: Coll.List[Mem.EF]): Coll.List[Mem.EF] = ps match
   case Coll.Nil => acc
@@ -833,7 +842,7 @@ def Mem.fnSeeds(fs: Coll.List[Ast.Fn], dispatch: Bool, acc: Coll.List[Mem.EF]): 
   case Coll.Cons(f, rest) =>
     val Ast.Fn(_, n, _, ps, _, _, body) = f
     val acc2: Coll.List[Mem.EF] = body match
-      case Ast.Def(_, e) => Mem.multiFacts(n, Mem.uses(e, Coll.Nil), acc)
+      case Ast.Def(_, e) => Mem.multiFacts(n, Mem.uses(e, Mem.ucNone()), acc)
       case Ast.Extern(_) => acc
     Mem.fnSeeds(rest, dispatch, if dispatch then Mem.paramSeeds(n, ps, acc2) else acc2)
 
