@@ -1263,7 +1263,8 @@ def Emit.closeEnums(cx: Emit.Cx, todo: Coll.List[K.Term], seen: Coll.BTree[Coll.
       val Emit.Cx(_, _, _, es, _, _, _, _, _, sx) = cx
       val h = Mono.thash(t, 0)
       Coll.sLookup(es, n) match
-        case Coll.None => Emit.closeEnums(cx, rest, seen, out)
+        // not an enum (Cell, Array, a builtin): the enums in its type args (a handler's state Cell[T] may be T's only use)
+        case Coll.None => Emit.closeEnums(cx, Coll.revOnto(args, rest), seen, out)
         case Coll.Some(e) =>
           if Emit.inTerms(Coll.bTGetOr(seen, h, Coll.Nil), t) then Emit.closeEnums(cx, rest, seen, out)
           else Emit.closeEnums(cx, Emit.fieldTys(e, args, rest), Coll.bPushT(seen, h, t), Coll.Cons(t, out))

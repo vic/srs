@@ -1,0 +1,26 @@
+// pass: a handler's state enum that only the handler uses (its Cell[T] state, matched in the op bodies): s2c emits its
+// struct (Emit.closeEnums visits the type args of Cell)
+enum Ho.St:
+  case Ho.St(n: I64, last: Str)
+
+capability Ho:
+  def add(s: Str): Unit
+  def count(): I64
+
+handler Hho for Ho:
+  def init(): Cell[Ho.St] = Cell.new(Ho.St(0, ""))
+  def add(self: Cell[Ho.St], s: Str): Unit = Cell.get(self) match
+    case Ho.St(n, _) => Cell.put(self, Ho.St(n + 1, s))
+  def count(self: Cell[Ho.St]): I64 = Cell.get(self) match
+    case Ho.St(n, _) => n
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle a = Srs.Arena()
+  handle h = Hho()
+  Ho.add("a")
+  Ho.add("b")
+  Console.printI64(Ho.count())
+  Console.print("\n")
+  0
