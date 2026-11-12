@@ -239,7 +239,7 @@ enum Mem.Block:
   case Mem.Block(line: I64, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row])
 
 enum Mem.Report:
-  case Mem.Ok(bs: Coll.List[Mem.Block], rs: Coll.List[Mem.Reuse])
+  case Mem.Ok(bs: Coll.List[Mem.Block], rs: Coll.List[Mem.Reuse], cs: Coll.List[Mem.Compact])
   case Mem.RulesBad(rel: Sym.Sym)
 
 // what the model says, by name or id
@@ -255,7 +255,7 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   D.solve(Mem.rules(), facts) match
     case D.Solved(m) =>
       val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), Mem.escapeSites(cx, ds))
-      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil), Mem.byReuseLine(Mem.reuses(ds)))
+      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil), Mem.byReuseLine(Mem.reuses(ds)), Mem.reachedOnly(Mem.compacts(ds), Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -1015,3 +1015,140 @@ def Mem.boxed(nss: Coll.List[Coll.List[Mem.Node]], fields: Coll.List[Ast.Binder]
       val Ast.Binder(_, _, t) = fd
       Mem.boxed(rest, frest, if Mem.scalar(t) then acc else Coll.Cons(ns, acc))
     case Coll.Nil => Mem.boxed(rest, Coll.Nil, Coll.Cons(ns, acc))
+
+// ── M6a: which defs can run in a scratch region and copy out their result (vic/c/mem-design.md M6) ──
+// F can when its run makes an unbounded number of boxes, no box of its run reaches a sink, and its result can hold boxes
+// of its run: the copy of the result (into the caller's region) is then all that outlives the run, and the scratch
+// region with the rest is freed. Report only (M6b writes the copy).
+//   unb(G) :- self(G), allocs(G) | loopAlloc(G) | call(G, H), unb(H)
+//   need(F) :- call(F, G), unb(G) | loopAlloc(F)
+// not a candidate: a def with a self call (a handle in its block stops the self tail call from being a C loop), main,
+// a def that opens a region, the prelude's own Srs.* code, a def with a {} binder (two Regions in scope).
+enum Mem.SRel:
+  case Mem.SCallR
+  case Mem.SSelf
+  case Mem.SAllocs
+  case Mem.SLoopAlloc
+  case Mem.SUnb
+  case Mem.SNeed
+  case Mem.SRunSink
+  case Mem.SNewRet
+
+def Mem.sSym(r: Mem.SRel): Sym.Sym = r match
+  case Mem.SCallR => Sym.of("scall")
+  case Mem.SSelf => Sym.of("sself")
+  case Mem.SAllocs => Sym.of("sallocs")
+  case Mem.SLoopAlloc => Sym.of("sloopAlloc")
+  case Mem.SUnb => Sym.of("sunb")
+  case Mem.SNeed => Sym.of("sneed")
+  case Mem.SRunSink => Sym.of("srunSink")
+  case Mem.SNewRet => Sym.of("snewRet")
+
+def Mem.sAtom(r: Mem.SRel, xs: Coll.List[I64]): D.Atom = D.Atom(Mem.sSym(r), Pure.vars(xs))
+
+def Mem.sRules(): Coll.List[D.Rule] =
+  val u1 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SSelf, Pure.one(0))), D.Pos(Mem.sAtom(Mem.SAllocs, Pure.one(0)))))
+  val u2 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lit1(D.Pos(Mem.sAtom(Mem.SLoopAlloc, Pure.one(0)))))
+  val u3 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SCallR, Pure.two(0, 1))), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
+  val n1 = D.Rule(Mem.sAtom(Mem.SNeed, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SCallR, Pure.two(0, 1))), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
+  val n2 = D.Rule(Mem.sAtom(Mem.SNeed, Pure.one(0)), Mem.lit1(D.Pos(Mem.sAtom(Mem.SLoopAlloc, Pure.one(0)))))
+  Coll.Cons(u1, Coll.Cons(u2, Coll.Cons(u3, Coll.Cons(n1, Coll.Cons(n2, Mem.runRules())))))
+
+def Mem.sFact1(r: Mem.SRel, a: Sym.Sym): D.Fact = D.Fact(Mem.sSym(r), Coll.Cons(D.VSym(a), Coll.Nil))
+
+// the facts of the M1 walk, renamed: call(F, G) gives scall and, when F == G, sself; each site gives sallocs and, in a
+// loop of its def, sloopAlloc
+def Mem.sFacts(fs: Coll.List[D.Fact], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) =>
+    val D.Fact(rel, vals) = x
+    if Sym.eq(rel, Mem.relSym(Mem.RCall)) then
+      val acc2 = Coll.Cons(D.Fact(Mem.sSym(Mem.SCallR), vals), acc)
+      Mem.sFacts(rest, Mem.selfOf(vals, acc2))
+    else Mem.sFacts(rest, acc)
+
+def Mem.selfOf(vals: Coll.List[D.Val], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = vals match
+  case Coll.Cons(a, t) => t match
+    case Coll.Cons(b, _) => if D.veq(a, b) then Coll.Cons(D.Fact(Mem.sSym(Mem.SSelf), Coll.Cons(a, Coll.Nil)), acc) else acc
+    case Coll.Nil => acc
+  case Coll.Nil => acc
+
+def Mem.siteFacts(ss: Coll.List[Mem.Site], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) =>
+    val Mem.Site(f, _, _, loop) = s
+    val acc2 = Coll.Cons(Mem.sFact1(Mem.SAllocs, f), acc)
+    Mem.siteFacts(rest, if loop then Coll.Cons(Mem.sFact1(Mem.SLoopAlloc, f), acc2) else acc2)
+
+def Mem.siteList(m: Coll.IMap[Mem.Site], i: I64, n: I64, acc: Coll.List[Mem.Site]): Coll.List[Mem.Site] =
+  if i == n then acc
+  else Coll.lookup(m, i) match
+    case Coll.Some(s) => Mem.siteList(m, i + 1, n, Coll.Cons(s, acc))
+    case Coll.None => Mem.siteList(m, i + 1, n, acc)
+
+def Mem.regionDefs(m: Coll.IMap[Mem.Region], i: I64, n: I64, acc: Coll.SMap[Bool]): Coll.SMap[Bool] =
+  if i == n then acc
+  else Coll.lookup(m, i) match
+    case Coll.Some(r) =>
+      val Mem.Region(f, _, _, _) = r
+      Mem.regionDefs(m, i + 1, n, Coll.sInsert(acc, f, true))
+    case Coll.None => Mem.regionDefs(m, i + 1, n, acc)
+
+// a source list with a new box in it: a site of the def, or a call result that can hold one
+// the program with a scratch region opened at the top of each chosen def
+// a node of def F (var 0) of kind k, any key (var 1)
+def Mem.ofKind(r: Mem.ERel, k: I64): D.Lit = D.Pos(D.Atom(Mem.eSym(r), Coll.Cons(D.AVar(0), Coll.Cons(D.AVar(1), Coll.Cons(D.AVal(D.VInt(k)), Coll.Nil)))))
+
+// runSink(F): a box made during F's run reaches a sink (in F or a callee); newRet(F): F's result can hold a box made
+// during its run (a site or a call result of F reaches F's result)
+def Mem.runRules(): Coll.List[D.Rule] =
+  val f0 = Coll.Cons(D.AVar(0), Coll.Nil)
+  val rs1 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.lit1(Mem.ofKind(Mem.ESinkR, Mem.kSite())))
+  val rs2 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.lit1(Mem.ofKind(Mem.ESinkR, Mem.kCall())))
+  val rs3 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SCallR, Pure.two(0, 1))), D.Pos(Mem.sAtom(Mem.SRunSink, Pure.one(1)))))
+  val b1 = D.Rule(D.Atom(Mem.sSym(Mem.SNewRet), f0), Mem.lit1(Mem.ofKind(Mem.ERetR, Mem.kSite())))
+  val b2 = D.Rule(D.Atom(Mem.sSym(Mem.SNewRet), f0), Mem.lit1(Mem.ofKind(Mem.ERetR, Mem.kCall())))
+  Coll.Cons(rs1, Coll.Cons(rs2, Coll.Cons(rs3, Coll.Cons(b1, Coll.Cons(b2, Coll.Nil)))))
+
+// a candidate: its name and line
+enum Mem.Compact:
+  case Mem.Compact(line: I64, f: Sym.Sym)
+
+def Mem.compacts(ds: Coll.List[Ast.Decl]): Coll.List[Mem.Compact] =
+  val fl = Mem.fnList(ds, Coll.Nil)
+  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms())
+  val Mem.W(sites, ns, regions, nr, fs, _, _) = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
+  val Mem.EW(efs, _, _) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), ds)
+  D.solve(Coll.revOnto(Coll.rev(Mem.eRules()), Mem.sRules()), Coll.revOnto(efs, Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil)))) match
+    case D.Solved(m) =>
+      val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
+      val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
+      Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
+    case D.Unsafe(_) => Coll.Nil
+    case D.NegCycle(_) => Coll.Nil
+
+def Mem.pickCompacts(need: Coll.SMap[Bool], skip: Coll.SMap[Bool], newRet: Coll.SMap[Bool], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = fs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, n, gs, _, _, _, _) = f
+    val x = Sym.str(n)
+    val srs = Str.len(x) > 4 && Str.eq(Str.slice(x, 0, 4), "Srs.")
+    val ok = Mem.isIn(need, n) && Mem.isIn(newRet, n) && !Mem.isIn(skip, n) && !Str.eq(x, "main") && !srs && !Mem.hasEvidence(gs)
+    Mem.pickCompacts(need, skip, newRet, rest, if ok then Coll.Cons(Mem.Compact(line, n), acc) else acc)
+
+// a def with a {} binder: a second Region in its scope would make its implicit summons ambiguous (error[no-capability])
+def Mem.hasEvidence(gs: Coll.List[Ast.Group]): Bool = gs match
+  case Coll.Nil => false
+  case Coll.Cons(g, rest) => g match
+    case Ast.Evidence(bs) => bs match
+      case Coll.Cons(_, _) => true
+      case Coll.Nil => Mem.hasEvidence(rest)
+    case Ast.Types(_) => Mem.hasEvidence(rest)
+    case Ast.Facts(_) => Mem.hasEvidence(rest)
+
+// the candidates main reaches, in order
+def Mem.reachedOnly(cs: Coll.List[Mem.Compact], reached: Coll.SMap[Bool], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = cs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(c, rest) =>
+    val Mem.Compact(_, f) = c
+    Mem.reachedOnly(rest, reached, if Mem.isIn(reached, f) then Coll.Cons(c, acc) else acc)
