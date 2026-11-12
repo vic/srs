@@ -26,19 +26,24 @@ def main(): I64 =
   val nil: Coll.List[D.Rule] = Coll.Nil
   // a and b negate each other (ids a 0, node 1, b 2, n 3, h 4: k = 5). the strata of a and b reach 5 at a, then n and h
   // follow in the same round: the first negated edge to pass k is h -> n, whose head is on no cycle. the answer is a
-  val downstream = Coll.Cons(W.neg("a", "b"), Coll.Cons(W.reads("n", "a"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("b", "a"), nil))))
+  val downstream =
+    Coll.Cons(W.neg("a", "b"), Coll.Cons(W.reads("n", "a"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("b", "a"), nil))))
   W.show(downstream)
   // the same cycle named from the other side: b first, so b has the smaller id
-  val flipped = Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil))))
+  val flipped =
+    Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil))))
   W.show(flipped)
   // two cycles out of each other's reach: the report is the smaller id of both, u (written first) or p
-  val two = Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), nil))))
+  val two =
+    Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), nil))))
   W.show(two)
-  val twoRev = Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), nil))))
+  val twoRev =
+    Coll.Cons(W.neg("p", "q"), Coll.Cons(W.neg("q", "p"), Coll.Cons(W.neg("u", "v"), Coll.Cons(W.neg("v", "u"), nil))))
   W.show(twoRev)
   // n is met first (n 0, node 1, b 2, a 3, h 4) and its second rule reads b; the strata climb b 1 3 5, n 1 3 5, h 2 4 6: h -> n passes k = 5 before a -> b. n is on no cycle, so the
   // answer is b, never n: the fold is seeded by the group's largest id, not by the witness's head n
-  val early = Coll.Cons(W.reads("n", "node"), Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil)))))
+  val early =
+    Coll.Cons(W.reads("n", "node"), Coll.Cons(W.neg("b", "a"), Coll.Cons(W.reads("n", "b"), Coll.Cons(W.neg("h", "n"), Coll.Cons(W.neg("a", "b"), nil)))))
   W.show(early)
   val self = Coll.Cons(W.neg("p", "p"), nil)
   W.show(self)

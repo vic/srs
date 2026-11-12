@@ -208,7 +208,9 @@ def Mono.better(a: El.Given, b: El.Given): Bool =
   val El.Given(btps, bev, bh, _) = b
   val ab = Mono.isSome(Mono.matchT(btps, bh, ah, Coll.Some(Coll.Nil)))
   val ba = Mono.isSome(Mono.matchT(atps, ah, bh, Coll.Some(Coll.Nil)))
-  if ab && !ba then true else if ab && ba then Coll.length(aev) < Coll.length(bev) else false
+  if ab && !ba then true
+  else if ab && ba then Coll.length(aev) < Coll.length(bev)
+  else false
 
 def Mono.isSome(o: Coll.Option[Coll.List[Ty.Bind]]): Bool = o match
   case Coll.Some(_) => true
@@ -219,12 +221,13 @@ def Mono.matchT(xs: Coll.List[Sym.Sym], p: K.Term, t: K.Term, acc: Coll.Option[C
   case Coll.None => Coll.None
   case Coll.Some(bs) => p match
     case K.Con(n, pargs) =>
-      if Coll.length(pargs) == 0 && Ty.memberSym(n, xs) then
-        Ty.lookup(bs, n) match
-          case Coll.Some(u) => if Mono.termEq(u, t) then acc else Coll.None
-          case Coll.None => Coll.Some(Coll.Cons(Ty.Bind(n, t), bs))
+      if Coll.length(pargs) == 0 && Ty.memberSym(n, xs) then Ty.lookup(bs, n) match
+        case Coll.Some(u) => if Mono.termEq(u, t) then acc else Coll.None
+        case Coll.None => Coll.Some(Coll.Cons(Ty.Bind(n, t), bs))
       else t match
-        case K.Con(m, targs) => if Sym.eq(n, m) && Coll.length(pargs) == Coll.length(targs) then Mono.matchAll(xs, pargs, targs, acc) else Coll.None
+        case K.Con(m, targs) =>
+          if Sym.eq(n, m) && Coll.length(pargs) == Coll.length(targs) then Mono.matchAll(xs, pargs, targs, acc)
+          else Coll.None
         case _ => Coll.None
     case _ => if Mono.termEq(p, t) then acc else Coll.None
 

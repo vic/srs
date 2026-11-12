@@ -229,9 +229,11 @@ def substSize(s: Subst): I64 = s match
   case SBind(_, _, rest) => 1 + substSize(rest)
 
 // the first n bindings of s: what unify added on top of the substitution it started from
-def newest(s: Subst, n: I64): Subst = if n <= 0 then SNil else s match
-  case SNil => SNil
-  case SBind(v, t, rest) => SBind(v, t, newest(rest, n - 1))
+def newest(s: Subst, n: I64): Subst =
+  if n <= 0 then SNil
+  else s match
+    case SNil => SNil
+    case SBind(v, t, rest) => SBind(v, t, newest(rest, n - 1))
 
 // s extended with every binding of p
 def unifyBinds(s: Subst, p: Subst): Unified = p match
@@ -365,10 +367,9 @@ def redom(st: State, ds: Doms): Checked = ds match
 
 // ── propagators (bounds) ──
 // x <= y - k: k = 0 for <=, 1 for <
-def leAt(st: State, x: Term, y: Term, dx: Dom, dy: Dom, k: I64): Checked =
-  setDom(st, x, between(ints(dx), lo(dx), hi(dy) - k)) match
-    case Bad => Bad
-    case Good(st2) => setDom(st2, y, between(ints(dy), lo(dx) + k, hi(dy)))
+def leAt(st: State, x: Term, y: Term, dx: Dom, dy: Dom, k: I64): Checked = setDom(st, x, between(ints(dx), lo(dx), hi(dy) - k)) match
+  case Bad => Bad
+  case Good(st2) => setDom(st2, y, between(ints(dy), lo(dx) + k, hi(dy)))
 
 def neqAt(st: State, x: Term, y: Term, dx: Dom, dy: Dom): Checked =
   if domSize(dx) == 1 && domSize(dy) == 1 then (if lo(dx) == lo(dy) then Bad else Good(st))
@@ -382,12 +383,11 @@ def binAt(st: State, op: Bin, x: Term, y: Term, dx: Dom, dy: Dom): Checked = op 
   case BNeq => neqAt(st, x, y, dx, dy)
 
 // x + y = z
-def plusAt(st: State, x: Term, y: Term, z: Term, dx: Dom, dy: Dom, dz: Dom): Checked =
-  setDom(st, z, between(ints(dz), lo(dx) + lo(dy), hi(dx) + hi(dy))) match
+def plusAt(st: State, x: Term, y: Term, z: Term, dx: Dom, dy: Dom, dz: Dom): Checked = setDom(st, z, between(ints(dz), lo(dx) + lo(dy), hi(dx) + hi(dy))) match
+  case Bad => Bad
+  case Good(st1) => setDom(st1, x, between(ints(dx), lo(dz) - hi(dy), hi(dz) - lo(dy))) match
     case Bad => Bad
-    case Good(st1) => setDom(st1, x, between(ints(dx), lo(dz) - hi(dy), hi(dz) - lo(dy))) match
-      case Bad => Bad
-      case Good(st2) => setDom(st2, y, between(ints(dy), lo(dz) - hi(dx), hi(dz) - lo(dx)))
+    case Good(st2) => setDom(st2, y, between(ints(dy), lo(dz) - hi(dx), hi(dz) - lo(dx)))
 
 // a propagator runs once every variable it reads has a domain
 def fire(st: State, c: Fd): Checked = c match
@@ -480,7 +480,8 @@ def picks(rules: Rules, rel: Str, args: Terms, st: State, nx: I64, rest: Goals):
     case Picked(bs, cost) => h match
       case Rule(f, head, body, nv) =>
         if Str.eq(f, rel) then
-          val b = Branch(withNext(st, nx + nv), GCons(GEqAll(shiftAll(head, nx), args), GCons(shiftGoal(body, nx), rest)))
+          val b =
+            Branch(withNext(st, nx + nv), GCons(GEqAll(shiftAll(head, nx), args), GCons(shiftGoal(body, nx), rest)))
           Picked(QCons(b, bs), cost + 1)
         else Picked(bs, cost)
 

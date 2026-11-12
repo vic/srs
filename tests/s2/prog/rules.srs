@@ -4,10 +4,10 @@ capability Door:
   state Shut, Open1, Open2, Gone
   start Shut
   stop Gone
-  transition knocks Shut -> Open1, Open1 -> Open2
-  def knock <s knocks t> (): I64 <t>
-  transition leaves Open1 -> Gone, Open2 -> Gone
-  def leave <s leaves t> (): Unit <t>
+  transition knock Shut -> Open1, Open1 -> Open2
+  def knock <s knock t> (): I64 <t>
+  transition leave Open1 -> Gone, Open2 -> Gone
+  def leave <s leave t> (): Unit <t>
   rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
   rule def reach(s, t) = next(s, knock, t)
   rule def reach(s, t) = next(s, knock, u), reach(u, t)

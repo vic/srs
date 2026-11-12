@@ -1,0 +1,402 @@
+// srs fmt (vic/c/fmt-design.md): the files given are compiled to srs again. Each file is parsed with its comments
+// (Parse.withNotes) and printed back (Ast.source) without its dead decls: a decl is live when a root reaches it by
+// name. Roots: every main and every top-level val. A decl goes with its comments (F4). Names are reached over the
+// syntax, an over-approximation: a name that may refer to a decl keeps it.
+// A region from a `// format: off` line to a `// format: on` line (or the end of the file), both at column 0, is kept
+// as written (F8): its decls are roots, and its text may not parse (a test that must be rejected)
+enum Fmt.File:
+  case Fmt.File(path: Str, src: Str, segs: Coll.List[Fmt.Seg])
+
+// a part of a file: formatted, or kept as written (its text, and its decls when it parses); gap = a blank line is
+// written before it
+enum Fmt.Seg:
+  case Fmt.Fmtd(gap: Bool, ds: Coll.List[Ast.Decl])
+  case Fmt.Verb(gap: Bool, text: Str, ds: Coll.List[Ast.Decl])
+
+enum Fmt.Read:
+  case Fmt.Got(f: Fmt.File)
+  case Fmt.Bad(line: I64, want: Str)
+
+// src, whose first line has number base (Parse.sourceFrom), cut at its markers
+def Fmt.read(path: Str, src: Str, base: I64): Fmt.Read = Fmt.cut(path, src, 0, base, 0, base, false, Coll.Nil)
+
+// from i (a line start, line its number); the open part starts at start (line sl), verb = it is kept as written
+def Fmt.cut(path: Str, src: Str, i: I64, line: I64, start: I64, sl: I64, verb: Bool, acc: Coll.List[Fmt.Seg]): Fmt.Read =
+  if i >= Str.len(src) then Fmt.close(path, src, start, Str.len(src), sl, verb, acc, Str.len(src), line)
+  else
+    val e = Fmt.eol(src, i)
+    if !verb && Fmt.marker(src, i, e, "// format: off") then Fmt.close(path, src, start, i, sl, false, acc, i, line)
+    else if verb && Fmt.marker(src, i, e, "// format: on") then
+      Fmt.close(path, src, start, Fmt.next(src, e), sl, true, acc, Fmt.next(src, e), line + 1)
+    else Fmt.cut(path, src, e + 1, line + 1, start, sl, verb, acc)
+
+// the part [start, end) ends; the next one, of the other kind, starts at next (line nl)
+def Fmt.close(path: Str, src: Str, start: I64, end: I64, sl: I64, verb: Bool, acc: Coll.List[Fmt.Seg], next: I64, nl: I64): Fmt.Read =
+  val text = Str.slice(src, start, end)
+  val done = next >= Str.len(src)
+  if verb then
+    val ds: Coll.List[Ast.Decl] = Parse.sourceFrom(text, sl) match
+      case Parse.Ok(xs, _) => xs
+      case Parse.Err(_, _) => Coll.Nil
+    val acc2 = Coll.Cons(Fmt.Verb(Fmt.gap(src, start), text, ds), acc)
+    if done then Fmt.Got(Fmt.File(path, src, Coll.rev(acc2))) else Fmt.cut(path, src, next, nl, next, nl, false, acc2)
+  else Parse.withNotes(text, sl) match
+    case Parse.Err(l, w) => Fmt.Bad(l, w)
+    case Parse.Ok(ds, _) =>
+      val acc2 = Coll.Cons(Fmt.Fmtd(Fmt.gap(src, start) || Fmt.blankStart(text, 0), ds), acc)
+      if done then Fmt.Got(Fmt.File(path, src, Coll.rev(acc2))) else Fmt.cut(path, src, next, nl, next, nl, true, acc2)
+
+def Fmt.eol(s: Str, i: I64): I64 = if i >= Str.len(s) || Str.at(s, i) == 10 then i else Fmt.eol(s, i + 1)
+
+// the start of the line after the one that ends at e
+def Fmt.next(s: Str, e: I64): I64 = if e < Str.len(s) then e + 1 else e
+
+// the line [i, e) is m (trailing spaces aside)
+def Fmt.marker(s: Str, i: I64, e: I64, m: Str): Bool =
+  Fmt.trimEnd(s, i, e) - i == Str.len(m) && Str.eq(Str.slice(s, i, i + Str.len(m)), m)
+
+def Fmt.trimEnd(s: Str, i: I64, e: I64): I64 =
+  if e > i && (Str.at(s, e - 1) == 32 || Str.at(s, e - 1) == 13) then Fmt.trimEnd(s, i, e - 1) else e
+
+// a file and the text fmt gives it
+enum Fmt.Out:
+  case Fmt.Out(path: Str, before: Str, after: Str)
+
+// every decl by its id (its position over all files); the ids a name may refer to; the givens of a trait
+enum Fmt.Cx:
+  case Fmt.Cx(decls: Coll.BMap[Ast.Decl], names: Coll.SMap[Coll.List[I64]], givens: Coll.SMap[Coll.List[I64]])
+
+enum Fmt.Ix:
+  case Fmt.Ix(cx: Fmt.Cx, next: I64, roots: Coll.List[Sym.Sym])
+
+// the files as fmt prints them; with no root (no main, no top-level val, no format: off decl) every decl would be dead:
+// that is not a program but part of one, so fmt refuses it and writes nothing
+enum Fmt.Run:
+  case Fmt.Done(outs: Coll.List[Fmt.Out])
+  case Fmt.NoRoot
+
+def Fmt.run(fs: Coll.List[Fmt.File]): Fmt.Run =
+  val Fmt.Ix(cx, _, roots) =
+    Fmt.index(fs, Fmt.Ix(Fmt.Cx(Coll.bEmpty[Ast.Decl](), Coll.sEmpty[Coll.List[I64]](), Coll.sEmpty[Coll.List[I64]]()), 0, Coll.Nil))
+  roots match
+    case Coll.Nil => Fmt.NoRoot
+    case Coll.Cons(_, _) =>
+      Fmt.Done(Fmt.outs(fs, 0, Fmt.reach(cx, roots, Coll.sEmpty[Bool](), Coll.setEmpty()), Coll.Nil))
+
+// ── the index: ids in file order ──
+def Fmt.index(fs: Coll.List[Fmt.File], ix: Fmt.Ix): Fmt.Ix = fs match
+  case Coll.Nil => ix
+  case Coll.Cons(f, rest) =>
+    val Fmt.File(_, _, segs) = f
+    Fmt.index(rest, Fmt.segs(segs, ix))
+
+def Fmt.segs(ss: Coll.List[Fmt.Seg], ix: Fmt.Ix): Fmt.Ix = ss match
+  case Coll.Nil => ix
+  case Coll.Cons(s, rest) => s match
+    case Fmt.Fmtd(_, ds) => Fmt.segs(rest, Fmt.decls(ds, false, ix))
+    case Fmt.Verb(_, _, ds) => Fmt.segs(rest, Fmt.decls(ds, true, ix))
+
+// pinned: the decl is in a region kept as written, so it is a root
+def Fmt.decls(ds: Coll.List[Ast.Decl], pinned: Bool, ix: Fmt.Ix): Fmt.Ix = ds match
+  case Coll.Nil => ix
+  case Coll.Cons(d, rest) =>
+    val Fmt.Ix(cx, id, roots) = ix
+    val Fmt.Cx(decls, names, givens) = cx
+    val cx2 = Fmt.Cx(Coll.bInsert(decls, id, d), Fmt.namesOf(d, id, names), Fmt.givenOf(d, id, givens))
+    Fmt.decls(rest, pinned, Fmt.Ix(cx2, id + 1, if pinned then Fmt.declRefs(d, roots) else Fmt.rootOf(d, roots)))
+
+def Fmt.add(m: Coll.SMap[Coll.List[I64]], n: Sym.Sym, id: I64): Coll.SMap[Coll.List[I64]] =
+  val ids: Coll.List[I64] = Coll.sLookup(m, n) match
+    case Coll.None => Coll.Nil
+    case Coll.Some(xs) => xs
+  Coll.sInsert(m, n, Coll.Cons(id, ids))
+
+// the names a decl answers to: its own; an enum's cases; a capability's ops are reached through its name (Fmt.idsOf)
+def Fmt.namesOf(d: Ast.Decl, id: I64, m: Coll.SMap[Coll.List[I64]]): Coll.SMap[Coll.List[I64]] = d match
+  case Ast.DFn(f) =>
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
+    Fmt.add(m, n, id)
+  case Ast.DVal(f) =>
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
+    Fmt.add(m, n, id)
+  case Ast.DEnum(e) =>
+    val Ast.Enum(_, _, n, _, cs) = e
+    Fmt.caseNames(cs, id, Fmt.add(m, n, id))
+  case Ast.DProto(p) =>
+    val Ast.Proto(_, _, n, _, _, _, _, _, _) = p
+    Fmt.add(m, n, id)
+  case Ast.DHandler(h) =>
+    val Ast.Handler(_, _, n, _, _, _, _) = h
+    Fmt.add(m, n, id)
+  case Ast.DTrait(t) =>
+    val Ast.Trait(_, _, n, _, _) = t
+    Fmt.add(m, n, id)
+  case Ast.DGiven(_) => m
+  case Ast.DType(t) =>
+    val Ast.TypeDecl(_, _, n, _, _, _) = t
+    Fmt.add(m, n, id)
+
+def Fmt.caseNames(cs: Coll.List[Ast.Case], id: I64, m: Coll.SMap[Coll.List[I64]]): Coll.SMap[Coll.List[I64]] = cs match
+  case Coll.Nil => m
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, n, _) = c
+    Fmt.caseNames(rest, id, Fmt.add(m, n, id))
+
+// a given is live when its trait is
+def Fmt.givenOf(d: Ast.Decl, id: I64, m: Coll.SMap[Coll.List[I64]]): Coll.SMap[Coll.List[I64]] = d match
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, _, _, hd, _) = g
+    val Ast.Ty(_, n, _, _, _) = hd
+    Fmt.add(m, n, id)
+  case _ => m
+
+def Fmt.rootOf(d: Ast.Decl, roots: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = d match
+  case Ast.DFn(f) =>
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
+    if Str.eq(Sym.str(n), "main") then Coll.Cons(n, roots) else roots
+  case Ast.DVal(f) =>
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
+    Coll.Cons(n, roots)
+  case _ => roots
+
+// ── the reach: each name once; a name that names no decl may be a member, Cap.op or Trait.m: its prefix then ──
+def Fmt.reach(cx: Fmt.Cx, todo: Coll.List[Sym.Sym], seen: Coll.SMap[Bool], live: Coll.ISet): Coll.ISet = todo match
+  case Coll.Nil => live
+  case Coll.Cons(n, rest) => Coll.sLookup(seen, n) match
+    case Coll.Some(_) => Fmt.reach(cx, rest, seen, live)
+    case Coll.None =>
+      val Fmt.Visit(todo2, live2) = Fmt.visit(cx, Fmt.idsOf(cx, n), rest, live)
+      Fmt.reach(cx, todo2, Coll.sInsert(seen, n, true), live2)
+
+enum Fmt.Visit:
+  case Fmt.Visit(todo: Coll.List[Sym.Sym], live: Coll.ISet)
+
+def Fmt.idsOf(cx: Fmt.Cx, n: Sym.Sym): Coll.List[I64] =
+  val Fmt.Cx(_, names, givens) = cx
+  val own: Coll.List[I64] = Coll.sLookup(names, n) match
+    case Coll.Some(xs) => xs
+    case Coll.None => Fmt.prefixIds(names, Sym.str(n), Str.len(Sym.str(n)) - 1)
+  Coll.sLookup(givens, n) match
+    case Coll.None => own
+    case Coll.Some(gs) => Coll.revOnto(gs, own)
+
+// the ids of the name before the last dot of s (from i down), if any
+def Fmt.prefixIds(names: Coll.SMap[Coll.List[I64]], s: Str, i: I64): Coll.List[I64] =
+  if i <= 0 then Coll.Nil
+  else if Str.at(s, i) == 46 then Coll.sLookup(names, Sym.of(Str.slice(s, 0, i))) match
+    case Coll.Some(xs) => xs
+    case Coll.None => Coll.Nil
+  else Fmt.prefixIds(names, s, i - 1)
+
+def Fmt.visit(cx: Fmt.Cx, ids: Coll.List[I64], todo: Coll.List[Sym.Sym], live: Coll.ISet): Fmt.Visit = ids match
+  case Coll.Nil => Fmt.Visit(todo, live)
+  case Coll.Cons(id, rest) =>
+    if Coll.setHas(live, id) then Fmt.visit(cx, rest, todo, live)
+    else
+      val Fmt.Cx(decls, _, _) = cx
+      val todo2: Coll.List[Sym.Sym] = Coll.bLookup(decls, id) match
+        case Coll.Some(d) => Fmt.declRefs(d, todo)
+        case Coll.None => todo
+      Fmt.visit(cx, rest, todo2, Coll.setAdd(live, id))
+
+// ── the names a decl mentions: types, calls, names, patterns, handlers, facts, and string literals (the compiler
+// names prelude decls in strings: Sym.of("Srs.noState")) ──
+def Fmt.declRefs(d: Ast.Decl, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = d match
+  case Ast.DFn(f) => Fmt.fnRefs(f, acc)
+  case Ast.DVal(f) => Fmt.fnRefs(f, acc)
+  case Ast.DEnum(e) =>
+    val Ast.Enum(_, _, _, gs, cs) = e
+    Fmt.casesRefs(cs, Fmt.groupsRefs(gs, acc))
+  case Ast.DProto(p) =>
+    val Ast.Proto(_, _, _, _, _, _, _, os, rs) = p
+    Fmt.rulesRefs(rs, Fmt.opsRefs(os, acc))
+  case Ast.DHandler(h) =>
+    val Ast.Handler(_, _, _, pr, fs, _, _) = h
+    Fmt.fnsRefs(fs, Coll.Cons(pr, acc))
+  case Ast.DTrait(t) =>
+    val Ast.Trait(_, _, _, gs, sigs) = t
+    Fmt.fnsRefs(sigs, Fmt.groupsRefs(gs, acc))
+  case Ast.DGiven(g) =>
+    val Ast.Given(_, _, gs, hd, fs) = g
+    Fmt.fnsRefs(fs, Fmt.tyRefs(hd, Fmt.groupsRefs(gs, acc)))
+  case Ast.DType(t) =>
+    val Ast.TypeDecl(_, _, _, gs, vs, b) = t
+    Fmt.tbodyRefs(b, Fmt.bindersRefs(vs, Fmt.groupsRefs(gs, acc)))
+
+def Fmt.fnRefs(f: Ast.Fn, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] =
+  val Ast.Fn(_, _, _, gs, ps, ret, exit, body) = f
+  val a1 = Fmt.atomsRefs(exit, Fmt.tyRefs(ret, Fmt.bindersRefs(ps, Fmt.groupsRefs(gs, acc))))
+  body match
+    case Ast.Def(cs, e) => Fmt.eRefs(e, Fmt.clausesRefs(cs, a1))
+    case Ast.Extern(_) => a1
+
+def Fmt.fnsRefs(fs: Coll.List[Ast.Fn], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) => Fmt.fnsRefs(rest, Fmt.fnRefs(f, acc))
+
+def Fmt.opsRefs(os: Coll.List[Ast.Op], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = os match
+  case Coll.Nil => acc
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, _, _, gs, ps, ret, _) = o
+    Fmt.opsRefs(rest, Fmt.tyRefs(ret, Fmt.bindersRefs(ps, Fmt.groupsRefs(gs, acc))))
+
+def Fmt.rulesRefs(rs: Coll.List[Ast.RuleDef], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = rs match
+  case Coll.Nil => acc
+  case Coll.Cons(r, rest) =>
+    val Ast.RuleDef(_, _, _, body) = r
+    Fmt.rulesRefs(rest, Fmt.atomsRefs(body, acc))
+
+def Fmt.casesRefs(cs: Coll.List[Ast.Case], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = cs match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, _, fs) = c
+    Fmt.casesRefs(rest, Fmt.bindersRefs(fs, acc))
+
+def Fmt.groupsRefs(gs: Coll.List[Ast.Group], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = gs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) =>
+    val a1: Coll.List[Sym.Sym] = g match
+      case Ast.Types(bs) => Fmt.bindersRefs(bs, acc)
+      case Ast.Evidence(bs) => Fmt.bindersRefs(bs, acc)
+      case Ast.Facts(xs) => Fmt.atomsRefs(xs, acc)
+    Fmt.groupsRefs(rest, a1)
+
+def Fmt.bindersRefs(bs: Coll.List[Ast.Binder], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    Fmt.bindersRefs(rest, Fmt.tyRefs(t, acc))
+
+def Fmt.atomsRefs(xs: Coll.List[Ast.Atom], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.Atom(_, rel, _) = a
+    Fmt.atomsRefs(rest, Coll.Cons(rel, acc))
+
+def Fmt.tyRefs(t: Ast.Ty, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] =
+  val Ast.Ty(_, n, args, caps, vals) = t
+  val a1: Coll.List[Sym.Sym] = caps match
+    case Ast.Inferred => acc
+    case Ast.Stated(cs) => Coll.revOnto(cs, acc)
+    case Ast.Chosen(cs) => Coll.revOnto(cs, acc)
+  Fmt.esRefs(vals, Fmt.tysRefs(args, Coll.Cons(n, a1)))
+
+def Fmt.tysRefs(ts: Coll.List[Ast.Ty], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ts match
+  case Coll.Nil => acc
+  case Coll.Cons(t, rest) => Fmt.tysRefs(rest, Fmt.tyRefs(t, acc))
+
+def Fmt.tbodyRefs(b: Ast.TBody, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = b match
+  case Ast.Alias(t) => Fmt.tyRefs(t, acc)
+  case Ast.TyMatch(s, arms) => Fmt.tyArmsRefs(arms, Fmt.tyRefs(s, acc))
+  case Ast.ValMatch(_, arms) => Fmt.valArmsRefs(arms, acc)
+  case Ast.CStruct(fs) => Fmt.cfieldsRefs(fs, acc)
+
+def Fmt.tyArmsRefs(xs: Coll.List[Ast.TyArm], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.TyArm(_, p, r) = a
+    Fmt.tyArmsRefs(rest, Fmt.tyRefs(r, Fmt.tyRefs(p, acc)))
+
+def Fmt.valArmsRefs(xs: Coll.List[Ast.ValArm], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.ValArm(_, _, r) = a
+    Fmt.valArmsRefs(rest, Fmt.tyRefs(r, acc))
+
+def Fmt.cfieldsRefs(xs: Coll.List[Ast.CField], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val Ast.CField(_, _, t) = c
+    Fmt.cfieldsRefs(rest, Fmt.tyRefs(t, acc))
+
+def Fmt.clausesRefs(cs: Coll.List[Ast.Clause], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = cs match
+  case Coll.Nil => acc
+  case Coll.Cons(c, rest) =>
+    val a1: Coll.List[Sym.Sym] = c match
+      case Ast.CondC(_, _, e) => Fmt.eRefs(e, acc)
+      case Ast.ProofUsing(_, xs) => Coll.revOnto(xs, acc)
+      case Ast.ProofInduction(_, _) => acc
+      case Ast.ProofLean(_, _) => acc
+    Fmt.clausesRefs(rest, a1)
+
+def Fmt.eRefs(e: Ast.Expr, acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = e match
+  case Ast.Str(_, s) => Coll.Cons(Sym.of(s), acc)
+  case Ast.Name(_, x) => Coll.Cons(x, acc)
+  case Ast.Call(_, f, targs, chosen, xs) => Fmt.esRefs(xs, Coll.revOnto(chosen, Fmt.tysRefs(targs, Coll.Cons(f, acc))))
+  case Ast.Method(_, _, _, xs) => Fmt.esRefs(xs, acc)
+  case Ast.Resume(_, _, x) => Fmt.eRefs(x, acc)
+  case Ast.Bin(_, _, l, x) => Fmt.eRefs(x, Fmt.eRefs(l, acc))
+  case Ast.Un(_, _, x) => Fmt.eRefs(x, acc)
+  case Ast.If(_, _, c, t, x) => Fmt.eRefs(x, Fmt.eRefs(t, Fmt.eRefs(c, acc)))
+  case Ast.Match(_, _, s, arms) => Fmt.armsRefs(arms, Fmt.eRefs(s, acc))
+  case Ast.Block(_, _, ss, last) => Fmt.eRefs(last, Fmt.stmtsRefs(ss, acc))
+  case Ast.While(_, c, b) => Fmt.eRefs(b, Fmt.eRefs(c, acc))
+  case Ast.Assign(_, _, x) => Fmt.eRefs(x, acc)
+  case Ast.Quant(_, _, _, t, b) => Fmt.eRefs(b, Fmt.tyRefs(t, acc))
+  case _ => acc
+
+def Fmt.esRefs(xs: Coll.List[Ast.Expr], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(x, rest) => Fmt.esRefs(rest, Fmt.eRefs(x, acc))
+
+def Fmt.armsRefs(xs: Coll.List[Ast.Arm], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, p, b) = a
+    val a1: Coll.List[Sym.Sym] = p match
+      case Ast.PCase(c, _) => Coll.Cons(c, acc)
+      case Ast.PAny => acc
+    Fmt.armsRefs(rest, Fmt.eRefs(b, a1))
+
+def Fmt.stmtsRefs(ss: Coll.List[Ast.Stmt], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) =>
+    val a1: Coll.List[Sym.Sym] = s match
+      case Ast.Val(_, _, _, ann, e) => Fmt.eRefs(e, Fmt.annRefs(ann, acc))
+      case Ast.Var(_, _, _, ann, e) => Fmt.eRefs(e, Fmt.annRefs(ann, acc))
+      case Ast.Handle(_, _, _, h, xs) => Fmt.esRefs(xs, Coll.Cons(h, acc))
+      case Ast.Do(_, e) => Fmt.eRefs(e, acc)
+      case Ast.Check(_, _, _, e) => Fmt.eRefs(e, acc)
+    Fmt.stmtsRefs(rest, a1)
+
+def Fmt.annRefs(ann: Coll.Option[Ast.Ty], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ann match
+  case Coll.None => acc
+  case Coll.Some(t) => Fmt.tyRefs(t, acc)
+
+// ── the output: each file's live decls as source; a file whose first decls are dead starts at its first live one ──
+def Fmt.outs(fs: Coll.List[Fmt.File], id: I64, live: Coll.ISet, acc: Coll.List[Fmt.Out]): Coll.List[Fmt.Out] = fs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(f, rest) =>
+    val Fmt.File(p, src, segs) = f
+    Console.captureBegin()
+    val id2 = Fmt.print(segs, id, live)
+    val s = Console.captureEnd()
+    Fmt.outs(rest, id2, live, Coll.Cons(Fmt.Out(p, src, Str.slice(s, Fmt.blanks(s, 0), Str.len(s))), acc))
+
+// prints each part, the next id after its decls
+def Fmt.print(ss: Coll.List[Fmt.Seg], id: I64, live: Coll.ISet): I64 = ss match
+  case Coll.Nil => id
+  case Coll.Cons(s, rest) => s match
+    case Fmt.Fmtd(gap, ds) =>
+      val kept = Fmt.keep(ds, id, live, Coll.Nil)
+      kept match
+        case Coll.Cons(_, _) => if gap then Console.print("\n") else ()
+        case Coll.Nil => ()
+      Ast.source(kept)
+      Fmt.print(rest, id + Coll.length(ds), live)
+    case Fmt.Verb(gap, text, ds) =>
+      if gap then Console.print("\n") else ()
+      Console.print(text)
+      Fmt.print(rest, id + Coll.length(ds), live)
+
+// a blank line ends right before i, or starts s at i
+def Fmt.gap(s: Str, i: I64): Bool = i >= 2 && Str.at(s, i - 1) == 10 && Str.at(s, i - 2) == 10
+
+def Fmt.blankStart(s: Str, i: I64): Bool = i < Str.len(s) && Str.at(s, i) == 10
+
+def Fmt.keep(ds: Coll.List[Ast.Decl], id: I64, live: Coll.ISet, acc: Coll.List[Ast.Decl]): Coll.List[Ast.Decl] = ds match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(d, rest) => Fmt.keep(rest, id + 1, live, if Coll.setHas(live, id) then Coll.Cons(d, acc) else acc)
+
+// the end of the newlines at the start of s
+def Fmt.blanks(s: Str, i: I64): I64 = if i < Str.len(s) && Str.at(s, i) == 10 then Fmt.blanks(s, i + 1) else i

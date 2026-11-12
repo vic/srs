@@ -8,8 +8,10 @@ def Fq.sy {r: Region} (x: Flow.Rel): Sym.Sym = Flow.relSym(x)
 // the relations only a capability (a binder, a handle), a call binding one, or an entry fact can make true
 def Fq.caps {r: Region} (): Coll.List[Sym.Sym] =
   val a = Coll.Cons(Fq.sy(Flow.RMsEnd), Coll.Cons(Fq.sy(Flow.REscCap), Coll.Cons(Fq.sy(Flow.RAssignAt), Coll.Nil)))
-  val b = Coll.Cons(Fq.sy(Flow.RCallee), Coll.Cons(Fq.sy(Flow.RWant), Coll.Cons(Fq.sy(Flow.RNoSol), Coll.Cons(Fq.sy(Flow.RMsRes), a))))
-  val c = Coll.Cons(Fq.sy(Flow.RCapLine), Coll.Cons(Fq.sy(Flow.RHandle), Coll.Cons(Fq.sy(Flow.RClose), Coll.Cons(Fq.sy(Flow.RBind), b))))
+  val b =
+    Coll.Cons(Fq.sy(Flow.RCallee), Coll.Cons(Fq.sy(Flow.RWant), Coll.Cons(Fq.sy(Flow.RNoSol), Coll.Cons(Fq.sy(Flow.RMsRes), a))))
+  val c =
+    Coll.Cons(Fq.sy(Flow.RCapLine), Coll.Cons(Fq.sy(Flow.RHandle), Coll.Cons(Fq.sy(Flow.RClose), Coll.Cons(Fq.sy(Flow.RBind), b))))
   Coll.Cons(Fq.sy(Flow.RCapName), Coll.Cons(Fq.sy(Flow.RCapOf), c))
 
 def Fq.has {r: Region} (xs: Coll.List[Sym.Sym], x: Sym.Sym): Bool = xs match
@@ -37,7 +39,10 @@ def Fq.hasRule {r: Region} (rs: Coll.List[D.Rule], x: Sym.Sym): Bool = rs match
 def Fq.round {r: Region} (rs: Coll.List[D.Rule], caps: Coll.List[Sym.Sym], f: Coll.List[Sym.Sym], us: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = us match
   case Coll.Nil => f
   case Coll.Cons(u, rest) =>
-    val f1 = if Fq.has(f, u) then f else if Fq.derivable(rs, rs, caps, f, u) then Coll.Cons(u, f) else f
+    val f1 =
+      if Fq.has(f, u) then f
+      else if Fq.derivable(rs, rs, caps, f, u) then Coll.Cons(u, f)
+      else f
     Fq.round(rs, caps, f1, rest)
 
 // u is free (no rule, not a CAPS seed) or some rule of u has every positive body relation in f
@@ -70,7 +75,8 @@ def Fq.fix {r: Region} (rs: Coll.List[D.Rule], caps: Coll.List[Sym.Sym], us: Col
     if Coll.length(f1) == Coll.length(f) then f else Fq.fix(rs, caps, us, f1, fuel - 1)
 
 def Fq.clashRels {r: Region} (): Coll.List[Flow.Kind] =
-  val a = Coll.Cons(Flow.KDead, Coll.Cons(Flow.KEscape, Coll.Cons(Flow.KStale, Coll.Cons(Flow.KMsState, Coll.Cons(Flow.KBound, Coll.Nil)))))
+  val a =
+    Coll.Cons(Flow.KDead, Coll.Cons(Flow.KEscape, Coll.Cons(Flow.KStale, Coll.Cons(Flow.KMsState, Coll.Cons(Flow.KBound, Coll.Nil)))))
   Coll.Cons(Flow.KStuck, Coll.Cons(Flow.KSplit, Coll.Cons(Flow.KUnended, Coll.Cons(Flow.KAmbig, Coll.Cons(Flow.KExitBad, Coll.Cons(Flow.KNoSol, a))))))
 
 def Fq.checkKinds {r: Region} (f: Coll.List[Sym.Sym], ks: Coll.List[Flow.Kind]): Unit = ks match
@@ -85,18 +91,21 @@ def Fq.checkKinds {r: Region} (f: Coll.List[Sym.Sym], ks: Coll.List[Flow.Kind]):
 def Fq.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred, Coll.Nil)
 def Fq.nm {r: Region} (x: Str): Ast.Expr = Ast.Name(1, Sym.of(x))
 def Fq.fn {r: Region} (name: Str, body: Ast.Expr): Ast.Fn =
-  Ast.Fn(1, Sym.of(name), Coll.Nil, Coll.Cons(Ast.Binder(1, Sym.of("x"), Fq.ty("I64")), Coll.Nil), Fq.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body))
-def Fq.val {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(1, Sym.of(x), Coll.None, e)
-def Fq.var {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Var(1, Sym.of(x), Coll.None, e)
+  Ast.Fn(Ast.NoDoc, 1, Sym.of(name), Coll.Nil, Coll.Cons(Ast.Binder(1, Sym.of("x"), Fq.ty("I64")), Coll.Nil), Fq.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body))
+def Fq.val {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(Ast.NoDoc, 1, Sym.of(x), Coll.None, e)
+def Fq.var {r: Region} (x: Str, e: Ast.Expr): Ast.Stmt = Ast.Var(Ast.NoDoc, 1, Sym.of(x), Coll.None, e)
 
 // the plain fns: arithmetic, val/var/assign, if, while, a call of another plain fn
 def Fq.fns {r: Region} (): Coll.List[Ast.Fn] =
   val inc = Fq.fn("inc", Ast.Bin(1, Ast.Add, Fq.nm("x"), Ast.Int(1, 1)))
-  val ass = Fq.fn("ass", Ast.Block(1, Coll.Cons(Fq.var("y", Fq.nm("x")), Coll.Cons(Ast.Do(Ast.Assign(1, Sym.of("y"), Ast.Int(1, 2))), Coll.Nil)), Fq.nm("y")))
-  val cond = Fq.fn("cond", Ast.If(1, Ast.Bool(1, true), Fq.nm("x"), Ast.Int(1, 0)))
-  val loop = Fq.fn("loop", Ast.Block(1, Coll.Cons(Fq.var("i", Ast.Int(1, 0)), Coll.Cons(Ast.Do(Ast.While(1, Ast.Bin(1, Ast.Lt, Fq.nm("i"), Fq.nm("x")), Ast.Assign(1, Sym.of("i"), Ast.Bin(1, Ast.Add, Fq.nm("i"), Ast.Int(1, 1))))), Coll.Nil)), Fq.nm("i")))
+  val ass =
+    Fq.fn("ass", Ast.Block(Ast.NoDoc, 1, Coll.Cons(Fq.var("y", Fq.nm("x")), Coll.Cons(Ast.Do(Ast.NoDoc, Ast.Assign(1, Sym.of("y"), Ast.Int(1, 2))), Coll.Nil)), Fq.nm("y")))
+  val cond = Fq.fn("cond", Ast.If(Ast.NoDoc, 1, Ast.Bool(1, true), Fq.nm("x"), Ast.Int(1, 0)))
+  val loop =
+    Fq.fn("loop", Ast.Block(Ast.NoDoc, 1, Coll.Cons(Fq.var("i", Ast.Int(1, 0)), Coll.Cons(Ast.Do(Ast.NoDoc, Ast.While(1, Ast.Bin(1, Ast.Lt, Fq.nm("i"), Fq.nm("x")), Ast.Assign(1, Sym.of("i"), Ast.Bin(1, Ast.Add, Fq.nm("i"), Ast.Int(1, 1))))), Coll.Nil)), Fq.nm("i")))
   val call = Fq.fn("call", Ast.Call(1, Sym.of("inc"), Coll.Nil, Coll.Nil, Coll.Cons(Fq.nm("x"), Coll.Nil)))
-  val vals = Fq.fn("vals", Ast.Block(1, Coll.Cons(Fq.val("a", Fq.nm("x")), Coll.Cons(Fq.val("b", Fq.nm("a")), Coll.Nil)), Fq.nm("b")))
+  val vals =
+    Fq.fn("vals", Ast.Block(Ast.NoDoc, 1, Coll.Cons(Fq.val("a", Fq.nm("x")), Coll.Cons(Fq.val("b", Fq.nm("a")), Coll.Nil)), Fq.nm("b")))
   Coll.Cons(inc, Coll.Cons(ass, Coll.Cons(cond, Coll.Cons(loop, Coll.Cons(call, Coll.Cons(vals, Coll.Nil))))))
 
 def Fq.factRels {r: Region} (fs: Coll.List[D.Fact], caps: Coll.List[Sym.Sym], bad: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = fs match

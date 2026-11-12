@@ -86,7 +86,8 @@ def Elgate.conS(c: Elgate.Con): Str = c match
   case Elgate.CHandle => "El.Handle"
   case Elgate.CCall => "El.CallFn"
 
-def Elgate.add(acc: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, l: I64, fn: Sym.Sym): Coll.List[Elgate.V] = Coll.Cons(Elgate.V(k, c, l, fn), acc)
+def Elgate.add(acc: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, l: I64, fn: Sym.Sym): Coll.List[Elgate.V] =
+  Coll.Cons(Elgate.V(k, c, l, fn), acc)
 
 // the permanent kinds: the gate fails on them (today's emit has none); the others are reported only, until emit stops
 // producing them
@@ -100,7 +101,10 @@ def Elgate.permanent(k: Elgate.Kind): Bool = k match
 def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = e match
   case El.CallFn(l, f, _, _, args) =>
     val a1 = Elgate.exs(cx, fn, args, acc)
-    val a2 = if tail && Sym.eq(f, fn) then Elgate.add(Elgate.add(a1, Elgate.StmtExpr, Elgate.CTail, l, fn), Elgate.GotoOut, Elgate.CTail, l, fn) else a1
+    val a2 =
+      if tail && Sym.eq(f, fn) then
+        Elgate.add(Elgate.add(a1, Elgate.StmtExpr, Elgate.CTail, l, fn), Elgate.GotoOut, Elgate.CTail, l, fn)
+      else a1
     if Sym.eq(f, Sym.of("rt_exit")) then Elgate.add(a2, Elgate.Exit, Elgate.CCall, l, fn) else a2
   case El.New(l, _, _, _, at, args) =>
     val a1 = Elgate.exs(cx, fn, args, acc)
@@ -118,7 +122,8 @@ def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[E
     ty match
       case K.Con(pn, _) =>
         if Sym.eq(pn, Sym.of("Region")) && Sym.eq(op, Sym.of("alloc")) && Emit.isInline(al) then a2
-        else Elgate.add(Elgate.add(Elgate.add(a2, Elgate.StmtExpr, Elgate.COp, l, fn), Elgate.AutoType, Elgate.COp, l, fn), Elgate.VtableCall, Elgate.COp, l, fn)
+        else
+          Elgate.add(Elgate.add(Elgate.add(a2, Elgate.StmtExpr, Elgate.COp, l, fn), Elgate.AutoType, Elgate.COp, l, fn), Elgate.VtableCall, Elgate.COp, l, fn)
       case _ => a2
   case El.MHandled(l, _, _, _, args, rest, _, _) =>
     val a1 = Elgate.ex(cx, fn, false, rest, Elgate.exs(cx, fn, args, acc))
@@ -135,7 +140,8 @@ def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[E
     val a1 = Elgate.add(Elgate.add(acc, Elgate.StmtExpr, Elgate.CBlock, l, fn), Elgate.AutoType, Elgate.CBlock, l, fn)
     // a block with a handle is not a tail position (Emit.lastPos)
     Elgate.ex(cx, fn, tail && !Elgate.hasHandle(ss), last, Elgate.ss(cx, fn, ss, a1))
-  case El.While(l, c, b) => Elgate.ex(cx, fn, false, b, Elgate.ex(cx, fn, false, c, Elgate.add(acc, Elgate.StmtExpr, Elgate.CWhile, l, fn)))
+  case El.While(l, c, b) =>
+    Elgate.ex(cx, fn, false, b, Elgate.ex(cx, fn, false, c, Elgate.add(acc, Elgate.StmtExpr, Elgate.CWhile, l, fn)))
   case El.Assign(_, _, x) => Elgate.ex(cx, fn, false, x, acc)
   case _ => acc
 
@@ -157,7 +163,8 @@ def Elgate.arms(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, as: Coll.List[El.Arm], acc
 def Elgate.binds(xs: Coll.List[Sym.Sym], l: I64, fn: Sym.Sym, acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = xs match
   case Coll.Nil => acc
   case Coll.Cons(x, rest) =>
-    if Str.eq(Sym.str(x), "_") then Elgate.binds(rest, l, fn, acc) else Elgate.binds(rest, l, fn, Elgate.add(acc, Elgate.AutoType, Elgate.CPatBind, l, fn))
+    if Str.eq(Sym.str(x), "_") then Elgate.binds(rest, l, fn, acc)
+    else Elgate.binds(rest, l, fn, Elgate.add(acc, Elgate.AutoType, Elgate.CPatBind, l, fn))
 
 def Elgate.hasHandle(ss: Coll.List[El.Stmt]): Bool = ss match
   case Coll.Nil => false
@@ -173,7 +180,8 @@ def Elgate.ss(cx: Emit.Cx, fn: Sym.Sym, ss: Coll.List[El.Stmt], acc: Coll.List[E
     case El.Handle(l, _, h, _, args) =>
       val a1 = Elgate.exs(cx, fn, args, acc)
       // the one handle of a static capability fills a file-static instance, no address of a local (Emit.block)
-      val a2 = if Emit.isStatic(cx, Emit.protoOfH(cx, h)) then a1 else Elgate.add(a1, Elgate.AddrOf, Elgate.CHandle, l, fn)
+      val a2 =
+        if Emit.isStatic(cx, Emit.protoOfH(cx, h)) then a1 else Elgate.add(a1, Elgate.AddrOf, Elgate.CHandle, l, fn)
       Elgate.ss(cx, fn, rest, a2)
 
 // vs onto acc, without its Exit rows when exits is true (a handler fn is the one place that ends the process, and so is main)
@@ -212,7 +220,7 @@ def Elgate.handlers(cx: Emit.Cx, hs: Coll.List[El.Handler], acc: Coll.List[Elgat
 // end the process like a handler fn
 def Elgate.mayExit(name: Sym.Sym): Bool =
   val s = Sym.str(name)
-  Sym.eq(name, Sym.of("main")) || (Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs."))
+  Sym.eq(name, Sym.of("main")) || Str.len(s) > 4 && Str.eq(Str.slice(s, 0, 4), "Srs.")
 
 // each mono instance of a def (KDef: a self tail call is a jump) or of a given's method
 def Elgate.insts(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Elgate.V]): Coll.List[Elgate.V] = is match
@@ -241,7 +249,8 @@ def Elgate.count(vs: Coll.List[Elgate.V], k: Elgate.Kind, c: Elgate.Con, n: I64)
   case Coll.Nil => n
   case Coll.Cons(v, rest) =>
     val Elgate.V(vk, vc, _, _) = v
-    if Elgate.kindN(vk) == Elgate.kindN(k) && Elgate.conN(vc) == Elgate.conN(c) then Elgate.count(rest, k, c, n + 1) else Elgate.count(rest, k, c, n)
+    if Elgate.kindN(vk) == Elgate.kindN(k) && Elgate.conN(vc) == Elgate.conN(c) then Elgate.count(rest, k, c, n + 1)
+    else Elgate.count(rest, k, c, n)
 
 def Elgate.rowsOf(vs: Coll.List[Elgate.V], k: Elgate.Kind, cs: Coll.List[Elgate.Con]): Unit = cs match
   case Coll.Nil => ()

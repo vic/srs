@@ -479,6 +479,17 @@ void* rt_out_new(srs_str dir, int64_t a, int64_t b, int64_t c, int64_t d) {
   o->b = (obuf){0, 0, 0};
   return o;
 }
+// a whole source file (srs fmt): written to path.tmpPID, renamed over path at rt_out_commit
+void* rt_fout_new(srs_str path) {
+  store_out* o = malloc(sizeof *o);
+  if (!o || path.n + 32 >= (int64_t)sizeof o->tmp) { fputs("srs: path too long\n", stderr); exit(70); }
+  memcpy(o->dst, path.p, (size_t)path.n); o->dst[path.n] = 0;
+  snprintf(o->tmp, sizeof o->tmp, "%s.tmp%ld", o->dst, (long)getpid());
+  o->fd = open(o->tmp, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+  if (o->fd < 0) { fprintf(stderr, "srs: cannot write %s\n", o->tmp); exit(70); }
+  o->b = (obuf){0, 0, 0};
+  return o;
+}
 int64_t rt_out_str(void* self, srs_str s) { obuf_put(&((store_out*)self)->b, s.p, (size_t)s.n); return 0; }
 // the decimal text of v, written backwards from end (a 24-byte buffer holds any int64 with its sign): no format parsing on the print path
 static char* i64_text(char* end, int64_t v) {
@@ -525,7 +536,16 @@ static inline void out_put(const void* s, size_t n) {
   if (!g_capturing && g_atexit && g_stdout.n + n < g_stdout.cap) { memcpy(g_stdout.p + g_stdout.n, s, n); g_stdout.n += n; return; }
   out_slow(s, n);
 }
+// captures nest: begin inside a capture saves the open one, end returns the inner text and reopens the outer
+typedef struct cap_frame { obuf b; struct cap_frame* up; } cap_frame;
+static cap_frame* g_caps;
 int64_t rt_capture_begin(void) {
+  if (g_capturing) {
+    cap_frame* f = malloc(sizeof *f);
+    if (!f) { fputs("srs: out of memory\n", stderr); exit(70); }
+    *f = (cap_frame){g_cap, g_caps};
+    g_caps = f;
+  }
   g_cap = (obuf){0, 0, 0}; // a fresh buffer: the previous capture's bytes live on
   obuf_put(&g_cap, "", 0);
   g_capturing = true;
@@ -533,8 +553,17 @@ int64_t rt_capture_begin(void) {
 }
 srs_str rt_capture_end(void) {
   if (!g_capturing) { fputs("srs: capture not open\n", stderr); exit(70); }
-  g_capturing = false;
-  return (srs_str){(const uint8_t*)(g_cap.p ? g_cap.p : ""), (int64_t)g_cap.n};
+  srs_str s = {(const uint8_t*)(g_cap.p ? g_cap.p : ""), (int64_t)g_cap.n};
+  if (g_caps) { cap_frame* f = g_caps; g_cap = f->b; g_caps = f->up; free(f); }
+  else g_capturing = false;
+  return s;
+}
+// the bytes written since the last newline (a printer's column); stdout counts from its last flush
+int64_t rt_column(void) {
+  obuf* b = g_capturing ? &g_cap : &g_stdout;
+  size_t i = b->n;
+  while (i > 0 && b->p[i - 1] != '\n') i--;
+  return (int64_t)(b->n - i);
 }
 int64_t rt_print(srs_str s) { out_put(s.p, (size_t)s.n); return 0; }
 int64_t rt_eprint(srs_str s) { fwrite(s.p, 1, (size_t)s.n, stderr); return 0; }

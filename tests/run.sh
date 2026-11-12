@@ -211,7 +211,7 @@ for k in quote backslash tab; do
   case $k in quote) q="$B/m\"q.srs";; backslash) q="$B/m\\q.srs";; tab) q="$B/m	q.srs";; esac
   cp tests/s2/mem/once.srs "$q"
   at=$(timeout 2 "$B/s2c1" --mem lib/prelude.srs "$q" 2>/dev/null | jq -r '.regions[0].at' 2>/dev/null)
-  pass=1; [ "$at" = "$q:12" ] || pass=0
+  pass=1; [ "$at" = "$q:13" ] || pass=0
   verdict "mem/json-escape-$k" $pass "at=$at"
 done
 # --mem's "once" checked at run time: a prog test with one region (main's, one life) runs with its C rewritten so each
@@ -362,4 +362,21 @@ case "$msg" in *"stmt-expr grew"*) [ $code -eq 1 ] && echo "ok fragment ratchet 
 awk '$1 == "tiny" && $2 == "stmt-expr" {$3 = $3 + 1} {print}' "$FB" > "$B/fragment.low"
 out=$(timeout 10 "$B/s2c1" --fragment lib/prelude.srs tests/s2/fragbase/tiny.srs 2>/dev/null); msg=$(frag_ratchet tiny "$B/fragment.low" "$out"); code=$?
 case "$msg" in *"stmt-expr shrank"*) [ $code -eq 1 ] && echo "ok fragment ratchet armed: a decrease needs a base update" || { echo "FAIL fragment ratchet armed (shrink)"; fail=1;};; *) echo "FAIL fragment ratchet armed (shrink): $msg"; fail=1;; esac
+# srs fmt (vic/c/fmt-design.md): the fixture is rewritten to its .out (dead decls go with their comments, the
+# format: off region stays as written); --check names the file and exits 1, then exits 0 on the result; fmt on a
+# formatted file leaves its mtime. Then the repo itself is formatted: fmt --check over every source exits 0
+f="$B/fmt_dead.srs"; cp tests/s2/fmt/dead.srs "$f"
+out=$(timeout 2 "$B/s2c1" fmt --check "$f"); c1=$?
+timeout 2 "$B/s2c1" fmt "$f"; c2=$?
+timeout 2 "$B/s2c1" fmt --check "$f" > /dev/null; c3=$?
+m1=$(stat -c %y "$f"); timeout 2 "$B/s2c1" fmt "$f"; m2=$(stat -c %y "$f")
+if [ $c1 -eq 1 ] && [ "$out" = "$f" ] && [ $c2 -eq 0 ] && [ $c3 -eq 0 ] && cmp -s "$f" tests/s2/fmt/dead.out && [ "$m1" = "$m2" ]; then echo "ok fmt fixture"
+else echo "FAIL fmt fixture exits=$c1$c2$c3 out=$out mtime=$m1/$m2"; fail=1; fi
+# a file set with no root (here one library file) is refused, unchanged: every decl would be dead
+g="$B/fmt_noroot.srs"; cp tests/s2/prog/list.lib "$g"
+msg=$(timeout 2 "$B/s2c1" fmt "$g" 2>&1); code=$?
+if [ $code -eq 1 ] && cmp -s "$g" tests/s2/prog/list.lib && printf '%s' "$msg" | grep -q 'error\[fmt-no-root\]'; then echo "ok fmt refuses a file set with no root"; else echo "FAIL fmt no root exit=$code: $msg"; fail=1; fi
+FMTF=$(ls lib/*.srs s2/*.srs s2c/main.srs tests/s2/*.srs tests/s2/prog/*.srs tests/s2/prog/*.lib tests/s2/{neg,cneg,cok,eval,frag,fragbase,hash,mem}/*.srs)
+out=$(timeout 5 "$B/s2c1" fmt --check $FMTF 2>&1); code=$?
+if [ $code -eq 0 ]; then echo "ok fmt: the repo is formatted"; else echo "FAIL fmt --check exit=$code: $(printf '%s' "$out" | head -3 | tr '\n' ' ')"; fail=1; fi
 exit $fail

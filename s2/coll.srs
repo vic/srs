@@ -52,7 +52,10 @@ def Coll.size [V: Type] (m: Coll.IMap[V]): I64 = m match
 
 def Coll.lookup [V: Type] (m: Coll.IMap[V], k: I64): Coll.Option[V] = m match
   case Coll.Tip => Coll.None
-  case Coll.Bin(_, k2, v, l, r2) => if k < k2 then Coll.lookup(l, k) else if k > k2 then Coll.lookup(r2, k) else Coll.Some(v)
+  case Coll.Bin(_, k2, v, l, r2) =>
+    if k < k2 then Coll.lookup(l, k)
+    else if k > k2 then Coll.lookup(r2, k)
+    else Coll.Some(v)
 
 // a node over l and r (their sizes known)
 def Coll.bin [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
@@ -94,7 +97,10 @@ def Coll.insert [V: Type] (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m matc
 // the node of k, Coll.Tip when absent: a lookup that allocates nothing (Coll.lookup allocates its Some)
 def Coll.node [V: Type] (m: Coll.IMap[V], k: I64): Coll.IMap[V] = m match
   case Coll.Tip => m
-  case Coll.Bin(_, k2, _, l, r2) => if k < k2 then Coll.node(l, k) else if k > k2 then Coll.node(r2, k) else m
+  case Coll.Bin(_, k2, _, l, r2) =>
+    if k < k2 then Coll.node(l, k)
+    else if k > k2 then Coll.node(r2, k)
+    else m
 
 // b4 batch input: key/value pairs, strictly ascending by key. Only Coll.sortDedup builds a Sorted (no sealing in s1 yet:
 // the order is a producer invariant, not a type one)

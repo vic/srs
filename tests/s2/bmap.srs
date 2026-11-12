@@ -21,65 +21,67 @@ def T.depthOk {r: Region} (t: Coll.BTree[I64]): Bool = T.depth(t) match
   case Coll.Some(_) => true
 
 // None = unbounded
-def T.above (k: I64, lo: Coll.Option[I64]): Bool = lo match
+def T.above(k: I64, lo: Coll.Option[I64]): Bool = lo match
   case Coll.None => true
   case Coll.Some(l) => k > l
 
-def T.below (k: I64, hi: Coll.Option[I64]): Bool = hi match
+def T.below(k: I64, hi: Coll.Option[I64]): Bool = hi match
   case Coll.None => true
   case Coll.Some(h) => k < h
 
 def T.ordered {r: Region} (t: Coll.BTree[I64], lo: Coll.Option[I64], hi: Coll.Option[I64]): Bool = t match
   case Coll.BTip => true
-  case Coll.B2(a, k1, _, b) => T.above(k1, lo) && T.below(k1, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), hi)
+  case Coll.B2(a, k1, _, b) =>
+    T.above(k1, lo) && T.below(k1, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), hi)
   case Coll.B3(a, k1, _, b, k2, _, c) =>
     T.above(k1, lo) && k1 < k2 && T.below(k2, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), Coll.Some(k2)) && T.ordered(c, Coll.Some(k2), hi)
   case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) =>
     T.above(k1, lo) && k1 < k2 && k2 < k3 && T.below(k3, hi) && T.ordered(a, lo, Coll.Some(k1)) && T.ordered(b, Coll.Some(k1), Coll.Some(k2)) && T.ordered(c, Coll.Some(k2), Coll.Some(k3)) && T.ordered(d, Coll.Some(k3), hi)
 
-def T.tree (m: Coll.BMap[I64]): Coll.BTree[I64] = m match
+def T.tree(m: Coll.BMap[I64]): Coll.BTree[I64] = m match
   case Coll.BMap(_, t) => t
 
 def T.valid {r: Region} (m: Coll.BMap[I64]): Bool = T.validT(T.tree(m))
 
 def T.validT {r: Region} (t: Coll.BTree[I64]): Bool = T.depthOk(t) && T.ordered(t, Coll.None, Coll.None)
 
+def T.fill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] =
+  if i == n then m else T.fill(Coll.bInsert(m, i * 7919 % 100003, i), i + 1, n)
 
-def T.fill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i == n then m else T.fill(Coll.bInsert(m, (i * 7919) % 100003, i), i + 1, n)
+def T.seq {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] =
+  if i > n then m else T.seq(Coll.bInsert(m, i, i), i + 1, n)
 
-def T.seq {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i > n then m else T.seq(Coll.bInsert(m, i, i), i + 1, n)
-
-def T.ifill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i == n then m else T.ifill(Coll.insert(m, (i * 7919) % 100003, i), i + 1, n)
-
-def T.iseq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i > n then m else T.iseq(Coll.insert(m, i, i), i + 1, n)
+def T.ifill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] =
+  if i == n then m else T.ifill(Coll.insert(m, i * 7919 % 100003, i), i + 1, n)
 
 // how many keys of T.fill hold i + d
 def T.found {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, d: I64, acc: I64): I64 =
   if i == n then acc
   else
-    val hit = Coll.bLookup(m, (i * 7919) % 100003) match
+    val hit = Coll.bLookup(m, i * 7919 % 100003) match
       case Coll.None => 0
       case Coll.Some(v) => if v == i + d then 1 else 0
     T.found(m, i + 1, n, d, acc + hit)
 
 // every key of T.fill bound again, to i + 1
-def T.refill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] = if i == n then m else T.refill(Coll.bInsert(m, (i * 7919) % 100003, i + 1), i + 1, n)
+def T.refill {r: Region} (m: Coll.BMap[I64], i: I64, n: I64): Coll.BMap[I64] =
+  if i == n then m else T.refill(Coll.bInsert(m, i * 7919 % 100003, i + 1), i + 1, n)
 
 // how many puts of the T.fill keys of [i, n) into m answer Added
 def T.adds {r: Region} (m: Coll.BMap[I64], i: I64, n: I64, acc: I64): I64 =
   if i == n then acc
   else
-    val a = Coll.bPut(m, (i * 7919) % 100003, i) match
+    val a = Coll.bPut(m, i * 7919 % 100003, i) match
       case Coll.Added(_) => 1
       case Coll.Replaced(_) => 0
     T.adds(m, i + 1, n, acc + a)
 
-def T.isTip (t: Coll.BTree[I64]): Bool = t match
+def T.isTip(t: Coll.BTree[I64]): Bool = t match
   case Coll.BTip => true
   case _ => false
 
 // same case and keys at every node (values ignored)
-def T.shape (x: Coll.BTree[I64], y: Coll.BTree[I64]): Bool = x match
+def T.shape(x: Coll.BTree[I64], y: Coll.BTree[I64]): Bool = x match
   case Coll.BTip => T.isTip(y)
   case Coll.B2(a, k1, _, b) => y match
     case Coll.B2(e, j1, _, f) => k1 == j1 && T.shape(a, e) && T.shape(b, f)
@@ -88,7 +90,8 @@ def T.shape (x: Coll.BTree[I64], y: Coll.BTree[I64]): Bool = x match
     case Coll.B3(e, j1, _, f, j2, _, g) => k1 == j1 && k2 == j2 && T.shape(a, e) && T.shape(b, f) && T.shape(c, g)
     case _ => false
   case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) => y match
-    case Coll.B4(e, j1, _, f, j2, _, g, j3, _, h) => k1 == j1 && k2 == j2 && k3 == j3 && T.shape(a, e) && T.shape(b, f) && T.shape(c, g) && T.shape(d, h)
+    case Coll.B4(e, j1, _, f, j2, _, g, j3, _, h) =>
+      k1 == j1 && k2 == j2 && k3 == j3 && T.shape(a, e) && T.shape(b, f) && T.shape(c, g) && T.shape(d, h)
     case _ => false
 
 // present value, or 0 when absent (absence is counted by T.miss)
@@ -104,13 +107,13 @@ def T.nv {r: Region} (m: Coll.IMap[I64], k: I64): Coll.Option[I64] = Coll.node(m
   case Coll.Tip => Coll.None
   case Coll.Bin(_, _, v, _, _) => Coll.Some(v)
 
-def T.same (x: Coll.Option[I64], y: Coll.Option[I64]): Bool = x match
+def T.same(x: Coll.Option[I64], y: Coll.Option[I64]): Bool = x match
   case Coll.None => T.isNone(y)
   case Coll.Some(h) => y match
     case Coll.None => false
     case Coll.Some(g) => h == g
 
-def T.isNone (x: Coll.Option[I64]): Bool = x match
+def T.isNone(x: Coll.Option[I64]): Bool = x match
   case Coll.None => true
   case Coll.Some(_) => false
 
@@ -121,15 +124,18 @@ def T.agree {r: Region} (b: Coll.BMap[I64], m: Coll.IMap[I64], k: I64, n: I64, a
 def T.two {r: Region} (a: Coll.BTree[I64], k: I64, b: Coll.BTree[I64]): Coll.BTree[I64] = Coll.B2(a, k, 0, b)
 
 // every k in [k, n] bound to k (a map of size n that holds all of 1..n is exactly that map)
-def T.self (m: Coll.BMap[I64], k: I64, n: I64): Bool =
-  if k > n then true else if Coll.bHas(m, k) && Coll.bGetOr(m, k, 0) == k then T.self(m, k + 1, n) else false
+def T.self(m: Coll.BMap[I64], k: I64, n: I64): Bool =
+  if k > n then true
+  else if Coll.bHas(m, k) && Coll.bGetOr(m, k, 0) == k then T.self(m, k + 1, n)
+  else false
 
 // KV(k, k) for k in 1..i, ascending
-def T.upto {r: Region} (i: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] = if i == 0 then acc else T.upto(i - 1, Coll.Cons(Coll.KV(i, i), acc))
+def T.upto {r: Region} (i: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
+  if i == 0 then acc else T.upto(i - 1, Coll.Cons(Coll.KV(i, i), acc))
 
 // the T.fill pairs of [0, i), in insertion order
 def T.fillList {r: Region} (i: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
-  if i == 0 then acc else T.fillList(i - 1, Coll.Cons(Coll.KV(((i - 1) * 7919) % 100003, i - 1), acc))
+  if i == 0 then acc else T.fillList(i - 1, Coll.Cons(Coll.KV((i - 1) * 7919 % 100003, i - 1), acc))
 
 def T.build {r: Region} (xs: Coll.List[Coll.KV[I64]]): Coll.BMap[I64] = Coll.bFromSorted(Coll.sortDedup(xs))
 

@@ -57,24 +57,32 @@ def Mem.lits2(a: D.Lit, b: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Coll.Cons(b, 
 def Mem.lit1(a: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Coll.Nil)
 
 def Mem.rules(): Coll.List[D.Rule] =
-  val reach = D.Rule(Mem.atom(Mem.RReached, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RReached, Pure.one(0)), Mem.pos(Mem.RCall, Pure.two(0, 1))))
+  val reach =
+    D.Rule(Mem.atom(Mem.RReached, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RReached, Pure.one(0)), Mem.pos(Mem.RCall, Pure.two(0, 1))))
   val run1 = D.Rule(Mem.atom(Mem.RRun, Pure.two(1, 0)), Mem.lit1(Mem.pos(Mem.RCallIn, Pure.two(0, 1))))
-  val run2 = D.Rule(Mem.atom(Mem.RRun, Pure.two(1, 2)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(0, 2))))
+  val run2 =
+    D.Rule(Mem.atom(Mem.RRun, Pure.two(1, 2)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(0, 2))))
   val fill1 = D.Rule(Mem.atom(Mem.RFills, Pure.two(0, 1)), Mem.lit1(Mem.pos(Mem.RSiteIn, Pure.two(0, 1))))
-  val fill2 = D.Rule(Mem.atom(Mem.RFills, Pure.two(0, 2)), Mem.lits2(Mem.pos(Mem.RSiteFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(1, 2))))
+  val fill2 =
+    D.Rule(Mem.atom(Mem.RFills, Pure.two(0, 2)), Mem.lits2(Mem.pos(Mem.RSiteFree, Pure.two(0, 1)), Mem.pos(Mem.RRun, Pure.two(1, 2))))
   val m1 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(0)), Mem.lit1(Mem.pos(Mem.RMulti, Pure.one(0))))
   val m2 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(0)), Mem.lit1(Mem.pos(Mem.RLoopCall, Pure.one(0))))
-  val m3 = D.Rule(Mem.atom(Mem.RManyDef, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RManyDef, Pure.one(0))))
-  val live = D.Rule(Mem.atom(Mem.RLive, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RRegionIn, Pure.two(0, 1)), Mem.pos(Mem.RReached, Pure.one(1))))
+  val m3 =
+    D.Rule(Mem.atom(Mem.RManyDef, Pure.one(1)), Mem.lits2(Mem.pos(Mem.RCallFree, Pure.two(0, 1)), Mem.pos(Mem.RManyDef, Pure.one(0))))
+  val live =
+    D.Rule(Mem.atom(Mem.RLive, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RRegionIn, Pure.two(0, 1)), Mem.pos(Mem.RReached, Pure.one(1))))
   // outl(R1, R2): R1 outlives R2: R2 is handled inside R1, or at the top of a def that runs in R1; and on through outl
   val o1 = D.Rule(Mem.atom(Mem.ROutl, Pure.two(0, 1)), Mem.lit1(Mem.pos(Mem.RInside, Pure.two(1, 0))))
-  val o2 = D.Rule(Mem.atom(Mem.ROutl, Pure.two(0, 1)), Mem.lits2(Mem.pos(Mem.RTop, Pure.two(1, 2)), Mem.pos(Mem.RRun, Pure.two(2, 0))))
-  val o3 = D.Rule(Mem.atom(Mem.ROutl, Pure.two(0, 2)), Mem.lits2(Mem.pos(Mem.ROutl, Pure.two(0, 1)), Mem.pos(Mem.ROutl, Pure.two(1, 2))))
+  val o2 =
+    D.Rule(Mem.atom(Mem.ROutl, Pure.two(0, 1)), Mem.lits2(Mem.pos(Mem.RTop, Pure.two(1, 2)), Mem.pos(Mem.RRun, Pure.two(2, 0))))
+  val o3 =
+    D.Rule(Mem.atom(Mem.ROutl, Pure.two(0, 2)), Mem.lits2(Mem.pos(Mem.ROutl, Pure.two(0, 1)), Mem.pos(Mem.ROutl, Pure.two(1, 2))))
   Coll.Cons(reach, Coll.Cons(run1, Coll.Cons(run2, Coll.Cons(fill1, Coll.Cons(fill2, Coll.Cons(m1, Coll.Cons(m2, Coll.Cons(m3, Coll.Cons(live, Coll.Cons(o1, Coll.Cons(o2, Coll.Cons(o3, Coll.Nil))))))))))))
 
 def Mem.f1(rel: Mem.Rel, a: D.Val): D.Fact = D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Nil))
 def Mem.f2(rel: Mem.Rel, a: D.Val, b: D.Val): D.Fact = D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
-def Mem.f3(rel: Mem.Rel, a: D.Val, b: D.Val, c: D.Val): D.Fact = D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil))))
+def Mem.f3(rel: Mem.Rel, a: D.Val, b: D.Val, c: D.Val): D.Fact =
+  D.Fact(Mem.relSym(rel), Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil))))
 
 // a site: the def it is in, its line, the constructor (or Array.fill), and whether a loop of its own def holds it
 enum Mem.Site:
@@ -101,10 +109,6 @@ enum Mem.W:
 enum Mem.Edge:
   case Mem.Edge(f: Sym.Sym, g: Sym.Sym)
 
-def Mem.fact(w: Mem.W, x: D.Fact): Mem.W =
-  val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
-  Mem.W(ss, ns, rs, nr, Coll.Cons(x, fs), cs, fr)
-
 def Mem.site(w: Mem.W, at: Mem.At, line: I64, ctor: Sym.Sym): Mem.W =
   val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
   val Mem.At(f, reg, loop, _) = at
@@ -130,8 +134,10 @@ def Mem.callN(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym, k: I64): Mem.W =
   val fs2 = if loop then Coll.Cons(Mem.f1(Mem.RLoopCall, D.VSym(g)), Coll.Cons(c, fs)) else Coll.Cons(c, fs)
   val cs2 = Coll.sInsert(cs, g, Mem.count(cs, g) + k)
   reg match
-    case Coll.Some(r) => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f3(Mem.RCallAt, D.VSym(f), D.VInt(line), D.VInt(r)), Coll.Cons(Mem.f2(Mem.RCallIn, D.VInt(r), D.VSym(g)), fs2)), cs2, fr)
-    case Coll.None => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f2(Mem.RCallFreeAt, D.VSym(f), D.VInt(line)), Coll.Cons(Mem.f2(Mem.RCallFree, D.VSym(f), D.VSym(g)), fs2)), cs2, Coll.Cons(Mem.Edge(f, g), fr))
+    case Coll.Some(r) =>
+      Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f3(Mem.RCallAt, D.VSym(f), D.VInt(line), D.VInt(r)), Coll.Cons(Mem.f2(Mem.RCallIn, D.VInt(r), D.VSym(g)), fs2)), cs2, fr)
+    case Coll.None =>
+      Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f2(Mem.RCallFreeAt, D.VSym(f), D.VInt(line)), Coll.Cons(Mem.f2(Mem.RCallFree, D.VSym(f), D.VSym(g)), fs2)), cs2, Coll.Cons(Mem.Edge(f, g), fr))
 
 // a new Region handle in def f: its id is the next one; the rest of the block runs under it. It lives inside the
 // innermost region handled around it in f (inside(R, outer)), else inside each region f runs in (top(R, f))
@@ -178,15 +184,18 @@ def Mem.expr(cx: Mem.Cx, at: Mem.At, w: Mem.W, e: Ast.Expr): Mem.W = e match
     val at2: Mem.At = ats match
       case Coll.Cons(a, _) => a
       case Coll.Nil => at
-    val w2 = if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at2, line, f) else if Mem.isIn(fns, f) then Mem.callAll(w, ats, line, f) else w
+    val w2 =
+      if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at2, line, f)
+      else if Mem.isIn(fns, f) then Mem.callAll(w, ats, line, f)
+      else w
     Mem.exprs(cx, at, w2, args)
   case Ast.Method(_, _, _, args) => Mem.exprs(cx, at, w, args)
   case Ast.Resume(_, _, x) => Mem.expr(cx, at, w, x)
   case Ast.Bin(_, _, l, r) => Mem.expr(cx, at, Mem.expr(cx, at, w, l), r)
   case Ast.Un(_, _, x) => Mem.expr(cx, at, w, x)
-  case Ast.If(_, c, t, x) => Mem.expr(cx, at, Mem.expr(cx, at, Mem.expr(cx, at, w, c), t), x)
-  case Ast.Match(_, s, arms) => Mem.arms(cx, at, Mem.expr(cx, at, w, s), arms)
-  case Ast.Block(_, stmts, last) => Mem.stmts(cx, at, w, stmts, last)
+  case Ast.If(_, _, c, t, x) => Mem.expr(cx, at, Mem.expr(cx, at, Mem.expr(cx, at, w, c), t), x)
+  case Ast.Match(_, _, s, arms) => Mem.arms(cx, at, Mem.expr(cx, at, w, s), arms)
+  case Ast.Block(_, _, stmts, last) => Mem.stmts(cx, at, w, stmts, last)
   case Ast.While(_, c, body) =>
     val Mem.At(f, reg, _, sc) = at
     val inLoop = Mem.At(f, reg, true, sc)
@@ -206,29 +215,30 @@ def Mem.exprs(cx: Mem.Cx, at: Mem.At, w: Mem.W, es: Coll.List[Ast.Expr]): Mem.W 
 def Mem.arms(cx: Mem.Cx, at: Mem.At, w: Mem.W, arms: Coll.List[Ast.Arm]): Mem.W = arms match
   case Coll.Nil => w
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, body) = a
+    val Ast.Arm(_, _, _, body) = a
     Mem.arms(cx, at, Mem.expr(cx, at, w, body), rest)
 
 // a block: a handle of a Region handler opens a region over the rest of the block
 def Mem.stmts(cx: Mem.Cx, at: Mem.At, w: Mem.W, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Mem.W = ss match
   case Coll.Nil => Mem.expr(cx, at, w, last)
   case Coll.Cons(s, rest) => s match
-    case Ast.Handle(line, x, h, args) =>
+    case Ast.Handle(_, line, x, h, args) =>
       val Mem.Cx(_, _, rhs, _, _, _) = cx
       val w2 = Mem.exprs(cx, at, w, args)
       val Mem.At(f, outer, loop, sc) = at
-      if Mem.isIn(rhs, h) then Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop, Coll.sInsert(sc, x, Mem.nextRegion(w2))), Mem.region(w2, f, line, x, h, outer, Mem.lastLine(last, Mem.lastStmts(rest, line))), rest, last)
+      if Mem.isIn(rhs, h) then
+        Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop, Coll.sInsert(sc, x, Mem.nextRegion(w2))), Mem.region(w2, f, line, x, h, outer, Mem.lastLine(last, Mem.lastStmts(rest, line))), rest, last)
       else Mem.stmts(cx, at, w2, rest, last)
-    case Ast.Val(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
-    case Ast.Var(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
-    case Ast.Do(e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
-    case Ast.Check(_, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Val(_, _, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Var(_, _, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Do(_, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
+    case Ast.Check(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
 
 def Mem.decls(cx: Mem.Cx, w: Mem.W, ds: Coll.List[Ast.Decl]): Mem.W = ds match
   case Coll.Nil => w
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
-      val Ast.Fn(_, n, _, _, _, _, body) = f
+      val Ast.Fn(_, _, n, _, _, _, _, body) = f
       val w2: Mem.W = body match
         case Ast.Def(_, e) => Mem.expr(cx, Mem.At(n, Coll.None, false, Coll.sEmpty()), w, e)
         case Ast.Extern(_) => w
@@ -240,21 +250,21 @@ def Mem.ctors(ds: Coll.List[Ast.Decl], m: Coll.SMap[Coll.List[Ast.Binder]]): Col
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DEnum(e) =>
-      val Ast.Enum(_, _, _, cases) = e
+      val Ast.Enum(_, _, _, _, cases) = e
       Mem.ctors(rest, Mem.caseCtors(cases, m))
     case _ => Mem.ctors(rest, m)
 
 def Mem.caseCtors(cs: Coll.List[Ast.Case], m: Coll.SMap[Coll.List[Ast.Binder]]): Coll.SMap[Coll.List[Ast.Binder]] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
-    val Ast.Case(_, n, fields) = c
+    val Ast.Case(_, _, n, fields) = c
     Mem.caseCtors(rest, Coll.sInsert(m, n, fields))
 
 def Mem.regionHs(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, n, p, _, _) = h
+      val Ast.Handler(_, _, n, p, _, _, _) = h
       Mem.regionHs(rest, if Sym.eq(p, Sym.of("Region")) then Coll.sInsert(m, n, true) else m)
     case _ => Mem.regionHs(rest, m)
 
@@ -268,7 +278,7 @@ def Mem.fnList(ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Fn]): Coll.List[Ast.F
 def Mem.multis(fns: Coll.List[Ast.Fn], cs: Coll.SMap[I64], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = fns match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, n, _, _, _, _, _) = f
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
     Mem.multis(rest, cs, if Mem.count(cs, n) >= 2 then Coll.Cons(Mem.f1(Mem.RMulti, D.VSym(n)), acc) else acc)
 
 // ── the report: per live region (by line), its sites (by line) and their multiplicity ──
@@ -363,11 +373,11 @@ def Mem.unshadow(ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Decl]): Coll.List[A
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) => Mem.unshadow(rest, Coll.Cons(Ast.DFn(Mem.usFn(f)), acc))
     case Ast.DHandler(h) =>
-      val Ast.Handler(line, n, p, fs, shots) = h
-      Mem.unshadow(rest, Coll.Cons(Ast.DHandler(Ast.Handler(line, n, p, Mem.usFns(fs), shots)), acc))
+      val Ast.Handler(_, line, n, p, fs, shots, st) = h
+      Mem.unshadow(rest, Coll.Cons(Ast.DHandler(Ast.Handler(Ast.NoDoc, line, n, p, Mem.usFns(fs), shots, st)), acc))
     case Ast.DGiven(g) =>
-      val Ast.Given(line, gs, head, fs) = g
-      Mem.unshadow(rest, Coll.Cons(Ast.DGiven(Ast.Given(line, gs, head, Mem.usFns(fs))), acc))
+      val Ast.Given(_, line, gs, head, fs) = g
+      Mem.unshadow(rest, Coll.Cons(Ast.DGiven(Ast.Given(Ast.NoDoc, line, gs, head, Mem.usFns(fs))), acc))
     case _ => Mem.unshadow(rest, Coll.Cons(d, acc))
 
 def Mem.usFns(fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
@@ -376,11 +386,11 @@ def Mem.usFns(fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
 
 // params are bound first (distinct names: no rename), then the body
 def Mem.usFn(f: Ast.Fn): Ast.Fn =
-  val Ast.Fn(line, n, gs, ps, ret, exit, body) = f
+  val Ast.Fn(_, line, n, gs, ps, ret, exit, body) = f
   body match
     case Ast.Def(cs, e) =>
       val Mem.UsE(e2, _) = Mem.usx(Mem.usParams(ps, Mem.Sc(Coll.sEmpty(), Coll.sEmpty())), e)
-      Ast.Fn(line, n, gs, ps, ret, exit, Ast.Def(cs, e2))
+      Ast.Fn(Ast.NoDoc, line, n, gs, ps, ret, exit, Ast.Def(cs, e2))
     case Ast.Extern(_) => f
 
 def Mem.usParams(ps: Coll.List[Ast.Binder], sc: Mem.Sc): Mem.Sc = ps match
@@ -408,18 +418,18 @@ def Mem.usx(sc: Mem.Sc, e: Ast.Expr): Mem.UsE = e match
   case Ast.Un(line, op, x) =>
     val Mem.UsE(x2, s) = Mem.usx(sc, x)
     Mem.UsE(Ast.Un(line, op, x2), s)
-  case Ast.If(line, c, t, x) =>
+  case Ast.If(_, line, c, t, x) =>
     val Mem.UsE(c2, s1) = Mem.usx(sc, c)
     val Mem.UsE(t2, s2) = Mem.usx(Mem.withSeen(sc, s1), t)
     val Mem.UsE(x2, s3) = Mem.usx(Mem.withSeen(sc, s2), x)
-    Mem.UsE(Ast.If(line, c2, t2, x2), s3)
-  case Ast.Match(line, s, arms) =>
+    Mem.UsE(Ast.If(Ast.NoDoc, line, c2, t2, x2), s3)
+  case Ast.Match(_, line, s, arms) =>
     val Mem.UsE(s2, k1) = Mem.usx(sc, s)
     val Mem.UsA(as, k2) = Mem.usArms(Mem.withSeen(sc, k1), arms, Coll.Nil)
-    Mem.UsE(Ast.Match(line, s2, as), k2)
-  case Ast.Block(line, ss, last) =>
+    Mem.UsE(Ast.Match(Ast.Written, line, s2, as), k2)
+  case Ast.Block(_, line, ss, last) =>
     val Mem.UsB(ss2, last2, k) = Mem.usStmts(sc, ss, last, Coll.Nil)
-    Mem.UsE(Ast.Block(line, ss2, last2), k)
+    Mem.UsE(Ast.Block(Ast.NoDoc, line, ss2, last2), k)
   case Ast.While(line, c, b) =>
     val Mem.UsE(c2, s1) = Mem.usx(sc, c)
     val Mem.UsE(b2, s2) = Mem.usx(Mem.withSeen(sc, s1), b)
@@ -444,15 +454,15 @@ def Mem.usxs(sc: Mem.Sc, es: Coll.List[Ast.Expr]): Mem.UsEs = es match
 def Mem.usArms(sc: Mem.Sc, arms: Coll.List[Ast.Arm], acc: Coll.List[Ast.Arm]): Mem.UsA = arms match
   case Coll.Nil => Mem.UsA(Coll.rev(acc), Mem.seenOf(sc))
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(line, p, b) = a
+    val Ast.Arm(_, line, p, b) = a
     p match
       case Ast.PCase(c, xs) =>
         val Mem.BoundAll(sc2, ys) = Mem.bindAll(sc, xs, Coll.Nil)
         val Mem.UsE(b2, s) = Mem.usx(sc2, b)
-        Mem.usArms(Mem.withSeen(sc, s), rest, Coll.Cons(Ast.Arm(line, Ast.PCase(c, ys), b2), acc))
+        Mem.usArms(Mem.withSeen(sc, s), rest, Coll.Cons(Ast.Arm(Ast.NoDoc, line, Ast.PCase(c, ys), b2), acc))
       case Ast.PAny =>
         val Mem.UsE(b2, s) = Mem.usx(sc, b)
-        Mem.usArms(Mem.withSeen(sc, s), rest, Coll.Cons(Ast.Arm(line, p, b2), acc))
+        Mem.usArms(Mem.withSeen(sc, s), rest, Coll.Cons(Ast.Arm(Ast.NoDoc, line, p, b2), acc))
 
 enum Mem.BoundAll:
   case Mem.BoundAll(sc: Mem.Sc, xs: Coll.List[Sym.Sym])
@@ -469,24 +479,24 @@ def Mem.usStmts(sc: Mem.Sc, ss: Coll.List[Ast.Stmt], last: Ast.Expr, acc: Coll.L
     val Mem.UsE(last2, s) = Mem.usx(sc, last)
     Mem.UsB(Coll.rev(acc), last2, s)
   case Coll.Cons(st, rest) => st match
-    case Ast.Val(line, x, ann, e) =>
+    case Ast.Val(_, line, x, ann, e) =>
       val Mem.UsE(e2, s) = Mem.usx(sc, e)
       val Mem.Bound(sc2, y) = Mem.bindName(Mem.withSeen(sc, s), x)
-      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Val(line, y, ann, e2), acc))
-    case Ast.Var(line, x, ann, e) =>
+      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Val(Ast.NoDoc, line, y, ann, e2), acc))
+    case Ast.Var(_, line, x, ann, e) =>
       val Mem.UsE(e2, s) = Mem.usx(sc, e)
       val Mem.Bound(sc2, y) = Mem.bindName(Mem.withSeen(sc, s), x)
-      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Var(line, y, ann, e2), acc))
-    case Ast.Handle(line, x, h, args) =>
+      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Var(Ast.NoDoc, line, y, ann, e2), acc))
+    case Ast.Handle(_, line, x, h, args) =>
       val Mem.UsEs(as, s) = Mem.usxs(sc, args)
       val Mem.Bound(sc2, y) = Mem.bindName(Mem.withSeen(sc, s), x)
-      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Handle(line, y, h, as), acc))
-    case Ast.Do(e) =>
+      Mem.usStmts(sc2, rest, last, Coll.Cons(Ast.Handle(Ast.NoDoc, line, y, h, as), acc))
+    case Ast.Do(_, e) =>
       val Mem.UsE(e2, s) = Mem.usx(sc, e)
-      Mem.usStmts(Mem.withSeen(sc, s), rest, last, Coll.Cons(Ast.Do(e2), acc))
-    case Ast.Check(line, k, e) =>
+      Mem.usStmts(Mem.withSeen(sc, s), rest, last, Coll.Cons(Ast.Do(Ast.NoDoc, e2), acc))
+    case Ast.Check(_, line, k, e) =>
       val Mem.UsE(e2, s) = Mem.usx(sc, e)
-      Mem.usStmts(Mem.withSeen(sc, s), rest, last, Coll.Cons(Ast.Check(line, k, e2), acc))
+      Mem.usStmts(Mem.withSeen(sc, s), rest, last, Coll.Cons(Ast.Check(Ast.NoDoc, line, k, e2), acc))
 
 // what a report computes: Full (--mem: every relation, the T4 liveness and moves too) or ForEmit (the optimized C: what
 // codegen reads; liveness costs about 1.6x the analysis and no codegen reads it yet)
@@ -501,15 +511,18 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB], need: Mem.Ne
   // the names each def binds (params, val, var, pattern, handle): only these are var nodes; a name no binder gives is a
   // nullary case, a global or an effect op, and holds no box of a handled region
   val bound = Mem.liveFns(Coll.revOnto(dfs, fl), Coll.sEmpty())
-  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms(), bound, Mem.quietPs(ds, Coll.sEmpty()))
+  val cx =
+    Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms(), bound, Mem.quietPs(ds, Coll.sEmpty()))
   val w = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
   val Mem.W(sites, ns, regions, nr, fs, cs, free) = w
   val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
   // one walk, one intern and one solve serve every analysis: their relations have distinct names. The walk takes the
   // handler and given fns too (dispatch calls them: their params are seeded shared); a def's escape is its own
-  val Mem.EW(efs, _, esites) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), Coll.revOnto(Mem.asDecls(dfs, Coll.Nil), ds))
+  val Mem.EW(efs, _, esites) =
+    Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), Coll.revOnto(Mem.asDecls(dfs, Coll.Nil), ds))
   val it = Mem.interned(Coll.revOnto(Mem.fnSeeds(bound, dfs, true, Mem.fnSeeds(bound, fl, false, Coll.Nil)), efs))
-  val all0 = Coll.revOnto(facts, Coll.revOnto(Mem.factsOf(it), Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil))))
+  val all0 =
+    Coll.revOnto(facts, Coll.revOnto(Mem.factsOf(it), Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil))))
   val byDef = Mem.sitesByDef(sites, 0, ns, Coll.sEmpty())
   val all1 = Mem.callFacts(fs, it, Mem.esmFacts(esites, byDef, all0))
   val Mem.IT(itDefs, _, _, _, _) = it
@@ -525,22 +538,31 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB], need: Mem.Ne
     case D.Solved(m) =>
       val mvd = Mem.movedBy(D.tuples(m, Mem.pSym(Mem.PMoved)), pat, Coll.sEmpty())
       val esc = Mem.marks(esites, Mem.idSet(D.tuples(m, Mem.eSym(Mem.EEsc)), Coll.Tip), true, Coll.Nil)
-      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), esc)
-      val reuse = Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(Mem.varMap(it), D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
+      val md =
+        Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), esc)
+      val reuse =
+        Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(Mem.varMap(it), D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
       val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
-      val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
-      val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), fl, Coll.Nil)
+      val skip =
+        Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
+      val compact =
+        Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), fl, Coll.Nil)
       val mf = Mem.manualFrees(fl, Coll.Nil)
-      val bs = Mem.blocks(md, cs, free, Mem.NoIndex, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
+      val bs =
+        Mem.blocks(md, cs, free, Mem.NoIndex, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
       val Mem.IT(defs, next, vars, _, mvs) = it
-      val sm = Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
+      val sm =
+        Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
       val rin = Mem.groupN(D.tuples(m, Mem.eSym(Mem.ERin)), Coll.Tip)
       val Mem.Unnoded(_, extra) = Mem.unnoded(Coll.sEntries(bound, Coll.Nil), defs, Mem.Unnoded(next, Coll.Nil))
-      val vrs = Mem.withMoved(Coll.revOnto(Coll.rev(Mem.varRecs(vars, rin, sm, bound, Coll.Nil)), Coll.rev(extra)), mvd, Coll.Nil)
+      val vrs =
+        Mem.withMoved(Coll.revOnto(Coll.rev(Mem.varRecs(vars, rin, sm, bound, Coll.Nil)), Coll.rev(extra)), mvd, Coll.Nil)
       val Mem.Sh7(_, _, shared) = sm
-      val mv0 = Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
+      val mv0 =
+        Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
       val outl = Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip)
-      val mrs = Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, outl, Coll.Nil)
+      val mrs =
+        Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, outl, Coll.Nil)
       Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Coll.revOnto(Mem.uafFails(bs, Mem.varsByDef(vrs, Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil)), Mem.deadLines(bs, Mem.varsByDef(vrs, Coll.sEmpty()), fs, Coll.Tip))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
@@ -633,7 +655,9 @@ def Mem.unnodedIn(f: Sym.Sym, xs: Coll.List[Coll.SEntry[Mem.LV]], names: Coll.SM
       case Coll.Some(_) => u
       case Coll.None => k match
         case Mem.BCap => u
-        case Mem.BVal => if n == 0 then u else Mem.Unnoded(i + 1, Coll.Cons(Mem.VarRec(i, f, x, Coll.Nil, Mem.NotShared, lv, Coll.Nil), acc))
+        case Mem.BVal =>
+          if n == 0 then u
+          else Mem.Unnoded(i + 1, Coll.Cons(Mem.VarRec(i, f, x, Coll.Nil, Mem.NotShared, lv, Coll.Nil), acc))
     Mem.unnodedIn(f, rest, names, u2)
 
 // and each line that reads it, newest first. A read inside a while counts at the loop's last line: the loop runs again.
@@ -669,7 +693,7 @@ def Mem.maxOf(xs: Coll.List[I64], m: I64): I64 = xs match
 def Mem.liveFns(fs: Coll.List[Ast.Fn], acc: Coll.SMap[Coll.SMap[Mem.LV]]): Coll.SMap[Coll.SMap[Mem.LV]] = fs match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(line, n, _, ps, _, _, body) = f
+    val Ast.Fn(_, line, n, _, ps, _, _, body) = f
     val m0: Coll.SMap[Mem.LV] = Coll.sLookup(acc, n) match
       case Coll.Some(m) => m
       case Coll.None => Coll.sEmpty()
@@ -709,9 +733,9 @@ def Mem.lvx(e: Ast.Expr, floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = 
   case Ast.Resume(_, _, x) => Mem.lvx(x, floor, m)
   case Ast.Bin(_, _, l, r) => Mem.lvx(r, floor, Mem.lvx(l, floor, m))
   case Ast.Un(_, _, x) => Mem.lvx(x, floor, m)
-  case Ast.If(_, c, t, x) => Mem.lvxs(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor, m)
-  case Ast.Match(_, s, arms) => Mem.lvArms(arms, floor, Mem.lvx(s, floor, m))
-  case Ast.Block(_, ss, last) => Mem.lvx(last, floor, Mem.lvStmts(ss, floor, m))
+  case Ast.If(_, _, c, t, x) => Mem.lvxs(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor, m)
+  case Ast.Match(_, _, s, arms) => Mem.lvArms(arms, floor, Mem.lvx(s, floor, m))
+  case Ast.Block(_, _, ss, last) => Mem.lvx(last, floor, Mem.lvStmts(ss, floor, m))
   case Ast.While(_, c, b) =>
     val end = Mem.lastLine(b, Mem.lastLine(c, floor))
     Mem.lvx(b, end, Mem.lvx(c, end, m))
@@ -725,7 +749,7 @@ def Mem.lvxs(es: Coll.List[Ast.Expr], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SM
 def Mem.lvArms(arms: Coll.List[Ast.Arm], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = arms match
   case Coll.Nil => m
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(line, p, b) = a
+    val Ast.Arm(_, line, p, b) = a
     val m2: Coll.SMap[Mem.LV] = p match
       case Ast.PCase(_, xs) => Mem.lvBinds(xs, line, m)
       case Ast.PAny => m
@@ -738,11 +762,12 @@ def Mem.lvBinds(xs: Coll.List[Sym.Sym], line: I64, m: Coll.SMap[Mem.LV]): Coll.S
 def Mem.lvStmts(ss: Coll.List[Ast.Stmt], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = ss match
   case Coll.Nil => m
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
-    case Ast.Var(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
-    case Ast.Handle(line, x, _, args) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvxs(args, floor, m), x, line, Mem.BCap))
-    case Ast.Do(e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
-    case Ast.Check(_, _, e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
+    case Ast.Val(_, line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
+    case Ast.Var(_, line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
+    case Ast.Handle(_, line, x, _, args) =>
+      Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvxs(args, floor, m), x, line, Mem.BCap))
+    case Ast.Do(_, e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
+    case Ast.Check(_, _, _, e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
 
 // the last line an expression spans (at least floor): the largest line of its parts
 def Mem.lastLine(e: Ast.Expr, floor: I64): I64 = e match
@@ -753,9 +778,9 @@ def Mem.lastLine(e: Ast.Expr, floor: I64): I64 = e match
   case Ast.Resume(_, _, x) => Mem.lastLine(x, floor)
   case Ast.Bin(_, _, l, r) => Mem.lastLine(r, Mem.lastLine(l, floor))
   case Ast.Un(_, _, x) => Mem.lastLine(x, floor)
-  case Ast.If(_, c, t, x) => Mem.lastLines(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor)
-  case Ast.Match(_, s, arms) => Mem.lastArms(arms, Mem.lastLine(s, floor))
-  case Ast.Block(_, ss, last) => Mem.lastLine(last, Mem.lastStmts(ss, floor))
+  case Ast.If(_, _, c, t, x) => Mem.lastLines(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor)
+  case Ast.Match(_, _, s, arms) => Mem.lastArms(arms, Mem.lastLine(s, floor))
+  case Ast.Block(_, _, ss, last) => Mem.lastLine(last, Mem.lastStmts(ss, floor))
   case Ast.While(_, c, b) => Mem.lastLine(b, Mem.lastLine(c, floor))
   case Ast.Assign(line, _, x) => Mem.lastLine(x, if line > floor then line else floor)
   case _ => floor
@@ -767,17 +792,18 @@ def Mem.lastLines(es: Coll.List[Ast.Expr], floor: I64): I64 = es match
 def Mem.lastArms(arms: Coll.List[Ast.Arm], floor: I64): I64 = arms match
   case Coll.Nil => floor
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(line, _, b) = a
+    val Ast.Arm(_, line, _, b) = a
     Mem.lastArms(rest, Mem.lastLine(b, if line > floor then line else floor))
 
 def Mem.lastStmts(ss: Coll.List[Ast.Stmt], floor: I64): I64 = ss match
   case Coll.Nil => floor
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
-    case Ast.Var(line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
-    case Ast.Handle(line, _, _, args) => Mem.lastStmts(rest, Mem.lastLines(args, if line > floor then line else floor))
-    case Ast.Do(e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
-    case Ast.Check(_, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
+    case Ast.Val(_, line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
+    case Ast.Var(_, line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
+    case Ast.Handle(_, line, _, _, args) =>
+      Mem.lastStmts(rest, Mem.lastLines(args, if line > floor then line else floor))
+    case Ast.Do(_, e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
+    case Ast.Check(_, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
 
 // the node sets of the sharing relations
 enum Mem.Sh7:
@@ -889,14 +915,16 @@ def Mem.rowDefs(rows: Coll.List[Mem.Row], seen: Coll.SMap[Bool], acc: Coll.List[
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(r, rest) =>
     val Mem.Row(_, f, _, _, _, _) = r
-    if Mem.isIn(seen, f) then Mem.rowDefs(rest, seen, acc) else Mem.rowDefs(rest, Coll.sInsert(seen, f, true), Coll.Cons(f, acc))
+    if Mem.isIn(seen, f) then Mem.rowDefs(rest, seen, acc)
+    else Mem.rowDefs(rest, Coll.sInsert(seen, f, true), Coll.Cons(f, acc))
 
 // the lines of the calls x.free() in def f after the handle at line, in order
 def Mem.freeLines(mf: Coll.List[Mem.FreeAt], f: Sym.Sym, x: Sym.Sym, line: I64, acc: Coll.List[I64]): Coll.List[I64] = mf match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(m, rest) =>
     val Mem.FreeAt(g, l, y) = m
-    if l > line && Sym.eq(g, f) && Sym.eq(x, y) then Mem.freeLines(rest, f, x, line, Coll.Cons(l, acc)) else Mem.freeLines(rest, f, x, line, acc)
+    if l > line && Sym.eq(g, f) && Sym.eq(x, y) then Mem.freeLines(rest, f, x, line, Coll.Cons(l, acc))
+    else Mem.freeLines(rest, f, x, line, acc)
 
 // the frees of no region its def handles: x is a {} Region param, so the free ends the region its caller passes
 def Mem.paramFrees(mf: Coll.List[Mem.FreeAt], bs: Coll.List[Mem.Block], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = mf match
@@ -914,7 +942,7 @@ def Mem.freedIn(m: Mem.FreeAt, bs: Coll.List[Mem.Block]): Bool = bs match
 def Mem.manualFrees(fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = fs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, n, _, _, _, _, body) = f
+    val Ast.Fn(_, _, n, _, _, _, _, body) = f
     val acc2: Coll.List[Mem.FreeAt] = body match
       case Ast.Def(_, e) => Mem.mfx(n, e, acc)
       case Ast.Extern(_) => acc
@@ -928,9 +956,9 @@ def Mem.mfx(f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.
   case Ast.Resume(_, _, x) => Mem.mfx(f, x, acc)
   case Ast.Bin(_, _, l, r) => Mem.mfx(f, r, Mem.mfx(f, l, acc))
   case Ast.Un(_, _, x) => Mem.mfx(f, x, acc)
-  case Ast.If(_, c, t, x) => Mem.mfxs(f, Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), acc)
-  case Ast.Match(_, s, arms) => Mem.mfArms(f, arms, Mem.mfx(f, s, acc))
-  case Ast.Block(_, ss, last) => Mem.mfx(f, last, Mem.mfStmts(f, ss, acc))
+  case Ast.If(_, _, c, t, x) => Mem.mfxs(f, Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), acc)
+  case Ast.Match(_, _, s, arms) => Mem.mfArms(f, arms, Mem.mfx(f, s, acc))
+  case Ast.Block(_, _, ss, last) => Mem.mfx(f, last, Mem.mfStmts(f, ss, acc))
   case Ast.While(_, c, b) => Mem.mfx(f, b, Mem.mfx(f, c, acc))
   case Ast.Assign(_, _, x) => Mem.mfx(f, x, acc)
   case _ => acc
@@ -942,17 +970,17 @@ def Mem.mfxs(f: Sym.Sym, es: Coll.List[Ast.Expr], acc: Coll.List[Mem.FreeAt]): C
 def Mem.mfArms(f: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = arms match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, b) = a
+    val Ast.Arm(_, _, _, b) = a
     Mem.mfArms(f, rest, Mem.mfx(f, b, acc))
 
 def Mem.mfStmts(f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = ss match
   case Coll.Nil => acc
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
-    case Ast.Var(_, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
-    case Ast.Handle(_, _, _, args) => Mem.mfStmts(f, rest, Mem.mfxs(f, args, acc))
-    case Ast.Do(e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
-    case Ast.Check(_, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Val(_, _, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Var(_, _, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Handle(_, _, _, _, args) => Mem.mfStmts(f, rest, Mem.mfxs(f, args, acc))
+    case Ast.Do(_, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Check(_, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
 
 // the rows of the sites ids; fc = the first-caller index, built at the first Via site (most programs have none). A
 // site in a loop of its def is many; else its def's reason to be many: its own call sites, a call in a loop, or a
@@ -1029,7 +1057,6 @@ def Mem.maxBytes(xs: Coll.List[Emit.SiteB], ctor: Sym.Sym, best: Coll.Option[I64
       case Coll.Some(x) => if Sym.eq(c, ctor) && b > x then Coll.Some(b) else best
       case Coll.None => if Sym.eq(c, ctor) then Coll.Some(b) else best
     Mem.maxBytes(rest, ctor, now)
-
 
 // ── M4: does a box die in the def that makes it (vic/c/mem-design.md "M4b") ──
 // A Datalog escape analysis in the shape of Doop's points-to (a value reaches a place only through a rule) and nanofil's
@@ -1191,13 +1218,13 @@ def Mem.eExpr(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, e: Ast.Expr): Mem.EV = e match
   case Ast.Un(_, _, x) =>
     val Mem.EV(w2, _) = Mem.eExpr(cx, f, w, x)
     Mem.EV(w2, Coll.Nil)
-  case Ast.If(_, c, t, x) =>
+  case Ast.If(_, _, c, t, x) =>
     val Mem.EV(w2, _) = Mem.eExpr(cx, f, w, c)
     Mem.eExprs(cx, f, w2, Coll.Cons(t, Coll.Cons(x, Coll.Nil)), Coll.Nil)
-  case Ast.Match(_, s, arms) =>
+  case Ast.Match(_, _, s, arms) =>
     val Mem.EV(w2, ss) = Mem.eExpr(cx, f, w, s)
     Mem.eArms(cx, f, w2, ss, arms, Coll.Nil)
-  case Ast.Block(_, stmts, last) => Mem.eStmts(cx, f, w, stmts, last)
+  case Ast.Block(_, _, stmts, last) => Mem.eStmts(cx, f, w, stmts, last)
   case Ast.While(_, c, body) =>
     val Mem.EV(w2, _) = Mem.eExprs(cx, f, w, Coll.Cons(c, Coll.Cons(body, Coll.Nil)), Coll.Nil)
     Mem.EV(w2, Coll.Nil)
@@ -1234,12 +1261,13 @@ def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Co
     Mem.unknown(Mem.flowTo(w2, Coll.Cons(Mem.nVar(f, g), Coll.Nil), el, Mem.MPattern), el)
   else Coll.sLookup(fns, g) match
     case Coll.Some(gf) =>
-      val Ast.Fn(_, _, _, ps, ret, _, body) = gf
+      val Ast.Fn(_, _, _, _, ps, ret, _, body) = gf
       body match
         case Ast.Def(_, _) =>
           val node = Mem.Node(Mem.kCall(), f, D.VInt(line))
           val w3 = Mem.toParams(g, node, w2, nss, ps, 0)
-          if Mem.scalar(ret) then Mem.EV(w3, Coll.Nil) else Mem.EV(Mem.eFact(w3, Mem.FCallOf(node, g)), Coll.Cons(node, Coll.Nil))
+          if Mem.scalar(ret) then Mem.EV(w3, Coll.Nil)
+          else Mem.EV(Mem.eFact(w3, Mem.FCallOf(node, g)), Coll.Cons(node, Coll.Nil))
         case Ast.Extern(_) =>
           val en = Mem.Node(Mem.kCall(), f, D.VInt(line))
           Mem.unknown(Mem.externArgs(w2, nss, ps, en, Mem.scalar(ret)), en)
@@ -1297,7 +1325,7 @@ def Mem.eExprs(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, es: Coll.List[Ast.Expr], acc: 
 def Mem.eArms(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, ss: Coll.List[Mem.Node], arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Node]): Mem.EV = arms match
   case Coll.Nil => Mem.EV(w, acc)
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, p, body) = a
+    val Ast.Arm(_, _, p, body) = a
     val w2: Mem.EW = p match
       case Ast.PCase(c, binds) =>
         val Mem.Cx(_, ctors, _, _, _, _) = cx
@@ -1322,19 +1350,19 @@ def Mem.bindPat(f: Sym.Sym, w: Mem.EW, ss: Coll.List[Mem.Node], xs: Coll.List[Sy
 def Mem.eStmts(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, ss: Coll.List[Ast.Stmt], last: Ast.Expr): Mem.EV = ss match
   case Coll.Nil => Mem.eExpr(cx, f, w, last)
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, x, _, e) =>
+    case Ast.Val(_, _, x, _, e) =>
       val Mem.EV(w2, ns) = Mem.eExpr(cx, f, w, e)
       Mem.eStmts(cx, f, Mem.flowTo(w2, ns, Mem.nVar(f, x), Mem.MBind), rest, last)
-    case Ast.Var(_, x, _, e) =>
+    case Ast.Var(_, _, x, _, e) =>
       val Mem.EV(w2, ns) = Mem.eExpr(cx, f, w, e)
       Mem.eStmts(cx, f, Mem.flowTo(w2, ns, Mem.nVar(f, x), Mem.MBind), rest, last)
-    case Ast.Handle(_, _, _, args) =>
+    case Ast.Handle(_, _, _, _, args) =>
       val Mem.EV(w2, ns) = Mem.eExprs(cx, f, w, args, Coll.Nil)
       Mem.eStmts(cx, f, Mem.sinkAll(w2, ns), rest, last)
-    case Ast.Do(e) =>
+    case Ast.Do(_, e) =>
       val Mem.EV(w2, _) = Mem.eExpr(cx, f, w, e)
       Mem.eStmts(cx, f, w2, rest, last)
-    case Ast.Check(_, _, e) =>
+    case Ast.Check(_, _, _, e) =>
       val Mem.EV(w2, _) = Mem.eExpr(cx, f, w, e)
       Mem.eStmts(cx, f, w2, rest, last)
 
@@ -1343,7 +1371,7 @@ def Mem.eDecls(cx: Mem.Cx, w: Mem.EW, ds: Coll.List[Ast.Decl]): Mem.EW = ds matc
   case Coll.Nil => w
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(fn) =>
-      val Ast.Fn(_, n, _, ps, _, _, body) = fn
+      val Ast.Fn(_, _, n, _, ps, _, _, body) = fn
       val w3: Mem.EW = body match
         case Ast.Def(_, e) =>
           val r = Mem.nRet(n)
@@ -1362,7 +1390,8 @@ def Mem.n1(a: I64, rest: Coll.List[D.Arg]): Coll.List[D.Arg] = Coll.Cons(Mem.v(a
 
 // var numbers: N = 0 1 2, M = 3 4 5, G = 6, I = 7, C = 8 9 10
 def Mem.nN(): Coll.List[D.Arg] = Mem.n1(0, Coll.Nil)
-def Mem.argOfA(): D.Lit = D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(0, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil))))))
+def Mem.argOfA(): D.Lit =
+  D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(0, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil))))))
 def Mem.gi(r: Mem.ERel): D.Lit = D.Pos(Mem.eAtom(r, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Coll.Nil))))
 def Mem.atC(r: Mem.ERel): D.Lit = D.Pos(Mem.eAtom(r, Mem.n1(8, Coll.Nil)))
 def Mem.lits3(a: D.Lit, b: D.Lit, c: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Mem.lits2(b, c))
@@ -1394,9 +1423,12 @@ def Mem.eRules(): Coll.List[D.Rule] =
   val sinkC = D.Rule(Mem.eAtom(Mem.ESinkR, Mem.nN()), Mem.lits3(Mem.argOfA(), Mem.gi(Mem.ERetP), Mem.atC(Mem.ESinkR)))
   val site = Coll.Cons(Mem.v(1), Coll.Nil)
   val siteOf = D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(0), Coll.Cons(Mem.v(1), Coll.Nil))))
-  val esc1 = D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ERetR, site))))
-  val esc2 = D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ESinkR, site))))
-  val own = Coll.Cons(retC, Coll.Cons(sinkP, Coll.Cons(sinkC, Coll.Cons(Mem.summary(Mem.ERetP, Mem.ERetR), Coll.Cons(Mem.summary(Mem.ESinkP, Mem.ESinkR), Coll.Cons(esc1, Coll.Cons(esc2, Coll.Nil)))))))
+  val esc1 =
+    D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ERetR, site))))
+  val esc2 =
+    D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ESinkR, site))))
+  val own =
+    Coll.Cons(retC, Coll.Cons(sinkP, Coll.Cons(sinkC, Coll.Cons(Mem.summary(Mem.ERetP, Mem.ERetR), Coll.Cons(Mem.summary(Mem.ESinkP, Mem.ESinkR), Coll.Cons(esc1, Coll.Cons(esc2, Coll.Nil)))))))
   val nC = D.Atom(Mem.eSym(Mem.ERetC), Mem.nN())
   val sC = D.Atom(Mem.eSym(Mem.ESinkC), Mem.nN())
   val rc3 = D.Rule(nC, Mem.lits3(Mem.argOfA(), Mem.gi(Mem.ERetPC), Mem.atC(Mem.ERetC)))
@@ -1490,9 +1522,10 @@ def Mem.uses(e: Ast.Expr, m: Mem.UC): Mem.UC = e match
   case Ast.Resume(_, _, x) => Mem.uses(x, m)
   case Ast.Bin(_, _, l, r) => Mem.uses(r, Mem.uses(l, m))
   case Ast.Un(_, _, x) => Mem.uses(x, m)
-  case Ast.If(_, c, t, x) => Mem.ucSumAll(Mem.uses(c, m), Mem.ucMaxAll(Mem.uses(t, Mem.ucNone()), Mem.uses(x, Mem.ucNone())), 1)
-  case Ast.Match(_, s, arms) => Mem.ucSumAll(Mem.uses(s, m), Mem.armUses(arms, Mem.ucNone()), 1)
-  case Ast.Block(_, ss, last) => Mem.uses(last, Mem.stmtUses(ss, m))
+  case Ast.If(_, _, c, t, x) =>
+    Mem.ucSumAll(Mem.uses(c, m), Mem.ucMaxAll(Mem.uses(t, Mem.ucNone()), Mem.uses(x, Mem.ucNone())), 1)
+  case Ast.Match(_, _, s, arms) => Mem.ucSumAll(Mem.uses(s, m), Mem.armUses(arms, Mem.ucNone()), 1)
+  case Ast.Block(_, _, ss, last) => Mem.uses(last, Mem.stmtUses(ss, m))
   case Ast.While(_, c, body) => Mem.ucSumAll(m, Mem.uses(body, Mem.uses(c, Mem.ucNone())), 2)
   case Ast.Assign(_, _, x) => Mem.uses(x, m)
   case Ast.Quant(_, _, _, _, _) => m
@@ -1508,17 +1541,17 @@ def Mem.usesAll(es: Coll.List[Ast.Expr], m: Mem.UC): Mem.UC = es match
 def Mem.armUses(arms: Coll.List[Ast.Arm], m: Mem.UC): Mem.UC = arms match
   case Coll.Nil => m
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, body) = a
+    val Ast.Arm(_, _, _, body) = a
     Mem.armUses(rest, Mem.ucMaxAll(m, Mem.uses(body, Mem.ucNone())))
 
 def Mem.stmtUses(ss: Coll.List[Ast.Stmt], m: Mem.UC): Mem.UC = ss match
   case Coll.Nil => m
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
-    case Ast.Var(_, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
-    case Ast.Handle(_, _, _, args) => Mem.stmtUses(rest, Mem.usesAll(args, m))
-    case Ast.Do(e) => Mem.stmtUses(rest, Mem.uses(e, m))
-    case Ast.Check(_, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
+    case Ast.Val(_, _, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
+    case Ast.Var(_, _, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
+    case Ast.Handle(_, _, _, _, args) => Mem.stmtUses(rest, Mem.usesAll(args, m))
+    case Ast.Do(_, e) => Mem.stmtUses(rest, Mem.uses(e, m))
+    case Ast.Check(_, _, _, e) => Mem.stmtUses(rest, Mem.uses(e, m))
 
 // the sharing seeds of def f: each name read twice, and (for a fn that dispatch calls) each param
 enum Mem.SRel7:
@@ -1551,10 +1584,10 @@ def Mem.dispatchFns(ds: Coll.List[Ast.Decl], acc: Coll.List[Ast.Fn]): Coll.List[
   case Coll.Nil => acc
   case Coll.Cons(d, rest) => d match
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, _, _, fs, _) = h
+      val Ast.Handler(_, _, _, _, fs, _, _) = h
       Mem.dispatchFns(rest, Coll.revOnto(fs, acc))
     case Ast.DGiven(g) =>
-      val Ast.Given(_, _, _, fs) = g
+      val Ast.Given(_, _, _, _, fs) = g
       Mem.dispatchFns(rest, Coll.revOnto(fs, acc))
     case _ => Mem.dispatchFns(rest, acc)
 
@@ -1565,7 +1598,7 @@ def Mem.asDecls(fs: Coll.List[Ast.Fn], acc: Coll.List[Ast.Decl]): Coll.List[Ast.
 def Mem.fnSeeds(bound: Coll.SMap[Coll.SMap[Mem.LV]], fs: Coll.List[Ast.Fn], dispatch: Bool, acc: Coll.List[Mem.EF]): Coll.List[Mem.EF] = fs match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, n, _, ps, _, _, body) = f
+    val Ast.Fn(_, _, n, _, ps, _, _, body) = f
     val acc2: Coll.List[Mem.EF] = body match
       case Ast.Def(_, e) => Mem.multiFacts(bound, n, Mem.uses(e, Mem.ucNone()), acc)
       case Ast.Extern(_) => acc
@@ -1577,11 +1610,13 @@ def Mem.sh(xs: Coll.List[D.Arg]): D.Lit = D.Pos(D.Atom(Mem.s7(Mem.RShared7), xs)
 // reached def whose box has no region (vars: E 14, F 6, N 0, R 12)
 //   hasOwn(N) :- own(N, R)        noRegion(E) :- esiteOf(E, F), reached(F), esiteNode(E, N), !hasOwn(N)
 def Mem.failRules(): Coll.List[D.Rule] =
-  val has = D.Rule(Mem.eAtom(Mem.EHasOwn, Mem.nN()), Mem.lit1(D.Pos(Mem.eAtom(Mem.EOwn, Mem.n1(0, Coll.Cons(Mem.v(12), Coll.Nil))))))
+  val has =
+    D.Rule(Mem.eAtom(Mem.EHasOwn, Mem.nN()), Mem.lit1(D.Pos(Mem.eAtom(Mem.EOwn, Mem.n1(0, Coll.Cons(Mem.v(12), Coll.Nil))))))
   val siteOf = D.Pos(Mem.eAtom(Mem.ESiteOf, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(6), Coll.Nil))))
   val reached = D.Pos(D.Atom(Mem.relSym(Mem.RReached), Coll.Cons(Mem.v(6), Coll.Nil)))
   val node = D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))
-  val none = D.Rule(Mem.eAtom(Mem.ENoRegion, Coll.Cons(Mem.v(14), Coll.Nil)), Coll.Cons(siteOf, Coll.Cons(reached, Coll.Cons(node, Mem.lit1(D.Neg(Mem.eAtom(Mem.EHasOwn, Mem.nN())))))))
+  val none =
+    D.Rule(Mem.eAtom(Mem.ENoRegion, Coll.Cons(Mem.v(14), Coll.Nil)), Coll.Cons(siteOf, Coll.Cons(reached, Coll.Cons(node, Mem.lit1(D.Neg(Mem.eAtom(Mem.EHasOwn, Mem.nN())))))))
   Coll.Cons(has, Coll.Cons(none, Coll.Nil))
 
 // a failed sanity check, each with what it names: a site of a reached def whose box has no region (def, line, ctor); a
@@ -1683,8 +1718,10 @@ def Mem.varsByDef(vs: Coll.List[Mem.VarRec], acc: Coll.SMap[Coll.List[Mem.VarRec
 // the moves across a call: marg(M, G, P) an arg node into its callee's param, mres(X, G, C) a callee's result into its
 // call (vars: M 3, G 6, I 7, C 8, P 0, X 11)
 def Mem.moveRules(): Coll.List[D.Rule] =
-  val arg = D.Rule(Mem.eAtom(Mem.EMArg, Coll.Cons(Mem.v(3), Coll.Cons(Mem.v(6), Mem.nN()))), Mem.lits2(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
-  val res = D.Rule(Mem.eAtom(Mem.EMRes, Coll.Cons(Mem.v(11), Coll.Cons(Mem.v(6), Mem.n1(8, Coll.Nil)))), Mem.lits2(D.Pos(Mem.eAtom(Mem.ERetOf, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(11), Coll.Nil)))), D.Pos(Mem.eAtom(Mem.ECallOf, Mem.n1(8, Coll.Cons(Mem.v(6), Coll.Nil))))))
+  val arg =
+    D.Rule(Mem.eAtom(Mem.EMArg, Coll.Cons(Mem.v(3), Coll.Cons(Mem.v(6), Mem.nN()))), Mem.lits2(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
+  val res =
+    D.Rule(Mem.eAtom(Mem.EMRes, Coll.Cons(Mem.v(11), Coll.Cons(Mem.v(6), Mem.n1(8, Coll.Nil)))), Mem.lits2(D.Pos(Mem.eAtom(Mem.ERetOf, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(11), Coll.Nil)))), D.Pos(Mem.eAtom(Mem.ECallOf, Mem.n1(8, Coll.Cons(Mem.v(6), Coll.Nil))))))
   Coll.Cons(arg, Coll.Cons(res, Coll.Nil))
 
 // the (from, def, to) rows of a move relation as moves of kind k, onto acc
@@ -1719,16 +1756,22 @@ def Mem.rinRules(): Coll.List[D.Rule] =
   val r12 = Coll.Cons(Mem.v(12), Coll.Nil)
   val head = Mem.eAtom(Mem.ERin, Mem.n1(0, r12))
   // written order is the probe order: esm first, so each delta (esm, fills or esiteNode) probes with a bound column
-  val seed = D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.ESm, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(13), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RFills), Coll.Cons(Mem.v(13), r12))), D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))))
-  val flow = D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.EFlow, Mem.n1(3, Mem.n1(0, Coll.Nil)))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12)))))
-  val arg = D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12))), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
+  val seed =
+    D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.ESm, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(13), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RFills), Coll.Cons(Mem.v(13), r12))), D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))))
+  val flow =
+    D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.EFlow, Mem.n1(3, Mem.n1(0, Coll.Nil)))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12)))))
+  val arg =
+    D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12))), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
   // a call's result, by call (context-sensitive): boxes of the region the call runs in (ecallIn: a handled region;
   // ecallFree: a region its def runs in; the callee may build its result there), and what an arg brings when the arg
   // reaches the callee's result (retP). Vars: G 6, I 7, C 0, M 3, F 15
   val ret1 = D.Rule(head, Mem.lit1(D.Pos(Mem.eAtom(Mem.ECallIn, Mem.n1(0, r12)))))
-  val ret2 = D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.ECallFree, Mem.n1(0, Coll.Cons(Mem.v(15), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RRun), Coll.Cons(Mem.v(15), r12)))))
-  val ret3 = D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12))), Mem.gi(Mem.ERetP)))
-  val own = D.Rule(Mem.eAtom(Mem.EOwn, Mem.n1(0, r12)), Mem.lits3(D.Pos(Mem.eAtom(Mem.ESm, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(13), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RFills), Coll.Cons(Mem.v(13), r12))), D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))))
+  val ret2 =
+    D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.ECallFree, Mem.n1(0, Coll.Cons(Mem.v(15), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RRun), Coll.Cons(Mem.v(15), r12)))))
+  val ret3 =
+    D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))), D.Pos(Mem.eAtom(Mem.ERin, Mem.n1(3, r12))), Mem.gi(Mem.ERetP)))
+  val own =
+    D.Rule(Mem.eAtom(Mem.EOwn, Mem.n1(0, r12)), Mem.lits3(D.Pos(Mem.eAtom(Mem.ESm, Coll.Cons(Mem.v(14), Coll.Cons(Mem.v(13), Coll.Nil)))), D.Pos(D.Atom(Mem.relSym(Mem.RFills), Coll.Cons(Mem.v(13), r12))), D.Pos(Mem.eAtom(Mem.ESiteNode, Coll.Cons(Mem.v(14), Mem.nN())))))
   Coll.Cons(own, Coll.Cons(seed, Coll.Cons(flow, Coll.Cons(arg, Coll.Cons(ret1, Coll.Cons(ret2, Coll.Cons(ret3, Coll.Nil)))))))
 
 // esm(E, S): escape site E is M1 site S (the same def, line and ctor; two sites alike share their regions)
@@ -1740,7 +1783,8 @@ def Mem.esmFacts(es: Coll.List[Mem.ESite], byDef: Coll.SMap[Coll.List[Mem.KSite]
       case Coll.Some(xs) => xs
       case Coll.None => Coll.Nil
     val acc2: Coll.List[D.Fact] = Mem.kFind(ks, line, ctor) match
-      case Coll.Some(s) => Coll.Cons(D.Fact(Mem.eSym(Mem.ESm), Coll.Cons(D.VInt(id), Coll.Cons(D.VInt(s), Coll.Nil))), acc)
+      case Coll.Some(s) =>
+        Coll.Cons(D.Fact(Mem.eSym(Mem.ESm), Coll.Cons(D.VInt(id), Coll.Cons(D.VInt(s), Coll.Nil))), acc)
       case Coll.None => acc
     Mem.esmFacts(rest, byDef, acc2)
 
@@ -1771,11 +1815,14 @@ def Mem.sharedRules(): Coll.List[D.Rule] =
   val head = D.Atom(Mem.s7(Mem.RShared7), Mem.nN())
   val r1 = D.Rule(head, Mem.lit1(D.Pos(D.Atom(Mem.s7(Mem.RMulti7), Mem.nN()))))
   val r2 = D.Rule(head, Mem.lit1(D.Pos(D.Atom(Mem.s7(Mem.RUnknown7), Mem.nN()))))
-  val r3 = D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.EFlow, Mem.n1(3, Mem.n1(0, Coll.Nil)))), Mem.sh(Mem.n1(3, Coll.Nil))))
-  val r4 = D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), Mem.sh(Mem.n1(3, Coll.Nil)), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
+  val r3 =
+    D.Rule(head, Mem.lits2(D.Pos(Mem.eAtom(Mem.EFlow, Mem.n1(3, Mem.n1(0, Coll.Nil)))), Mem.sh(Mem.n1(3, Coll.Nil))))
+  val r4 =
+    D.Rule(head, Mem.lits3(D.Pos(Mem.eAtom(Mem.EArgOf, Mem.n1(3, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.n1(8, Coll.Nil)))))), Mem.sh(Mem.n1(3, Coll.Nil)), D.Pos(Mem.eAtom(Mem.EParam, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(7), Mem.nN()))))))
   // written order is the probe order of the other atoms: retOf first, so callOf is probed with G bound
   val retOf = D.Pos(Mem.eAtom(Mem.ERetOf, Coll.Cons(Mem.v(6), Coll.Cons(Mem.v(11), Coll.Nil))))
-  val r5 = D.Rule(head, Mem.lits3(retOf, Mem.sh(Coll.Cons(Mem.v(11), Coll.Nil)), D.Pos(Mem.eAtom(Mem.ECallOf, Mem.n1(0, Coll.Cons(Mem.v(6), Coll.Nil))))))
+  val r5 =
+    D.Rule(head, Mem.lits3(retOf, Mem.sh(Coll.Cons(Mem.v(11), Coll.Nil)), D.Pos(Mem.eAtom(Mem.ECallOf, Mem.n1(0, Coll.Cons(Mem.v(6), Coll.Nil))))))
   Coll.Cons(r1, Coll.Cons(r2, Coll.Cons(r3, Coll.Cons(r4, Coll.Cons(r5, Coll.Nil)))))
 // a reuse: the match at line in def f, on x, whose arm takes apart case c and builds ctor (a case of the same enum) at line at
 // a reuse: the match at line, on x, whose arm takes apart case c and builds ctor (a case of the same enum)
@@ -1796,15 +1843,14 @@ def Mem.sharedSet(vars: Coll.BMap[Mem.VarOf], ts: Coll.List[Coll.List[D.Val]], m
     case Coll.Nil => Mem.sharedSet(vars, rest, m)
 
 // a shared node that is a var: its def and name into m (a site or call node is never a scrutinee name)
-def Mem.addShared(vars: Coll.BMap[Mem.VarOf], m: Coll.SMap[Coll.SMap[Bool]], i: I64): Coll.SMap[Coll.SMap[Bool]] =
-  Coll.bLookup(vars, i) match
-    case Coll.Some(vo) =>
-      val Mem.VarOf(f, n) = vo
-      val inner: Coll.SMap[Bool] = Coll.sLookup(m, f) match
-        case Coll.Some(s) => s
-        case Coll.None => Coll.sEmpty()
-      Coll.sInsert(m, f, Coll.sInsert(inner, n, true))
-    case Coll.None => m
+def Mem.addShared(vars: Coll.BMap[Mem.VarOf], m: Coll.SMap[Coll.SMap[Bool]], i: I64): Coll.SMap[Coll.SMap[Bool]] = Coll.bLookup(vars, i) match
+  case Coll.Some(vo) =>
+    val Mem.VarOf(f, n) = vo
+    val inner: Coll.SMap[Bool] = Coll.sLookup(m, f) match
+      case Coll.Some(s) => s
+      case Coll.None => Coll.sEmpty()
+    Coll.sInsert(m, f, Coll.sInsert(inner, n, true))
+  case Coll.None => m
 
 def Mem.isShared(sh: Coll.SMap[Coll.SMap[Bool]], f: Sym.Sym, x: Sym.Sym): Bool = Coll.sLookup(sh, f) match
   case Coll.Some(s) => Mem.isIn(s, x)
@@ -1815,14 +1861,14 @@ def Mem.caseEnums(ds: Coll.List[Ast.Decl], m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DEnum(e) =>
-      val Ast.Enum(_, en, _, cases) = e
+      val Ast.Enum(_, _, en, _, cases) = e
       Mem.caseEnums(rest, Mem.casesOf(cases, en, m))
     case _ => Mem.caseEnums(rest, m)
 
 def Mem.casesOf(cs: Coll.List[Ast.Case], en: Sym.Sym, m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym.Sym] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
-    val Ast.Case(_, n, _) = c
+    val Ast.Case(_, _, n, _) = c
     Mem.casesOf(rest, en, Coll.sInsert(m, n, en))
 
 def Mem.sameEnum(ce: Coll.SMap[Sym.Sym], a: Sym.Sym, b: Sym.Sym): Bool = Coll.sLookup(ce, a) match
@@ -1834,7 +1880,7 @@ def Mem.sameEnum(ce: Coll.SMap[Sym.Sym], a: Sym.Sym, b: Sym.Sym): Bool = Coll.sL
 def Mem.scanFns(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = fs match
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, n, _, _, _, _, body) = f
+    val Ast.Fn(_, _, n, _, _, _, _, body) = f
     val acc2: Coll.List[Mem.Reuse] = body match
       case Ast.Def(_, e) => Mem.scan(ce, cx, sh, n, e, acc)
       case Ast.Extern(_) => acc
@@ -1842,7 +1888,7 @@ def Mem.scanFns(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool
 
 // every match on an unshared var: each arm on a case with fields pairs with the first box of the same enum its body builds
 def Mem.scan(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]], f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = e match
-  case Ast.Match(line, s, arms) =>
+  case Ast.Match(_, line, s, arms) =>
     val acc2: Coll.List[Mem.Reuse] = s match
       case Ast.Name(_, x) => if Mem.isShared(sh, f, x) then acc else Mem.armReuse(ce, cx, f, line, x, arms, acc)
       case _ => acc
@@ -1852,8 +1898,8 @@ def Mem.scan(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]],
   case Ast.Resume(_, _, x) => Mem.scan(ce, cx, sh, f, x, acc)
   case Ast.Bin(_, _, l, r) => Mem.scan(ce, cx, sh, f, r, Mem.scan(ce, cx, sh, f, l, acc))
   case Ast.Un(_, _, x) => Mem.scan(ce, cx, sh, f, x, acc)
-  case Ast.If(_, c, t, x) => Mem.scanAll(ce, cx, sh, f, Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), acc)
-  case Ast.Block(_, ss, last) => Mem.scan(ce, cx, sh, f, last, Mem.scanStmts(ce, cx, sh, f, ss, acc))
+  case Ast.If(_, _, c, t, x) => Mem.scanAll(ce, cx, sh, f, Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), acc)
+  case Ast.Block(_, _, ss, last) => Mem.scan(ce, cx, sh, f, last, Mem.scanStmts(ce, cx, sh, f, ss, acc))
   case Ast.While(_, c, b) => Mem.scan(ce, cx, sh, f, b, Mem.scan(ce, cx, sh, f, c, acc))
   case Ast.Assign(_, _, x) => Mem.scan(ce, cx, sh, f, x, acc)
   case _ => acc
@@ -1865,22 +1911,22 @@ def Mem.scanAll(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool
 def Mem.scanArms(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]], f: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = arms match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, b) = a
+    val Ast.Arm(_, _, _, b) = a
     Mem.scanArms(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, b, acc))
 
 def Mem.scanStmts(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, sh: Coll.SMap[Coll.SMap[Bool]], f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = ss match
   case Coll.Nil => acc
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, _, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
-    case Ast.Var(_, _, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
-    case Ast.Handle(_, _, _, args) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scanAll(ce, cx, sh, f, args, acc))
-    case Ast.Do(e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
-    case Ast.Check(_, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
+    case Ast.Val(_, _, _, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
+    case Ast.Var(_, _, _, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
+    case Ast.Handle(_, _, _, _, args) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scanAll(ce, cx, sh, f, args, acc))
+    case Ast.Do(_, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
+    case Ast.Check(_, _, _, e) => Mem.scanStmts(ce, cx, sh, f, rest, Mem.scan(ce, cx, sh, f, e, acc))
 
 def Mem.armReuse(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, f: Sym.Sym, line: I64, x: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] = arms match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, p, b) = a
+    val Ast.Arm(_, _, p, b) = a
     val acc2: Coll.List[Mem.Reuse] = p match
       case Ast.PCase(c, _) =>
         val Mem.Cx(_, ctors, _, _, _, _) = cx
@@ -1899,9 +1945,10 @@ def Mem.firstBuild(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, e: Ast.Expr):
     val Mem.Cx(_, ctors, _, _, _, _) = cx
     Mem.firstOf(ce, cx, c, args) match
       case Coll.Some(k) => Coll.Some(k)
-      case Coll.None => if Mem.allocates(ctors, g) && Mem.sameEnum(ce, c, g) then Coll.Some(Mem.Built(gl, g)) else Coll.None
-  case Ast.If(_, _, t, x) => Mem.firstOf(ce, cx, c, Coll.Cons(t, Coll.Cons(x, Coll.Nil)))
-  case Ast.Block(_, _, last) => Mem.firstBuild(ce, cx, c, last)
+      case Coll.None =>
+        if Mem.allocates(ctors, g) && Mem.sameEnum(ce, c, g) then Coll.Some(Mem.Built(gl, g)) else Coll.None
+  case Ast.If(_, _, _, t, x) => Mem.firstOf(ce, cx, c, Coll.Cons(t, Coll.Cons(x, Coll.Nil)))
+  case Ast.Block(_, _, _, last) => Mem.firstBuild(ce, cx, c, last)
   case _ => Coll.None
 
 def Mem.firstOf(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, es: Coll.List[Ast.Expr]): Coll.Option[Mem.Built] = es match
@@ -2029,7 +2076,8 @@ def Mem.intoE(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], e: El.Expr
       case _ => cell
     El.Match(l, Mem.intoE(t, cell, x), en, Mem.intoArms(t, cell2, arms))
   case El.CallFn(l, f, ts, caps, args) => El.CallFn(l, f, ts, caps, Mem.intoEs(t, cell, args))
-  case El.MHandled(l, x, h, caps, args, rest, a, ans) => El.MHandled(l, x, h, caps, Mem.intoEs(t, cell, args), Mem.intoE(t, cell, rest), a, ans)
+  case El.MHandled(l, x, h, caps, args, rest, a, ans) =>
+    El.MHandled(l, x, h, caps, Mem.intoEs(t, cell, args), Mem.intoE(t, cell, rest), a, ans)
   case El.Resume(l, k, x) => El.Resume(l, k, Mem.intoE(t, cell, x))
   case El.Op(l, recv, ty, op, args, cs) => El.Op(l, recv, ty, op, Mem.intoEs(t, cell, args), cs)
   case El.TCall(l, ty, op, caps, args) => El.TCall(l, ty, op, caps, Mem.intoEs(t, cell, args))
@@ -2106,8 +2154,10 @@ def Mem.cellAfter(cell: Coll.Option[Mem.Cell], ss: Coll.List[El.Stmt]): Coll.Opt
 def Mem.intoSs(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], ss: Coll.List[El.Stmt]): Coll.List[El.Stmt] = ss match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(s, rest) => s match
-    case El.Val(l, x, ty, mut, v) => Coll.Cons(El.Val(l, x, ty, mut, Mem.intoE(t, cell, v)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
-    case El.Handle(l, x, h, caps, args) => Coll.Cons(El.Handle(l, x, h, caps, Mem.intoEs(t, cell, args)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
+    case El.Val(l, x, ty, mut, v) =>
+      Coll.Cons(El.Val(l, x, ty, mut, Mem.intoE(t, cell, v)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
+    case El.Handle(l, x, h, caps, args) =>
+      Coll.Cons(El.Handle(l, x, h, caps, Mem.intoEs(t, cell, args)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
     case El.Do(v) => Coll.Cons(El.Do(Mem.intoE(t, cell, v)), Mem.intoSs(t, cell, rest))
 
 // reuses by line (line * n + i is unique: i < n)
@@ -2170,10 +2220,13 @@ def Mem.sSym(r: Mem.SRel): Sym.Sym = r match
 def Mem.sAtom(r: Mem.SRel, xs: Coll.List[I64]): D.Atom = D.Atom(Mem.sSym(r), Pure.vars(xs))
 
 def Mem.sRules(): Coll.List[D.Rule] =
-  val u1 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SSelf, Pure.one(0))), D.Pos(Mem.sAtom(Mem.SAllocs, Pure.one(0)))))
+  val u1 =
+    D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(D.Pos(Mem.sAtom(Mem.SSelf, Pure.one(0))), D.Pos(Mem.sAtom(Mem.SAllocs, Pure.one(0)))))
   val u2 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lit1(D.Pos(Mem.sAtom(Mem.SLoopAlloc, Pure.one(0)))))
-  val u3 = D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
-  val n1 = D.Rule(Mem.sAtom(Mem.SNeed, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
+  val u3 =
+    D.Rule(Mem.sAtom(Mem.SUnb, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
+  val n1 =
+    D.Rule(Mem.sAtom(Mem.SNeed, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SUnb, Pure.one(1)))))
   val n2 = D.Rule(Mem.sAtom(Mem.SNeed, Pure.one(0)), Mem.lit1(D.Pos(Mem.sAtom(Mem.SLoopAlloc, Pure.one(0)))))
   Coll.Cons(u1, Coll.Cons(u2, Coll.Cons(u3, Coll.Cons(n1, Coll.Cons(n2, Mem.runRules())))))
 
@@ -2189,7 +2242,8 @@ def Mem.sFacts(fs: Coll.List[D.Fact], acc: Coll.List[D.Fact]): Coll.List[D.Fact]
 
 def Mem.selfOf(vals: Coll.List[D.Val], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = vals match
   case Coll.Cons(a, t) => t match
-    case Coll.Cons(b, _) => if D.veq(a, b) then Coll.Cons(D.Fact(Mem.sSym(Mem.SSelf), Coll.Cons(a, Coll.Nil)), acc) else acc
+    case Coll.Cons(b, _) =>
+      if D.veq(a, b) then Coll.Cons(D.Fact(Mem.sSym(Mem.SSelf), Coll.Cons(a, Coll.Nil)), acc) else acc
     case Coll.Nil => acc
   case Coll.Nil => acc
 
@@ -2217,7 +2271,8 @@ def Mem.regionDefs(m: Coll.IMap[Mem.Region], i: I64, n: I64, acc: Coll.SMap[Bool
 // a source list with a new box in it: a site of the def, or a call result that can hold one
 // the program with a scratch region opened at the top of each chosen def
 // a node N (var 1) of def F (var 0) of kind k: enode(N, F, k), then r(N)
-def Mem.ofKind(r: Mem.ERel, k: I64): Coll.List[D.Lit] = Mem.lits2(D.Pos(Mem.eAtom(Mem.ENode, Coll.Cons(D.AVar(1), Coll.Cons(D.AVar(0), Coll.Cons(D.AVal(D.VInt(k)), Coll.Nil))))), D.Pos(Mem.eAtom(r, Coll.Cons(D.AVar(1), Coll.Nil))))
+def Mem.ofKind(r: Mem.ERel, k: I64): Coll.List[D.Lit] =
+  Mem.lits2(D.Pos(Mem.eAtom(Mem.ENode, Coll.Cons(D.AVar(1), Coll.Cons(D.AVar(0), Coll.Cons(D.AVal(D.VInt(k)), Coll.Nil))))), D.Pos(Mem.eAtom(r, Coll.Cons(D.AVar(1), Coll.Nil))))
 
 // runSink(F): a box made during F's run reaches a sink (in F or a callee); newRet(F): F's result can hold a box made
 // during its run (a site or a call result of F reaches F's result)
@@ -2225,7 +2280,8 @@ def Mem.runRules(): Coll.List[D.Rule] =
   val f0 = Coll.Cons(D.AVar(0), Coll.Nil)
   val rs1 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.ofKind(Mem.ESinkR, Mem.kSite()))
   val rs2 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.ofKind(Mem.ESinkR, Mem.kCall()))
-  val rs3 = D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SRunSink, Pure.one(1)))))
+  val rs3 =
+    D.Rule(Mem.sAtom(Mem.SRunSink, Pure.one(0)), Mem.lits2(Mem.pos(Mem.RCall, Pure.two(0, 1)), D.Pos(Mem.sAtom(Mem.SRunSink, Pure.one(1)))))
   val b1 = D.Rule(D.Atom(Mem.sSym(Mem.SNewRet), f0), Mem.ofKind(Mem.ERetR, Mem.kSite()))
   val b2 = D.Rule(D.Atom(Mem.sSym(Mem.SNewRet), f0), Mem.ofKind(Mem.ERetR, Mem.kCall()))
   Coll.Cons(rs1, Coll.Cons(rs2, Coll.Cons(rs3, Coll.Cons(b1, Coll.Cons(b2, Coll.Nil)))))
@@ -2242,10 +2298,11 @@ enum Mem.Runs:
 def Mem.pickCompacts(need: Coll.SMap[Bool], skip: Coll.SMap[Bool], newRet: Coll.SMap[Bool], many: Coll.SMap[Bool], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = fs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(line, n, gs, _, _, _, _) = f
+    val Ast.Fn(_, line, n, gs, _, _, _, _) = f
     val x = Sym.str(n)
     val srs = Str.len(x) > 4 && Str.eq(Str.slice(x, 0, 4), "Srs.")
-    val ok = Mem.isIn(need, n) && Mem.isIn(newRet, n) && !Mem.isIn(skip, n) && !Str.eq(x, "main") && !srs && !Mem.hasEvidence(gs)
+    val ok =
+      Mem.isIn(need, n) && Mem.isIn(newRet, n) && !Mem.isIn(skip, n) && !Str.eq(x, "main") && !srs && !Mem.hasEvidence(gs)
     val runs: Mem.Runs = if Mem.isIn(many, n) then Mem.RunsMany else Mem.RunsOnce
     Mem.pickCompacts(need, skip, newRet, many, rest, if ok then Coll.Cons(Mem.Compact(line, n, runs), acc) else acc)
 
@@ -2322,14 +2379,16 @@ def Mem.idOf(it: Mem.IT, n: Mem.Node): Mem.Got =
   x match
     case D.VSym(s) => Coll.sLookup(names, s) match
       case Coll.Some(i) => Mem.Got(it, i)
-      case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(Coll.sInsert(names, s, next), byKind)), next + 1, Coll.Cons(Coll.KV(next, Mem.VarOf(d, s)), vars), out, mv), next)
+      case Coll.None =>
+        Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(Coll.sInsert(names, s, next), byKind)), next + 1, Coll.Cons(Coll.KV(next, Mem.VarOf(d, s)), vars), out, mv), next)
     case D.VInt(v) =>
       val ints: Coll.IMap[I64] = Coll.lookup(byKind, k) match
         case Coll.Some(m) => m
         case Coll.None => Coll.Tip
       Coll.lookup(ints, v) match
         case Coll.Some(i) => Mem.Got(it, i)
-        case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(names, Coll.insert(byKind, k, Coll.insert(ints, v, next)))), next + 1, vars, Coll.Cons(D.Fact(Mem.eSym(Mem.ENode), Coll.Cons(D.VInt(next), Coll.Cons(D.VSym(d), Coll.Cons(D.VInt(k), Coll.Nil)))), out), mv), next)
+        case Coll.None =>
+          Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(names, Coll.insert(byKind, k, Coll.insert(ints, v, next)))), next + 1, vars, Coll.Cons(D.Fact(Mem.eSym(Mem.ENode), Coll.Cons(D.VInt(next), Coll.Cons(D.VSym(d), Coll.Cons(D.VInt(k), Coll.Nil)))), out), mv), next)
 
 def Mem.emit(it: Mem.IT, rel: Sym.Sym, vals: Coll.List[D.Val]): Mem.IT =
   val Mem.IT(defs, next, vars, out, mv) = it
@@ -2351,7 +2410,8 @@ def Mem.intern1(x: Mem.EF, it: Mem.IT): Mem.IT = x match
       case Mem.MField => Mem.EField
       case Mem.MPattern => Mem.ELoad
       case _ => Mem.EAlias
-    val out2 = Coll.Cons(D.Fact(Mem.eSym(kr), Coll.Cons(D.VInt(i), Mem.one(j))), Coll.Cons(D.Fact(Mem.eSym(Mem.EFlow), Coll.Cons(D.VInt(i), Mem.one(j))), out))
+    val out2 =
+      Coll.Cons(D.Fact(Mem.eSym(kr), Coll.Cons(D.VInt(i), Mem.one(j))), Coll.Cons(D.Fact(Mem.eSym(Mem.EFlow), Coll.Cons(D.VInt(i), Mem.one(j))), out))
     Mem.IT(defs, next, vars, out2, Coll.Cons(Mem.Move(k, d, i, j), mv))
   case Mem.FSink(a) =>
     val Mem.Got(it1, i) = Mem.idOf(it, a)
@@ -2514,21 +2574,21 @@ def Mem.pw(cx: Mem.PCx, e: Ast.Expr, prev: I64, s: Mem.PS): Mem.PR = e match
     val Mem.PR(s2, q) = Mem.pw(cx, l, prev, s)
     Mem.pw(cx, r, q, s2)
   case Ast.Un(_, _, x) => Mem.pw(cx, x, prev, s)
-  case Ast.If(line, c, t, x) =>
+  case Ast.If(_, line, c, t, x) =>
     val Mem.PCx(f, _) = cx
     val Mem.PR(s1, pc) = Mem.pw(cx, c, prev, s)
     val Mem.PR(s2, pt) = Mem.pw(cx, t, pc, s1)
     val Mem.PR(s3, px) = Mem.pw(cx, x, pc, s2)
     val Mem.PR(s4, j) = Mem.pNew(s3, f, pt, line)
     Mem.PR(Mem.pEdge(s4, px, j), j)
-  case Ast.Match(line, sc, arms) =>
+  case Ast.Match(_, line, sc, arms) =>
     val Mem.PCx(f, _) = cx
     val Mem.PR(s1, ps) = Mem.pw(cx, sc, prev, s)
     val Mem.PEnds(s2, ends) = Mem.pArms(cx, arms, ps, s1, Coll.Nil)
     val Mem.PS(n, out, at) = s2
     val j = n
     Mem.PR(Mem.pJoin(Mem.PS(n + 1, out, Coll.insert(at, j, Mem.PAt(line, f))), ends, j), j)
-  case Ast.Block(_, ss, last) =>
+  case Ast.Block(_, _, ss, last) =>
     val Mem.PR(s2, q) = Mem.pss(cx, ss, prev, s)
     Mem.pw(cx, last, q, s2)
   case Ast.While(line, c, b) =>
@@ -2557,7 +2617,7 @@ def Mem.pArms(cx: Mem.PCx, arms: Coll.List[Ast.Arm], ps: I64, s: Mem.PS, ends: C
   case Coll.Nil => Mem.PEnds(s, ends)
   case Coll.Cons(a, rest) =>
     val Mem.PCx(f, _) = cx
-    val Ast.Arm(line, p, b) = a
+    val Ast.Arm(_, line, p, b) = a
     val Mem.PR(s1, q) = Mem.pNew(s, f, ps, line)
     val s2: Mem.PS = p match
       case Ast.PCase(_, xs) => Mem.pDefs(s1, xs, q)
@@ -2576,21 +2636,21 @@ def Mem.pJoin(s: Mem.PS, ends: Coll.List[I64], j: I64): Mem.PS = ends match
 def Mem.pss(cx: Mem.PCx, ss: Coll.List[Ast.Stmt], prev: I64, s: Mem.PS): Mem.PR = ss match
   case Coll.Nil => Mem.PR(s, prev)
   case Coll.Cons(st, rest) => st match
-    case Ast.Val(line, x, _, e) =>
+    case Ast.Val(_, line, x, _, e) =>
       val Mem.PR(s2, q) = Mem.pw(cx, e, prev, s)
       val Mem.PR(s3, d) = Mem.pBind(cx, s2, q, line, x)
       Mem.pss(cx, rest, d, s3)
-    case Ast.Var(line, x, _, e) =>
+    case Ast.Var(_, line, x, _, e) =>
       val Mem.PR(s2, q) = Mem.pw(cx, e, prev, s)
       val Mem.PR(s3, d) = Mem.pBind(cx, s2, q, line, x)
       Mem.pss(cx, rest, d, s3)
-    case Ast.Handle(_, _, _, args) =>
+    case Ast.Handle(_, _, _, _, args) =>
       val Mem.PR(s2, q) = Mem.pws(cx, args, prev, s)
       Mem.pss(cx, rest, q, s2)
-    case Ast.Do(e) =>
+    case Ast.Do(_, e) =>
       val Mem.PR(s2, q) = Mem.pw(cx, e, prev, s)
       Mem.pss(cx, rest, q, s2)
-    case Ast.Check(_, _, e) =>
+    case Ast.Check(_, _, _, e) =>
       val Mem.PR(s2, q) = Mem.pw(cx, e, prev, s)
       Mem.pss(cx, rest, q, s2)
 
@@ -2598,7 +2658,7 @@ def Mem.pss(cx: Mem.PCx, ss: Coll.List[Ast.Stmt], prev: I64, s: Mem.PS): Mem.PR 
 def Mem.pFns(fs: Coll.List[Ast.Fn], defs: Coll.SMap[Mem.DefIds], s: Mem.PS): Mem.PS = fs match
   case Coll.Nil => s
   case Coll.Cons(fn, rest) =>
-    val Ast.Fn(line, f, _, ps, _, _, body) = fn
+    val Ast.Fn(_, line, f, _, ps, _, _, body) = fn
     val nodes: Coll.SMap[I64] = Coll.sLookup(defs, f) match
       case Coll.Some(d) =>
         val Mem.DefIds(ns, _) = d
@@ -2679,7 +2739,10 @@ def Mem.externArgs(w: Mem.EW, nss: Coll.List[Coll.List[Mem.Node]], ps: Coll.List
       val Ast.Binder(_, _, t) = p
       val Ast.Ty(_, tn, _, _, _) = t
       val isStr = Str.eq(Sym.str(tn), "Str")
-      val w2: Mem.EW = if isStr && retScalar then w else if isStr then Mem.flowTo(w, ns, r, Mem.MBind) else Mem.sinkAll(w, ns)
+      val w2: Mem.EW =
+        if isStr && retScalar then w
+        else if isStr then Mem.flowTo(w, ns, r, Mem.MBind)
+        else Mem.sinkAll(w, ns)
       Mem.externArgs(w2, rest, prest, r, retScalar)
 
 // the quiet protocols, as true: every handler is stateless (E5) and every op takes only Str or scalar params (an arg
@@ -2688,10 +2751,10 @@ def Mem.quietPs(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = 
   case Coll.Nil => Mem.trueOnly(Coll.sEntries(m, Coll.Nil), Coll.sEmpty())
   case Coll.Cons(d, rest) => d match
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, _, p, fs, _) = h
+      val Ast.Handler(_, _, _, p, fs, _, _) = h
       Mem.quietPs(rest, Mem.quietAnd(m, p, !Mem.hasInit(fs)))
     case Ast.DProto(pr) =>
-      val Ast.Proto(_, p, _, _, _, _, ops, _) = pr
+      val Ast.Proto(_, _, p, _, _, _, _, ops, _) = pr
       Mem.quietPs(rest, Mem.quietAnd(m, p, Mem.plainOps(ops)))
     case _ => Mem.quietPs(rest, m)
 
@@ -2705,7 +2768,7 @@ def Mem.quietAnd(m: Coll.SMap[Bool], p: Sym.Sym, ok: Bool): Coll.SMap[Bool] =
 def Mem.plainOps(ops: Coll.List[Ast.Op]): Bool = ops match
   case Coll.Nil => true
   case Coll.Cons(o, rest) =>
-    val Ast.Op(_, _, _, ps, _, _) = o
+    val Ast.Op(_, _, _, _, ps, _, _) = o
     Mem.plainParams(ps) && Mem.plainOps(rest)
 
 def Mem.plainParams(ps: Coll.List[Ast.Binder]): Bool = ps match
@@ -2725,13 +2788,13 @@ def Mem.trueOnly(xs: Coll.List[Coll.SEntry[Bool]], acc: Coll.SMap[Bool]): Coll.S
 def Mem.hasInit(fs: Coll.List[Ast.Fn]): Bool = fs match
   case Coll.Nil => false
   case Coll.Cons(g, rest) =>
-    val Ast.Fn(_, n, _, _, _, _, body) = g
+    val Ast.Fn(_, _, n, _, _, _, _, body) = g
     val noState: Bool = body match
       case Ast.Def(_, e) => e match
         case Ast.Call(_, h, _, _, _) => Str.eq(Sym.str(h), "Srs.noState")
         case _ => false
       case Ast.Extern(_) => false
-    (Str.eq(Sym.str(n), "init") && !noState) || Mem.hasInit(rest)
+    Str.eq(Sym.str(n), "init") && !noState || Mem.hasInit(rest)
 
 // g is P.op with P a quiet protocol: the text before g's last dot is a key of quiet
 def Mem.quietOp(quiet: Coll.SMap[Bool], g: Sym.Sym): Bool =
@@ -2740,7 +2803,10 @@ def Mem.quietOp(quiet: Coll.SMap[Bool], g: Sym.Sym): Bool =
   if k <= 0 then false else Mem.isIn(quiet, Sym.of(Str.slice(s, 0, k)))
 
 // the index of the last dot at or before i, -1 when none
-def Mem.lastDot(s: Str, i: I64): I64 = if i < 0 then 0 - 1 else if Str.at(s, i) == 46 then i else Mem.lastDot(s, i - 1)
+def Mem.lastDot(s: Str, i: I64): I64 =
+  if i < 0 then 0 - 1
+  else if Str.at(s, i) == 46 then i
+  else Mem.lastDot(s, i - 1)
 
 // the defs whose calls run in a scratch Arena (M12a): the compact defs that run once
 def Mem.scratchSet(r: Mem.Report): Coll.SMap[Bool] = r match
@@ -2759,12 +2825,13 @@ def Mem.onceDefs(cs: Coll.List[Mem.Compact], m: Coll.SMap[Bool]): Coll.SMap[Bool
 // ── field usage (layout by usage, the mem optimization): how often the program reads each field of each case: a match
 // arm or a val pattern on case c with a binder that is not `_` at field i reads field i of c. Emit lays a case's word
 // fields in this order (most read first, next to the tag) ──
-def Mem.fieldUse(ds: Coll.List[Ast.Decl]): Coll.SMap[Coll.IMap[I64]] = Mem.useFns(Mem.fnList(ds, Coll.Nil), Coll.sEmpty())
+def Mem.fieldUse(ds: Coll.List[Ast.Decl]): Coll.SMap[Coll.IMap[I64]] =
+  Mem.useFns(Mem.fnList(ds, Coll.Nil), Coll.sEmpty())
 
 def Mem.useFns(fs: Coll.List[Ast.Fn], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = fs match
   case Coll.Nil => m
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, _, _, _, _, _, body) = f
+    val Ast.Fn(_, _, _, _, _, _, _, body) = f
     val m2: Coll.SMap[Coll.IMap[I64]] = body match
       case Ast.Def(_, e) => Mem.useE(e, m)
       case Ast.Extern(_) => m
@@ -2776,9 +2843,9 @@ def Mem.useE(e: Ast.Expr, m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64
   case Ast.Resume(_, _, x) => Mem.useE(x, m)
   case Ast.Bin(_, _, l, r) => Mem.useE(r, Mem.useE(l, m))
   case Ast.Un(_, _, x) => Mem.useE(x, m)
-  case Ast.If(_, c, t, x) => Mem.useE(x, Mem.useE(t, Mem.useE(c, m)))
-  case Ast.Match(_, s, arms) => Mem.useArms(arms, Mem.useE(s, m))
-  case Ast.Block(_, ss, last) => Mem.useE(last, Mem.useSs(ss, m))
+  case Ast.If(_, _, c, t, x) => Mem.useE(x, Mem.useE(t, Mem.useE(c, m)))
+  case Ast.Match(_, _, s, arms) => Mem.useArms(arms, Mem.useE(s, m))
+  case Ast.Block(_, _, ss, last) => Mem.useE(last, Mem.useSs(ss, m))
   case Ast.While(_, c, b) => Mem.useE(b, Mem.useE(c, m))
   case Ast.Assign(_, _, x) => Mem.useE(x, m)
   case Ast.Quant(_, _, _, _, x) => Mem.useE(x, m)
@@ -2791,16 +2858,16 @@ def Mem.useEs(es: Coll.List[Ast.Expr], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[
 def Mem.useSs(ss: Coll.List[Ast.Stmt], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = ss match
   case Coll.Nil => m
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
-    case Ast.Var(_, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
-    case Ast.Handle(_, _, _, args) => Mem.useSs(rest, Mem.useEs(args, m))
-    case Ast.Do(e) => Mem.useSs(rest, Mem.useE(e, m))
-    case Ast.Check(_, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Val(_, _, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Var(_, _, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Handle(_, _, _, _, args) => Mem.useSs(rest, Mem.useEs(args, m))
+    case Ast.Do(_, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Check(_, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
 
 def Mem.useArms(arms: Coll.List[Ast.Arm], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = arms match
   case Coll.Nil => m
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, p, b) = a
+    val Ast.Arm(_, _, p, b) = a
     val m2: Coll.SMap[Coll.IMap[I64]] = p match
       case Ast.PCase(c, xs) => Mem.useBinds(c, xs, 0, m)
       case Ast.PAny => m

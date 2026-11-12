@@ -4,10 +4,10 @@ capability Door:
   state Shut, Open1, Open2, Gone
   start Shut
   stop Gone
-  transition knocks Shut -> Open1, Open1 -> Open2
-  def knock <s knocks t> (): I64 <t>
-  def leave <s leaves t> (): Unit <t>
-  transition leaves Open1 -> Gone, Open2 -> Gone
+  transition knock Shut -> Open1, Open1 -> Open2
+  def knock <s knock t> (): I64 <t>
+  transition leave Open1 -> Gone, Open2 -> Gone
+  def leave <s leave t> (): Unit <t>
   rule def twoKnocks(s, s3) = next(s, knock, s2), next(s2, knock, s3)
   rule def reach(s, t) = next(s, knock, t)
   rule def reach(s, t) = next(s, knock, u), reach(u, t)
@@ -31,11 +31,11 @@ handler HBell for Bell:
 handler HLamp for Lamp:
   def on(): Unit = ()
 
-def knockTwice {d: Door} <d: s, s twoKnocks s3> (): I64 <d: s3> =
+def knockTwice {d: Door} <d: s, twoKnocks(s, s3)> (): I64 <d: s3> =
   val a = d.knock()
   a + d.knock()
 
-def knockOnce {d: Door} <d: Shut, Shut reach t, next(Shut, knock, t)> (): I64 <d: t> = d.knock()
+def knockOnce {d: Door} <d: Shut, reach(Shut, t), next(Shut, knock, t)> (): I64 <d: t> = d.knock()
 
 def main(): I64 =
   handle io = Srs.Console()

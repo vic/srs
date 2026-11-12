@@ -4,7 +4,8 @@
 def P.v {r: Region} (n: I64): D.Arg = D.AVar(n)
 def P.s {r: Region} (x: Str): D.Val = D.VSym(Sym.of(x))
 def P.a1 {r: Region} (rel: Str, x: I64): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(P.v(x), Coll.Nil))
-def P.a2 {r: Region} (rel: Str, x: I64, y: I64): D.Atom = D.Atom(Sym.of(rel), Coll.Cons(P.v(x), Coll.Cons(P.v(y), Coll.Nil)))
+def P.a2 {r: Region} (rel: Str, x: I64, y: I64): D.Atom =
+  D.Atom(Sym.of(rel), Coll.Cons(P.v(x), Coll.Cons(P.v(y), Coll.Nil)))
 def P.t1 {r: Region} (x: D.Val): Coll.List[D.Val] = Coll.Cons(x, Coll.Nil)
 def P.t2 {r: Region} (x: D.Val, y: D.Val): Coll.List[D.Val] = Coll.Cons(x, Coll.Cons(y, Coll.Nil))
 def P.f1 {r: Region} (rel: Str, x: Str): D.Fact = D.Fact(Sym.of(rel), P.t1(P.s(x)))
@@ -13,7 +14,8 @@ def P.f2 {r: Region} (rel: Str, x: Str, y: Str): D.Fact = D.Fact(Sym.of(rel), P.
 // r0 path(X, Y) :- edge(X, Y).  r1 path(X, Z) :- edge(X, Y), path(Y, Z).
 def P.tc {r: Region} (): Coll.List[D.Rule] =
   val r0 = D.Rule(P.a2("path", 0, 1), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Nil))
-  val r1 = D.Rule(P.a2("path", 0, 2), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Cons(D.Pos(P.a2("path", 1, 2)), Coll.Nil)))
+  val r1 =
+    D.Rule(P.a2("path", 0, 2), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Cons(D.Pos(P.a2("path", 1, 2)), Coll.Nil)))
   Coll.Cons(r0, Coll.Cons(r1, Coll.Nil))
 
 def P.showVal(v: D.Val): Unit = v match
@@ -129,17 +131,21 @@ def P.each {r: Region} (m: D.Model, i: I64, j: I64, c: P.Count): P.Count =
 def main(): I64 =
   handle io = Srs.Console()
   handle r = Srs.Arena()
-  val chain = Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "d"), Coll.Nil)))
+  val chain =
+    Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "d"), Coll.Nil)))
   val tcChain = D.solve(P.tc(), chain)
   P.why(tcChain, "path", P.t2(P.s("a"), P.s("d")))
-  val ring = Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "a"), Coll.Nil)))
+  val ring =
+    Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), Coll.Cons(P.f2("edge", "c", "a"), Coll.Nil)))
   P.why(D.solve(P.tc(), ring), "path", P.t2(P.s("a"), P.s("a")))
   // r0 reach(X) :- start(X).  r1 reach(Y) :- reach(X), edge(X, Y).  r2 unreach(X) :- node(X), !reach(X).
   val g0 = D.Rule(P.a1("reach", 0), Coll.Cons(D.Pos(P.a1("start", 0)), Coll.Nil))
   val g1 = D.Rule(P.a1("reach", 1), Coll.Cons(D.Pos(P.a1("reach", 0)), Coll.Cons(D.Pos(P.a2("edge", 0, 1)), Coll.Nil)))
   val g2 = D.Rule(P.a1("unreach", 0), Coll.Cons(D.Pos(P.a1("node", 0)), Coll.Cons(D.Neg(P.a1("reach", 0)), Coll.Nil)))
-  val nodes = Coll.Cons(P.f1("node", "a"), Coll.Cons(P.f1("node", "b"), Coll.Cons(P.f1("node", "c"), Coll.Cons(P.f1("node", "d"), Coll.Cons(P.f1("node", "e"), Coll.Nil)))))
-  val gfacts = Coll.Cons(P.f1("start", "a"), Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), nodes)))
+  val nodes =
+    Coll.Cons(P.f1("node", "a"), Coll.Cons(P.f1("node", "b"), Coll.Cons(P.f1("node", "c"), Coll.Cons(P.f1("node", "d"), Coll.Cons(P.f1("node", "e"), Coll.Nil)))))
+  val gfacts =
+    Coll.Cons(P.f1("start", "a"), Coll.Cons(P.f2("edge", "a", "b"), Coll.Cons(P.f2("edge", "b", "c"), nodes)))
   val neg = D.solve(Coll.Cons(g0, Coll.Cons(g1, Coll.Cons(g2, Coll.Nil))), gfacts)
   P.why(neg, "unreach", P.t1(P.s("d")))
   P.why(neg, "reach", P.t1(P.s("c")))

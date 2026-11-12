@@ -12,6 +12,7 @@ def LT.kindOf(t: Lex.Tok): Str = t match
   case Lex.TIndent(_) => "in"
   case Lex.TDedent(_) => "de"
   case Lex.TEof(_) => "eof"
+  case Lex.TDoc(_, _) => "doc"
 
 def LT.lineOf(t: Lex.Tok): I64 = t match
   case Lex.TIdent(_, l) => l
@@ -24,6 +25,7 @@ def LT.lineOf(t: Lex.Tok): I64 = t match
   case Lex.TIndent(l) => l
   case Lex.TDedent(l) => l
   case Lex.TEof(l) => l
+  case Lex.TDoc(_, l) => l
 
 def LT.show(t: Lex.Tok): Unit =
   Console.print(LT.kindOf(t))
@@ -32,6 +34,7 @@ def LT.show(t: Lex.Tok): Unit =
     case Lex.TStr(s, _) => LT.text(s)
     case Lex.TChar(s, _) => LT.text(s)
     case Lex.TOp(s, _) => LT.text(s)
+    case Lex.TDoc(s, _) => LT.text(s)
     case Lex.TInt(v, _) =>
       Console.print(":")
       Console.printI64(v)
@@ -57,7 +60,12 @@ def LT.why(w: Lex.Why): Str = w match
   case Lex.BadChar => "bad char"
   case Lex.BigHex => "big hex"
 
-def LT.dump {r: Region} (src: Str): Unit = Lex.lex(src) match
+def LT.dump {r: Region} (src: Str): Unit = LT.dumpR(Lex.lex(src))
+
+// comments kept (srs fmt): each // line, and a blank line after one, is a TDoc right before the next code token
+def LT.dumpKeep {r: Region} (src: Str): Unit = LT.dumpR(Lex.lexFrom(Lex.Keep, src, 1))
+
+def LT.dumpR(lr: Lex.Result): Unit = lr match
   case Lex.Toks(ts) => LT.showAll(ts)
   case Lex.Bad(line, w) =>
     Console.print("bad ")
@@ -100,6 +108,7 @@ def main(): I64 =
   LT.dump("0x8000000000000000\n")
   // 2^64: a wrapping v * 16 would give 0 here, not a reject
   LT.dump("0x10000000000000000\n")
+  LT.dumpKeep("// a\n\n// b\ndef f() =\n  // c\n  x // t\n// d\ny\n  // e\n")
   LT.file("lib/prelude.srs")
   LT.file("tests/s2/prog/rules.srs")
   LT.file("tests/s2/prog/file_ok.srs")

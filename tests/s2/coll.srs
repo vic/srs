@@ -11,7 +11,8 @@ given Coll.Fold[T.Longest, Str, I64]:
   def step(acc: I64, x: Str): I64 = if Str.len(x) > acc then Str.len(x) else acc
 
 // n, n-1, ..., 1 onto acc
-def T.range {r: Region} (n: I64, acc: Coll.List[I64]): Coll.List[I64] = if n == 0 then acc else T.range(n - 1, Coll.Cons(n, acc))
+def T.range {r: Region} (n: I64, acc: Coll.List[I64]): Coll.List[I64] =
+  if n == 0 then acc else T.range(n - 1, Coll.Cons(n, acc))
 
 def T.firstOr(o: Coll.Option[I64], d: I64): I64 = o match
   case Coll.None => d

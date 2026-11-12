@@ -1,3 +1,4 @@
+// format: off
 // expect: error[use-after-free]
 // an unannotated data param may live in any region binder of its def: after r.free() it is dead
 def work {r: Region} <r: Open> (a: List): I64 <r: Freed> =
@@ -6,4 +7,4 @@ def work {r: Region} <r: Open> (a: List): I64 <r: Freed> =
 def main(): I64 =
   handle tmp = Srs.Arena()
   work{tmp}(build{tmp}(2))
-// expect: --> tests/s2/neg/param_region.srs:5
+// expect: --> tests/s2/neg/param_region.srs:6

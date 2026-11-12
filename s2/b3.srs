@@ -8,16 +8,17 @@ enum B3.Hash:
   case B3.Hash(h0: U32, h1: U32, h2: U32, h3: U32, h4: U32, h5: U32, h6: U32, h7: U32)
 
 // the IV (the SHA-256 IV): the key of an unkeyed hash
-def B3.iv(): B3.Hash = B3.Hash(0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19)
+def B3.iv(): B3.Hash =
+  B3.Hash(1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225)
 
 // the compression function (spec 2.2): state = cv, IV[0..4], counter low and high, block length, flags; 7 rounds,
 // the message permuted between rounds (the schedule is written out per round); the result is the chaining value
 def B3.compress(cv: B3.Hash, m0: U32, m1: U32, m2: U32, m3: U32, m4: U32, m5: U32, m6: U32, m7: U32, m8: U32, m9: U32, m10: U32, m11: U32, m12: U32, m13: U32, m14: U32, m15: U32, counter: U64, blen: I64, flags: U32): B3.Hash =
   val B3.Hash(s0, s1, s2, s3, s4, s5, s6, s7) = cv
-  val s8: U32 = 0x6a09e667
-  val s9: U32 = 0xbb67ae85
-  val s10: U32 = 0x3c6ef372
-  val s11: U32 = 0xa54ff53a
+  val s8: U32 = 1779033703
+  val s9: U32 = 3144134277
+  val s10: U32 = 1013904242
+  val s11: U32 = 2773480762
   val s12 = U32.ofU64(counter)
   val s13 = U32.ofU64(counter >> 32)
   val s14 = U32.of(blen)
@@ -542,7 +543,7 @@ def B3.hexWord(w: U32): Unit =
   B3.hexByte(w >> 24)
 
 def B3.hexByte(w: U32): Unit =
-  B3.hexDigit(I64.of((w >> 4) & 15))
+  B3.hexDigit(I64.of(w >> 4 & 15))
   B3.hexDigit(I64.of(w & 15))
 
-def B3.hexDigit(d: I64): Unit = Console.printChar(if d < 10 then '0' + d else 'a' + d - 10)
+def B3.hexDigit(d: I64): Unit = Console.printChar(if d < 10 then 48 + d else 97 + d - 10)

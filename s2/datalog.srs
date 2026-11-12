@@ -35,7 +35,7 @@ def D.seed(): I64 = 7
 
 def D.vhash(v: D.Val): I64 = v match
   case D.VSym(s) => Sym.hash(s)
-  case D.VInt(n) => ((n % D.modulus()) + D.modulus()) % D.modulus()
+  case D.VInt(n) => (n % D.modulus() + D.modulus()) % D.modulus()
 
 def D.veq(a: D.Val, b: D.Val): Bool = a match
   case D.VSym(x) => b match
@@ -118,7 +118,8 @@ def D.addNew(rl: D.Rel, row: D.Row): Coll.Option[D.Rel] =
   val n = Coll.bFind(set, h)
   val b = Coll.bValOr(n, h, Coll.Nil)
   if D.inRows(b, t) then Coll.None
-  else Coll.Some(D.Rel(ic, if Coll.bIsNode(n) then Coll.bRep(set, h, Coll.Cons(row, b)) else Coll.bIns(set, h, Coll.Cons(row, Coll.Nil)), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1))
+  else
+    Coll.Some(D.Rel(ic, if Coll.bIsNode(n) then Coll.bRep(set, h, Coll.Cons(row, b)) else Coll.bIns(set, h, Coll.Cons(row, Coll.Nil)), D.indexCols(cols, row, t, ic), Coll.Cons(row, all), rc, fr + 1))
 
 // the rows an atom may match under a probe (a superset: the match checks values)
 def D.cands(rl: D.Rel, p: D.Probe): Coll.List[D.Row] =
@@ -240,7 +241,8 @@ def D.plans(body: Coll.List[D.CAtom], xs: Coll.List[D.CAtom], heads: Coll.List[I
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(a, rest) =>
     val D.CAtom(ref, _) = a
-    if D.memberI(D.idOfRef(ref), heads) then D.plans(body, rest, heads, j + 1, Coll.Cons(D.Plan(a, D.steps(body, j, 0, Coll.Nil)), acc))
+    if D.memberI(D.idOfRef(ref), heads) then
+      D.plans(body, rest, heads, j + 1, Coll.Cons(D.Plan(a, D.steps(body, j, 0, Coll.Nil)), acc))
     else D.plans(body, rest, heads, j + 1, acc)
 
 // the other atoms of body around position j, in written order
@@ -393,7 +395,8 @@ def D.fireAt(rels0: Coll.IMap[D.Rel], rl: D.CRule, ps: Coll.List[D.Plan], rd: I6
     val D.Plan(first, _) = p
     val e0: Coll.List[D.Bind] = Coll.Nil
     if D.recentOf(rels0, first) == 0 then D.fireAt(rels0, rl, rest, rd, rels)
-    else D.fireAt(rels0, rl, rest, rd, D.fireWith(rels0, rl, D.evalPlan(rels0, p, rd, Coll.Cons(e0, Coll.Nil)), rd, rels))
+    else
+      D.fireAt(rels0, rl, rest, rd, D.fireWith(rels0, rl, D.evalPlan(rels0, p, rd, Coll.Cons(e0, Coll.Nil)), rd, rels))
 
 // the body matches envs of rule rl, filtered by its negated atoms, as head rows of round rd
 def D.fireWith(rels0: Coll.IMap[D.Rel], rl: D.CRule, envs: Coll.List[Coll.List[D.Bind]], rd: I64, rels: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
@@ -481,12 +484,15 @@ def D.raiseAll(rs: Coll.List[D.CRule], st: Coll.IMap[I64], changed: Bool, k: I64
     val D.CAtom(hrRef, _) = h
     val hr = D.idOfRef(hrRef)
     val m = D.maxSt(st, body, 0)
-    val raised: D.Raised = if m > D.stOf(st, hr) then D.raiseNeg(hrRef, neg, Coll.insert(st, hr, m), true, k) else D.raiseNeg(hrRef, neg, st, changed, k)
+    val raised: D.Raised =
+      if m > D.stOf(st, hr) then D.raiseNeg(hrRef, neg, Coll.insert(st, hr, m), true, k)
+      else D.raiseNeg(hrRef, neg, st, changed, k)
     raised match
       case D.Over(w) => D.Over(w)
       case D.Raised(st2, ch2) => D.raiseAll(rest, st2, ch2, k)
 
-def D.topOf(st: Coll.IMap[I64], id: I64, k: I64, m: I64): I64 = if id == k then m else D.topOf(st, id + 1, k, if D.stOf(st, id) > m then D.stOf(st, id) else m)
+def D.topOf(st: Coll.IMap[I64], id: I64, k: I64, m: I64): I64 =
+  if id == k then m else D.topOf(st, id + 1, k, if D.stOf(st, id) > m then D.stOf(st, id) else m)
 
 // the stratification of a program: every relation's stratum, or the negated edge that passed k (a cycle through negation)
 enum D.Strat:
@@ -575,7 +581,8 @@ def D.negCycle(all: Coll.List[D.CRule], todo: Coll.List[D.CRule], best: D.RelRef
     D.negCycle(all, rest, D.negEdges(all, D.idOfRef(hRef), neg, best))
 
 // the report of a failed stratification: the name of the relation on a cycle through negation with the smallest id
-def D.report(rs: Coll.List[D.CRule], w: D.NegEdge): Sym.Sym = D.nameOfRef(D.negCycle(rs, rs, D.largest(D.cycleOf(rs, w))))
+def D.report(rs: Coll.List[D.CRule], w: D.NegEdge): Sym.Sym =
+  D.nameOfRef(D.negCycle(rs, rs, D.largest(D.cycleOf(rs, w))))
 
 def D.rulesAt(rs: Coll.List[D.CRule], st: Coll.IMap[I64], s: I64, acc: Coll.List[D.CRule]): Coll.List[D.CRule] = rs match
   case Coll.Nil => Coll.rev(acc)
@@ -614,8 +621,8 @@ def D.firstUnsafe(rs: Coll.List[D.CRule]): Coll.Option[Sym.Sym] = rs match
     val D.CAtom(nameRef, hargs) = h
     val name = D.nameOfRef(nameRef)
     val bound = D.atomsVars(body, Coll.Nil)
-    if D.allIn(D.argVars(hargs, Coll.Nil), bound) && D.allIn(D.atomsVars(neg, Coll.Nil), bound) then D.firstUnsafe(rest) else Coll.Some(name)
-
+    if D.allIn(D.argVars(hargs, Coll.Nil), bound) && D.allIn(D.atomsVars(neg, Coll.Nil), bound) then D.firstUnsafe(rest)
+    else Coll.Some(name)
 
 // ── which columns need an index: per body atom (variables bound left to right, constants bound) its first bound
 // column, the one D.probe reads; no other column is ever indexed ──
@@ -682,8 +689,7 @@ def D.probesAll(rs: Coll.List[D.CRule], ics: Coll.IMap[Coll.List[I64]]): Coll.IM
     D.probesAll(rest, D.probesPlans(plans, D.probesOf(body, Coll.Nil, ics)))
 
 def D.initRels(ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc: Coll.IMap[D.Rel]): Coll.IMap[D.Rel] =
-  if id == k then acc
-  else D.initRels(ics, id + 1, k, Coll.insert(acc, id, D.newRel(D.colsOf(ics, id))))
+  if id == k then acc else D.initRels(ics, id + 1, k, Coll.insert(acc, id, D.newRel(D.colsOf(ics, id))))
 
 // ── the model ──
 enum D.Model:
@@ -708,7 +714,8 @@ def D.loadIn(st: D.Loading, fs: Coll.List[D.Fact]): D.With[Coll.IMap[D.Rel]] = f
 def D.loadStep(st: D.Loading, f: D.Fact): D.Loading =
   val D.Loading(tab, rel, id, rl, rels) = st
   val D.Fact(r, vals) = f
-  if Sym.eq(r, rel) then D.Loading(tab, rel, id, D.withRow(rl, vals), rels) else D.loadStart(tab, f, Coll.insert(rels, id, rl))
+  if Sym.eq(r, rel) then D.Loading(tab, rel, id, D.withRow(rl, vals), rels)
+  else D.loadStart(tab, f, Coll.insert(rels, id, rl))
 
 def D.loadStart(tab: Coll.List[D.RelRef], f: D.Fact, rels: Coll.IMap[D.Rel]): D.Loading =
   val D.Fact(r, vals) = f
@@ -749,7 +756,8 @@ def D.compile(rules: Coll.List[D.Rule]): D.Compiled =
       val k = Coll.length(tab)
       D.strata(crs, Coll.Tip, k) match
         case D.Looped(w) => D.NegLoop(D.report(crs, w))
-        case D.Layered(st) => D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
+        case D.Layered(st) =>
+          D.Ready(D.Prog(tab, D.initRels(D.probesAll(crs, Coll.Tip), 0, k, Coll.Tip), D.byStratum(crs, st, 0, D.topOf(st, 0, k, 0), Coll.Nil)))
 
 // the model of a compiled program over facts: strata in order, each to its fixpoint. ids: the rules' names in written
 // order, then the names only facts use

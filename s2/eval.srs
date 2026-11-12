@@ -30,7 +30,8 @@ enum Ev.Cx:
 
 def Ev.fuel(): I64 = 1000000
 
-def Ev.cxOf(ds: Coll.List[Ast.Decl], imp: Coll.SMap[Bool]): Ev.Cx = Ev.cxDecls(ds, Ev.Cx(Coll.sEmpty(), Coll.sEmpty(), imp))
+def Ev.cxOf(ds: Coll.List[Ast.Decl], imp: Coll.SMap[Bool]): Ev.Cx =
+  Ev.cxDecls(ds, Ev.Cx(Coll.sEmpty(), Coll.sEmpty(), imp))
 
 def Ev.cxDecls(ds: Coll.List[Ast.Decl], cx: Ev.Cx): Ev.Cx = ds match
   case Coll.Nil => cx
@@ -39,21 +40,21 @@ def Ev.cxDecls(ds: Coll.List[Ast.Decl], cx: Ev.Cx): Ev.Cx = ds match
     d match
       // a decl that names U32 or U64 is left out: a call of it has no value (Ev.wordFn)
       case Ast.DFn(f) =>
-        val Ast.Fn(_, n, _, _, _, _, _) = f
+        val Ast.Fn(_, _, n, _, _, _, _, _) = f
         Ev.cxDecls(rest, Ev.Cx(if Ev.wordFn(f) then fs else Coll.sInsert(fs, n, f), cs, imp))
       // a top-level val is a nullary fn: another val may name it
       case Ast.DVal(f) =>
-        val Ast.Fn(_, n, _, _, _, _, _) = f
+        val Ast.Fn(_, _, n, _, _, _, _, _) = f
         Ev.cxDecls(rest, Ev.Cx(if Ev.wordFn(f) then fs else Coll.sInsert(fs, n, f), cs, imp))
       case Ast.DEnum(e) =>
-        val Ast.Enum(_, _, _, cases) = e
+        val Ast.Enum(_, _, _, _, cases) = e
         Ev.cxDecls(rest, Ev.Cx(fs, Ev.caseMap(cases, cs), imp))
       case _ => Ev.cxDecls(rest, cx)
 
 def Ev.caseMap(cs: Coll.List[Ast.Case], m: Coll.SMap[I64]): Coll.SMap[I64] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
-    val Ast.Case(_, n, fs) = c
+    val Ast.Case(_, _, n, fs) = c
     Ev.caseMap(rest, if Ev.wordBinders(fs) then m else Coll.sInsert(m, n, Coll.length(fs)))
 
 // ── words: Ev's ints do not wrap at 2^32 or 2^64, so a decl that names U32 or U64 (a param, the result, a field, a
@@ -73,7 +74,7 @@ def Ev.wordBinders(bs: Coll.List[Ast.Binder]): Bool = bs match
     Ev.wordTy(t) || Ev.wordBinders(rest)
 
 def Ev.wordFn(f: Ast.Fn): Bool =
-  val Ast.Fn(_, _, _, ps, ret, _, body) = f
+  val Ast.Fn(_, _, _, _, ps, ret, _, body) = f
   Ev.wordBinders(ps) || Ev.wordTy(ret) || Ev.wordBody(body)
 
 def Ev.wordBody(b: Ast.Body): Bool = b match
@@ -86,9 +87,9 @@ def Ev.wordExpr(e: Ast.Expr): Bool = e match
   case Ast.Resume(_, _, x) => Ev.wordExpr(x)
   case Ast.Bin(_, _, l, x) => Ev.wordExpr(l) || Ev.wordExpr(x)
   case Ast.Un(_, _, x) => Ev.wordExpr(x)
-  case Ast.If(_, c, t, x) => Ev.wordExpr(c) || Ev.wordExpr(t) || Ev.wordExpr(x)
-  case Ast.Match(_, s, arms) => Ev.wordExpr(s) || Ev.wordArms(arms)
-  case Ast.Block(_, ss, last) => Ev.wordStmts(ss) || Ev.wordExpr(last)
+  case Ast.If(_, _, c, t, x) => Ev.wordExpr(c) || Ev.wordExpr(t) || Ev.wordExpr(x)
+  case Ast.Match(_, _, s, arms) => Ev.wordExpr(s) || Ev.wordArms(arms)
+  case Ast.Block(_, _, ss, last) => Ev.wordStmts(ss) || Ev.wordExpr(last)
   case Ast.While(_, c, b) => Ev.wordExpr(c) || Ev.wordExpr(b)
   case Ast.Assign(_, _, x) => Ev.wordExpr(x)
   case Ast.Quant(_, _, _, t, b) => Ev.wordTy(t) || Ev.wordExpr(b)
@@ -101,7 +102,7 @@ def Ev.wordExprs(xs: Coll.List[Ast.Expr]): Bool = xs match
 def Ev.wordArms(as: Coll.List[Ast.Arm]): Bool = as match
   case Coll.Nil => false
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, b) = a
+    val Ast.Arm(_, _, _, b) = a
     Ev.wordExpr(b) || Ev.wordArms(rest)
 
 def Ev.wordStmts(ss: Coll.List[Ast.Stmt]): Bool = ss match
@@ -109,11 +110,11 @@ def Ev.wordStmts(ss: Coll.List[Ast.Stmt]): Bool = ss match
   case Coll.Cons(s, rest) => Ev.wordStmt(s) || Ev.wordStmts(rest)
 
 def Ev.wordStmt(s: Ast.Stmt): Bool = s match
-  case Ast.Val(_, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
-  case Ast.Var(_, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
-  case Ast.Handle(_, _, _, xs) => Ev.wordExprs(xs)
-  case Ast.Do(e) => Ev.wordExpr(e)
-  case Ast.Check(_, _, e) => Ev.wordExpr(e)
+  case Ast.Val(_, _, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
+  case Ast.Var(_, _, _, ann, e) => Ev.wordAnn(ann) || Ev.wordExpr(e)
+  case Ast.Handle(_, _, _, _, xs) => Ev.wordExprs(xs)
+  case Ast.Do(_, e) => Ev.wordExpr(e)
+  case Ast.Check(_, _, _, e) => Ev.wordExpr(e)
 
 def Ev.wordAnn(t: Coll.Option[Ast.Ty]): Bool = t match
   case Coll.None => false
@@ -133,9 +134,11 @@ def Ev.set(env: Coll.List[Ev.Bind], x: Sym.Sym, v: Ev.V): Coll.List[Ev.Bind] = e
     if Sym.eq(x, y) then Coll.Cons(Ev.Bind(y, v), rest) else Coll.Cons(b, Ev.set(rest, x, v))
 
 // the last k bindings dropped (a block ends: what it bound goes)
-def Ev.drop(env: Coll.List[Ev.Bind], k: I64): Coll.List[Ev.Bind] = if k <= 0 then env else env match
-  case Coll.Nil => Coll.Nil
-  case Coll.Cons(_, rest) => Ev.drop(rest, k - 1)
+def Ev.drop(env: Coll.List[Ev.Bind], k: I64): Coll.List[Ev.Bind] =
+  if k <= 0 then env
+  else env match
+    case Coll.Nil => Coll.Nil
+    case Coll.Cons(_, rest) => Ev.drop(rest, k - 1)
 
 // ── e in env, inside fn f (for messages) ──
 def Ev.expr(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, e: Ast.Expr): Ev.R = e match
@@ -151,15 +154,15 @@ def Ev.expr(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, e: Ast.Ex
   case Ast.Un(line, op, x) => Ev.expr(cx, f, env, fuel, x) match
     case Ev.Ok(v, env2, fuel2) => Ev.un(f, line, op, v, env2, fuel2)
     case Ev.Err(x) => Ev.Err(x)
-  case Ast.If(line, c, t, x) => Ev.expr(cx, f, env, fuel, c) match
+  case Ast.If(_, line, c, t, x) => Ev.expr(cx, f, env, fuel, c) match
     case Ev.Ok(v, env2, fuel2) => v match
       case Ev.VBool(b) => if b then Ev.expr(cx, f, env2, fuel2, t) else Ev.expr(cx, f, env2, fuel2, x)
       case _ => Ev.Err(Ev.NoValue(line, f))
     case Ev.Err(x) => Ev.Err(x)
-  case Ast.Match(line, s, arms) => Ev.expr(cx, f, env, fuel, s) match
+  case Ast.Match(_, line, s, arms) => Ev.expr(cx, f, env, fuel, s) match
     case Ev.Ok(v, env2, fuel2) => Ev.arms(cx, f, env2, fuel2, line, v, arms)
     case Ev.Err(x) => Ev.Err(x)
-  case Ast.Block(_, ss, last) => Ev.block(cx, f, env, fuel, ss, last, 0)
+  case Ast.Block(_, _, ss, last) => Ev.block(cx, f, env, fuel, ss, last, 0)
   case Ast.While(line, c, b) => Ev.loop(cx, f, env, fuel, line, c, b)
   case Ast.Assign(_, x, v) => Ev.expr(cx, f, env, fuel, v) match
     case Ev.Ok(w, env2, fuel2) => Ev.Ok(Ev.VUnit, Ev.set(env2, x, w), fuel2)
@@ -192,7 +195,7 @@ def Ev.call(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64
         else Coll.sLookup(fns, g) match
           case Coll.None => Ev.Err(Ev.NoValue(line, g))
           case Coll.Some(fd) =>
-            val Ast.Fn(_, _, _, ps, _, _, body) = fd
+            val Ast.Fn(_, _, _, _, ps, _, _, body) = fd
             val env3 = Ev.bindAll(ps, vs, Coll.Nil)
             body match
               case Ast.Def(_, b) => Ev.result(Ev.expr(cx, g, env3, fuel2 - 1, b), env2)
@@ -326,7 +329,7 @@ def Ev.eqAll(xs: Coll.List[Ev.V], ys: Coll.List[Ev.V]): Bool = xs match
 def Ev.arms(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, line: I64, v: Ev.V, as: Coll.List[Ast.Arm]): Ev.R = as match
   case Coll.Nil => Ev.Err(Ev.NoValue(line, f))
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, p, b) = a
+    val Ast.Arm(_, _, p, b) = a
     p match
       case Ast.PAny => Ev.expr(cx, f, env, fuel, b)
       case Ast.PCase(c, binds) => v match
@@ -341,7 +344,8 @@ def Ev.bindPat(xs: Coll.List[Sym.Sym], vs: Coll.List[Ev.V], env: Coll.List[Ev.Bi
   case Coll.Nil => env
   case Coll.Cons(x, rest) => vs match
     case Coll.Nil => env
-    case Coll.Cons(v, vrest) => Ev.bindPat(rest, vrest, if Str.eq(Sym.str(x), "_") then env else Coll.Cons(Ev.Bind(x, v), env))
+    case Coll.Cons(v, vrest) =>
+      Ev.bindPat(rest, vrest, if Str.eq(Sym.str(x), "_") then env else Coll.Cons(Ev.Bind(x, v), env))
 
 // a block: each statement in turn, k = the bindings it made; they go when it ends
 def Ev.block(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, ss: Coll.List[Ast.Stmt], last: Ast.Expr, k: I64): Ev.R = ss match
@@ -349,13 +353,13 @@ def Ev.block(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, ss: Coll
     case Ev.Ok(v, env2, fuel2) => Ev.Ok(v, Ev.drop(env2, k), fuel2)
     case Ev.Err(x) => Ev.Err(x)
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
-    case Ast.Var(_, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
-    case Ast.Do(e) => Ev.expr(cx, f, env, fuel, e) match
+    case Ast.Val(_, _, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
+    case Ast.Var(_, _, x, _, e) => Ev.bindStmt(cx, f, env, fuel, x, e, rest, last, k)
+    case Ast.Do(_, e) => Ev.expr(cx, f, env, fuel, e) match
       case Ev.Ok(_, env2, fuel2) => Ev.block(cx, f, env2, fuel2, rest, last, k)
       case Ev.Err(x) => Ev.Err(x)
-    case Ast.Check(_, _, _) => Ev.block(cx, f, env, fuel, rest, last, k)
-    case Ast.Handle(line, _, _, _) => Ev.Err(Ev.NoValue(line, f))
+    case Ast.Check(_, _, _, _) => Ev.block(cx, f, env, fuel, rest, last, k)
+    case Ast.Handle(_, line, _, _, _) => Ev.Err(Ev.NoValue(line, f))
 
 def Ev.bindStmt(cx: Ev.Cx, f: Sym.Sym, env: Coll.List[Ev.Bind], fuel: I64, x: Sym.Sym, e: Ast.Expr, rest: Coll.List[Ast.Stmt], last: Ast.Expr, k: I64): Ev.R = Ev.expr(cx, f, env, fuel, e) match
   case Ev.Ok(v, env2, fuel2) => Ev.block(cx, f, Coll.Cons(Ev.Bind(x, v), env2), fuel2, rest, last, k + 1)
@@ -389,7 +393,7 @@ def Ev.run(cx: Ev.Cx, ds: Coll.List[Ast.Decl], acc: Coll.List[Ev.Line]): Ev.Out 
   case Coll.Nil => Ev.Lines(Coll.rev(acc))
   case Coll.Cons(d, rest) => d match
     case Ast.DVal(f) =>
-      val Ast.Fn(line, n, _, _, _, _, body) = f
+      val Ast.Fn(_, line, n, _, _, _, _, body) = f
       if Ev.wordFn(f) then Ev.Failed(Ev.NoValue(line, n)) else Ev.runVal(cx, n, body, rest, acc)
     case _ => Ev.run(cx, rest, acc)
 

@@ -1,0 +1,28 @@
+// srs fmt fixture (tests/run.sh): main reaches Ft.used, Ft.named (a call), Ft.byName (a string literal) and the
+// given of Ft.Show (its trait); Ft.dead and Ft.alsoDead are reached by nothing and go with their comments; the region
+// between the markers stays as written, its unused decl kept and what it calls (Ft.helper) live
+
+// main doc
+def main(): I64 =
+  val x = Ft.used(1)
+  Console.printI64(x)
+  0
+
+// used: kept
+def Ft.used {s: Ft.Show[I64]} (n: I64): I64 = if n > 0 then Ft.named() + Str.len("Ft.byName") else n
+
+// reached only from the region
+def Ft.helper(x: I64): I64 = x
+
+def Ft.named(): I64 = 1
+def Ft.byName(): I64 = 2
+
+trait Ft.Show [A: Type]:
+  def show(a: A): I64
+
+given Ft.Show[I64]:
+  def show(a: I64): I64 = a
+
+// format: off
+def Ft.keptAsWritten(  x: I64 ): I64 =     Ft.helper( x )
+// format: on

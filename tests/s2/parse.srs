@@ -12,6 +12,10 @@ def PT.run {r: Region} (src: Str): Unit = Parse.source(src) match
   case Parse.Ok(ds, _) => Ast.print(ds)
   case Parse.Err(line, want) => PT.err(line, want)
 
+def PT.notes {r: Region} (src: Str): Unit = Parse.withNotes(src, 1) match
+  case Parse.Ok(ds, _) => Ast.source(ds)
+  case Parse.Err(line, want) => PT.err(line, want)
+
 def main(): I64 =
   handle r = Srs.Arena()
   handle c = Srs.Console()
@@ -29,4 +33,7 @@ def main(): I64 =
   PT.run("handler Count [A: Type] for NonDet:\n  def done(x: A): I64 = 1\n  def choose(k): I64 = resume k(true) + resume k(false)\n")
   PT.run("enum E:\n  case A\n  kase B\n")
   PT.run("def g(): I64 = if true then 1\n")
+  // comments (srs fmt, Parse.withNotes): each slot keeps its own and prints them back as written
+  PT.notes("// head\n\n// f\ndef f(x: I64): I64 =\n  // v\n  val y = x\n  // m\n  y match\n    // a\n    case A =>\n      // t\n      val Pair(a, b) = p\n      a\n    case _ =>\n      if y > 0 then 1\n      // e\n      else 2\n\n// E\nenum E:\n  // A\n  case A\n\ntrait T:\n  // s\n  def s(): I64\n")
+  PT.notes("def f(): I64 = 1\n// end of file\n")
   0

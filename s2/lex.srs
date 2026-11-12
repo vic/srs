@@ -14,6 +14,14 @@ enum Lex.Tok:
   case Lex.TIndent(line: I64)
   case Lex.TDedent(line: I64)
   case Lex.TEof(line: I64)
+  // a // line as written, "" = a blank line after one (Lex.Keep only): it comes after the layout tokens of the next
+  // code line, right before its first token
+  case Lex.TDoc(s: Str, line: I64)
+
+// srs fmt keeps the comments (Keep); the compiler skips them (Skip)
+enum Lex.Notes:
+  case Lex.Keep
+  case Lex.Skip
 
 // why a source does not lex
 enum Lex.Why:
@@ -28,128 +36,175 @@ enum Lex.Result:
   case Lex.Toks(ts: Coll.List[Lex.Tok])
   case Lex.Bad(line: I64, why: Lex.Why)
 
-def Lex.isAlpha(c: I64): Bool = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-def Lex.isDigit(c: I64): Bool = c >= '0' && c <= '9'
+def Lex.isAlpha(c: I64): Bool = c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 95
+def Lex.isDigit(c: I64): Bool = c >= 48 && c <= 57
 def Lex.isPunct(c: I64): Bool =
-  c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == ',' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '<' || c == '>' || c == '!' || c == '.' || c == '^' || c == '@' || c == '&' || c == '|' || c == '~'
+  c == 40 || c == 41 || c == 91 || c == 93 || c == 123 || c == 125 || c == 44 || c == 58 || c == 61 || c == 43 || c == 45 || c == 42 || c == 47 || c == 37 || c == 60 || c == 62 || c == 33 || c == 46 || c == 94 || c == 64 || c == 38 || c == 124 || c == 126
 def Lex.isTwo(a: I64, b: I64): Bool =
-  (a == '=' && b == '>') || (a == '=' && b == '=') || (a == '!' && b == '=') || (a == '<' && b == '=') || (a == '>' && b == '=') || (a == '&' && b == '&') || (a == '|' && b == '|') || (a == '~' && b == '>') || (a == '<' && b == '<') || (a == '>' && b == '>')
+  a == 61 && b == 62 || a == 61 && b == 61 || a == 33 && b == 61 || a == 60 && b == 61 || a == 62 && b == 61 || a == 38 && b == 38 || a == 124 && b == 124 || a == 126 && b == 62 || a == 60 && b == 60 || a == 62 && b == 62
 
 // the width of the operator token at i (c, then b): >>> is the one three-char operator
 def Lex.opWidth(src: Str, i: I64, c: I64, b: I64): I64 =
-  if c == '>' && b == '>' && Str.at(src, i + 2) == '>' then 3 else if Lex.isTwo(c, b) then 2 else 1
+  if c == 62 && b == 62 && Str.at(src, i + 2) == 62 then 3
+  else if Lex.isTwo(c, b) then 2
+  else 1
 
 // a < right after an identifier character, ] or ) is glued to the type before it (a region list T<r>): it is a TLtGlued token;
 // the parser takes it as a region list after a type, as less-than in an expression
-def Lex.gluedTo(p: I64): Bool = Lex.isAlpha(p) || Lex.isDigit(p) || p == ']' || p == ')'
+def Lex.gluedTo(p: I64): Bool = Lex.isAlpha(p) || Lex.isDigit(p) || p == 93 || p == 41
 
 // a hex digit's value, or -1
 def Lex.hexVal(c: I64): I64 =
-  if Lex.isDigit(c) then c - '0' else if c >= 'a' && c <= 'f' then c - 'a' + 10 else if c >= 'A' && c <= 'F' then c - 'A' + 10 else -1
+  if Lex.isDigit(c) then c - 48
+  else if c >= 97 && c <= 102 then c - 97 + 10
+  else if c >= 65 && c <= 70 then c - 65 + 10
+  else -1
 
 // the value of the hex digits from i, or -1 when it reaches 2^63 (v < 2^59 keeps v * 16 + 15 below 2^63: no overflow)
 def Lex.hex(src: Str, i: I64, v: I64): I64 =
   val d = Lex.hexVal(Str.at(src, i))
-  if d < 0 then v else if v >= 576460752303423488 then -1 else Lex.hex(src, i + 1, v * 16 + d)
+  if d < 0 then v
+  else if v >= 576460752303423488 then -1
+  else Lex.hex(src, i + 1, v * 16 + d)
 def Lex.hexEnd(src: Str, i: I64): I64 = if Lex.hexVal(Str.at(src, i)) >= 0 then Lex.hexEnd(src, i + 1) else i
 
-// the last token is a layout token (no TNl after it)
+// the last token is a layout token (no TNl after it); comments do not count
 def Lex.layoutLast(out: Coll.List[Lex.Tok]): Bool = out match
   case Coll.Nil => true
-  case Coll.Cons(t, _) => t match
+  case Coll.Cons(t, rest) => t match
     case Lex.TNl(_) => true
     case Lex.TIndent(_) => true
     case Lex.TDedent(_) => true
+    case Lex.TDoc(_, _) => Lex.layoutLast(rest)
     case _ => false
 
+// a layout token goes before the comments just lexed: they belong to the next code line, after its indent
+def Lex.under(t: Lex.Tok, out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = out match
+  case Coll.Nil => Coll.Cons(t, out)
+  case Coll.Cons(d, rest) => d match
+    case Lex.TDoc(_, _) => Coll.Cons(d, Lex.under(t, rest))
+    case _ => Coll.Cons(t, out)
+
+// a blank line is kept as TDoc "" (one for a run of blank lines; none at the start of the source): srs fmt keeps the
+// blank lines between decls as written
+def Lex.blank(nt: Lex.Notes, out: Coll.List[Lex.Tok], line: I64): Coll.List[Lex.Tok] = nt match
+  case Lex.Skip => out
+  case Lex.Keep => out match
+    case Coll.Nil => out
+    case Coll.Cons(t, _) => t match
+      case Lex.TDoc(s, _) => if Str.len(s) == 0 then out else Coll.Cons(Lex.TDoc("", line), out)
+      case _ => Coll.Cons(Lex.TDoc("", line), out)
+
 // the end of a run of spaces from i
-def Lex.spaces(src: Str, i: I64): I64 = if Str.at(src, i) == ' ' then Lex.spaces(src, i + 1) else i
+def Lex.spaces(src: Str, i: I64): I64 = if Str.at(src, i) == 32 then Lex.spaces(src, i + 1) else i
 
 // the end of a run of letters and digits from i
-def Lex.word(src: Str, i: I64): I64 = if Lex.isAlpha(Str.at(src, i)) || Lex.isDigit(Str.at(src, i)) then Lex.word(src, i + 1) else i
+def Lex.word(src: Str, i: I64): I64 =
+  if Lex.isAlpha(Str.at(src, i)) || Lex.isDigit(Str.at(src, i)) then Lex.word(src, i + 1) else i
 
 // the end of an identifier that starts with an upper case letter: Upper(.name)*
 def Lex.dotted(src: Str, i: I64): I64 =
-  if Str.at(src, i) == '.' && Lex.isAlpha(Str.at(src, i + 1)) then Lex.dotted(src, Lex.word(src, i + 1)) else i
+  if Str.at(src, i) == 46 && Lex.isAlpha(Str.at(src, i + 1)) then Lex.dotted(src, Lex.word(src, i + 1)) else i
 
 // the value of the digits from i (and where they end)
-def Lex.digits(src: Str, i: I64, v: I64): I64 = if Lex.isDigit(Str.at(src, i)) then Lex.digits(src, i + 1, v * 10 + (Str.at(src, i) - '0')) else v
+def Lex.digits(src: Str, i: I64, v: I64): I64 =
+  if Lex.isDigit(Str.at(src, i)) then Lex.digits(src, i + 1, v * 10 + (Str.at(src, i) - 48)) else v
 def Lex.digitsEnd(src: Str, i: I64): I64 = if Lex.isDigit(Str.at(src, i)) then Lex.digitsEnd(src, i + 1) else i
 
 // the closing quote q of a literal from i (a backslash skips the next character), or the line end
 def Lex.litEnd(src: Str, i: I64, n: I64, q: I64): I64 =
   if i >= n then i
-  else if Str.at(src, i) == q || Str.at(src, i) == '\n' then i
-  else if Str.at(src, i) == '\\' then Lex.litEnd(src, i + 2, n, q)
+  else if Str.at(src, i) == q || Str.at(src, i) == 10 then i
+  else if Str.at(src, i) == 92 then Lex.litEnd(src, i + 2, n, q)
   else Lex.litEnd(src, i + 1, n, q)
 
 // the end of a comment from i (the newline stays)
-def Lex.lineEnd(src: Str, i: I64, n: I64): I64 = if i < n && Str.at(src, i) != '\n' then Lex.lineEnd(src, i + 1, n) else i
+def Lex.lineEnd(src: Str, i: I64, n: I64): I64 = if i < n && Str.at(src, i) != 10 then Lex.lineEnd(src, i + 1, n) else i
 
 def Lex.top(ind: Coll.List[I64]): I64 = ind match
   case Coll.Nil => 0
   case Coll.Cons(c, _) => c
 
-def Lex.lex(src: Str): Lex.Result = Lex.lexFrom(src, 1)
+def Lex.lex(src: Str): Lex.Result = Lex.lexFrom(Lex.Skip, src, 1)
 
 // src whose first line has number line (a file after others: its lines continue the numbering, so a line names a file)
-def Lex.lexFrom(src: Str, line: I64): Lex.Result = Lex.go(src, Str.len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
+def Lex.lexFrom(nt: Lex.Notes, src: Str, line: I64): Lex.Result =
+  Lex.go(nt, src, Str.len(src), 0, line, 0, true, Coll.Cons(0, Coll.Nil), Coll.Nil)
 
 // the scan from i: depth = open ( and [, bol = at the start of a line, ind = the indent stack, out = tokens, newest first
-def Lex.go(src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
+def Lex.go(nt: Lex.Notes, src: Str, n: I64, i: I64, line: I64, depth: I64, bol: Bool, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
   if i >= n then Lex.finish(line, ind, out)
   else if bol && depth == 0 then
     val j = Lex.spaces(src, i)
     val col = j - i
     val c = Str.at(src, j)
-    if c == '\t' then Lex.Bad(line, Lex.Tab)
-    else if c == -1 || c == '\n' || (c == '/' && Str.at(src, j + 1) == '/') then Lex.go(src, n, j, line, depth, false, ind, out)
-    else if col > Lex.top(ind) then Lex.go(src, n, j, line, depth, false, Coll.Cons(col, ind), Coll.Cons(Lex.TIndent(line), out))
-    else Lex.dedent(src, n, j, line, col, ind, out)
+    if c == 9 then Lex.Bad(line, Lex.Tab)
+    else if c == -1 || c == 10 || c == 47 && Str.at(src, j + 1) == 47 then
+      Lex.go(nt, src, n, j, line, depth, false, ind, if c == 10 then Lex.blank(nt, out, line) else out)
+    else if col > Lex.top(ind) then
+      Lex.go(nt, src, n, j, line, depth, false, Coll.Cons(col, ind), Lex.under(Lex.TIndent(line), out))
+    else Lex.dedent(nt, src, n, j, line, col, ind, out)
   else
     val c = Str.at(src, i)
-    if c == '\n' then Lex.go(src, n, i + 1, line + 1, depth, true, ind, if depth == 0 && !Lex.layoutLast(out) then Coll.Cons(Lex.TNl(line), out) else out)
-    else if c == ' ' || c == '\r' then Lex.go(src, n, i + 1, line, depth, bol, ind, out)
-    else if c == '/' && Str.at(src, i + 1) == '/' then Lex.go(src, n, Lex.lineEnd(src, i, n), line, depth, bol, ind, out)
+    if c == 10 then
+      Lex.go(nt, src, n, i + 1, line + 1, depth, true, ind, if depth == 0 && !Lex.layoutLast(out) then Lex.under(Lex.TNl(line), out) else out)
+    else if c == 32 || c == 13 then Lex.go(nt, src, n, i + 1, line, depth, bol, ind, out)
+    else if c == 47 && Str.at(src, i + 1) == 47 then
+      val e = Lex.lineEnd(src, i, n)
+      nt match
+        case Lex.Skip => Lex.go(nt, src, n, e, line, depth, bol, ind, out)
+        case Lex.Keep =>
+          Lex.go(nt, src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TDoc(Str.slice(src, i, e), line), out))
     else if Lex.isAlpha(c) then
       val e0 = Lex.word(src, i)
-      val e = if c >= 'A' && c <= 'Z' then Lex.dotted(src, e0) else e0
-      Lex.go(src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TIdent(Str.slice(src, i, e), line), out))
+      val e = if c >= 65 && c <= 90 then Lex.dotted(src, e0) else e0
+      Lex.go(nt, src, n, e, line, depth, bol, ind, Coll.Cons(Lex.TIdent(Str.slice(src, i, e), line), out))
     else if Lex.isDigit(c) then
       // 0x: a hex literal (tested only on a digit: the lexer's hot path stays as it was)
-      if c == '0' && Str.at(src, i + 1) == 'x' && Lex.hexVal(Str.at(src, i + 2)) >= 0 then
+      if c == 48 && Str.at(src, i + 1) == 120 && Lex.hexVal(Str.at(src, i + 2)) >= 0 then
         val v = Lex.hex(src, i + 2, 0)
-        if v < 0 then Lex.Bad(line, Lex.BigHex) else Lex.go(src, n, Lex.hexEnd(src, i + 2), line, depth, bol, ind, Coll.Cons(Lex.TInt(v, line), out))
-      else Lex.go(src, n, Lex.digitsEnd(src, i), line, depth, bol, ind, Coll.Cons(Lex.TInt(Lex.digits(src, i, 0), line), out))
-    else if c == '"' || c == '\'' then
+        if v < 0 then Lex.Bad(line, Lex.BigHex)
+        else Lex.go(nt, src, n, Lex.hexEnd(src, i + 2), line, depth, bol, ind, Coll.Cons(Lex.TInt(v, line), out))
+      else
+        Lex.go(nt, src, n, Lex.digitsEnd(src, i), line, depth, bol, ind, Coll.Cons(Lex.TInt(Lex.digits(src, i, 0), line), out))
+    else if c == 34 || c == 39 then
       val e = Lex.litEnd(src, i + 1, n, c)
       if Str.at(src, e) != c then Lex.Bad(line, Lex.Unterminated)
-      else Lex.go(src, n, e + 1, line, depth, bol, ind, Coll.Cons(if c == '"' then Lex.TStr(Str.slice(src, i + 1, e), line) else Lex.TChar(Str.slice(src, i + 1, e), line), out))
+      else
+        Lex.go(nt, src, n, e + 1, line, depth, bol, ind, Coll.Cons(if c == 34 then Lex.TStr(Str.slice(src, i + 1, e), line) else Lex.TChar(Str.slice(src, i + 1, e), line), out))
     else
       val w = Lex.opWidth(src, i, c, Str.at(src, i + 1))
       if w == 1 && !Lex.isPunct(c) then Lex.Bad(line, Lex.BadChar)
       else
-        val d = if c == '(' || c == '[' then depth + 1 else if (c == ')' || c == ']') && depth > 0 then depth - 1 else depth
-        Lex.go(src, n, i + w, line, d, bol, ind, Coll.Cons(if c == '<' && w == 1 && Lex.gluedTo(Str.at(src, i - 1)) then Lex.TLtGlued(line) else Lex.TOp(Str.slice(src, i, i + w), line), out))
+        val d =
+          if c == 40 || c == 91 then depth + 1
+          else if (c == 41 || c == 93) && depth > 0 then depth - 1
+          else depth
+        Lex.go(nt, src, n, i + w, line, d, bol, ind, Coll.Cons(if c == 60 && w == 1 && Lex.gluedTo(Str.at(src, i - 1)) then Lex.TLtGlued(line) else Lex.TOp(Str.slice(src, i, i + w), line), out))
 
 // a line at column col, shallower than or as deep as the indent: close every deeper indent; col must be on the stack
-def Lex.dedent(src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
+def Lex.dedent(nt: Lex.Notes, src: Str, n: I64, j: I64, line: I64, col: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result = ind match
   case Coll.Nil => Lex.Bad(line, Lex.BadDedent)
   case Coll.Cons(t, rest) =>
-    if col < t then Lex.dedent(src, n, j, line, col, rest, Coll.Cons(Lex.TDedent(line), out))
-    else if col == t then Lex.go(src, n, j, line, 0, false, ind, out)
+    if col < t then Lex.dedent(nt, src, n, j, line, col, rest, Lex.under(Lex.TDedent(line), out))
+    else if col == t then Lex.go(nt, src, n, j, line, 0, false, ind, out)
     else Lex.Bad(line, Lex.BadDedent)
 
 // the end: a last TNl, a TDedent for each open indent, TEof
 def Lex.finish(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Lex.Result =
-  val out1: Coll.List[Lex.Tok] = out match
-    case Coll.Nil => out
-    case Coll.Cons(t, _) => t match
-      case Lex.TNl(_) => out
-      case Lex.TDedent(_) => out
-      case _ => Coll.Cons(Lex.TNl(line), out)
-  Lex.Toks(Lex.closeAll(line, ind, out1))
+  Lex.Toks(Lex.closeAll(line, ind, if Lex.lineDone(out) then out else Lex.under(Lex.TNl(line), out)))
+
+// the last code line has its TNl (or a TDedent ends it); comments do not count
+def Lex.lineDone(out: Coll.List[Lex.Tok]): Bool = out match
+  case Coll.Nil => true
+  case Coll.Cons(t, rest) => t match
+    case Lex.TNl(_) => true
+    case Lex.TDedent(_) => true
+    case Lex.TDoc(_, _) => Lex.lineDone(rest)
+    case _ => false
 
 def Lex.closeAll(line: I64, ind: Coll.List[I64], out: Coll.List[Lex.Tok]): Coll.List[Lex.Tok] = ind match
   case Coll.Nil => Coll.rev(Coll.Cons(Lex.TEof(line), out))
-  case Coll.Cons(t, rest) => if t > 0 then Lex.closeAll(line, rest, Coll.Cons(Lex.TDedent(line), out)) else Coll.rev(Coll.Cons(Lex.TEof(line), out))
+  case Coll.Cons(t, rest) =>
+    if t > 0 then Lex.closeAll(line, rest, Lex.under(Lex.TDedent(line), out))
+    else Coll.rev(Coll.Cons(Lex.TEof(line), out))

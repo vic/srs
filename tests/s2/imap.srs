@@ -5,19 +5,21 @@ def T.valid(m: Coll.IMap[I64], lo: I64, hi: I64): Bool = m match
   case Coll.Bin(s, k, _, l, r) =>
     val sl = Coll.size(l)
     val sr = Coll.size(r)
-    s == sl + sr + 1 && k > lo && k < hi && (sl + sr <= 1 || (sl <= 3 * sr && sr <= 3 * sl)) && T.valid(l, lo, k) && T.valid(r, k, hi)
+    s == sl + sr + 1 && k > lo && k < hi && (sl + sr <= 1 || sl <= 3 * sr && sr <= 3 * sl) && T.valid(l, lo, k) && T.valid(r, k, hi)
 
 // key i * 7919 mod 100003 (distinct: 100003 is prime) bound to i, for i in [i, n)
-def T.fill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i == n then m else T.fill(Coll.insert(m, (i * 7919) % 100003, i), i + 1, n)
+def T.fill {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] =
+  if i == n then m else T.fill(Coll.insert(m, i * 7919 % 100003, i), i + 1, n)
 
 // keys 1..n bound to their key
-def T.seq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] = if i > n then m else T.seq(Coll.insert(m, i, i), i + 1, n)
+def T.seq {r: Region} (m: Coll.IMap[I64], i: I64, n: I64): Coll.IMap[I64] =
+  if i > n then m else T.seq(Coll.insert(m, i, i), i + 1, n)
 
 // how many i in [i, n) find their value under their key
 def T.found {r: Region} (m: Coll.IMap[I64], i: I64, n: I64, acc: I64): I64 =
   if i == n then acc
   else
-    val hit = Coll.lookup(m, (i * 7919) % 100003) match
+    val hit = Coll.lookup(m, i * 7919 % 100003) match
       case Coll.None => 0
       case Coll.Some(v) => if v == i then 1 else 0
     T.found(m, i + 1, n, acc + hit)

@@ -14,9 +14,12 @@ def TT.parseAll {r: Region} (ps: Coll.List[Str], acc: Coll.List[Ast.Decl]): Coll
 
 // the prelude and every s2 source (a new s2 file goes here too)
 def TT.sources {r: Region} (): Coll.List[Str] =
-  val a = Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/b3.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/eff.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/elgate.srs", Coll.Cons("s2/emit.srs", Coll.Cons("s2/eval.srs", Coll.Cons("s2/facts.srs", Coll.Cons("s2/mono.srs", Coll.Nil)))))))))))))
-  val b = Coll.Cons("s2/flow.srs", Coll.Cons("s2/hash.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Cons("s2/mem.srs", Coll.Nil)))))))
-  val c = Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/pure.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/store.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/tlevel.srs", Coll.Cons("s2/types.srs", Coll.Nil))))))))
+  val a =
+    Coll.Cons("lib/prelude.srs", Coll.Cons("s2/ast.srs", Coll.Cons("s2/b3.srs", Coll.Cons("s2/bmap.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/datalog.srs", Coll.Cons("s2/eff.srs", Coll.Cons("s2/elab.srs", Coll.Cons("s2/elgate.srs", Coll.Cons("s2/emit.srs", Coll.Cons("s2/eval.srs", Coll.Cons("s2/facts.srs", Coll.Cons("s2/mono.srs", Coll.Nil)))))))))))))
+  val b =
+    Coll.Cons("s2/flow.srs", Coll.Cons("s2/fmt.srs", Coll.Cons("s2/hash.srs", Coll.Cons("s2/kanren.srs", Coll.Cons("s2/kfd.srs", Coll.Cons("s2/ksearch.srs", Coll.Cons("s2/lex.srs", Coll.Cons("s2/mem.srs", Coll.Nil))))))))
+  val c =
+    Coll.Cons("s2/names.srs", Coll.Cons("s2/parse.srs", Coll.Cons("s2/pure.srs", Coll.Cons("s2/queue.srs", Coll.Cons("s2/store.srs", Coll.Cons("s2/sym.srs", Coll.Cons("s2/tlevel.srs", Coll.Cons("s2/types.srs", Coll.Nil))))))))
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), c))
 
 def TT.show(c: Ty.Clash): Unit = c match
@@ -96,7 +99,8 @@ def TT.run {r: Region} (name: Str, ds: Coll.List[Ast.Decl]): Unit = TT.report(na
 // a check that stopped before types prints why; an empty result follows so the report stays one line
 def TT.checked(t: Ty.Typed): Ty.Result = t match
   case Ty.Checked(_, _, res) => res
-  case Ty.RowsBad(rel) => Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
+  case Ty.RowsBad(rel) =>
+    Ty.Result(Coll.Cons(Ty.PureRules(rel), Coll.Nil), Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
   case Ty.TlBad(_) =>
     Console.print(" tl-errors")
     Ty.Result(Coll.Nil, Coll.Nil, Coll.Tip, Coll.Nil, Coll.Nil, Coll.Nil)
@@ -136,7 +140,8 @@ def main(): I64 =
   Console.printI64(if Coll.length(is) > 1000 then 1 else 0)
   Console.print("\n")
   // the clash probes need only the prelude, Coll and Sym: they re-check this small lib, not the whole self (each whole check is 0.15 s)
-  val small = TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)
+  val small =
+    TT.parseAll(Coll.Cons("lib/prelude.srs", Coll.Cons("s2/coll.srs", Coll.Cons("s2/sym.srs", Coll.Nil))), Coll.Nil)
   TT.run("trait_args", Coll.revOnto(Coll.rev(TT.src("def fold1 [X: Type] [Y: Type] {f: Coll.Fold[Y, X, I64]} (x: X): I64 = f.step(0, x)\n")), small))
   TT.run("mismatch", Coll.revOnto(Coll.rev(TT.src("def f(): I64 = true\n")), small))
   TT.run("arity", Coll.revOnto(Coll.rev(TT.src("def g(x: I64): I64 = x\ndef f(): I64 = g(1, 2)\n")), small))
@@ -251,10 +256,9 @@ def TT.fnCalls {r: Region} (s: K.Subst, fs: Coll.List[El.Fn], name: Sym.Sym): Un
   case Coll.Nil => ()
   case Coll.Cons(f, rest) =>
     val El.Fn(_, n, _, _, _, _, body) = f
-    if Sym.eq(n, name) then
-      body match
-        case El.Def(e) => TT.calls(s, e)
-        case _ => ()
+    if Sym.eq(n, name) then body match
+      case El.Def(e) => TT.calls(s, e)
+      case _ => ()
     else TT.fnCalls(s, rest, name)
 
 // El.Bad nodes in an elaborated program: 0 when it typed (a mutant that drops an elaboration shows up here)

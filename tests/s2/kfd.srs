@@ -77,9 +77,12 @@ def T.fd {r: Region} (g: K.Goal, nv: I64, fuel: I64): Unit =
     case K.NoFuel => Console.print("nofuel\n")
 
 // X0 < X1 < ... < X(n-1)
-def T.chainLt {r: Region} (i: I64, n: I64, g: K.Goal): K.Goal = if i + 1 >= n then g else T.chainLt(i + 1, n, T.both(g, T.lt(K.Var(i), K.Var(i + 1))))
-def T.allIn {r: Region} (i: I64, n: I64, a: I64, b: I64, g: K.Goal): K.Goal = if i >= n then g else T.allIn(i + 1, n, a, b, T.both(g, T.in(K.Var(i), a, b)))
-def T.vlist {r: Region} (i: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] = if i < 0 then acc else T.vlist(i - 1, Coll.Cons(K.Var(i), acc))
+def T.chainLt {r: Region} (i: I64, n: I64, g: K.Goal): K.Goal =
+  if i + 1 >= n then g else T.chainLt(i + 1, n, T.both(g, T.lt(K.Var(i), K.Var(i + 1))))
+def T.allIn {r: Region} (i: I64, n: I64, a: I64, b: I64, g: K.Goal): K.Goal =
+  if i >= n then g else T.allIn(i + 1, n, a, b, T.both(g, T.in(K.Var(i), a, b)))
+def T.vlist {r: Region} (i: I64, acc: Coll.List[K.Term]): Coll.List[K.Term] =
+  if i < 0 then acc else T.vlist(i - 1, Coll.Cons(K.Var(i), acc))
 
 def T.ne {r: Region} (x: K.Term, y: K.Term): K.Goal = K.Post(K.FBin(K.Ne, x, y))
 
@@ -134,7 +137,8 @@ def main(): I64 =
   // propagation strength, seen in fuel: X < Y < Z < W in 1..5 leaves X in 1..2 only when a narrowed variable wakes the
   // other propagators (a label of X costs 2 <= fuel 3)
   val w = K.Var(3)
-  val chain4 = T.both(T.both(T.both(T.both(T.both(T.both(T.in(x, 1, 5), T.in(y, 1, 5)), T.in(z, 1, 5)), T.in(w, 1, 5)), T.lt(x, y)), T.lt(y, z)), T.lt(z, w))
+  val chain4 =
+    T.both(T.both(T.both(T.both(T.both(T.both(T.in(x, 1, 5), T.in(y, 1, 5)), T.in(z, 1, 5)), T.in(w, 1, 5)), T.lt(x, y)), T.lt(y, z)), T.lt(z, w))
   T.fd(T.both(chain4, K.Label(x1)), 4, 3)
   // X =/= Y in 1..2 and X = 1 fix Y = 2 with no label
   T.fd(T.both(T.both(T.both(T.in(x, 1, 2), T.in(y, 1, 2)), K.Post(K.FBin(K.Ne, x, y))), K.Eq(x, K.Int(1))), 2, 1000)

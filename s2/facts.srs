@@ -154,36 +154,55 @@ def Fx.rule(rel: Fx.Rel, hs: Coll.List[I64], body: Coll.List[D.Lit]): D.Rule = D
 
 def Fx.rules(): Coll.List[D.Rule] =
   val isCap = Fx.rule(Fx.RIsCap, Fx.l2(0, 1), Fx.l1(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2)))))
-  val defOp = Fx.rule(Fx.RDefOp, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.ROpOf, Fx.vs(Fx.l2(2, 3)))))
-  val defRel = Fx.rule(Fx.RDefRel, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(2, 3, 4, 5)))))
-  val defRelN = Fx.rule(Fx.RDefRelN, Fx.l3(0, 3, 4), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(2, 3, 4, 5)))))
+  val defOp =
+    Fx.rule(Fx.RDefOp, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.ROpOf, Fx.vs(Fx.l2(2, 3)))))
+  val defRel =
+    Fx.rule(Fx.RDefRel, Fx.l2(0, 3), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(2, 3, 4, 5)))))
+  val defRelN =
+    Fx.rule(Fx.RDefRelN, Fx.l3(0, 3, 4), Fx.l2(Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 1, 2))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(2, 3, 4, 5)))))
   val var0 = Fx.rule(Fx.RVar0, Fx.l2(0, 2), Fx.l1(Fx.p(Fx.RVarIn, Fx.l4(Fx.v(0), Fx.c(0), Fx.v(2), Fx.v(3)))))
   val rrel = Fx.rule(Fx.RRRel, Fx.l2(0, 1), Fx.l1(Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(0, 1, 2, 3)))))
-  val notCap = Fx.rule(Fx.RNotCapAt, Fx.l2(3, 2), Fx.l2(Fx.p(Fx.RUseAt, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.n(Fx.RIsCap, Fx.vs(Fx.l2(0, 2)))))
-  val badState = Fx.rule(Fx.RBadStateAt, Fx.l2(4, 3), Fx.l3(Fx.p(Fx.RAtState, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 2, 5))), Fx.n(Fx.RState, Fx.vs(Fx.l2(5, 3)))))
-  val twice = Fx.rule(Fx.RTwiceAt, Fx.l2(5, 2), Fx.l4(Fx.p(Fx.RAtId, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RAtId, Fx.vs(Fx.l4(0, 1, 2, 4))), Fx.n(Fx.RSameId, Fx.vs(Fx.l2(3, 4))), Fx.p(Fx.RAtLine, Fx.vs(Fx.l2(3, 5)))))
-  val notOp = Fx.rule(Fx.RNotOpAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RUseNext, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RDefOp, Fx.vs(Fx.l2(0, 1)))))
-  val unknownRel = Fx.rule(Fx.RUnknownRelAt, Fx.l2(3, 1), Fx.l2(Fx.p(Fx.RUseRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.n(Fx.RDefRel, Fx.vs(Fx.l2(0, 1)))))
-  val relArity = Fx.rule(Fx.RRelArityAt, Fx.l2(3, 1), Fx.l3(Fx.p(Fx.RUseRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RDefRel, Fx.vs(Fx.l2(0, 1))), Fx.n(Fx.RDefRelN, Fx.vs(Fx.l3(0, 1, 2)))))
-  val unbound = Fx.rule(Fx.RUnboundAt, Fx.l2(3, 2), Fx.l2(Fx.p(Fx.RVarIn, Fx.l4(Fx.v(0), Fx.c(1), Fx.v(2), Fx.v(3))), Fx.n(Fx.RVar0, Fx.vs(Fx.l2(0, 2)))))
+  val notCap =
+    Fx.rule(Fx.RNotCapAt, Fx.l2(3, 2), Fx.l2(Fx.p(Fx.RUseAt, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.n(Fx.RIsCap, Fx.vs(Fx.l2(0, 2)))))
+  val badState =
+    Fx.rule(Fx.RBadStateAt, Fx.l2(4, 3), Fx.l3(Fx.p(Fx.RAtState, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RCap, Fx.vs(Fx.l3(0, 2, 5))), Fx.n(Fx.RState, Fx.vs(Fx.l2(5, 3)))))
+  val twice =
+    Fx.rule(Fx.RTwiceAt, Fx.l2(5, 2), Fx.l4(Fx.p(Fx.RAtId, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RAtId, Fx.vs(Fx.l4(0, 1, 2, 4))), Fx.n(Fx.RSameId, Fx.vs(Fx.l2(3, 4))), Fx.p(Fx.RAtLine, Fx.vs(Fx.l2(3, 5)))))
+  val notOp =
+    Fx.rule(Fx.RNotOpAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RUseNext, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RDefOp, Fx.vs(Fx.l2(0, 1)))))
+  val unknownRel =
+    Fx.rule(Fx.RUnknownRelAt, Fx.l2(3, 1), Fx.l2(Fx.p(Fx.RUseRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.n(Fx.RDefRel, Fx.vs(Fx.l2(0, 1)))))
+  val relArity =
+    Fx.rule(Fx.RRelArityAt, Fx.l2(3, 1), Fx.l3(Fx.p(Fx.RUseRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RDefRel, Fx.vs(Fx.l2(0, 1))), Fx.n(Fx.RDefRelN, Fx.vs(Fx.l3(0, 1, 2)))))
+  val unbound =
+    Fx.rule(Fx.RUnboundAt, Fx.l2(3, 2), Fx.l2(Fx.p(Fx.RVarIn, Fx.l4(Fx.v(0), Fx.c(1), Fx.v(2), Fx.v(3))), Fx.n(Fx.RVar0, Fx.vs(Fx.l2(0, 2)))))
   val exitOther = Fx.rule(Fx.RExitOtherAt, Fx.l2(1, 0), Fx.l1(Fx.p(Fx.RExitOther, Fx.vs(Fx.l2(0, 1)))))
   val reserved = Fx.rule(Fx.RReservedAt, Fx.l2(1, 0), Fx.l1(Fx.p(Fx.RReserved, Fx.vs(Fx.l2(0, 1)))))
-  val clauseArity = Fx.rule(Fx.RClauseArityAt, Fx.l2(3, 1), Fx.l3(Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(0, 1, 4, 5))), Fx.n(Fx.RSameN, Fx.vs(Fx.l2(2, 4)))))
-  val unsafe = Fx.rule(Fx.RUnsafeAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RParam, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RBodyVar, Fx.vs(Fx.l2(0, 1)))))
-  val ruleUnknown = Fx.rule(Fx.RRuleUnknownAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RRUse, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RRRel, Fx.vs(Fx.l2(0, 1)))))
-  val ruleOp = Fx.rule(Fx.RRuleOpAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RRNext, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.ROpOf, Fx.vs(Fx.l2(0, 1)))))
+  val clauseArity =
+    Fx.rule(Fx.RClauseArityAt, Fx.l2(3, 1), Fx.l3(Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(0, 1, 2, 3))), Fx.p(Fx.RRuleRel, Fx.vs(Fx.l4(0, 1, 4, 5))), Fx.n(Fx.RSameN, Fx.vs(Fx.l2(2, 4)))))
+  val unsafe =
+    Fx.rule(Fx.RUnsafeAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RParam, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RBodyVar, Fx.vs(Fx.l2(0, 1)))))
+  val ruleUnknown =
+    Fx.rule(Fx.RRuleUnknownAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RRUse, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.RRRel, Fx.vs(Fx.l2(0, 1)))))
+  val ruleOp =
+    Fx.rule(Fx.RRuleOpAt, Fx.l2(2, 1), Fx.l2(Fx.p(Fx.RRNext, Fx.vs(Fx.l3(0, 1, 2))), Fx.n(Fx.ROpOf, Fx.vs(Fx.l2(0, 1)))))
   val a = Fx.l5(isCap, defOp, defRel, defRelN, var0)
   val b = Fx.l5(rrel, notCap, badState, twice, notOp)
   val c = Fx.l5(unknownRel, relArity, unbound, exitOther, reserved)
   // unambiguous protocols: one op from one state has one target (vars: p 0, op 1, s 2, t 3, line 4, t2 5, line2 6)
-  val ambig = Fx.rule(Fx.RAmbigAt, Fx.l3(4, 1, 2), Fx.l3(Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 5, 6))), Fx.n(Fx.RSameS, Fx.vs(Fx.l2(3, 5)))))
+  val ambig =
+    Fx.rule(Fx.RAmbigAt, Fx.l3(4, 1, 2), Fx.l3(Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.p(Fx.RTr, Fx.vs(Fx.l5(0, 1, 2, 5, 6))), Fx.n(Fx.RSameS, Fx.vs(Fx.l2(3, 5)))))
   val d = Fx.l5(clauseArity, unsafe, ruleUnknown, ruleOp, ambig)
   // an op result names only its receiver: <self>, and T{self, ...} with one self per {} binder of T, each a binder of
   // this capability (vars: p 0, T 1, i 2, x 3, line 4, n 5)
-  val opCap = Fx.rule(Fx.ROpCapAt, Fx.l2(4, 3), Fx.l2(Fx.p(Fx.RResCap, Fx.vs(Fx.l3(0, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
-  val choiceSelf = Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResChoice, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
-  val choiceProto = Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResChoice, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.n(Fx.RTyBinder, Fx.vs(Fx.l3(1, 2, 0)))))
-  val choiceCount = Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResCount, Fx.vs(Fx.l4(0, 1, 5, 4))), Fx.n(Fx.RTyArity, Fx.vs(Fx.l2(1, 5)))))
+  val opCap =
+    Fx.rule(Fx.ROpCapAt, Fx.l2(4, 3), Fx.l2(Fx.p(Fx.RResCap, Fx.vs(Fx.l3(0, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
+  val choiceSelf =
+    Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResChoice, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.n(Fx.RSelf, Fx.vs(Fx.l1(3)))))
+  val choiceProto =
+    Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResChoice, Fx.vs(Fx.l5(0, 1, 2, 3, 4))), Fx.n(Fx.RTyBinder, Fx.vs(Fx.l3(1, 2, 0)))))
+  val choiceCount =
+    Fx.rule(Fx.ROpChoiceAt, Fx.l2(4, 1), Fx.l2(Fx.p(Fx.RResCount, Fx.vs(Fx.l4(0, 1, 5, 4))), Fx.n(Fx.RTyArity, Fx.vs(Fx.l2(1, 5)))))
   val e = Fx.l4(opCap, choiceSelf, choiceProto, choiceCount)
   Coll.revOnto(Coll.rev(a), Coll.revOnto(Coll.rev(b), Coll.revOnto(Coll.rev(c), Coll.revOnto(Coll.rev(d), e))))
 
@@ -213,11 +232,13 @@ def Fx.isConst(x: Sym.Sym): Bool =
   val c = Str.at(Sym.str(x), 0)
   c >= 65 && c <= 90
 
-def Fx.sameNs(n: I64, st: Fx.St): Fx.St = if n < 0 then st else Fx.sameNs(n - 1, Fx.add(st, Fx.fact(Fx.RSameN, Fx.l2(Fx.i(n), Fx.i(n)))))
+def Fx.sameNs(n: I64, st: Fx.St): Fx.St =
+  if n < 0 then st else Fx.sameNs(n - 1, Fx.add(st, Fx.fact(Fx.RSameN, Fx.l2(Fx.i(n), Fx.i(n)))))
 
 def Fx.facts(ds: Coll.List[Ast.Decl]): Coll.List[D.Fact] =
   val ps = Pure.protos(ds, Coll.Nil)
-  val Fx.St(_, fs) = Fx.decls(ps, ds, Fx.add(Fx.sameNs(16, Fx.St(0, Coll.Nil)), Fx.fact(Fx.RSelf, Fx.l1(Fx.s(Sym.of("self"))))))
+  val Fx.St(_, fs) =
+    Fx.decls(ps, ds, Fx.add(Fx.sameNs(16, Fx.St(0, Coll.Nil)), Fx.fact(Fx.RSelf, Fx.l1(Fx.s(Sym.of("self"))))))
   fs
 
 def Fx.decls(ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: Fx.St): Fx.St = ds match
@@ -226,24 +247,25 @@ def Fx.decls(ps: Coll.List[Sym.Sym], ds: Coll.List[Ast.Decl], st: Fx.St): Fx.St 
     case Ast.DProto(p) => Fx.decls(ps, rest, Fx.proto(p, st))
     case Ast.DFn(f) => Fx.decls(ps, rest, Fx.fn(ps, f, st))
     case Ast.DType(td) =>
-      val Ast.TypeDecl(_, n, gs, _, _) = td
+      val Ast.TypeDecl(_, _, n, gs, _, _) = td
       val ev = Ty.evidence(gs, Coll.Nil)
       val st1 = Fx.add(Fx.tyBinders(n, ev, 0, st), Fx.fact(Fx.RTyArity, Fx.l2(Fx.s(n), Fx.i(Coll.length(ev)))))
       Fx.decls(ps, rest, Fx.groups(n, gs, Fx.caps(ps, n, ev, st1)))
     case _ => Fx.decls(ps, rest, st)
 
 def Fx.proto(p: Ast.Proto, st: Fx.St): Fx.St =
-  val Ast.Proto(_, n, states, _, _, _, ops, rules) = p
+  val Ast.Proto(_, _, n, states, _, _, _, ops, rules) = p
   Fx.ruleDefs(n, rules, Fx.opsF(n, ops, Fx.statesF(n, states, st)))
 
 def Fx.statesF(p: Sym.Sym, ss: Coll.List[Sym.Sym], st: Fx.St): Fx.St = ss match
   case Coll.Nil => st
-  case Coll.Cons(s, rest) => Fx.statesF(p, rest, Fx.add(Fx.add(st, Fx.fact(Fx.RState, Fx.l2(Fx.s(p), Fx.s(s)))), Fx.fact(Fx.RSameS, Fx.l2(Fx.s(s), Fx.s(s)))))
+  case Coll.Cons(s, rest) =>
+    Fx.statesF(p, rest, Fx.add(Fx.add(st, Fx.fact(Fx.RState, Fx.l2(Fx.s(p), Fx.s(s)))), Fx.fact(Fx.RSameS, Fx.l2(Fx.s(s), Fx.s(s)))))
 
 def Fx.opsF(p: Sym.Sym, os: Coll.List[Ast.Op], st: Fx.St): Fx.St = os match
   case Coll.Nil => st
   case Coll.Cons(o, rest) =>
-    val Ast.Op(line, n, ogs, _, ret, trs) = o
+    val Ast.Op(_, line, n, ogs, _, ret, trs) = o
     Fx.opsF(p, rest, Fx.resF(p, line, ret, Fx.binderNames(Ty.evidence(ogs, Coll.Nil), Coll.Nil), Fx.trsF(p, n, line, trs, Fx.add(st, Fx.fact(Fx.ROpOf, Fx.l2(Fx.s(p), Fx.s(n)))))))
 
 // the names of binders: an op result T<r> may name a {r: Region} binder of the op itself (the caller's capability it takes)
@@ -260,15 +282,18 @@ def Fx.resF(p: Sym.Sym, line: I64, ret: Ast.Ty, own: Coll.List[Sym.Sym], st: Fx.
   caps match
     case Ast.Inferred => st
     case Ast.Stated(xs) => Fx.resCaps(p, line, xs, own, st)
-    case Ast.Chosen(xs) => Fx.resChoices(p, t, line, xs, 0, Fx.add(st, Fx.fact(Fx.RResCount, Fx.l4(Fx.s(p), Fx.s(t), Fx.i(Coll.length(xs)), Fx.i(line)))))
+    case Ast.Chosen(xs) =>
+      Fx.resChoices(p, t, line, xs, 0, Fx.add(st, Fx.fact(Fx.RResCount, Fx.l4(Fx.s(p), Fx.s(t), Fx.i(Coll.length(xs)), Fx.i(line)))))
 
 def Fx.resCaps(p: Sym.Sym, line: I64, xs: Coll.List[Sym.Sym], own: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
   case Coll.Nil => st
-  case Coll.Cons(x, rest) => Fx.resCaps(p, line, rest, own, if Ty.memberSym(x, own) then st else Fx.add(st, Fx.fact(Fx.RResCap, Fx.l3(Fx.s(p), Fx.s(x), Fx.i(line)))))
+  case Coll.Cons(x, rest) =>
+    Fx.resCaps(p, line, rest, own, if Ty.memberSym(x, own) then st else Fx.add(st, Fx.fact(Fx.RResCap, Fx.l3(Fx.s(p), Fx.s(x), Fx.i(line)))))
 
 def Fx.resChoices(p: Sym.Sym, t: Sym.Sym, line: I64, xs: Coll.List[Sym.Sym], i: I64, st: Fx.St): Fx.St = xs match
   case Coll.Nil => st
-  case Coll.Cons(x, rest) => Fx.resChoices(p, t, line, rest, i + 1, Fx.add(st, Fx.fact(Fx.RResChoice, Fx.l5(Fx.s(p), Fx.s(t), Fx.i(i), Fx.s(x), Fx.i(line)))))
+  case Coll.Cons(x, rest) =>
+    Fx.resChoices(p, t, line, rest, i + 1, Fx.add(st, Fx.fact(Fx.RResChoice, Fx.l5(Fx.s(p), Fx.s(t), Fx.i(i), Fx.s(x), Fx.i(line)))))
 
 // fxTyBinder(T, i, P): the i-th {} binder of type T has type P
 def Fx.tyBinders(t: Sym.Sym, bs: Coll.List[Ast.Binder], i: I64, st: Fx.St): Fx.St = bs match
@@ -299,7 +324,8 @@ def Fx.builtinRel(n: Sym.Sym): Bool = Str.eq(Sym.str(n), "at") || Str.eq(Sym.str
 
 def Fx.params(rid: I64, line: I64, xs: Coll.List[Sym.Sym], st: Fx.St): Fx.St = xs match
   case Coll.Nil => st
-  case Coll.Cons(x, rest) => Fx.params(rid, line, rest, Fx.add(st, Fx.fact(Fx.RParam, Fx.l3(Fx.i(rid), Fx.s(x), Fx.i(line)))))
+  case Coll.Cons(x, rest) =>
+    Fx.params(rid, line, rest, Fx.add(st, Fx.fact(Fx.RParam, Fx.l3(Fx.i(rid), Fx.s(x), Fx.i(line)))))
 
 def Fx.bodyAtoms(p: Sym.Sym, rid: I64, as: Coll.List[Ast.Atom], st: Fx.St): Fx.St = as match
   case Coll.Nil => st
@@ -335,7 +361,7 @@ def Fx.nth(ts: Coll.List[Ast.Term], i: I64): Coll.Option[Sym.Sym] = ts match
 
 // a def: its {} capabilities, its entry groups (g 0) and its exit facts (g 1)
 def Fx.fn(ps: Coll.List[Sym.Sym], f: Ast.Fn, st: Fx.St): Fx.St =
-  val Ast.Fn(_, d, gs, _, _, exit, _) = f
+  val Ast.Fn(_, _, d, gs, _, _, exit, _) = f
   val st1 = Fx.caps(ps, d, Ty.evidence(gs, Coll.Nil), st)
   Fx.atoms(d, 1, exit, Fx.groups(d, gs, st1))
 
@@ -374,7 +400,8 @@ def Fx.atAtom(d: Sym.Sym, g: I64, line: I64, args: Coll.List[Ast.Term], st: Fx.S
   case Coll.None => st
   case Coll.Some(x) =>
     val id = Fx.fresh(st)
-    val st1 = Fx.add(Fx.add(Fx.add(Fx.add(Fx.bump(st), Fx.fact(Fx.RUseAt, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(line)))), Fx.fact(Fx.RAtId, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(id)))), Fx.fact(Fx.RAtLine, Fx.l2(Fx.i(id), Fx.i(line)))), Fx.fact(Fx.RSameId, Fx.l2(Fx.i(id), Fx.i(id))))
+    val st1 =
+      Fx.add(Fx.add(Fx.add(Fx.add(Fx.bump(st), Fx.fact(Fx.RUseAt, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(line)))), Fx.fact(Fx.RAtId, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(id)))), Fx.fact(Fx.RAtLine, Fx.l2(Fx.i(id), Fx.i(line)))), Fx.fact(Fx.RSameId, Fx.l2(Fx.i(id), Fx.i(id))))
     Fx.nth(args, 1) match
       case Coll.None => st1
       case Coll.Some(s) =>
@@ -388,7 +415,8 @@ def Fx.varsFrom(d: Sym.Sym, g: I64, line: I64, ts: Coll.List[Ast.Term], i: I64, 
     case Ast.TNum(_) => Fx.varsFrom(d, g, line, rest, i + 1, op, st)
     case Ast.TName(x) =>
       if Fx.isConst(x) || Fx.isPos(op, i) then Fx.varsFrom(d, g, line, rest, i + 1, op, st)
-      else Fx.varsFrom(d, g, line, rest, i + 1, op, Fx.add(st, Fx.fact(Fx.RVarIn, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(line)))))
+      else
+        Fx.varsFrom(d, g, line, rest, i + 1, op, Fx.add(st, Fx.fact(Fx.RVarIn, Fx.l4(Fx.s(d), Fx.i(g), Fx.s(x), Fx.i(line)))))
 
 // ── the verdict: each clash relation read as (line, name) ──
 def Fx.check(ds: Coll.List[Ast.Decl]): Fx.Verdict = D.solve(Fx.rules(), Fx.facts(ds)) match
