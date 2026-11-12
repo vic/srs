@@ -414,9 +414,9 @@ enum S2c.Mode:
 // compact: each def that can run in a scratch region and copy its result out (M6a)
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs, pf, vs, ms, rs, cs, bad) =>
+  case Mem.Ok(bs, pf, vs, ms, rs, cs, bad, dead) =>
     Console.print("{\"regions\":[")
-    S2c.jRegions(fs, bs, true)
+    S2c.jRegions(fs, bs, dead, true)
     Console.print("],\"sites\":[")
     val S2c.MemCount(once, onceB, many, die, _) = S2c.jBlocks(fs, bs, S2c.MemCount(0, 0, 0, 0, 0))
     Console.print("],\"frees\":[")
@@ -511,10 +511,15 @@ def S2c.jAt(fs: Coll.List[S2c.File], line: I64): Unit =
 // "," before every element but the first
 def S2c.jSep(first: Bool): Unit = if first then () else Console.print(",")
 
-def S2c.jRegions(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], first: Bool): Unit = bs match
+// each region; endAt: the last line of its handle's block (its drop frees it there), deadAt: the last line that can touch
+// it (a read of a var that can hold its boxes, a site or call of its def in it), earlyFree: deadAt is before endAt
+def S2c.jRegions(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], dead: Coll.IMap[I64], first: Bool): Unit = bs match
   case Coll.Nil => ()
   case Coll.Cons(b, rest) =>
-    val Mem.Block(rid, line, f, x, h, _, defs, _) = b
+    val Mem.Block(rid, line, f, x, h, _, defs, _, end) = b
+    val d: I64 = Coll.lookup(dead, rid) match
+      case Coll.Some(v) => v
+      case Coll.None => line
     S2c.jSep(first)
     Console.print("{\"id\":")
     Console.printI64(rid)
@@ -526,10 +531,16 @@ def S2c.jRegions(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], first: Bool)
     S2c.jSym(x)
     Console.print(",\"handler\":")
     S2c.jSym(h)
+    Console.print(",\"endAt\":")
+    S2c.jAt(fs, end)
+    Console.print(",\"deadAt\":")
+    S2c.jAt(fs, d)
+    val early = if d < end then ",\"earlyFree\":true" else ",\"earlyFree\":false"
+    Console.print(early)
     Console.print(",\"defs\":[")
     S2c.jSyms(defs, true)
     Console.print("]}")
-    S2c.jRegions(fs, rest, false)
+    S2c.jRegions(fs, rest, dead, false)
 
 def S2c.jSyms(xs: Coll.List[Sym.Sym], first: Bool): Unit = xs match
   case Coll.Nil => ()
@@ -543,7 +554,7 @@ def S2c.jSyms(xs: Coll.List[Sym.Sym], first: Bool): Unit = xs match
 def S2c.jFrees(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], first: Bool): Unit = bs match
   case Coll.Nil => ()
   case Coll.Cons(b, rest) =>
-    val Mem.Block(rid, _, _, _, _, _, _, frees) = b
+    val Mem.Block(rid, _, _, _, _, _, _, frees, _) = b
     S2c.jSep(first)
     S2c.jManual(fs, frees, rid)
     Console.print("{\"region\":")
@@ -676,7 +687,7 @@ def S2c.jParamFrees(fs: Coll.List[S2c.File], pf: Coll.List[Mem.FreeAt], first: B
 def S2c.jBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemCount): S2c.MemCount = bs match
   case Coll.Nil => c
   case Coll.Cons(b, rest) =>
-    val Mem.Block(rid, _, _, _, _, rows, _, _) = b
+    val Mem.Block(rid, _, _, _, _, rows, _, _, _) = b
     S2c.jBlocks(fs, rest, S2c.jRows(fs, rows, rid, c))
 
 def S2c.jRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], region: I64, c: S2c.MemCount): S2c.MemCount = rows match
