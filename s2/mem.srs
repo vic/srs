@@ -252,10 +252,22 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
   val w = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
   val Mem.W(sites, ns, regions, nr, fs, cs, free) = w
   val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
-  D.solve(Mem.rules(), facts) match
+  // one walk, one intern and one solve serve every analysis: their relations have distinct names. The walk takes the
+  // handler and given fns too (dispatch calls them: their params are seeded shared); a def's escape is its own
+  // summaries, so their facts change no def's escape
+  val dfs = Mem.dispatchFns(ds, Coll.Nil)
+  val Mem.EW(efs, _, esites) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), Coll.revOnto(Mem.asDecls(dfs, Coll.Nil), ds))
+  val it = Mem.interned(Coll.revOnto(Mem.fnSeeds(dfs, true, Mem.fnSeeds(fl, false, Coll.Nil)), efs))
+  val all = Coll.revOnto(facts, Coll.revOnto(Mem.factsOf(it), Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil))))
+  D.solve(Coll.revOnto(Coll.rev(Mem.rules()), Coll.revOnto(Coll.rev(Mem.eRules()), Coll.revOnto(Coll.rev(Mem.sharedRules()), Mem.sRules()))), all) match
     case D.Solved(m) =>
-      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), Mem.escapeSites(cx, ds))
-      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil), Mem.byReuseLine(Mem.reuses(ds)), Mem.reachedOnly(Mem.compacts(ds), Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
+      val esc = Mem.marks(esites, Mem.idSet(D.tuples(m, Mem.eSym(Mem.EEsc)), Coll.Tip), true, Coll.Nil)
+      val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), esc)
+      val reuse = Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(it, D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
+      val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
+      val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
+      val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
+      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil), Mem.byReuseLine(reuse), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -669,14 +681,6 @@ def Mem.eRules(): Coll.List[D.Rule] =
   val own = Coll.Cons(retC, Coll.Cons(sinkP, Coll.Cons(sinkC, Coll.Cons(Mem.summary(Mem.ERetP, Mem.ERetR), Coll.Cons(Mem.summary(Mem.ESinkP, Mem.ESinkR), Coll.Cons(esc1, Coll.Cons(esc2, Coll.Nil)))))))
   Coll.revOnto(Coll.rev(Mem.reach(Mem.ERetR, Mem.ERet)), Coll.revOnto(Coll.rev(Mem.reach(Mem.ESinkR, Mem.ESink)), own))
 
-// every site with whether its box dies; when the rules are not a program, every site escapes (the safe answer)
-def Mem.escapeSites(cx: Mem.Cx, ds: Coll.List[Ast.Decl]): Coll.List[Mem.ESiteR] =
-  val Mem.EW(fs, _, sites) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), ds)
-  D.solve(Mem.eRules(), Mem.factsOf(Mem.interned(fs))) match
-    case D.Solved(m) => Mem.marks(sites, Mem.idSet(D.tuples(m, Mem.eSym(Mem.EEsc)), Coll.Tip), true, Coll.Nil)
-    case D.Unsafe(_) => Mem.marks(sites, Coll.Tip, false, Coll.Nil)
-    case D.NegCycle(_) => Mem.marks(sites, Coll.Tip, false, Coll.Nil)
-
 def Mem.idSet(ts: Coll.List[Coll.List[D.Val]], m: Coll.IMap[Bool]): Coll.IMap[Bool] = ts match
   case Coll.Nil => m
   case Coll.Cons(t, rest) => t match
@@ -849,18 +853,6 @@ def Mem.sharedRules(): Coll.List[D.Rule] =
 // a reuse: the match at line, on x, whose arm takes apart case c and builds ctor (a case of the same enum)
 enum Mem.Reuse:
   case Mem.Reuse(line: I64, x: Sym.Sym, c: Sym.Sym, ctor: Sym.Sym)
-
-def Mem.reuses(ds: Coll.List[Ast.Decl]): Coll.List[Mem.Reuse] =
-  val fl = Mem.fnList(ds, Coll.Nil)
-  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms())
-  val dfs = Mem.dispatchFns(ds, Coll.Nil)
-  val Mem.EW(efs, _, _) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), Coll.revOnto(Mem.asDecls(dfs, Coll.Nil), ds))
-  val seeds = Mem.fnSeeds(dfs, true, Mem.fnSeeds(fl, false, Coll.Nil))
-  val it = Mem.interned(Coll.revOnto(seeds, efs))
-  D.solve(Mem.sharedRules(), Mem.factsOf(it)) match
-    case D.Solved(m) => Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(it, D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
-    case D.Unsafe(_) => Coll.Nil
-    case D.NegCycle(_) => Coll.Nil
 
 // shared var nodes by def: def -> the names shared in it
 def Mem.sharedSet(it: Mem.IT, ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Coll.SMap[Bool]]): Coll.SMap[Coll.SMap[Bool]] = ts match
@@ -1113,19 +1105,6 @@ def Mem.runRules(): Coll.List[D.Rule] =
 // a candidate: its name and line
 enum Mem.Compact:
   case Mem.Compact(line: I64, f: Sym.Sym)
-
-def Mem.compacts(ds: Coll.List[Ast.Decl]): Coll.List[Mem.Compact] =
-  val fl = Mem.fnList(ds, Coll.Nil)
-  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms())
-  val Mem.W(sites, ns, regions, nr, fs, _, _) = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
-  val Mem.EW(efs, _, _) = Mem.eDecls(cx, Mem.EW(Coll.Nil, 0, Coll.Nil), ds)
-  D.solve(Coll.revOnto(Coll.rev(Mem.eRules()), Mem.sRules()), Coll.revOnto(Mem.factsOf(Mem.interned(efs)), Mem.siteFacts(Mem.siteList(sites, 0, ns, Coll.Nil), Mem.sFacts(fs, Coll.Nil)))) match
-    case D.Solved(m) =>
-      val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
-      val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
-      Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
-    case D.Unsafe(_) => Coll.Nil
-    case D.NegCycle(_) => Coll.Nil
 
 def Mem.pickCompacts(need: Coll.SMap[Bool], skip: Coll.SMap[Bool], newRet: Coll.SMap[Bool], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = fs match
   case Coll.Nil => Coll.rev(acc)
