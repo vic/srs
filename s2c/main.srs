@@ -404,18 +404,21 @@ enum S2c.Mode:
   // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
   case S2c.MemAll
 
-// --mem: one JSON object on one line (read it with jq). regions: each handled Region; sites:
-// each allocation site of a region, with its bytes (null for an Array.fill), once or many and why, dies or escapes;
-// total: the once sites and their bytes, the many sites, the sites that die; reuse: each match that can build its
-// arm's box in the scrutinee's cell (M7a); compact: each def that can run in a scratch region and copy its result out
-// (M6a)
+// --mem: one JSON object on one line (read it with jq). regions: each handled Region, its def and the defs whose sites
+// fill it; sites: each allocation site of a region, its def, its bytes (null for an Array.fill), once or many and why,
+// dies or escapes; frees: each region's manual frees and its drop at block end; total: the once sites and their bytes,
+// the many sites, the sites that die; reuse: each match that can build its arm's box in the scrutinee's cell (M7a);
+// compact: each def that can run in a scratch region and copy its result out (M6a)
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs, rs, cs) =>
+  case Mem.Ok(bs, pf, rs, cs) =>
     Console.print("{\"regions\":[")
     S2c.jRegions(fs, bs, 0)
     Console.print("],\"sites\":[")
     val S2c.MemCount(once, onceB, many, die, _) = S2c.jBlocks(fs, bs, 0, S2c.MemCount(0, 0, 0, 0, 0))
+    Console.print("],\"frees\":[")
+    S2c.jFrees(fs, bs, 0)
+    S2c.jParamFrees(fs, pf, Coll.length(bs) == 0)
     Console.print("],\"total\":{\"once\":")
     Console.printI64(once)
     Console.print(",\"onceBytes\":")
@@ -492,35 +495,86 @@ def S2c.jSep(first: Bool): Unit = if first then () else Console.print(",")
 def S2c.jRegions(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], id: I64): Unit = bs match
   case Coll.Nil => ()
   case Coll.Cons(b, rest) =>
-    val Mem.Block(line, x, h, _) = b
+    val Mem.Block(line, f, x, h, _, defs, _) = b
     S2c.jSep(id == 0)
     Console.print("{\"id\":")
     Console.printI64(id)
+    Console.print(",\"def\":")
+    S2c.jSym(f)
     Console.print(",\"at\":")
     S2c.jAt(fs, line)
     Console.print(",\"var\":")
     S2c.jSym(x)
     Console.print(",\"handler\":")
     S2c.jSym(h)
-    Console.print("}")
+    Console.print(",\"defs\":[")
+    S2c.jSyms(defs, true)
+    Console.print("]}")
     S2c.jRegions(fs, rest, id + 1)
+
+def S2c.jSyms(xs: Coll.List[Sym.Sym], first: Bool): Unit = xs match
+  case Coll.Nil => ()
+  case Coll.Cons(x, rest) =>
+    S2c.jSep(first)
+    S2c.jSym(x)
+    S2c.jSyms(rest, false)
+
+// each region's manual frees (x.free() at a line), then its drop at the end of its block, which frees it when it is
+// still live
+def S2c.jFrees(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], id: I64): Unit = bs match
+  case Coll.Nil => ()
+  case Coll.Cons(b, rest) =>
+    val Mem.Block(_, _, _, _, _, _, frees) = b
+    S2c.jSep(id == 0)
+    S2c.jManual(fs, frees, id)
+    Console.print("{\"region\":")
+    Console.printI64(id)
+    Console.print(",\"kind\":\"auto\",\"when\":\"blockEnd\",\"ifLive\":true}")
+    S2c.jFrees(fs, rest, id + 1)
+
+def S2c.jManual(fs: Coll.List[S2c.File], ls: Coll.List[I64], id: I64): Unit = ls match
+  case Coll.Nil => ()
+  case Coll.Cons(l, rest) =>
+    Console.print("{\"region\":")
+    Console.printI64(id)
+    Console.print(",\"kind\":\"manual\",\"at\":")
+    S2c.jAt(fs, l)
+    Console.print("},")
+    S2c.jManual(fs, rest, id)
+
+// a manual free of a {} Region param: region null, the def and the param name (its caller passes the region)
+def S2c.jParamFrees(fs: Coll.List[S2c.File], pf: Coll.List[Mem.FreeAt], first: Bool): Unit = pf match
+  case Coll.Nil => ()
+  case Coll.Cons(m, rest) =>
+    val Mem.FreeAt(f, l, x) = m
+    S2c.jSep(first)
+    Console.print("{\"region\":null,\"kind\":\"manual\",\"at\":")
+    S2c.jAt(fs, l)
+    Console.print(",\"def\":")
+    S2c.jSym(f)
+    Console.print(",\"param\":")
+    S2c.jSym(x)
+    Console.print("}")
+    S2c.jParamFrees(fs, rest, false)
 
 def S2c.jBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], region: I64, c: S2c.MemCount): S2c.MemCount = bs match
   case Coll.Nil => c
   case Coll.Cons(b, rest) =>
-    val Mem.Block(_, _, _, rows) = b
+    val Mem.Block(_, _, _, _, rows, _, _) = b
     S2c.jBlocks(fs, rest, region + 1, S2c.jRows(fs, rows, region, c))
 
 def S2c.jRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], region: I64, c: S2c.MemCount): S2c.MemCount = rows match
   case Coll.Nil => c
   case Coll.Cons(r, rest) =>
-    val Mem.Row(line, ctor, bytes, dies, m) = r
+    val Mem.Row(line, f, ctor, bytes, dies, m) = r
     val S2c.MemCount(once, onceB, many, die, site) = c
     S2c.jSep(site == 0)
     Console.print("{\"id\":")
     Console.printI64(site)
     Console.print(",\"region\":")
     Console.printI64(region)
+    Console.print(",\"def\":")
+    S2c.jSym(f)
     Console.print(",\"at\":")
     S2c.jAt(fs, line)
     Console.print(",\"ctor\":")

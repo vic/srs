@@ -1,0 +1,25 @@
+// mem: frees. main's region r is freed by hand, then the drop at its block end finds it dead; t is freed only by the
+// drop; FR.drain frees the {s: Region} param its caller passes (region null: the call gives it); FR.mk and main both
+// fill t (two defs share one region)
+enum FB:
+  case FB(v: I64)
+
+def FB.get(b: FB): I64 = b match
+  case FB(v) => v
+
+def FR.mk(x: I64): FB = FB(x)
+
+def FR.drain {s: Region} <s: Open> (n: I64): I64 <s: Freed> =
+  s.free()
+  n
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = FB.get(FB(1))
+  r.free()
+  handle t = Srs.Arena()
+  val b = FB.get(FR.mk(2)) + FB.get(FB(3))
+  handle u = Srs.Arena()
+  Console.printI64(a + b + FR.drain{u}(4))
+  0
