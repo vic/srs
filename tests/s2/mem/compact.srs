@@ -36,7 +36,7 @@ def main(): I64 =
   handle mu = Srs.Mut()
   val m = 1
   val xs = Array.fill(m, CS(0))
-  Console.printI64(CS.get(C.summary(4)) + C.count(4) + CS.get(C.keep(CS(1), 2)) + C.store(m, xs) + CS.get(C.sink(2)) + CS.get(C.small(3)))
+  Console.printI64(CS.get(C.summary(4)) + C.count(4) + CS.get(C.keep(CS(1), 2)) + C.store(m, xs) + CS.get(C.sink(2)) + CS.get(C.small(3)) + CS.get(C.deep(5)))
   0
 
 def C.sink(n: I64): CS =
@@ -47,3 +47,6 @@ def C.sink(n: I64): CS =
   CS(5)
 
 def C.small(x: I64): CS = CS(x)
+
+// C.count makes many boxes through CL.build, so C.deep makes them too: unbounded goes up the call chain
+def C.deep(n: I64): CS = CS(C.count(n))
