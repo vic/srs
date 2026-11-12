@@ -206,6 +206,20 @@ memfails=0
 for t in tests/s2/prog/*.srs; do memfail "$t" $S2LIBS; done
 for t in tests/s2/mem/*.srs; do memfail "$t" lib/prelude.srs; done
 if [ "$memfails" -ge "$(ls tests/s2/mem/*.srs | wc -l)" ]; then echo "ok memfail armed ($memfails read)"; else echo "FAIL memfail unarmed ($memfails read)"; fail=1; fi
+# s2c's own --mem report ($B/mem-s2c.json, kept for jq), audited: each query counts claims that cannot be true and must
+# count 0; armed: the report has vars, sites and moves (an empty report would pass every query)
+timeout 10 "$B/s2c1" --mem lib/prelude.srs $S2SRC s2c/main.srs > "$B/mem-s2c.json" 2>/dev/null; code=$?
+memaudit() { # name query: the query counts false claims
+  local n; n=$(jq "$2" "$B/mem-s2c.json" 2>&1)
+  verdict "memaudit/$1" "$([ "$n" = 0 ] && echo 1 || echo 0)" "count=$n"
+}
+memaudit fail '.fail | length'
+# a var no binder of its def gives (an effect op, a nullary case, a global is no var)
+memaudit unbound '[.vars[] | select(.defAt == null)] | length'
+# a field move that stores a box into a box of a region that outlives the stored one (s2c has one region: none)
+memaudit unsafe-move '[.moves[] | select(.safe == false)] | length'
+armed=$(jq '[(.vars | length) > 0, (.sites | length) > 0, (.moves | length) > 0] | all' "$B/mem-s2c.json" 2>&1)
+if [ $code -eq 0 ] && [ "$armed" = true ]; then echo "ok memaudit armed ($(wc -c < "$B/mem-s2c.json") B)"; else echo "FAIL memaudit unarmed (exit=$code $armed)"; fail=1; fi
 # s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
 # a trailing byte each read as bad (a miss)
 S2STORE="$B/store-s2"; rm -rf "$S2STORE"
