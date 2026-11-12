@@ -194,6 +194,18 @@ for t in tests/s2/prog/*.srs; do memrun "$t" $S2LIBS; done
 for t in tests/s2/mem/*.srs; do memrun "$t" lib/prelude.srs; done
 # armed: mem/once has one once site by construction, so a --mem format the check cannot read fails here
 case "$memruns" in *" mem_once "*) echo "ok memrun armed (mem_once checked)";; *) echo "FAIL memrun unarmed: mem_once not checked"; fail=1;; esac
+# --mem's sanity checks (the fail list) are empty on every program --mem reads; armed: the list must be there (an
+# array), so a --mem that drops it fails, and at least the mem tests must be read
+memfail() { # test libs...
+  local t=$1 n out; shift; n=$(basename "$(dirname "$t")")_$(basename "$t" .srs)
+  out=$(timeout 2 "$B/s2c1" --mem "$@" "$t" 2>/dev/null) || return 0
+  memfails=$((memfails + 1))
+  verdict "memfail/$n" "$(jq '.fail | type == "array" and length == 0' <<< "$out" | sed 's/true/1/; s/false/0/')" "fail=$(jq -c '.fail' <<< "$out" 2>&1 | head -c 200)"
+}
+memfails=0
+for t in tests/s2/prog/*.srs; do memfail "$t" $S2LIBS; done
+for t in tests/s2/mem/*.srs; do memfail "$t" lib/prelude.srs; done
+if [ "$memfails" -ge "$(ls tests/s2/mem/*.srs | wc -l)" ]; then echo "ok memfail armed ($memfails read)"; else echo "FAIL memfail unarmed ($memfails read)"; fail=1; fi
 # s2c --store-check (its own store under $B): cold writes every entry, warm writes none; a cut entry, a changed byte and
 # a trailing byte each read as bad (a miss)
 S2STORE="$B/store-s2"; rm -rf "$S2STORE"

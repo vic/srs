@@ -1,0 +1,29 @@
+// mem: a reuse writes the new box into the matched box's cell, so the new box lives in the matched box's region.
+// RR.up{r} builds its box in r from a box of t: t dies first, so the reuse is regionShorter; RR.same reuses a box of
+// t for a box of t: ok
+// RR.lone is never called: its b can hold no known region, so its reuse is regionUnknown (no proof)
+enum RR:
+  case RR(v: I64)
+
+def RR.get(b: RR): I64 = b match
+  case RR(v) => v
+
+def RR.up {s: Region} (b: RR): RR = b match
+  case RR(v) => RR(v + 1)
+
+def RR.same(b: RR): RR = b match
+  case RR(v) => RR(v + 2)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle t = Srs.Arena()
+  val a = RR(1)
+  val u = RR.up{r}(a)
+  val b = RR(2)
+  val w = RR.same(b)
+  Console.printI64(RR.get(u) + RR.get(w))
+  0
+
+def RR.lone(b: RR): RR = b match
+  case RR(v) => RR(v + 3)
