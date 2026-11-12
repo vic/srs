@@ -137,4 +137,10 @@ def main(): I64 =
   T.agree(ncq, nodes, "p")
   // a stratified program: both paths solve it
   T.agree(un, db, "unreach")
+  // a duplicate input fact is one row (the first); the rows of a probed value come newest first
+  val dup =
+    Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "a", "c"), Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "a", "d"), Coll.Nil))))
+  val md = D.solve(sc, dup)
+  T.show(md, "edge")
+  T.show(md, "from_a")
   0
