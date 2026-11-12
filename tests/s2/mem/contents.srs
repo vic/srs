@@ -1,0 +1,66 @@
+// mem: a box apart from its contents (T3). CT.first returns a field of its param: at CT.pick the pair box dies but the
+// box in its field escapes (retPC). CT.keep stores a field of its param into an array (a sink): at CT.sinkIt the pair
+// box dies, its field box escapes (sinkPC). CT.wrap returns a new box holding its arg: the arg escapes (field into a
+// returned box). CT.peek reads a field and returns a number: both boxes die. CT.viaId and CT.sinkId pass a pair
+// through CT.id (it returns its param) and then return or sink a field of the result: the pair dies, its fields escape
+enum CB:
+  case CB(v: I64)
+
+enum CP:
+  case CP(a: CB, b: CB)
+
+enum CW:
+  case CW(x: CB)
+
+def CB.get(c: CB): I64 = c match
+  case CB(v) => v
+
+def CT.first(p: CP): CB = p match
+  case CP(a, _) => a
+
+def CT.pick(x: I64): CB = CT.first(CP(CB(x), CB(x + 1)))
+
+def CT.keep {r: Region} (n: I64, xs: Array[CB](n)<r>, p: CP): I64 =
+  val i = 0
+  val u = if 0 <= i && i < n then Array.put(xs, i, CT.first(p)) else ()
+  0
+
+def CT.sinkIt {r: Region} (n: I64, xs: Array[CB](n)<r>, x: I64): I64 = CT.keep(n, xs, CP(CB(x), CB(x + 2)))
+
+def CT.wrap(c: CB): CW = CW(c)
+
+def CT.boxed(x: I64): CW = CT.wrap(CB(x))
+
+def CT.peek(x: I64): I64 =
+  val p = CP(CB(x), CB(x))
+  p match
+    case CP(a, _) => CB.get(a)
+
+def CT.id(p: CP): CP = p
+
+def CT.viaId(x: I64): CB = CT.id(CP(CB(x), CB(x))) match
+  case CP(a, _) => a
+
+def CT.sinkId {r: Region} (n: I64, xs: Array[CB](n)<r>, x: I64): I64 =
+  val q = CT.id(CP(CB(x), CB(x)))
+  val a: CB = q match
+    case CP(y, _) => y
+  val i = 0
+  val u = if 0 <= i && i < n then Array.put(xs, i, a) else ()
+  0
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 1
+  val xs = Array.fill(n, CB(0))
+  val w = CT.boxed(3)
+  val k = w match
+    case CW(c) => CB.get(c)
+  val s = CT.sinkIt(n, xs, 2)
+  val i = 0
+  val e = if 0 <= i && i < n then xs(i) else CB(0)
+  val t = CT.sinkId(n, xs, 5)
+  Console.printI64(CB.get(CT.pick(1)) + s + k + CT.peek(4) + CB.get(e) + CB.get(CT.viaId(6)) + t)
+  0

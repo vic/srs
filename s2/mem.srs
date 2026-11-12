@@ -1001,7 +1001,23 @@ def Mem.maxBytes(xs: Coll.List[Emit.SiteB], ctor: Sym.Sym, best: Coll.Option[I64
 //   sinkR(N) :- sink(N) | flow(N, M), sinkR(M) | argOf(N, G, I, C), sinkP(G, I) | argOf(N, G, I, C), retP(G, I), sinkR(C)
 //   retP(G, I) :- param(G, I, P), retR(P)        sinkP(G, I) :- param(G, I, P), sinkR(P)
 //   esc(S) :- siteOf(S, F), retR(site S of F) | siteOf(S, F), sinkR(site S of F)
+// T3 (a box apart from its contents, Polonius child_path at one level): flow splits into alias(A, B) (a val, var,
+// assignment, return), field(A, B) (A stored into box B) and load(A, B) (B read out of a field of A: a pattern, an array
+// element). retC(N): a box reachable through N's fields reaches the result. retR walks alias only, so a box whose field
+// alone is returned dies:
+//   retR(N) :- alias(N, M), retR(M) | field(N, M), retC(M)
+//   retC(N) :- retR(N) | alias(N, M), retC(M) | load(N, M), retC(M)   (retR implies retC: load/field into retR are
+//   covered: a field store into retC reaches retR, then retC)
+//   retPC(G, I) :- param(G, I, P), retC(P) (so retP implies retPC); at a call: retC(N) :- argOf(N, G, I, C),
+//   retPC(G, I), retC(C); sinkC(N) :- argOf(N, G, I, C), sinkPC(G, I) | argOf(N, G, I, C), retPC(G, I), sinkC(C)
 enum Mem.ERel:
+  case Mem.EAlias
+  case Mem.EField
+  case Mem.ELoad
+  case Mem.ERetC
+  case Mem.ESinkC
+  case Mem.ERetPC
+  case Mem.ESinkPC
   case Mem.EFlow
   case Mem.ESink
   case Mem.ERet
@@ -1028,6 +1044,13 @@ enum Mem.ERel:
   case Mem.ENoRegion
 
 def Mem.eSym(r: Mem.ERel): Sym.Sym = r match
+  case Mem.EAlias => Sym.of("ealias")
+  case Mem.EField => Sym.of("efield")
+  case Mem.ELoad => Sym.of("eload")
+  case Mem.ERetC => Sym.of("eretC")
+  case Mem.ESinkC => Sym.of("esinkC")
+  case Mem.ERetPC => Sym.of("eretPC")
+  case Mem.ESinkPC => Sym.of("esinkPC")
   case Mem.EFlow => Sym.of("eflow")
   case Mem.ESink => Sym.of("esink")
   case Mem.ERet => Sym.of("eret")
@@ -1292,11 +1315,22 @@ def Mem.gi(r: Mem.ERel): D.Lit = D.Pos(Mem.eAtom(r, Coll.Cons(Mem.v(6), Coll.Con
 def Mem.atC(r: Mem.ERel): D.Lit = D.Pos(Mem.eAtom(r, Mem.n1(8, Coll.Nil)))
 def Mem.lits3(a: D.Lit, b: D.Lit, c: D.Lit): Coll.List[D.Lit] = Coll.Cons(a, Mem.lits2(b, c))
 
-// r(N) :- base(N) | flow(N, M), r(M): the reach part of retR and sinkR
-def Mem.reach(r: Mem.ERel, base: Mem.ERel): Coll.List[D.Rule] =
-  val r1 = D.Rule(Mem.eAtom(r, Mem.nN()), Mem.lit1(D.Pos(Mem.eAtom(base, Mem.nN()))))
-  val r2 = D.Rule(Mem.eAtom(r, Mem.nN()), Mem.lits2(D.Pos(Mem.eAtom(Mem.EFlow, Mem.n1(0, Mem.n1(3, Coll.Nil)))), D.Pos(Mem.eAtom(r, Mem.n1(3, Coll.Nil)))))
-  Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
+// the reach part of retR/retC (or sinkR/sinkC) over base: r(N) :- base(N); the T3 rules of the comment above
+def Mem.reach(r: Mem.ERel, c: Mem.ERel, base: Mem.ERel): Coll.List[D.Rule] =
+  val rN = Mem.eAtom(r, Mem.nN())
+  val cN = Mem.eAtom(c, Mem.nN())
+  val rM = D.Pos(Mem.eAtom(r, Mem.n1(3, Coll.Nil)))
+  val cM = D.Pos(Mem.eAtom(c, Mem.n1(3, Coll.Nil)))
+  val alias = D.Pos(Mem.eAtom(Mem.EAlias, Mem.n1(0, Mem.n1(3, Coll.Nil))))
+  val field = D.Pos(Mem.eAtom(Mem.EField, Mem.n1(0, Mem.n1(3, Coll.Nil))))
+  val load = D.Pos(Mem.eAtom(Mem.ELoad, Mem.n1(0, Mem.n1(3, Coll.Nil))))
+  val r1 = D.Rule(rN, Mem.lit1(D.Pos(Mem.eAtom(base, Mem.nN()))))
+  val r2 = D.Rule(rN, Mem.lits2(alias, rM))
+  val r3 = D.Rule(rN, Mem.lits2(field, cM))
+  val c1 = D.Rule(cN, Mem.lit1(D.Pos(rN)))
+  val c2 = D.Rule(cN, Mem.lits2(alias, cM))
+  val c4 = D.Rule(cN, Mem.lits2(load, cM))
+  Coll.Cons(r1, Coll.Cons(r2, Coll.Cons(r3, Coll.Cons(c1, Coll.Cons(c2, Coll.Cons(c4, Coll.Nil))))))
 
 // p(G, I) :- param(G, I, P), r(P)
 def Mem.summary(p: Mem.ERel, r: Mem.ERel): D.Rule =
@@ -1311,7 +1345,14 @@ def Mem.eRules(): Coll.List[D.Rule] =
   val esc1 = D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ERetR, site))))
   val esc2 = D.Rule(Mem.eAtom(Mem.EEsc, Coll.Cons(Mem.v(0), Coll.Nil)), Mem.lits2(siteOf, D.Pos(Mem.eAtom(Mem.ESinkR, site))))
   val own = Coll.Cons(retC, Coll.Cons(sinkP, Coll.Cons(sinkC, Coll.Cons(Mem.summary(Mem.ERetP, Mem.ERetR), Coll.Cons(Mem.summary(Mem.ESinkP, Mem.ESinkR), Coll.Cons(esc1, Coll.Cons(esc2, Coll.Nil)))))))
-  Coll.revOnto(Coll.rev(Mem.reach(Mem.ERetR, Mem.ERet)), Coll.revOnto(Coll.rev(Mem.reach(Mem.ESinkR, Mem.ESink)), own))
+  val nC = D.Atom(Mem.eSym(Mem.ERetC), Mem.nN())
+  val sC = D.Atom(Mem.eSym(Mem.ESinkC), Mem.nN())
+  val rc3 = D.Rule(nC, Mem.lits3(Mem.argOfA(), Mem.gi(Mem.ERetPC), Mem.atC(Mem.ERetC)))
+  val sc1 = D.Rule(sC, Mem.lits2(Mem.argOfA(), Mem.gi(Mem.ESinkPC)))
+  val sc4 = D.Rule(sC, Mem.lits3(Mem.argOfA(), Mem.gi(Mem.ERetPC), Mem.atC(Mem.ESinkC)))
+  val sums = Coll.Cons(Mem.summary(Mem.ERetPC, Mem.ERetC), Coll.Cons(Mem.summary(Mem.ESinkPC, Mem.ESinkC), own))
+  val cs = Coll.Cons(rc3, Coll.Cons(sc1, Coll.Cons(sc4, sums)))
+  Coll.revOnto(Coll.rev(Mem.reach(Mem.ERetR, Mem.ERetC, Mem.ERet)), Coll.revOnto(Coll.rev(Mem.reach(Mem.ESinkR, Mem.ESinkC, Mem.ESink)), cs))
 
 def Mem.idSet(ts: Coll.List[Coll.List[D.Val]], m: Coll.IMap[Bool]): Coll.IMap[Bool] = ts match
   case Coll.Nil => m
@@ -2248,7 +2289,12 @@ def Mem.intern1(x: Mem.EF, it: Mem.IT): Mem.IT = x match
     val Mem.Got(it2, j) = Mem.idOf(it1, b)
     val Mem.IT(defs, next, vars, out, mv) = it2
     val Mem.Node(_, d, _) = b
-    Mem.IT(defs, next, vars, Coll.Cons(D.Fact(Mem.eSym(Mem.EFlow), Coll.Cons(D.VInt(i), Mem.one(j))), out), Coll.Cons(Mem.Move(k, d, i, j), mv))
+    val kr: Mem.ERel = k match
+      case Mem.MField => Mem.EField
+      case Mem.MPattern => Mem.ELoad
+      case _ => Mem.EAlias
+    val out2 = Coll.Cons(D.Fact(Mem.eSym(kr), Coll.Cons(D.VInt(i), Mem.one(j))), Coll.Cons(D.Fact(Mem.eSym(Mem.EFlow), Coll.Cons(D.VInt(i), Mem.one(j))), out))
+    Mem.IT(defs, next, vars, out2, Coll.Cons(Mem.Move(k, d, i, j), mv))
   case Mem.FSink(a) =>
     val Mem.Got(it1, i) = Mem.idOf(it, a)
     Mem.emit(it1, Mem.eSym(Mem.ESink), Mem.one(i))
