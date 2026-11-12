@@ -1634,6 +1634,12 @@ def Emit.cnewFn(cx: Emit.Cx, name: Sym.Sym): Unit =
   Emit.cid(name)
   Console.print(")); return p; }\n")
 
+// CStr.of (lib/prelude.srs): the bytes of s and a NUL in the region c, only in a program that calls it
+def Emit.cstrOf(cx: Emit.Cx): Unit =
+  Console.print("static inline const char* CStr__of(srs_cap* c, srs_str s) { char* p = (char*)")
+  Emit.allocOpenC(cx)
+  Console.print("s.n + 1); if (s.n > 0) memcpy(p, s.p, (size_t)s.n); p[s.n] = 0; return p; }\n")
+
 // the allocator call open for the capability param c (as Emit.allocOpen for a local)
 def Emit.allocOpenC(cx: Emit.Cx): Unit =
   val Emit.Cx(_, _, _, _, _, _, al, _, _, sx) = cx
@@ -1745,7 +1751,7 @@ def Emit.anyLibc(fs: Coll.List[El.Fn], cs: Coll.ISet): Bool = fs match
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
-  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("rt_os_errno")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
+  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("CStr.of")) || Sym.eq(n, Sym.of("rt_os_errno")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
@@ -3108,6 +3114,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit 
       else ()
     case Coll.Nil => ()
   Emit.cnewFns(cx, ds, cs)
+  if Coll.setHas(cs, Sym.hash(Sym.of("CStr.of"))) then Emit.cstrOf(cx) else ()
   Emit.bodies(cx, hs, is)
   Emit.handlers(cx, Emit.oneShot(hsu), Emit.Code)
   if Emit.hasMain(cx) then
