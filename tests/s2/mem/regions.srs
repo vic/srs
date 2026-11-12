@@ -1,0 +1,22 @@
+// mem: the regions a var can hold: a box made in r (a), a val of it (flow: c), the result of a call (ret: d), a param a
+// box is passed to (arg: RG.pass b), a result of a param (arg then ret: e); RG.get b is given boxes of r and t
+enum RG:
+  case RG(v: I64)
+
+def RG.get(b: RG): I64 = b match
+  case RG(v) => v
+
+def RG.make(x: I64): RG = RG(x)
+
+def RG.pass(b: RG): RG = b
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = RG(1)
+  val c = a
+  val d = RG.make(2)
+  handle t = Srs.Arena()
+  val e = RG.pass(RG(3))
+  Console.printI64(RG.get(c) + RG.get(d) + RG.get(e))
+  0
