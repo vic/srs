@@ -1,0 +1,139 @@
+// Cseal: where a Cell of region data may be written. A Cell[A] holds one word; when A holds
+// region memory (a Str, an Array, a box: not a scalar, El.CellPut data), the value must outlive the cell. srs proves it
+// by place, not by inference (Tofte, Talpin 1997 region typing: a store into a longer-lived place needs the outlives
+// order; Grossman et al. PLDI 2002, Cyclone: r1 outlives r2). The rule: a data put runs only while one Arena is open,
+// main's outermost. Then every live value holding region memory is in that one region (memory of a closed region cannot
+// be reached: error[region-escape]), and so is the cell: the value outlives the cell. A Cell.new needs no rule: the cell
+// is made in the innermost Region, which every value in scope outlives.
+// sealed: the rest of a block after an inner `handle x = Srs.Arena()` (any Arena handle while another is open; a fn but
+// main runs with main's open), and every fn, op or trait method called from a sealed place. A data put there is
+// error[cell-seal]. Conservative: an op call seals every handler fn of that name, a trait call every given fn.
+
+// what the walk found: the fns called from sealed places (by name) and the lines of the data puts there
+enum Cs.Acc:
+  case Cs.Acc(calls: Coll.List[Sym.Sym], bad: Coll.List[I64])
+
+def Cs.call(acc: Cs.Acc, sealed: Bool, f: Sym.Sym): Cs.Acc =
+  if sealed then
+    val Cs.Acc(cs, b) = acc
+    Cs.Acc(Coll.Cons(f, cs), b)
+  else acc
+
+def Cs.put(acc: Cs.Acc, sealed: Bool, data: Bool, line: I64): Cs.Acc =
+  if sealed && data then
+    val Cs.Acc(cs, b) = acc
+    Cs.Acc(cs, Coll.Cons(line, b))
+  else acc
+
+def Cs.isArena(h: Sym.Sym): Bool = Str.eq(Sym.str(h), "Srs.Arena")
+
+def Cs.ex(e: El.Expr, sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = e match
+  case El.CallFn(_, f, _, _, args) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, f))
+  case El.New(_, _, _, _, _, args) => Cs.exs(args, sealed, open, acc)
+  case El.MHandled(_, _, h, _, args, rest, _, _) => Cs.ex(rest, sealed, open, Cs.exs(args, sealed, open, Cs.call(acc, sealed, h)))
+  case El.Resume(_, _, a) => Cs.ex(a, sealed, open, acc)
+  case El.Op(_, _, _, op, args, _) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, op))
+  case El.TCall(_, _, op, _, args) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, op))
+  case El.Bin(_, _, l, r) => Cs.ex(r, sealed, open, Cs.ex(l, sealed, open, acc))
+  case El.Un(_, _, x) => Cs.ex(x, sealed, open, acc)
+  case El.If(_, c, t, f) => Cs.ex(f, sealed, open, Cs.ex(t, sealed, open, Cs.ex(c, sealed, open, acc)))
+  case El.Match(_, s, _, arms) => Cs.arms(arms, sealed, open, Cs.ex(s, sealed, open, acc))
+  case El.Block(_, stmts, last) => Cs.block(stmts, last, sealed, open, acc)
+  case El.While(_, c, b) => Cs.ex(b, sealed, open, Cs.ex(c, sealed, open, acc))
+  case El.Assign(_, _, x) => Cs.ex(x, sealed, open, acc)
+  case El.Index(_, _, i) => Cs.ex(i, sealed, open, acc)
+  case El.Slice(_, xs, off) => Cs.ex(off, sealed, open, Cs.ex(xs, sealed, open, acc))
+  case El.Fill(_, _, n, x, _) => Cs.ex(x, sealed, open, Cs.ex(n, sealed, open, acc))
+  case El.Tab(_, _, n, _, _, g) => Cs.ex(g, sealed, open, Cs.ex(n, sealed, open, acc))
+  case El.CellNew(_, _, v, _) => Cs.ex(v, sealed, open, acc)
+  case El.CellGet(_, c) => Cs.ex(c, sealed, open, acc)
+  case El.CField(_, c, _, _, _) => Cs.ex(c, sealed, open, acc)
+  case El.CellPut(line, c, v, data) => Cs.put(Cs.ex(v, sealed, open, Cs.ex(c, sealed, open, acc)), sealed, data, line)
+  case El.ArrPut(_, _, i, v) => Cs.ex(v, sealed, open, Cs.ex(i, sealed, open, acc))
+  case El.Blit(_, _, at, s, m) => Cs.ex(m, sealed, open, Cs.ex(s, sealed, open, Cs.ex(at, sealed, open, acc)))
+  case El.Int(_, _, _) => acc
+  case El.Bool(_, _) => acc
+  case El.Str(_, _) => acc
+  case El.Unit(_) => acc
+  case El.Local(_, _) => acc
+  case El.Nullary(_, _, _, _) => acc
+  case El.CNew(_, _, _) => acc
+  case El.Bad(_) => acc
+
+def Cs.exs(es: Coll.List[El.Expr], sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = es match
+  case Coll.Nil => acc
+  case Coll.Cons(e, rest) => Cs.exs(rest, sealed, open, Cs.ex(e, sealed, open, acc))
+
+def Cs.arms(as: Coll.List[El.Arm], sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = as match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val El.Arm(_, _, b) = a
+    Cs.arms(rest, sealed, open, Cs.ex(b, sealed, open, acc))
+
+// a block's statements in order: an Arena handle opens main's region when none is open, else seals the rest
+def Cs.block(ss: Coll.List[El.Stmt], last: El.Expr, sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = ss match
+  case Coll.Nil => Cs.ex(last, sealed, open, acc)
+  case Coll.Cons(s, rest) => s match
+    case El.Val(_, _, _, _, x) => Cs.block(rest, last, sealed, open, Cs.ex(x, sealed, open, acc))
+    case El.Do(x) => Cs.block(rest, last, sealed, open, Cs.ex(x, sealed, open, acc))
+    case El.Handle(_, _, h, _, args) =>
+      val a1 = Cs.exs(args, sealed, open, Cs.call(acc, sealed, h))
+      if Cs.isArena(h) then Cs.block(rest, last, sealed || open, true, a1) else Cs.block(rest, last, sealed, open, a1)
+
+// the bodies of the fns named n (defs, handler fns, given fns)
+def Cs.bodies(fs: Coll.List[El.Fn], n: Sym.Sym, acc: Coll.List[El.Expr]): Coll.List[El.Expr] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, m, _, _, _, _, b) = f
+    val acc2 = if Sym.eq(m, n) then b match
+      case El.Def(e) => Coll.Cons(e, acc)
+      case El.Extern(_, _) => acc
+    else acc
+    Cs.bodies(rest, n, acc2)
+
+def Cs.handlerFns(hs: Coll.List[El.Handler], acc: Coll.List[El.Fn]): Coll.List[El.Fn] = hs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, rest) =>
+    val El.Handler(_, _, fns, _) = h
+    Cs.handlerFns(rest, Coll.revOnto(fns, acc))
+
+def Cs.givenFns(gs: Coll.List[El.Given], acc: Coll.List[El.Fn]): Coll.List[El.Fn] = gs match
+  case Coll.Nil => acc
+  case Coll.Cons(g, rest) =>
+    val El.Given(_, _, _, fns) = g
+    Cs.givenFns(rest, Coll.revOnto(fns, acc))
+
+// the sealed fns: the worklist of names, each walked once, sealed
+def Cs.close(all: Coll.List[El.Fn], todo: Coll.List[Sym.Sym], seen: Coll.SMap[Bool], bad: Coll.List[I64]): Coll.List[I64] = todo match
+  case Coll.Nil => bad
+  case Coll.Cons(n, rest) => Coll.sLookup(seen, n) match
+    case Coll.Some(_) => Cs.close(all, rest, seen, bad)
+    case Coll.None =>
+      val Cs.Acc(cs, b2) = Cs.exs(Cs.bodies(all, n, Coll.Nil), true, true, Cs.Acc(rest, bad))
+      Cs.close(all, cs, Coll.sInsert(seen, n, true), b2)
+
+// every fn walked from its own entry: main with no Arena open, the others with main's open
+def Cs.entries(fs: Coll.List[El.Fn], acc: Cs.Acc): Cs.Acc = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, n, _, _, _, _, b) = f
+    val acc2 = b match
+      case El.Def(e) => Cs.ex(e, false, !Str.eq(Sym.str(n), "main"), acc)
+      case El.Extern(_, _) => acc
+    Cs.entries(rest, acc2)
+
+// the lines of the data puts that may run while an inner Arena is open (error[cell-seal]), first line first
+def Cs.run(res: Ty.Result): Coll.List[I64] =
+  val Ty.Result(_, _, _, fns, hs, gvs) = res
+  val all = Cs.givenFns(gvs, Cs.handlerFns(hs, fns))
+  val Cs.Acc(calls, bad) = Cs.entries(all, Cs.Acc(Coll.Nil, Coll.Nil))
+  Cs.uniq(Coll.rev(Cs.close(all, calls, Coll.sEmpty(), bad)), Coll.Nil)
+
+// xs without a line seen before it
+def Cs.uniq(xs: Coll.List[I64], seen: Coll.List[I64]): Coll.List[I64] = xs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(x, rest) => if Cs.has(seen, x) then Cs.uniq(rest, seen) else Coll.Cons(x, Cs.uniq(rest, Coll.Cons(x, seen)))
+
+def Cs.has(xs: Coll.List[I64], x: I64): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(y, rest) => y == x || Cs.has(rest, x)

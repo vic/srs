@@ -308,7 +308,18 @@ def S2c.flowed(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
       case Coll.Cons(_, _) =>
         S2c.showFlow(fs, Coll.rev(cs))
         1
-      case Coll.Nil => S2c.finish(m, fs, ds, rows, res)
+      case Coll.Nil => Cs.run(res) match
+        case Coll.Nil => S2c.finish(m, fs, ds, rows, res)
+        case Coll.Cons(_, _) =>
+          S2c.showSeal(fs, Cs.run(res))
+          1
+
+// error[cell-seal]: a put of region data into a Cell where an inner Arena may be open (s2/cseal.srs)
+def S2c.showSeal(fs: Coll.List[S2c.File], ls: Coll.List[I64]): Unit = ls match
+  case Coll.Nil => ()
+  case Coll.Cons(l, rest) =>
+    S2c.diag(fs, "cell-seal", l, "a Cell of region data is written where an inner Arena may be open", S2c.Text("Cell.put"), "write it where only main's outermost Arena is open, or keep a scalar in the cell")
+    S2c.showSeal(fs, rest)
 
 enum S2c.Flowed:
   case S2c.FlowOk(cs: Coll.List[Flow.Clash])

@@ -408,7 +408,7 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print("(*(")
     Emit.ex(cx, fi, env, Emit.Inner, c)
     Console.print("))")
-  case El.CellPut(_, c, v) =>
+  case El.CellPut(_, c, v, _) =>
     Console.print("(*(")
     Emit.ex(cx, fi, env, Emit.Inner, c)
     Console.print(") = (")
@@ -1233,7 +1233,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CellGet(_, c) => Emit.exTys(cx, fi, c, acc)
   case El.CNew(_, _, _) => acc
   case El.CField(_, c, _, _, _) => Emit.exTys(cx, fi, c, acc)
-  case El.CellPut(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
+  case El.CellPut(_, c, v, _) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
   case El.Blit(_, _, a, b, m) => Emit.exTys(cx, fi, m, Emit.exTys(cx, fi, b, Emit.exTys(cx, fi, a, acc)))
   case _ => acc
@@ -2811,7 +2811,7 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
     val Emit.Seen(ps, called, hn, cs, ex) = s
     Emit.Seen(ps, called, hn, Coll.setAdd(cs, Sym.hash(n)), ex)
   case El.CField(_, c, _, _, _) => Emit.seenE(cx, c, s)
-  case El.CellPut(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
+  case El.CellPut(_, c, v, _) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
   case El.Blit(_, _, a, b, m) => Emit.seenE(cx, m, Emit.seenE(cx, b, Emit.seenE(cx, a, s)))
   case _ => s
@@ -2970,7 +2970,7 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.CellGet(l, c) => El.CellGet(l, Emit.dropE(m, xs, c))
   case El.CNew(l, r, n) => El.CNew(l, r, n)
   case El.CField(l, c, n, f, t) => El.CField(l, Emit.dropE(m, xs, c), n, f, t)
-  case El.CellPut(l, c, v) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
+  case El.CellPut(l, c, v, d) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v), d)
   case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
   case El.Blit(l, x, a, b, k) => El.Blit(l, x, Emit.dropE(m, xs, a), Emit.dropE(m, xs, b), Emit.dropE(m, xs, k))
   case _ => e
@@ -3140,7 +3140,7 @@ def Emit.exSites(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[Emit.SiteB
   case El.CellGet(_, c) => Emit.exSites(cx, fi, c, acc)
   case El.CNew(_, _, _) => acc
   case El.CField(_, c, _, _, _) => Emit.exSites(cx, fi, c, acc)
-  case El.CellPut(_, c, v) => Emit.exSites(cx, fi, v, Emit.exSites(cx, fi, c, acc))
+  case El.CellPut(_, c, v, _) => Emit.exSites(cx, fi, v, Emit.exSites(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exSites(cx, fi, v, Emit.exSites(cx, fi, i, acc))
   case El.Blit(_, _, a, b, m) => Emit.exSites(cx, fi, m, Emit.exSites(cx, fi, b, Emit.exSites(cx, fi, a, acc)))
   case _ => acc

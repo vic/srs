@@ -1,0 +1,13 @@
+// expect: error[cell-seal]
+// a Cell of region data written while an inner Arena is open (here the value comes from the caller: the rule is by
+// place, it does not track the value)
+def CS.fill(c: Cell[Str], s: Str): Unit =
+  handle q = Srs.Arena()
+  Cell.put(c, s)
+def main(): I64 =
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val c = Cell.new("x")
+  CS.fill(c, "y")
+  0
+// expect: --> tests/s2/neg/cell_seal_block.srs:6
