@@ -1654,10 +1654,11 @@ def Ty.isI64(t: Ast.Ty): Bool =
   val Ast.Ty(_, n, args, _, _) = t
   Coll.length(args) == 0 && Str.eq(Sym.str(n), "I64")
 
+// the {} binders in written order, group after group (a call's chosen evidence names them by position)
 def Ty.evidence(gs: Coll.List[Ast.Group], acc: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = gs match
   case Coll.Nil => acc
   case Coll.Cons(g, rest) => g match
-    case Ast.Evidence(bs) => Ty.evidence(rest, Coll.revOnto(Coll.rev(bs), acc))
+    case Ast.Evidence(bs) => Ty.evidence(rest, Coll.revOnto(Coll.rev(acc), bs))
     case Ast.Types(_) => Ty.evidence(rest, acc)
     case Ast.Facts(_) => Ty.evidence(rest, acc)
 
