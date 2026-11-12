@@ -1,0 +1,46 @@
+// pass: tagless boxes (L1). TL.List has one boxed case: under the mem optimization its box has no tag and a match
+// tests the address of TL.TNil; TL.Opt has a nullary case first; TL.One has one case and no nullary; TL.Two has two
+// boxed cases and keeps its tag. Every match arm order is used (the nullary arm first and last). A head of 256 has the
+// low byte 0 (the tag of TL.TNil), so a tag read in place of the address test fails
+enum TL.List:
+  case TL.TNil
+  case TL.TCons(h: I64, t: TL.List)
+
+enum TL.Opt:
+  case TL.TNone
+  case TL.TSome(v: I64)
+
+enum TL.One:
+  case TL.TOne(a: I64, b: I64)
+
+enum TL.Two:
+  case TL.TA(a: I64)
+  case TL.TB(b: I64, c: I64)
+
+def TL.sum(l: TL.List, acc: I64): I64 = l match
+  case TL.TNil => acc
+  case TL.TCons(h, t) => TL.sum(t, acc + h)
+
+def TL.len(l: TL.List, n: I64): I64 = l match
+  case TL.TCons(_, t) => TL.len(t, n + 1)
+  case TL.TNil => n
+
+def TL.get(o: TL.Opt): I64 = o match
+  case TL.TSome(v) => v
+  case TL.TNone => 0
+
+def TL.two(t: TL.Two): I64 = t match
+  case TL.TA(a) => a
+  case TL.TB(b, c) => b + c
+
+def TL.one(o: TL.One): I64 = o match
+  case TL.TOne(a, b) => a * b
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val l = TL.TCons(256, TL.TCons(2, TL.TCons(3, TL.TNil)))
+  val opts = TL.get(TL.TSome(7)) + TL.get(TL.TNone)
+  val rest = TL.two(TL.TA(4)) + TL.two(TL.TB(5, 6)) + TL.one(TL.TOne(2, 3))
+  Console.printI64(TL.sum(l, 0) + TL.len(l, 0) + opts + rest)
+  0

@@ -1,9 +1,9 @@
 // s2 self-host rung B2 (vic/c/s2-emit-spec.md): the C of an elaborated program at its mono instances, as s1/emit.srs
 // prints it. the input typed with no clash, so every name the lookups read is declared. one C file to stdout.
 
-// a case: its tag (declaration index), its enum and its fields
+// a case: its tag (declaration index), its enum, its fields and its enum's tag width (Emit.T0: no tag in a box)
 enum Emit.CaseAt:
-  case Emit.CaseAt(tag: I64, en: Ast.Enum, c: Ast.Case)
+  case Emit.CaseAt(tag: I64, en: Ast.Enum, c: Ast.Case, w: Emit.TagW)
 
 // how a constructor allocates: an inline bump when the program has the Srs.Arena handler (rt/srs_rt.c:24-25), else the vtable
 enum Emit.Alloc:
@@ -58,9 +58,12 @@ enum Emit.Sep:
   case Emit.Comma
 
 // the test of a match arm: a `_` arm always holds, a case arm tests the tag
+// (a T0 enum tests addresses: IsP the nullary case c's static P_, NotP no nullary static of cs; ts: the enum's args)
 enum Emit.Guard:
   case Emit.Always
   case Emit.Tag(tag: I64)
+  case Emit.IsP(c: Sym.Sym, ts: Coll.List[K.Term])
+  case Emit.NotP(cs: Coll.List[Ast.Case], ts: Coll.List[K.Term])
 
 // a declaration's layout (enum struct, fn prototype) or its code (nullary statics, fn body)
 enum Emit.Part:
@@ -105,7 +108,43 @@ def Emit.caseMap(cs: Coll.List[Ast.Case], e: Ast.Enum, i: I64, m: Coll.SMap[Emit
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
     val Ast.Case(_, n, _) = c
-    Emit.caseMap(rest, e, i + 1, Coll.sInsert(m, n, Emit.CaseAt(i, e, c)))
+    val Ast.Enum(_, _, _, all) = e
+    Emit.caseMap(rest, e, i + 1, Coll.sInsert(m, n, Emit.CaseAt(i, e, c, Emit.tagWidth(Coll.length(all)))))
+
+// the mem optimization (L1, vic/c/mem-design.md): an enum with exactly one case with fields needs no tag in its box: a
+// value is a nullary case iff it is that case's static (P_), so every case of such an enum gets width T0
+def Emit.tagless(cx: Emit.Cx): Emit.Cx =
+  val Emit.Cx(s, fns, cs, es, ps, hp, al, nm, sc) = cx
+  Emit.Cx(s, fns, Emit.taglessIn(Coll.sEntries(cs, Coll.Nil), cs), es, ps, hp, al, nm, sc)
+
+def Emit.taglessIn(xs: Coll.List[Coll.SEntry[Emit.CaseAt]], m: Coll.SMap[Emit.CaseAt]): Coll.SMap[Emit.CaseAt] = xs match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) =>
+    val Coll.SEntry(n, ca) = x
+    val Emit.CaseAt(tag, e, c, _) = ca
+    val Ast.Enum(_, _, _, all) = e
+    Emit.taglessIn(rest, if Emit.boxedCases(all, 0) == 1 then Coll.sInsert(m, n, Emit.CaseAt(tag, e, c, Emit.T0)) else m)
+
+// how many cases have fields
+def Emit.boxedCases(cs: Coll.List[Ast.Case], n: I64): I64 = cs match
+  case Coll.Nil => n
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, fs) = c
+    val k: I64 = fs match
+      case Coll.Nil => 0
+      case Coll.Cons(_, _) => 1
+    Emit.boxedCases(rest, n + k)
+
+// the tag width of an enum's cases (any case: they share it)
+def Emit.enumW(cx: Emit.Cx, cs: Coll.List[Ast.Case]): Emit.TagW = cs match
+  case Coll.Nil => Emit.T8
+  case Coll.Cons(c, _) =>
+    val Ast.Case(_, n, _) = c
+    Emit.caseAt(cx, n) match
+      case Coll.Some(ca) =>
+        val Emit.CaseAt(_, _, _, w) = ca
+        w
+      case Coll.None => Emit.tagWidth(Coll.length(cs))
 
 def Emit.isProto(cx: Emit.Cx, n: Sym.Sym): Bool =
   val Emit.Cx(_, _, _, _, ps, _, _, _, _) = cx
@@ -319,13 +358,16 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print(" : ")
     Emit.ex(cx, fi, env, pos, x)
     Console.print(")")
-  case El.Match(_, x, _, arms) =>
+  case El.Match(_, x, en, arms) =>
     Console.print("({ __auto_type s")
     Console.printI64(Emit.envN(env))
     Console.print(" = ")
     Emit.ex(cx, fi, env, Emit.Inner, x)
     Console.print("; ")
-    Emit.arms(cx, fi, env, pos, arms)
+    val ts: Coll.List[K.Term] = Emit.gr(cx, fi, en) match
+      case K.Con(_, a) => a
+      case _ => Coll.Nil
+    Emit.arms(cx, fi, env, pos, ts, arms)
     Console.print("; })")
   case El.Block(_, ss, last) =>
     Console.print("({ ")
@@ -634,7 +676,7 @@ enum Emit.Src:
 def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, src: Emit.Src, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
   case Coll.None => Console.print("0")
   case Coll.Some(ca) =>
-    val Emit.CaseAt(tag, _, cs) = ca
+    val Emit.CaseAt(tag, _, cs, w) = ca
     val Ast.Case(_, _, fields) = cs
     val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
     val n = Emit.envN(env)
@@ -672,12 +714,15 @@ def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.Lis
         Emit.id(c)
         Console.print("))); o")
     Console.printI64(n)
-    // the tag is written through the case struct (its t_), as every field is: one union member per box
-    Console.print("->u.C_")
-    Emit.id(c)
-    Console.print(".t_ = ")
-    Console.printI64(tag)
-    Console.print(";")
+    // the tag is written through the case struct (its t_), as every field is: one union member per box; a T0 box has none
+    w match
+      case Emit.T0 => Console.print(";")
+      case _ =>
+        Console.print("->u.C_")
+        Emit.id(c)
+        Console.print(".t_ = ")
+        Console.printI64(tag)
+        Console.print(";")
     Emit.fieldSets(cx, fi, env, n, c, fields, args)
     Console.print(" o")
     Console.printI64(n)
@@ -804,7 +849,7 @@ def Emit.allEnd(ts: Coll.List[Ast.Trans], ends: Coll.List[Sym.Sym]): Bool = ts m
     if Ty.memberSym(to, ends) then Emit.allEnd(rest, ends) else false
 
 // match (spec sec 4.1): the scrutinee once in s<n>; the last arm has no tag test
-def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, as: Coll.List[El.Arm]): Unit = as match
+def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, ts: Coll.List[K.Term], as: Coll.List[El.Arm]): Unit = as match
   case Coll.Nil => ()
   case Coll.Cons(a, rest) =>
     val El.Arm(_, p, b) = a
@@ -818,9 +863,15 @@ def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, as: Coll.L
       case Ast.PCase(c, binds) => Emit.caseAt(cx, c) match
         case Coll.None => Console.print("0")
         case Coll.Some(ca) =>
-          val Emit.CaseAt(tag, _, cs) = ca
+          val Emit.CaseAt(tag, e, cs, w) = ca
           val Ast.Case(_, _, fields) = cs
-          Emit.test(rest, n, Emit.Tag(tag))
+          val Ast.Enum(_, _, _, all) = e
+          val g: Emit.Guard = w match
+            case Emit.T0 => fields match
+              case Coll.Nil => Emit.IsP(c, ts)
+              case Coll.Cons(_, _) => Emit.NotP(all, ts)
+            case _ => Emit.Tag(tag)
+          Emit.test(rest, n, g)
           Console.print("({ ")
           Emit.ex(cx, fi, Emit.binds(env, n, c, binds, fields), pos, b)
           Console.print("; })")
@@ -828,7 +879,7 @@ def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, as: Coll.L
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
         Console.print(" : ")
-        Emit.arms(cx, fi, env, pos, rest)
+        Emit.arms(cx, fi, env, pos, ts, rest)
 
 // the test of an arm that is not the last
 def Emit.test(rest: Coll.List[El.Arm], n: I64, g: Emit.Guard): Unit = rest match
@@ -841,6 +892,31 @@ def Emit.test(rest: Coll.List[El.Arm], n: I64, g: Emit.Guard): Unit = rest match
       Console.print("->tag == ")
       Console.printI64(tag)
       Console.print(" ? ")
+    case Emit.IsP(c, ts) =>
+      Console.print("s")
+      Console.printI64(n)
+      Console.print(" == P_")
+      Emit.id(c)
+      Emit.suffix(ts)
+      Console.print(" ? ")
+    case Emit.NotP(cs, ts) =>
+      Console.print("(1")
+      Emit.notPs(cs, n, ts)
+      Console.print(") ? ")
+
+def Emit.notPs(cs: Coll.List[Ast.Case], n: I64, ts: Coll.List[K.Term]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, cn, fs) = c
+    fs match
+      case Coll.Nil =>
+        Console.print(" && s")
+        Console.printI64(n)
+        Console.print(" != P_")
+        Emit.id(cn)
+        Emit.suffix(ts)
+      case Coll.Cons(_, _) => ()
+    Emit.notPs(rest, n, ts)
 
 // each binder of an arm (not `_`) to its case field of s<n>
 def Emit.binds(env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]): Emit.Env = xs match
@@ -1213,7 +1289,7 @@ def Emit.withEnum(cx: Emit.Cx, t: K.Term, what: Emit.Part): Unit = t match
           // the tag and every case struct start at offset 0: a case struct begins with its own copy of the tag (t_),
           // so its one-byte fields share the tag's word and a box is just its case struct
           case Emit.Layout =>
-            val w = Emit.tagWidth(Coll.length(cases))
+            val w = Emit.enumW(cx, cases)
             Console.print("struct E_")
             Emit.enumName(n, args)
             Console.print(" { union { ")
@@ -1234,9 +1310,8 @@ def Emit.caseStructs(cx: Emit.Cx, cs: Coll.List[Ast.Case], tv: Coll.List[Ty.Bind
     fs match
       case Coll.Nil => ()
       case Coll.Cons(_, _) =>
-        Console.print(" struct { ")
-        Emit.tagType(w)
-        Console.print(" t_;")
+        Console.print(" struct {")
+        Emit.tagField(w)
         Emit.fieldDecls(cx, fs, tv, Emit.AByte)
         Emit.fieldDecls(cx, fs, tv, Emit.AWord)
         Console.print(" } C_")
@@ -1293,6 +1368,7 @@ def Emit.csize(cx: Emit.Cx, t: K.Term): Emit.CSize = t match
   case _ => Emit.CSize(8, 8)
 
 def Emit.tagBytes(w: Emit.TagW): I64 = w match
+  case Emit.T0 => 0
   case Emit.T8 => 1
   case Emit.T16 => 2
   case Emit.T32 => 4
@@ -1315,15 +1391,26 @@ def Emit.lay(cx: Emit.Cx, fs: Coll.List[Ast.Binder], tv: Coll.List[Ty.Bind], a: 
     val next = if Emit.sameAlign(Emit.alignOf(cx, ft), a) then Emit.CSize(Srs.Arena.up(off, fa) + s, if fa > al then fa else al) else at
     Emit.lay(cx, rest, tv, a, next)
 
-// a tag is the smallest unsigned C int that holds the case count
+// a tag is the smallest unsigned C int that holds the case count; T0: a box has no tag (Emit.tagless)
 enum Emit.TagW:
+  case Emit.T0
   case Emit.T8
   case Emit.T16
   case Emit.T32
 
 def Emit.tagWidth(cases: I64): Emit.TagW = if cases <= 256 then Emit.T8 else if cases <= 65536 then Emit.T16 else Emit.T32
 
+// a case struct's own tag (t_), none for T0
+def Emit.tagField(w: Emit.TagW): Unit = w match
+  case Emit.T0 => ()
+  case _ =>
+    Console.print(" ")
+    Emit.tagType(w)
+    Console.print(" t_;")
+
+// the union's tag: the nullary statics keep theirs (a T0 enum never reads it)
 def Emit.tagType(w: Emit.TagW): Unit = w match
+  case Emit.T0 => Console.print("uint8_t")
   case Emit.T8 => Console.print("uint8_t")
   case Emit.T16 => Console.print("uint16_t")
   case Emit.T32 => Console.print("uint32_t")
@@ -2891,9 +2978,17 @@ def Emit.staticCaps(st: Coll.List[Emit.Static]): Unit = st match
     Emit.staticCaps(rest)
 
 // ── the program (spec sec 1): one C file to stdout ──
-def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result): Unit =
+// the C of a program: Plain, or MemOpt (s2c --mem-reuse: the layout and reuse of the mem optimization)
+enum Emit.Opt:
+  case Emit.Plain
+  case Emit.MemOpt
+
+def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit =
   val Ty.Result(_, _, s, fs0, _, _) = res0
-  val cx0 = Emit.cxOf(ds, s, fs0, Coll.Nil)
+  val cxp = Emit.cxOf(ds, s, fs0, Coll.Nil)
+  val cx0: Emit.Cx = opt match
+    case Emit.Plain => cxp
+    case Emit.MemOpt => Emit.tagless(cxp)
   val Ty.Result(_, _, _, fs00, _, gvs00) = res0
   val roots = Emit.roots(cx0, fs00, gvs00)
   val st = Emit.staticsOf(cx0, ds, res0, roots)
@@ -2968,10 +3063,10 @@ def Emit.instSites(cx: Emit.Cx, is: Coll.List[Mono.Inst], acc: Coll.List[Emit.Si
 def Emit.newBytes(cx: Emit.Cx, c: Sym.Sym, args: Coll.List[K.Term]): I64 = Emit.caseAt(cx, c) match
   case Coll.None => 0
   case Coll.Some(ca) =>
-    val Emit.CaseAt(_, e, cs) = ca
-    val Ast.Enum(_, _, gs, cases) = e
+    val Emit.CaseAt(_, e, cs, w) = ca
+    val Ast.Enum(_, _, gs, _) = e
     val Ast.Case(_, _, fs) = cs
-    Srs.Arena.up(Emit.caseSize(cx, fs, Ty.zipBind(Ty.tparams(gs, Coll.Nil), args, Coll.Nil), Emit.tagWidth(Coll.length(cases))), 8)
+    Srs.Arena.up(Emit.caseSize(cx, fs, Ty.zipBind(Ty.tparams(gs, Coll.Nil), args, Coll.Nil), w), 8)
 
 def Emit.exSites(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[Emit.SiteB]): Coll.List[Emit.SiteB] = e match
   case El.CallFn(_, _, _, _, args) => Emit.exsSites(cx, fi, args, acc)

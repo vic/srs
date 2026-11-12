@@ -867,13 +867,13 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.Fragment =>
     S2c.fragment(fs, Elgate.run(ds, res))
   case S2c.EmitAgree =>
-    Emit.program(ds, res)
+    Emit.program(ds, res, Emit.Plain)
     0
   case S2c.EmitReuse =>
-    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res)))))
+    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res)))), Emit.MemOpt)
     0
   case S2c.EmitC =>
-    Emit.program(ds, res)
+    Emit.program(ds, res, Emit.Plain)
     0
   case S2c.EvalAll => Pure.impure(ds, rows) match
     case Pure.RulesBad(rel) => S2c.internal("purity", rel)
