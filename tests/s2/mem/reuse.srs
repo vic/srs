@@ -43,7 +43,7 @@ def main(): I64 =
   handle m = Srs.Mut()
   val n = 1
   val xs = Array.fill(n, RB(7))
-  Console.printI64(RB.local(1) + RB.twice(2) + RB.get(RB.bump(RB(3))) + k + RL.len(RL.rev(RCons(1, RCons(2, RNil)), RNil), 0) + RB.viaKeep(s) + RB.fromArr(n, xs) + RB.get(RB.arms(RB(8), true)) + RB.get(RB.marms(RB(9), KA)))
+  Console.printI64(RB.local(1) + RB.twice(2) + RB.get(RB.bump(RB(3))) + k + RL.len(RL.rev(RCons(1, RCons(2, RNil)), RNil), 0) + RB.viaKeep(s) + RB.fromArr(n, xs) + RB.get(RB.arms(RB(8), true)) + RB.get(RB.marms(RB(9), KA)) + RB.split(RB(11), KA))
   0
 
 def RB.keep(b: RB): RB = b
@@ -76,3 +76,11 @@ def RB.bumpU(b: RB): RB = b match
 def RB.marms(b: RB, k: RK): RB = k match
   case KA => RB.bumpU(b)
   case KB => RB.bump(b)
+
+// b is read twice in one arm and once in the other: the larger count holds, so b is shared and its match is no reuse
+def RB.split(b: RB, k: RK): I64 = k match
+  case KA =>
+    val c = b match
+      case RB(v) => RB(v + 7)
+    RB.get(c) + RB.get(b)
+  case KB => RB.get(b)
