@@ -117,12 +117,18 @@ def Mem.count(cs: Coll.SMap[I64], g: Sym.Sym): I64 = Coll.sLookup(cs, g) match
   case Coll.Some(n) => n
   case Coll.None => 0
 
-def Mem.call(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym): Mem.W =
+def Mem.call(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym): Mem.W = Mem.callN(w, at, line, g, 1)
+
+// a call of g at another region of the same call site: no new site for the count
+def Mem.callNoCount(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym): Mem.W = Mem.callN(w, at, line, g, 0)
+
+// a call of g that adds k to its call-site count
+def Mem.callN(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym, k: I64): Mem.W =
   val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
   val Mem.At(f, reg, loop, _) = at
   val c = Mem.f2(Mem.RCall, D.VSym(f), D.VSym(g))
   val fs2 = if loop then Coll.Cons(Mem.f1(Mem.RLoopCall, D.VSym(g)), Coll.Cons(c, fs)) else Coll.Cons(c, fs)
-  val cs2 = Coll.sInsert(cs, g, Mem.count(cs, g) + 1)
+  val cs2 = Coll.sInsert(cs, g, Mem.count(cs, g) + k)
   reg match
     case Coll.Some(r) => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f3(Mem.RCallAt, D.VSym(f), D.VInt(line), D.VInt(r)), Coll.Cons(Mem.f2(Mem.RCallIn, D.VInt(r), D.VSym(g)), fs2)), cs2, fr)
     case Coll.None => Mem.W(ss, ns, rs, nr, Coll.Cons(Mem.f2(Mem.RCallFreeAt, D.VSym(f), D.VInt(line)), Coll.Cons(Mem.f2(Mem.RCallFree, D.VSym(f), D.VSym(g)), fs2)), cs2, Coll.Cons(Mem.Edge(f, g), fr))
@@ -144,21 +150,35 @@ def Mem.isIn [V: Type] (m: Coll.SMap[V], s: Sym.Sym): Bool = Coll.sLookup(m, s) 
   case Coll.Some(_) => true
   case Coll.None => false
 
-// at, in the region of the first chosen evidence name that is a handle in scope (f{r}(..) runs f in r)
-def Mem.chosenAt(at: Mem.At, chosen: Coll.List[Sym.Sym]): Mem.At = chosen match
-  case Coll.Nil => at
+// at, in the region of each chosen evidence name: a handle in scope is its region (f{r}(..) runs f in r); any other
+// name (an evidence param of this def) is a region this def runs in. Which of two chosen regions a box of f goes to is
+// the type checker's (El), not this walk's: f runs in each of them (no region is missed); none chosen: at
+def Mem.chosenAts(at: Mem.At, chosen: Coll.List[Sym.Sym], acc: Coll.List[Mem.At]): Coll.List[Mem.At] = chosen match
+  case Coll.Nil => acc match
+    case Coll.Nil => Coll.Cons(at, Coll.Nil)
+    case Coll.Cons(_, _) => acc
   case Coll.Cons(x, rest) =>
     val Mem.At(f, _, loop, sc) = at
     val r: Coll.Option[I64] = Coll.sLookup(sc, x)
     r match
-      case Coll.Some(id) => Mem.At(f, Coll.Some(id), loop, sc)
-      case Coll.None => Mem.chosenAt(at, rest)
+      case Coll.Some(id) => Mem.chosenAts(at, rest, Coll.Cons(Mem.At(f, Coll.Some(id), loop, sc), acc))
+      case Coll.None => Mem.chosenAts(at, rest, Coll.Cons(Mem.At(f, Coll.None, loop, sc), acc))
+
+// a call of f at each of ats (one call site: its count goes up once)
+def Mem.callAll(w: Mem.W, ats: Coll.List[Mem.At], line: I64, f: Sym.Sym): Mem.W = ats match
+  case Coll.Nil => w
+  case Coll.Cons(a, rest) => rest match
+    case Coll.Nil => Mem.call(w, a, line, f)
+    case Coll.Cons(_, _) => Mem.callAll(Mem.callNoCount(w, a, line, f), rest, line, f)
 
 def Mem.expr(cx: Mem.Cx, at: Mem.At, w: Mem.W, e: Ast.Expr): Mem.W = e match
   case Ast.Call(line, f, _, chosen, args) =>
     val Mem.Cx(fns, ctors, _, ss, _) = cx
-    val at2 = Mem.chosenAt(at, chosen)
-    val w2 = if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at2, line, f) else if Mem.isIn(fns, f) then Mem.call(w, at2, line, f) else w
+    val ats = Mem.chosenAts(at, chosen, Coll.Nil)
+    val at2: Mem.At = ats match
+      case Coll.Cons(a, _) => a
+      case Coll.Nil => at
+    val w2 = if Mem.allocates(ctors, f) || Eff.isArrayNew(ss, f) then Mem.site(w, at2, line, f) else if Mem.isIn(fns, f) then Mem.callAll(w, ats, line, f) else w
     Mem.exprs(cx, at, w2, args)
   case Ast.Method(_, _, _, args) => Mem.exprs(cx, at, w, args)
   case Ast.Resume(_, _, x) => Mem.expr(cx, at, w, x)
@@ -1540,12 +1560,12 @@ def Mem.esmFacts(es: Coll.List[Mem.ESite], byDef: Coll.SMap[Coll.List[Mem.KSite]
 
 // an M1 site by its line and ctor
 enum Mem.KSite:
-  case Mem.KSite(line: I64, ctor: Sym.Sym, id: I64)
+  case Mem.KSite(line: I64, ctor: Sym.Sym, id: I64, loop: Bool)
 
 def Mem.kFind(ks: Coll.List[Mem.KSite], line: I64, ctor: Sym.Sym): Coll.Option[I64] = ks match
   case Coll.Nil => Coll.None
   case Coll.Cons(k, rest) =>
-    val Mem.KSite(l, c, id) = k
+    val Mem.KSite(l, c, id, _) = k
     if l == line && Sym.eq(c, ctor) then Coll.Some(id) else Mem.kFind(rest, line, ctor)
 
 // the M1 sites 0 .. ns - 1 by def
@@ -1554,11 +1574,11 @@ def Mem.sitesByDef(ss: Coll.IMap[Mem.Site], i: I64, ns: I64, acc: Coll.SMap[Coll
 
 def Mem.addKSite(ss: Coll.IMap[Mem.Site], i: I64, acc: Coll.SMap[Coll.List[Mem.KSite]]): Coll.SMap[Coll.List[Mem.KSite]] = Coll.lookup(ss, i) match
   case Coll.Some(s) =>
-    val Mem.Site(f, line, ctor, _) = s
+    val Mem.Site(f, line, ctor, loop) = s
     val xs: Coll.List[Mem.KSite] = Coll.sLookup(acc, f) match
       case Coll.Some(ys) => ys
       case Coll.None => Coll.Nil
-    Coll.sInsert(acc, f, Coll.Cons(Mem.KSite(line, ctor, i), xs))
+    Coll.sInsert(acc, f, Coll.Cons(Mem.KSite(line, ctor, i, loop), xs))
   case Coll.None => acc
 
 def Mem.sharedRules(): Coll.List[D.Rule] =
@@ -1705,11 +1725,15 @@ def Mem.firstOf(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, es: Coll.List[As
     case Coll.None => Mem.firstOf(ce, cx, c, rest)
 
 // a reuse writes the new box into x's cell, so the box lives in x's region: ok when each region x can hold outlives (or
-// is) each region the box would be made in; unknown when either set is empty (no proof)
+// is) each region the box would be made in; unknown when either set is empty (no proof); ambiguous when its def has
+// two boxes of the ctor on the line (which one the arm builds is not known); inLoop when a loop of its def holds the
+// box (each turn would overwrite the cell)
 enum Mem.RV:
   case Mem.ROk
   case Mem.RShorter(x: I64, box: I64)
   case Mem.RUnknown
+  case Mem.RAmbiguous
+  case Mem.RInLoop
 
 enum Mem.ReuseRec:
   case Mem.ReuseRec(r: Mem.Reuse, xr: Coll.List[I64], br: Coll.List[I64], v: Mem.RV)
@@ -1730,19 +1754,175 @@ def Mem.reuseRecs(rs: Coll.List[Mem.Reuse], ro: Mem.RegionsOf, acc: Coll.List[Me
     val ks: Coll.List[Mem.KSite] = Coll.sLookup(byDef, f) match
       case Coll.Some(xs) => xs
       case Coll.None => Coll.Nil
-    val br: Coll.List[I64] = Mem.kFind(ks, at, k) match
-      case Coll.Some(s) => Mem.idsOf(fills, s)
-      case Coll.None => Coll.Nil
-    Mem.reuseRecs(rest, ro, Coll.Cons(Mem.ReuseRec(r, xr, br, Mem.reuseVerdict(xr, br, outl)), acc))
+    val same = Mem.kAll(ks, at, k, Coll.Nil)
+    val br: Coll.List[I64] = same match
+      case Coll.Cons(s, _) =>
+        val Mem.KSite(_, _, id, _) = s
+        Mem.idsOf(fills, id)
+      case Coll.Nil => Coll.Nil
+    Mem.reuseRecs(rest, ro, Coll.Cons(Mem.ReuseRec(r, xr, br, Mem.reuseVerdict(same, xr, br, outl)), acc))
 
-def Mem.reuseVerdict(xr: Coll.List[I64], br: Coll.List[I64], outl: Coll.IMap[Coll.List[I64]]): Mem.RV =
-  if Coll.length(xr) == 0 || Coll.length(br) == 0 then Mem.RUnknown
+// the M1 sites of ks at line with ctor
+def Mem.kAll(ks: Coll.List[Mem.KSite], line: I64, ctor: Sym.Sym, acc: Coll.List[Mem.KSite]): Coll.List[Mem.KSite] = ks match
+  case Coll.Nil => acc
+  case Coll.Cons(k, rest) =>
+    val Mem.KSite(l, c, _, _) = k
+    Mem.kAll(rest, line, ctor, if l == line && Sym.eq(c, ctor) then Coll.Cons(k, acc) else acc)
+
+def Mem.inLoop(same: Coll.List[Mem.KSite]): Bool = same match
+  case Coll.Nil => false
+  case Coll.Cons(k, rest) =>
+    val Mem.KSite(_, _, _, loop) = k
+    loop || Mem.inLoop(rest)
+
+def Mem.reuseVerdict(same: Coll.List[Mem.KSite], xr: Coll.List[I64], br: Coll.List[I64], outl: Coll.IMap[Coll.List[I64]]): Mem.RV =
+  if Coll.length(same) > 1 then Mem.RAmbiguous
+  else if Mem.inLoop(same) then Mem.RInLoop
+  else if Coll.length(xr) == 0 || Coll.length(br) == 0 then Mem.RUnknown
   else
     val s: Mem.Safe = Mem.safeAll(xr, br, outl)
     s match
       case Mem.Shorter(a, b) => Mem.RShorter(a, b)
       case Mem.Outlives => Mem.ROk
       case Mem.NoStore => Mem.ROk
+
+// ── M13 (s2c --mem-reuse): the box an arm builds goes into the matched box's cell where the verdict is ok ──
+// a reuse to emit: the line of the box its arm builds, and its ctor (the match is the key)
+enum Mem.ReuseAt:
+  case Mem.ReuseAt(at: I64, ctor: Sym.Sym)
+
+// the ok reuses by match line
+def Mem.reuseTable(r: Mem.Report): Coll.IMap[Mem.ReuseAt] = r match
+  case Mem.Ok(_, _, _, _, rs, _, _) => Mem.okReuses(rs, Coll.Tip)
+  case Mem.RulesBad(_) => Coll.Tip
+
+def Mem.okReuses(rs: Coll.List[Mem.ReuseRec], m: Coll.IMap[Mem.ReuseAt]): Coll.IMap[Mem.ReuseAt] = rs match
+  case Coll.Nil => m
+  case Coll.Cons(rr, rest) =>
+    val Mem.ReuseRec(r, _, _, v) = rr
+    val Mem.Reuse(line, _, _, _, k, at) = r
+    val m2: Coll.IMap[Mem.ReuseAt] = v match
+      case Mem.ROk => Coll.insert(m, line, Mem.ReuseAt(at, k))
+      case _ => m
+    Mem.okReuses(rest, m2)
+
+// inside the arms of a reused match on local x of type ty: the box at line at with ctor ctor goes into x's cell when it
+// has type ty too (one generic case at two type args is two C structs, of two sizes)
+enum Mem.Cell:
+  case Mem.Cell(x: Sym.Sym, ty: K.Term, at: I64, ctor: Sym.Sym)
+
+def Mem.intoRes(res: Ty.Result, t: Coll.IMap[Mem.ReuseAt]): Ty.Result =
+  val Ty.Result(cl, is, s, fs, hs, gvs) = res
+  Ty.Result(cl, is, s, Mem.intoFns(fs, t), hs, gvs)
+
+def Mem.intoFns(fs: Coll.List[El.Fn], t: Coll.IMap[Mem.ReuseAt]): Coll.List[El.Fn] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val El.Fn(l, n, tps, caps, ps, ret, body) = f
+    val b2: El.Body = body match
+      case El.Def(e) => El.Def(Mem.intoE(t, Coll.None, e))
+      case El.Extern(_, _) => body
+    Coll.Cons(El.Fn(l, n, tps, caps, ps, ret, b2), Mem.intoFns(rest, t))
+
+def Mem.intoE(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], e: El.Expr): El.Expr = e match
+  case El.New(l, en, ts, c, at, args) =>
+    val args2 = Mem.intoEs(t, cell, args)
+    val at2: El.Alloc = cell match
+      case Coll.Some(cl) =>
+        val Mem.Cell(x, ty, a, k) = cl
+        if l == a && Sym.eq(c, k) && Mem.termEq(K.Con(en, ts), ty) then El.Into(x) else at
+      case Coll.None => at
+    El.New(l, en, ts, c, at2, args2)
+  case El.Match(l, x, en, arms) =>
+    val cell2: Coll.Option[Mem.Cell] = x match
+      case El.Local(_, v) => Coll.lookup(t, l) match
+        case Coll.Some(ra) =>
+          val Mem.ReuseAt(a, k) = ra
+          Coll.Some(Mem.Cell(v, en, a, k))
+        case Coll.None => cell
+      case _ => cell
+    El.Match(l, Mem.intoE(t, cell, x), en, Mem.intoArms(t, cell2, arms))
+  case El.CallFn(l, f, ts, caps, args) => El.CallFn(l, f, ts, caps, Mem.intoEs(t, cell, args))
+  case El.MHandled(l, x, h, caps, args, rest, a, ans) => El.MHandled(l, x, h, caps, Mem.intoEs(t, cell, args), Mem.intoE(t, cell, rest), a, ans)
+  case El.Resume(l, k, x) => El.Resume(l, k, Mem.intoE(t, cell, x))
+  case El.Op(l, recv, ty, op, args, cs) => El.Op(l, recv, ty, op, Mem.intoEs(t, cell, args), cs)
+  case El.TCall(l, ty, op, caps, args) => El.TCall(l, ty, op, caps, Mem.intoEs(t, cell, args))
+  case El.Bin(l, op, a, b) => El.Bin(l, op, Mem.intoE(t, cell, a), Mem.intoE(t, cell, b))
+  case El.Un(l, op, x) => El.Un(l, op, Mem.intoE(t, cell, x))
+  case El.If(l, c, th, x) => El.If(l, Mem.intoE(t, cell, c), Mem.intoE(t, cell, th), Mem.intoE(t, cell, x))
+  case El.Block(l, ss, last) => El.Block(l, Mem.intoSs(t, cell, ss), Mem.intoE(t, Mem.cellAfter(cell, ss), last))
+  case El.While(l, c, b) => El.While(l, Mem.intoE(t, cell, c), Mem.intoE(t, cell, b))
+  case El.Assign(l, x, v) => El.Assign(l, x, Mem.intoE(t, cell, v))
+  case El.Index(l, x, i) => El.Index(l, x, Mem.intoE(t, cell, i))
+  case El.Slice(l, x, o) => El.Slice(l, Mem.intoE(t, cell, x), Mem.intoE(t, cell, o))
+  case El.Fill(l, r, n, x, a) => El.Fill(l, r, Mem.intoE(t, cell, n), Mem.intoE(t, cell, x), a)
+  case El.Tab(l, r, n, a, i, g) => El.Tab(l, r, Mem.intoE(t, cell, n), a, i, Mem.intoE(t, cell, g))
+  case El.CellNew(l, r, v, a) => El.CellNew(l, r, Mem.intoE(t, cell, v), a)
+  case El.CellGet(l, c) => El.CellGet(l, Mem.intoE(t, cell, c))
+  case El.CField(l, c, n, f, ty) => El.CField(l, Mem.intoE(t, cell, c), n, f, ty)
+  case El.CellPut(l, c, v) => El.CellPut(l, Mem.intoE(t, cell, c), Mem.intoE(t, cell, v))
+  case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Mem.intoE(t, cell, i), Mem.intoE(t, cell, v))
+  case El.Blit(l, x, a, b, k) => El.Blit(l, x, Mem.intoE(t, cell, a), Mem.intoE(t, cell, b), Mem.intoE(t, cell, k))
+  case _ => e
+
+def Mem.intoEs(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(x, rest) => Coll.Cons(Mem.intoE(t, cell, x), Mem.intoEs(t, cell, rest))
+
+def Mem.intoArms(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], as: Coll.List[El.Arm]): Coll.List[El.Arm] = as match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(a, rest) =>
+    val El.Arm(l, p, b) = a
+    val cell2: Coll.Option[Mem.Cell] = p match
+      case Ast.PCase(_, xs) => Mem.unless(cell, xs)
+      case Ast.PAny => cell
+    Coll.Cons(El.Arm(l, p, Mem.intoE(t, cell2, b)), Mem.intoArms(t, cell, rest))
+
+// cell, unless one of xs rebinds its var (then the name is no longer the matched box)
+def Mem.unless(cell: Coll.Option[Mem.Cell], xs: Coll.List[Sym.Sym]): Coll.Option[Mem.Cell] = cell match
+  case Coll.Some(cl) =>
+    val Mem.Cell(x, _, _, _) = cl
+    if Mem.symIn(x, xs) then Coll.None else cell
+  case Coll.None => cell
+
+def Mem.symIn(x: Sym.Sym, xs: Coll.List[Sym.Sym]): Bool = xs match
+  case Coll.Nil => false
+  case Coll.Cons(y, rest) => Sym.eq(x, y) || Mem.symIn(x, rest)
+
+// two types are the same term (a type var only equals itself)
+def Mem.termEq(a: K.Term, b: K.Term): Bool = a match
+  case K.Var(n) => b match
+    case K.Var(m) => n == m
+    case _ => false
+  case K.Int(v) => b match
+    case K.Int(w) => v == w
+    case _ => false
+  case K.Con(f, xs) => b match
+    case K.Con(g, ys) => Sym.eq(f, g) && Mem.termsEq(xs, ys)
+    case _ => false
+
+def Mem.termsEq(xs: Coll.List[K.Term], ys: Coll.List[K.Term]): Bool = xs match
+  case Coll.Nil => ys match
+    case Coll.Nil => true
+    case Coll.Cons(_, _) => false
+  case Coll.Cons(x, xr) => ys match
+    case Coll.Nil => false
+    case Coll.Cons(y, yr) => Mem.termEq(x, y) && Mem.termsEq(xr, yr)
+
+// cell after the statements of a block (a val or handle that rebinds its var ends it)
+def Mem.cellAfter(cell: Coll.Option[Mem.Cell], ss: Coll.List[El.Stmt]): Coll.Option[Mem.Cell] = ss match
+  case Coll.Nil => cell
+  case Coll.Cons(s, rest) => s match
+    case El.Val(_, x, _, _, _) => Mem.cellAfter(Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest)
+    case El.Handle(_, x, _, _, _) => Mem.cellAfter(Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest)
+    case El.Do(_) => Mem.cellAfter(cell, rest)
+
+def Mem.intoSs(t: Coll.IMap[Mem.ReuseAt], cell: Coll.Option[Mem.Cell], ss: Coll.List[El.Stmt]): Coll.List[El.Stmt] = ss match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(s, rest) => s match
+    case El.Val(l, x, ty, mut, v) => Coll.Cons(El.Val(l, x, ty, mut, Mem.intoE(t, cell, v)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
+    case El.Handle(l, x, h, caps, args) => Coll.Cons(El.Handle(l, x, h, caps, Mem.intoEs(t, cell, args)), Mem.intoSs(t, Mem.unless(cell, Coll.Cons(x, Coll.Nil)), rest))
+    case El.Do(v) => Coll.Cons(El.Do(Mem.intoE(t, cell, v)), Mem.intoSs(t, cell, rest))
 
 // reuses by line (line * n + i is unique: i < n)
 def Mem.byReuseLine(rs: Coll.List[Mem.Reuse]): Coll.List[Mem.Reuse] =

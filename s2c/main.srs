@@ -403,6 +403,9 @@ enum S2c.Mode:
   case S2c.Fragment
   // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
   case S2c.MemAll
+  // --mem-reuse: as the C output, but a match on an unshared box builds its arm's box of the same case into the matched
+  // box's cell where --mem gives the reuse verdict ok (s2/mem.srs M13)
+  case S2c.EmitReuse
 
 // --mem: one JSON object on one line (read it with jq). regions: each handled Region, its def and the defs whose sites
 // fill it; sites: each allocation site of a region, its def, its bytes (null for an Array.fill), once or many and why,
@@ -735,7 +738,8 @@ def S2c.jWhy(w: Mem.Why): Unit = w match
 
 // each reuse: the match (at, def, var x, case), the box its arm builds (ctor, boxAt), the regions x can hold and the
 // regions the box would be made in, and the verdict: ok, regionShorter (x's region dies before the box's) or
-// regionUnknown (a region set is empty: no proof)
+// regionUnknown (a region set is empty: no proof), ambiguous (two boxes of the ctor on the line) or inLoop (a loop holds
+// the box: each turn would overwrite the cell)
 def S2c.jReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.ReuseRec], first: Bool): Unit = rs match
   case Coll.Nil => ()
   case Coll.Cons(rr, rest) =>
@@ -766,6 +770,8 @@ def S2c.jReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.ReuseRec], first: Boo
 def S2c.jRV(v: Mem.RV): Unit = v match
   case Mem.ROk => Console.print("\"ok\"")
   case Mem.RUnknown => Console.print("\"regionUnknown\"")
+  case Mem.RAmbiguous => Console.print("\"ambiguous\"")
+  case Mem.RInLoop => Console.print("\"inLoop\"")
   case Mem.RShorter(a, b) =>
     Console.print("\"regionShorter\",\"varRegion\":")
     Console.printI64(a)
@@ -852,6 +858,9 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.EmitAgree =>
     Emit.program(ds, res)
     0
+  case S2c.EmitReuse =>
+    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res)))))
+    0
   case S2c.EmitC =>
     Emit.program(ds, res)
     0
@@ -888,6 +897,7 @@ def S2c.args(): S2c.Args =
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--fragment") then S2c.Args(S2c.Fragment, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--mem") then S2c.Args(S2c.MemAll, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--mem-reuse") then S2c.Args(S2c.EmitReuse, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--l2-agree") then S2c.Args(S2c.EmitAgree, 2)
   else S2c.Args(S2c.EmitC, 1)
 
