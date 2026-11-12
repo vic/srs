@@ -680,17 +680,36 @@ def D.initRels(ics: Coll.IMap[Coll.List[I64]], id: I64, k: I64, acc: Coll.IMap[D
 enum D.Model:
   case D.Model(tab: Coll.List[D.RelRef], rels: Coll.IMap[D.Rel])
 
-// the input facts as rows of the input round; a relation that only facts name gets its id here
+// the input facts as rows of the input round; a relation that only facts name gets its id here. A run of facts of one
+// relation takes one id lookup and one insert into rels
 def D.load(tab: Coll.List[D.RelRef], fs: Coll.List[D.Fact], rels: Coll.IMap[D.Rel]): D.With[Coll.IMap[D.Rel]] = fs match
   case Coll.Nil => D.With(tab, rels)
-  case Coll.Cons(f, rest) =>
-    val D.Fact(rel, vals) = f
-    val D.With(tab2, ref) = D.internId(tab, rel)
-    val id = D.idOfRef(ref)
-    val rels2: Coll.IMap[D.Rel] = D.addNew(D.relOf(rels, id), D.Input(vals)) match
-      case Coll.None => rels
-      case Coll.Some(rl) => Coll.insert(rels, id, rl)
-    D.load(tab2, rest, rels2)
+  case Coll.Cons(f, rest) => D.loadIn(D.loadStart(tab, f, rels), rest)
+
+// a load in a run: rl is relation rel (id id) with the run's rows so far, not yet in rels
+enum D.Loading:
+  case D.Loading(tab: Coll.List[D.RelRef], rel: Sym.Sym, id: I64, rl: D.Rel, rels: Coll.IMap[D.Rel])
+
+def D.loadIn(st: D.Loading, fs: Coll.List[D.Fact]): D.With[Coll.IMap[D.Rel]] = fs match
+  case Coll.Nil =>
+    val D.Loading(tab, _, id, rl, rels) = st
+    D.With(tab, Coll.insert(rels, id, rl))
+  case Coll.Cons(f, rest) => D.loadIn(D.loadStep(st, f), rest)
+
+def D.loadStep(st: D.Loading, f: D.Fact): D.Loading =
+  val D.Loading(tab, rel, id, rl, rels) = st
+  val D.Fact(r, vals) = f
+  if Sym.eq(r, rel) then D.Loading(tab, rel, id, D.withRow(rl, vals), rels) else D.loadStart(tab, f, Coll.insert(rels, id, rl))
+
+def D.loadStart(tab: Coll.List[D.RelRef], f: D.Fact, rels: Coll.IMap[D.Rel]): D.Loading =
+  val D.Fact(r, vals) = f
+  val D.With(tab2, ref) = D.internId(tab, r)
+  val id = D.idOfRef(ref)
+  D.Loading(tab2, r, id, D.withRow(D.relOf(rels, id), vals), rels)
+
+def D.withRow(rl: D.Rel, vals: Coll.List[D.Val]): D.Rel = D.addNew(rl, D.Input(vals)) match
+  case Coll.None => rl
+  case Coll.Some(x) => x
 
 // a program's result: its model, or why it is not a program (an unsafe rule, a cycle through negation)
 enum D.Result:
