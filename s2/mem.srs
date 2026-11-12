@@ -82,7 +82,7 @@ enum Mem.Site:
 
 // a Region handle: the def it is in, its line, its name and its handler
 enum Mem.Region:
-  case Mem.Region(f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym)
+  case Mem.Region(f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym, end: I64)
 
 // what the walk knows of the program: defs by name, the constructors that allocate (a case with fields), the handlers
 // whose protocol is Region
@@ -135,12 +135,12 @@ def Mem.callN(w: Mem.W, at: Mem.At, line: I64, g: Sym.Sym, k: I64): Mem.W =
 
 // a new Region handle in def f: its id is the next one; the rest of the block runs under it. It lives inside the
 // innermost region handled around it in f (inside(R, outer)), else inside each region f runs in (top(R, f))
-def Mem.region(w: Mem.W, f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym, outer: Coll.Option[I64]): Mem.W =
+def Mem.region(w: Mem.W, f: Sym.Sym, line: I64, x: Sym.Sym, h: Sym.Sym, outer: Coll.Option[I64], end: I64): Mem.W =
   val Mem.W(ss, ns, rs, nr, fs, cs, fr) = w
   val nest: D.Fact = outer match
     case Coll.Some(o) => Mem.f2(Mem.RInside, D.VInt(nr), D.VInt(o))
     case Coll.None => Mem.f2(Mem.RTop, D.VInt(nr), D.VSym(f))
-  Mem.W(ss, ns, Coll.insert(rs, nr, Mem.Region(f, line, x, h)), nr + 1, Coll.Cons(nest, Coll.Cons(Mem.f2(Mem.RRegionIn, D.VInt(nr), D.VSym(f)), fs)), cs, fr)
+  Mem.W(ss, ns, Coll.insert(rs, nr, Mem.Region(f, line, x, h, end)), nr + 1, Coll.Cons(nest, Coll.Cons(Mem.f2(Mem.RRegionIn, D.VInt(nr), D.VSym(f)), fs)), cs, fr)
 
 def Mem.nextRegion(w: Mem.W): I64 =
   val Mem.W(_, _, _, nr, _, _, _) = w
@@ -217,7 +217,7 @@ def Mem.stmts(cx: Mem.Cx, at: Mem.At, w: Mem.W, ss: Coll.List[Ast.Stmt], last: A
       val Mem.Cx(_, _, rhs, _, _) = cx
       val w2 = Mem.exprs(cx, at, w, args)
       val Mem.At(f, outer, loop, sc) = at
-      if Mem.isIn(rhs, h) then Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop, Coll.sInsert(sc, x, Mem.nextRegion(w2))), Mem.region(w2, f, line, x, h, outer), rest, last)
+      if Mem.isIn(rhs, h) then Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop, Coll.sInsert(sc, x, Mem.nextRegion(w2))), Mem.region(w2, f, line, x, h, outer, Mem.lastLine(last, Mem.lastStmts(rest, line))), rest, last)
       else Mem.stmts(cx, at, w2, rest, last)
     case Ast.Val(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
     case Ast.Var(_, _, _, e) => Mem.stmts(cx, at, Mem.expr(cx, at, w, e), rest, last)
@@ -289,14 +289,14 @@ enum Mem.Row:
 // order of first site), and the lines of its manual frees (x.free()); the drop op frees it at the end of its block when
 // it is still live
 enum Mem.Block:
-  case Mem.Block(id: I64, line: I64, f: Sym.Sym, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row], defs: Coll.List[Sym.Sym], frees: Coll.List[I64])
+  case Mem.Block(id: I64, line: I64, f: Sym.Sym, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row], defs: Coll.List[Sym.Sym], frees: Coll.List[I64], end: I64)
 
 // a call x.free() in def f at line
 enum Mem.FreeAt:
   case Mem.FreeAt(f: Sym.Sym, line: I64, x: Sym.Sym)
 
 enum Mem.Report:
-  case Mem.Ok(bs: Coll.List[Mem.Block], pf: Coll.List[Mem.FreeAt], vs: Coll.List[Mem.VarRec], ms: Coll.List[Mem.MoveRec], rs: Coll.List[Mem.ReuseRec], cs: Coll.List[Mem.Compact], bad: Coll.List[Mem.Fail])
+  case Mem.Ok(bs: Coll.List[Mem.Block], pf: Coll.List[Mem.FreeAt], vs: Coll.List[Mem.VarRec], ms: Coll.List[Mem.MoveRec], rs: Coll.List[Mem.ReuseRec], cs: Coll.List[Mem.Compact], bad: Coll.List[Mem.Fail], dead: Coll.IMap[I64])
   case Mem.RulesBad(rel: Sym.Sym)
 
 // what the model says, by name or id
@@ -524,7 +524,7 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report 
       val mv0 = Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
       val outl = Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip)
       val mrs = Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, outl, Coll.Nil)
-      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Coll.revOnto(Mem.uafFails(bs, Mem.varsByDef(vrs, Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil)))
+      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Coll.revOnto(Mem.uafFails(bs, Mem.varsByDef(vrs, Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil)), Mem.deadLines(bs, Mem.varsByDef(vrs, Coll.sEmpty()), fs, Coll.Tip))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -794,7 +794,7 @@ def Mem.regionKeys(rs: Coll.IMap[Mem.Region], n: I64, ids: Coll.List[I64], acc: 
   case Coll.Nil => acc
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
-      val Mem.Region(_, line, _, _) = x
+      val Mem.Region(_, line, _, _, _) = x
       Mem.regionKeys(rs, n, rest, Coll.Cons(Coll.KV(line * n + r, r), acc))
     case Coll.None => Mem.regionKeys(rs, n, rest, acc)
 
@@ -820,10 +820,10 @@ def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss:
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
-      val Mem.Region(f, line, nm, h) = x
+      val Mem.Region(f, line, nm, h, end) = x
       val Mem.Model(_, _, byRegion, _, _, _) = md
       val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
-      val b = Mem.Block(r, line, f, nm, h, rows, Mem.rowDefs(rows, Coll.sEmpty(), Coll.Nil), Mem.freeLines(mf, f, nm, line, Coll.Nil))
+      val b = Mem.Block(r, line, f, nm, h, rows, Mem.rowDefs(rows, Coll.sEmpty(), Coll.Nil), Mem.freeLines(mf, f, nm, line, Coll.Nil), end)
       Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, Coll.Cons(b, acc))
     case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, acc)
 
@@ -850,7 +850,7 @@ def Mem.freedIn(m: Mem.FreeAt, bs: Coll.List[Mem.Block]): Bool = bs match
   case Coll.Nil => false
   case Coll.Cons(b, rest) =>
     val Mem.FreeAt(f, l, x) = m
-    val Mem.Block(_, line, g, y, _, _, _, _) = b
+    val Mem.Block(_, line, g, y, _, _, _, _, _) = b
     if l > line && Sym.eq(f, g) && Sym.eq(x, y) then true else Mem.freedIn(m, rest)
 
 // every call x.free() in the bodies of fs, in program order
@@ -1466,7 +1466,7 @@ def Mem.noRegionFails(es: Coll.List[Mem.ESite], bad: Coll.IMap[Bool], acc: Coll.
 def Mem.uafFails(bs: Coll.List[Mem.Block], byDef: Coll.SMap[Coll.List[Mem.VarRec]], acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = bs match
   case Coll.Nil => acc
   case Coll.Cons(b, rest) =>
-    val Mem.Block(r, _, f, _, _, _, _, frees) = b
+    val Mem.Block(r, _, f, _, _, _, _, frees, _) = b
     val vs: Coll.List[Mem.VarRec] = Coll.sLookup(byDef, f) match
       case Coll.Some(xs) => xs
       case Coll.None => Coll.Nil
@@ -1483,6 +1483,55 @@ def Mem.uafVars(vs: Coll.List[Mem.VarRec], r: I64, free: I64, acc: Coll.List[Mem
     val Mem.LV(_, uses, _, assigned) = lv
     val last = Mem.maxOf(uses, 0)
     Mem.uafVars(rest, r, free, if last > free && !assigned && Mem.inList(r, regions) then Coll.Cons(Mem.FUseAfterFree(f, x, last, r, free), acc) else acc)
+
+// ── M11: the last line that can touch each handled region (Polonius liveness at region grain): after it the region
+// could be freed (today its drop frees it at its block end) ──
+// by region id: the largest of the handle's line, the last read of a var of its def that can hold its boxes, a site of
+// its def in it, and a call of its def that runs in it (callAt: the callee fills it during the call)
+def Mem.deadLines(bs: Coll.List[Mem.Block], vbd: Coll.SMap[Coll.List[Mem.VarRec]], fs: Coll.List[D.Fact], acc: Coll.IMap[I64]): Coll.IMap[I64] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Mem.Block(r, line, f, _, _, rows, _, _, _) = b
+    val vs: Coll.List[Mem.VarRec] = Coll.sLookup(vbd, f) match
+      case Coll.Some(xs) => xs
+      case Coll.None => Coll.Nil
+    val d = Mem.callsIn(fs, f, r, Mem.rowsIn(rows, f, Mem.varsLast(vs, r, line)))
+    Mem.deadLines(rest, vbd, fs, Coll.insert(acc, r, d))
+
+def Mem.varsLast(vs: Coll.List[Mem.VarRec], r: I64, m: I64): I64 = vs match
+  case Coll.Nil => m
+  case Coll.Cons(v, rest) =>
+    val Mem.VarRec(_, _, _, regions, _, lv) = v
+    val Mem.LV(_, uses, _, _) = lv
+    val last = Mem.maxOf(uses, 0)
+    Mem.varsLast(rest, r, if Mem.inList(r, regions) && last > m then last else m)
+
+def Mem.rowsIn(rows: Coll.List[Mem.Row], f: Sym.Sym, m: I64): I64 = rows match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) =>
+    val Mem.Row(line, g, _, _, _, _) = x
+    Mem.rowsIn(rest, f, if Sym.eq(f, g) && line > m then line else m)
+
+// the calls of def f that run in region r (callAt(f, line, r) facts of the M1 walk)
+def Mem.callsIn(fs: Coll.List[D.Fact], f: Sym.Sym, r: I64, m: I64): I64 = fs match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) =>
+    val D.Fact(rel, vals) = x
+    Mem.callsIn(rest, f, r, if Sym.eq(rel, Mem.relSym(Mem.RCallAt)) then Mem.callAtLine(vals, f, r, m) else m)
+
+def Mem.callAtLine(vals: Coll.List[D.Val], f: Sym.Sym, r: I64, m: I64): I64 = vals match
+  case Coll.Cons(fv, t1) => t1 match
+    case Coll.Cons(lv, t2) => t2 match
+      case Coll.Cons(rv, _) => fv match
+        case D.VSym(g) => lv match
+          case D.VInt(line) => rv match
+            case D.VInt(q) => if Sym.eq(f, g) && q == r && line > m then line else m
+            case D.VSym(_) => m
+          case D.VSym(_) => m
+        case D.VInt(_) => m
+      case Coll.Nil => m
+    case Coll.Nil => m
+  case Coll.Nil => m
 
 // the var records by def
 def Mem.varsByDef(vs: Coll.List[Mem.VarRec], acc: Coll.SMap[Coll.List[Mem.VarRec]]): Coll.SMap[Coll.List[Mem.VarRec]] = vs match
@@ -1793,7 +1842,7 @@ enum Mem.ReuseAt:
 
 // the ok reuses by match line
 def Mem.reuseTable(r: Mem.Report): Coll.IMap[Mem.ReuseAt] = r match
-  case Mem.Ok(_, _, _, _, rs, _, _) => Mem.okReuses(rs, Coll.Tip)
+  case Mem.Ok(_, _, _, _, rs, _, _, _) => Mem.okReuses(rs, Coll.Tip)
   case Mem.RulesBad(_) => Coll.Tip
 
 def Mem.okReuses(rs: Coll.List[Mem.ReuseRec], m: Coll.IMap[Mem.ReuseAt]): Coll.IMap[Mem.ReuseAt] = rs match
@@ -2024,7 +2073,7 @@ def Mem.regionDefs(m: Coll.IMap[Mem.Region], i: I64, n: I64, acc: Coll.SMap[Bool
   if i == n then acc
   else Coll.lookup(m, i) match
     case Coll.Some(r) =>
-      val Mem.Region(f, _, _, _) = r
+      val Mem.Region(f, _, _, _, _) = r
       Mem.regionDefs(m, i + 1, n, Coll.sInsert(acc, f, true))
     case Coll.None => Mem.regionDefs(m, i + 1, n, acc)
 
