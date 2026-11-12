@@ -1,0 +1,69 @@
+// pass: a game loop's memory stays flat (tot-srs pattern): the world is an Array in main's Arena, written in place by
+// Array.put, and each tick's scratch values live in the tick's own Arena (handle t = Srs.Arena() in At.step), freed when
+// the tick ends. 2000 ticks of 640 boxes each: without the tick Arena the boxes would pile up in main's Arena (~20 MB;
+// with it each tick reuses one 1 MiB chunk). The peak RSS (VmHWM of /proc/self/status, kB) after tick 2000 must stay
+// under twice the peak after tick 100: a relative bar, so smaller boxes do not let a leak slip under a fixed limit
+enum At.Junk:
+  case At.Junk(a: I64, b: I64)
+
+def At.sum(j: At.Junk): I64 = j match
+  case At.Junk(a, b) => a + b
+
+def At.scratch(i: I64): I64 =
+  var acc = 0
+  var k = 0
+  while k < 640 do
+    acc = acc + At.sum(At.Junk(i, k))
+    k = k + 1
+  acc
+
+def At.get(n: I64, w: Array[I64](n), s: I64): I64 = if 0 <= s && s < n then w(s) else 0
+
+def At.step(n: I64, w: Array[I64](n), i: I64): Unit =
+  handle t = Srs.Arena()
+  val v = At.scratch(i)
+  val s = i % n
+  if 0 <= s && s < n then Array.put(w, s, At.get(n, w, s) + v) else ()
+
+// the number after "VmHWM:" in the text of /proc/self/status, or -1
+def At.hwm(s: Str): I64 =
+  var i = 0
+  var v = 0 - 1
+  val n = Str.len(s)
+  while v < 0 && i + 6 < n do
+    if Str.eq(Str.slice(s, i, i + 6), "VmHWM:") then
+      var j = i + 6
+      var x = 0
+      while j < n && (Str.at(s, j) == 32 || Str.at(s, j) == 9) do j = j + 1
+      while j < n && Str.at(s, j) >= 48 && Str.at(s, j) <= 57 do
+        x = x * 10 + Str.at(s, j) - 48
+        j = j + 1
+      v = x
+    else i = i + 1
+  v
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle m = Srs.Mut()
+  handle fs = Srs.Files()
+  val n = 1024
+  val w: Array[I64](n) = Array.fill(n, 0)
+  var i = 0
+  while i < 100 do
+    At.step(n, w, i)
+    i = i + 1
+  val early = At.peak()
+  while i < 2000 do
+    At.step(n, w, i)
+    i = i + 1
+  val late = At.peak()
+  Console.printI64(At.get(n, w, 5))
+  Console.print("\n")
+  Console.print(if early > 0 && late < 2 * early then "flat\n" else "grew\n")
+  0
+
+// the peak RSS so far (kB), or -1 when /proc is missing
+def At.peak(): I64 = Files.readAll("/proc/self/status") match
+  case Os.Ok(s) => At.hwm(s)
+  case Os.Fail(_) => 0 - 1
