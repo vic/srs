@@ -1,0 +1,32 @@
+// mem: moves per program point (T4, Polonius path_moved_at with cfg edges). MV.pick reads b in both arms: b moves at
+// each arm's line. MV.loop reads b in a while: the back edge keeps b live, so the read in the loop is no move; the read
+// after the loop is. MV.kill reads d, then assigns d: the assignment kills the old value, so the first read is a move too
+enum MV:
+  case MV(v: I64)
+
+def MV.get(b: MV): I64 = b match
+  case MV(v) => v
+
+def MV.pick(b: MV, k: Bool): I64 =
+  if k then MV.get(b)
+  else MV.get(b) + 1
+
+def MV.loop(b: MV, n: I64): I64 =
+  var i = 0
+  var s = 0
+  while i < n do
+    s = s + MV.get(b)
+    i = i + 1
+  s + MV.get(b)
+
+def MV.kill(x: I64): I64 =
+  var d = MV(x)
+  val a = MV.get(d)
+  d = MV(x + 1)
+  a + MV.get(d)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(MV.pick(MV(1), true) + MV.loop(MV(2), 3) + MV.kill(4))
+  0

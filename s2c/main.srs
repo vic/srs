@@ -491,6 +491,21 @@ def S2c.jSym(x: Sym.Sym): Unit = S2c.jStr(Sym.str(x))
 // "file:line" of line, or null for 0 (no line)
 def S2c.jAtOr(fs: Coll.List[S2c.File], line: I64): Unit = if line == 0 then Console.print("null") else S2c.jAt(fs, line)
 
+// lines in ascending order, each once
+def S2c.lineSet(ls: Coll.List[I64]): Coll.List[I64] =
+  val Coll.Sorted(kvs) = Coll.sortDedup(S2c.lineKVs(ls, Coll.Nil))
+  S2c.kvKeys(kvs, Coll.Nil)
+
+def S2c.lineKVs(ls: Coll.List[I64], acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] = ls match
+  case Coll.Nil => acc
+  case Coll.Cons(l, rest) => S2c.lineKVs(rest, Coll.Cons(Coll.KV(l, l), acc))
+
+def S2c.kvKeys(kvs: Coll.List[Coll.KV[I64]], acc: Coll.List[I64]): Coll.List[I64] = kvs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(kv, rest) =>
+    val Coll.KV(k, _) = kv
+    S2c.kvKeys(rest, Coll.Cons(k, acc))
+
 def S2c.jAts(fs: Coll.List[S2c.File], ls: Coll.List[I64], first: Bool): Unit = ls match
   case Coll.Nil => ()
   case Coll.Cons(l, rest) =>
@@ -575,13 +590,15 @@ def S2c.jManual(fs: Coll.List[S2c.File], ls: Coll.List[I64], id: I64): Unit = ls
     S2c.jManual(fs, rest, id)
 
 // each var node: its id, def, name, the regions whose boxes it can hold, why it is shared (false when it is not), the
-// line that binds it (null when no binder of its def does), the lines that read it, the last, and movedAt: the last read
-// when the var is unshared (its value moves there; Polonius path_moved_at), else null; binds: how many binders give the
+// line that binds it (null when no binder of its def does), the lines that read it, the last, and movedAt: each read
+// after which the var is not live on any path (Polonius path_moved_at, one per branch; a loop's back edge keeps a read
+// in the loop live; an assignment kills the old value), for a var that can hold a box (a scalar has none); binds: how
+// many binders give the
 // name in its def (more than one: shadowing, the lines merge); assigned: an assignment changes it
 def S2c.jVars(fs: Coll.List[S2c.File], vs: Coll.List[Mem.VarRec], first: Bool): Unit = vs match
   case Coll.Nil => ()
   case Coll.Cons(v, rest) =>
-    val Mem.VarRec(id, f, x, regions, why, lv) = v
+    val Mem.VarRec(id, f, x, regions, why, lv, moved) = v
     val Mem.LV(defAt, uses, binds, assigned, _) = lv
     val last = Mem.maxOf(uses, 0)
     S2c.jSep(first)
@@ -601,11 +618,9 @@ def S2c.jVars(fs: Coll.List[S2c.File], vs: Coll.List[Mem.VarRec], first: Bool): 
     S2c.jAts(fs, Coll.rev(uses), true)
     Console.print("],\"lastUse\":")
     S2c.jAtOr(fs, last)
-    Console.print(",\"movedAt\":")
-    val moved: I64 = why match
-      case Mem.NotShared => last
-      case _ => 0
-    S2c.jAtOr(fs, moved)
+    Console.print(",\"movedAt\":[")
+    S2c.jAts(fs, S2c.lineSet(moved), true)
+    Console.print("]")
     Console.print(",\"binds\":")
     Console.printI64(binds)
     val asg = if assigned then ",\"assigned\":true" else ",\"assigned\":false"
@@ -865,14 +880,14 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.HashAll =>
     Hs.print(ds)
     0
-  case S2c.MemAll => S2c.mem(fs, Mem.report(ds, Emit.memSites(ds, res)))
+  case S2c.MemAll => S2c.mem(fs, Mem.report(ds, Emit.memSites(ds, res), Mem.Full))
   case S2c.Fragment =>
     S2c.fragment(fs, Elgate.run(ds, res))
   case S2c.EmitAgree =>
     Emit.program(ds, res, Emit.Plain)
     0
   case S2c.EmitOpt =>
-    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res)))), Emit.MemOpt)
+    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res), Mem.ForEmit))), Emit.MemOpt)
     0
   case S2c.EmitC =>
     Emit.program(ds, res, Emit.Plain)
