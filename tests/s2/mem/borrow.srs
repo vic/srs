@@ -1,0 +1,44 @@
+// mem: an extern borrows a Str arg (it reads the bytes during the call and keeps no pointer: Str.eq, Str.len), so a
+// box whose field only such calls read dies, also through another box (BW.deep); Str.slice returns a view of its arg,
+// so a box whose field's slice is returned escapes
+enum BW:
+  case BW(s: Str)
+
+// BW.deep: a is stored in w, and only Str.eq reads a's Str through w: when an extern arg was a sink, w's contents
+// were sunk, so a escaped; now a dies
+enum BW2:
+  case BW2(b: BW)
+
+def BW.deep(x: Str): Bool =
+  val a = BW(x)
+  val w = BW2(a)
+  val y: BW = w match
+    case BW2(z) => z
+  y match
+    case BW(s) => Str.eq(s, "k")
+
+def BW.same(x: Str): Bool =
+  val b = BW(x)
+  b match
+    case BW(s) => Str.eq(s, "k")
+
+def BW.say(x: Str): I64 =
+  val b = BW(x)
+  b match
+    case BW(s) =>
+      Console.print(s)
+      Str.len(s)
+
+def BW.cut(x: Str): BW =
+  val b = BW(x)
+  b match
+    case BW(s) => BW(Str.slice(s, 0, 1))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val k = if BW.same("k") && BW.deep("k") then 1 else 0
+  val c = BW.cut("xy") match
+    case BW(s) => Str.len(s)
+  Console.printI64(k + BW.say("ab") + c)
+  0

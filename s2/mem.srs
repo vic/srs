@@ -1213,7 +1213,9 @@ def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Co
           val node = Mem.Node(Mem.kCall(), f, D.VInt(line))
           val w3 = Mem.toParams(g, node, w2, nss, ps, 0)
           if Mem.scalar(ret) then Mem.EV(w3, Coll.Nil) else Mem.EV(Mem.eFact(w3, Mem.FCallOf(node, g)), Coll.Cons(node, Coll.Nil))
-        case Ast.Extern(_) => Mem.unknown(Mem.sinkAll(w2, Mem.flat(nss, Coll.Nil)), Mem.Node(Mem.kCall(), f, D.VInt(line)))
+        case Ast.Extern(_) =>
+          val en = Mem.Node(Mem.kCall(), f, D.VInt(line))
+          Mem.unknown(Mem.externArgs(w2, nss, ps, en, Mem.scalar(ret)), en)
     case Coll.None => Mem.unknown(Mem.sinkAll(w2, Mem.flat(nss, Coll.Nil)), Mem.Node(Mem.kCall(), f, D.VInt(line)))
 
 // each arg's nodes, in arg order (the list of lists is built reversed and turned once)
@@ -2625,3 +2627,17 @@ def Mem.withMoved(vs: Coll.List[Mem.VarRec], mvd: Coll.SMap[Coll.SMap[Coll.List[
         case Coll.None => Coll.Nil
       case Coll.None => Coll.Nil
     Mem.withMoved(rest, mvd, Coll.Cons(Mem.VarRec(i, f, x, regions, why, lv, ls), acc))
+
+// the args of an extern call: a Str arg is borrowed (every Str extern reads its bytes during the call and keeps no
+// pointer: lib/prelude.srs Str.*, rt_print, rt_fs_*), and when the extern returns a value that can hold one (Str.slice
+// returns a view of its arg) the arg flows to the result; any other non-scalar arg (a Ptr: raw memory) is a sink
+def Mem.externArgs(w: Mem.EW, nss: Coll.List[Coll.List[Mem.Node]], ps: Coll.List[Ast.Binder], r: Mem.Node, retScalar: Bool): Mem.EW = nss match
+  case Coll.Nil => w
+  case Coll.Cons(ns, rest) => ps match
+    case Coll.Nil => Mem.externArgs(Mem.sinkAll(w, ns), rest, Coll.Nil, r, retScalar)
+    case Coll.Cons(p, prest) =>
+      val Ast.Binder(_, _, t) = p
+      val Ast.Ty(_, tn, _, _, _) = t
+      val isStr = Str.eq(Sym.str(tn), "Str")
+      val w2: Mem.EW = if isStr && retScalar then w else if isStr then Mem.flowTo(w, ns, r, Mem.MBind) else Mem.sinkAll(w, ns)
+      Mem.externArgs(w2, rest, prest, r, retScalar)
