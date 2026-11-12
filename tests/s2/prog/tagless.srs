@@ -36,6 +36,9 @@ def TL.two(t: TL.Two): I64 = t match
 def TL.one(o: TL.One): I64 = o match
   case TL.TOne(a, b) => a * b
 
+// nothing calls TL.unused: the optimized C has no f_TL__unused (tree shaking), the plain C has it (tests/run.sh)
+def TL.unused(x: I64): I64 = x + 1
+
 def main(): I64 =
   handle io = Srs.Console()
   handle r = Srs.Arena()

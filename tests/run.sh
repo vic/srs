@@ -85,6 +85,8 @@ export -f t_reuse
 reused=$(par t_reuse tests/s2/prog/*.srs) || fail=1
 printf '%s\n' "$reused" | grep -v '^reused ' | grep . || true
 case "$reused" in *"reused reuse_run"*) echo "ok reuse armed (reuse_run changed)";; *) echo "FAIL reuse unarmed: reuse_run C unchanged"; fail=1;; esac
+# tree shaking: prog/tagless's TL.unused is in the plain C and not in the optimized C
+if ! grep -q 'f_TL__unused' "$B/s2c1_tagless.c" && grep -q 'f_TL__unused' "$B/s2c1_reuse_tagless.c"; then echo "ok shake (TL.unused only in the plain C)"; else echo "FAIL shake: TL.unused in the optimized C or not in the plain C"; fail=1; fi
 # poison: with a prelude whose Arena fills each freed chunk's words with 0xA5.. before it is kept for reuse, a read of a
 # freed box reads garbage: every prog test still prints its .out (optimized and plain). armed: the sed changed the
 # prelude (the line it edits is there)

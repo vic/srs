@@ -80,13 +80,45 @@ def Mono.inBucket(ks: Coll.List[Mono.Key], k: Mono.Key): Bool = ks match
   case Coll.Cons(x, rest) => if Mono.keyEq(x, k) then true else Mono.inBucket(rest, k)
 
 // ── the worklist: roots first, then every generic call they reach, each key once ──
-def Mono.run(res: Ty.Result): Coll.List[Mono.Inst] =
-  val Ty.Result(_, _, s, fs, _, gvs) = res
-  Mono.loop(Mono.Cx(s, Mono.fnMap(fs, Coll.sEmpty()), gvs), Mono.roots(fs, Coll.Nil), Coll.BTip, Coll.Nil)
+def Mono.run(res: Ty.Result): Coll.List[Mono.Inst] = Mono.runFor(res, Mono.All)
 
-// what the worklist reads: the final substitution, the defs, the givens
+// All: every non-generic def is a root. FromMain (tree shaking, the mem optimization): main and the defs the handlers
+// call are the roots, and a non-generic def is an instance only when a call reaches it
+enum Mono.Shake:
+  case Mono.All
+  case Mono.FromMain
+
+def Mono.runFor(res: Ty.Result, sh: Mono.Shake): Coll.List[Mono.Inst] =
+  val Ty.Result(_, _, s, fs, hs, gvs) = res
+  val fm = Mono.fnMap(fs, Coll.sEmpty())
+  val cx = Mono.Cx(s, fm, gvs, sh)
+  sh match
+    case Mono.All => Mono.loop(cx, Mono.roots(fs, Coll.Nil), Coll.BTip, Coll.Nil)
+    case Mono.FromMain => Coll.sLookup(fm, Sym.of("main")) match
+      case Coll.None => Mono.loop(Mono.Cx(s, fm, gvs, Mono.All), Mono.roots(fs, Coll.Nil), Coll.BTip, Coll.Nil)
+      case Coll.Some(m) =>
+        val Mono.Grow(todo, made) = Mono.enqueue(cx, Mono.hCalls(s, hs, Coll.Nil), Coll.Nil, Coll.BTip)
+        Mono.loop(cx, Coll.Cons(Mono.Inst(m, Coll.Nil, Mono.Top), todo), Coll.bPushT(made, Mono.keyHash(Mono.Call(Sym.of("main"), Coll.Nil)), Mono.Call(Sym.of("main"), Coll.Nil)), Coll.Nil)
+
+// the calls in every handler fn
+def Mono.hCalls(s: K.Subst, hs: Coll.List[El.Handler], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = hs match
+  case Coll.Nil => acc
+  case Coll.Cons(h, rest) =>
+    val El.Handler(_, _, fs, _) = h
+    Mono.hCalls(s, rest, Mono.fnCalls(s, fs, acc))
+
+def Mono.fnCalls(s: K.Subst, fs: Coll.List[El.Fn], acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val El.Fn(_, _, _, _, _, _, body) = f
+    val acc2: Coll.List[Mono.Key] = body match
+      case El.Def(e) => Mono.calls(s, Coll.Nil, e, acc)
+      case _ => acc
+    Mono.fnCalls(s, rest, acc2)
+
+// what the worklist reads: the final substitution, the defs, the givens, the roots
 enum Mono.Cx:
-  case Mono.Cx(s: K.Subst, fs: Coll.SMap[El.Fn], gvs: Coll.List[El.Given])
+  case Mono.Cx(s: K.Subst, fs: Coll.SMap[El.Fn], gvs: Coll.List[El.Given], sh: Mono.Shake)
 
 def Mono.fnMap(fs: Coll.List[El.Fn], m: Coll.SMap[El.Fn]): Coll.SMap[El.Fn] = fs match
   case Coll.Nil => m
@@ -107,7 +139,7 @@ def Mono.loop(cx: Mono.Cx, todo: Coll.List[Mono.Inst], made: Coll.BTree[Coll.Lis
   case Coll.Nil => Coll.rev(out)
   case Coll.Cons(i, rest) =>
     val Mono.Inst(f, sub, _) = i
-    val Mono.Cx(s, _, _) = cx
+    val Mono.Cx(s, _, _, _) = cx
     val El.Fn(_, _, _, _, _, _, body) = f
     val ks: Coll.List[Mono.Key] = body match
       case El.Def(e) => Mono.calls(s, sub, e, Coll.Nil)
@@ -123,9 +155,17 @@ def Mono.enqueue(cx: Mono.Cx, ks: Coll.List[Mono.Key], todo: Coll.List[Mono.Inst
   case Coll.Nil => Mono.Grow(todo, made)
   case Coll.Cons(k, rest) =>
     val h = Mono.keyHash(k)
-    if Mono.inBucket(Coll.bTGetOr(made, h, Coll.Nil), k) then Mono.enqueue(cx, rest, todo, made)
+    val Mono.Cx(_, fs, gvs, sh) = cx
+    // a call with no type args: an instance only under FromMain (under All every non-generic def is a root)
+    val skip: Bool = k match
+      case Mono.Call(_, targs) => targs match
+        case Coll.Nil => sh match
+          case Mono.All => true
+          case Mono.FromMain => false
+        case Coll.Cons(_, _) => false
+      case Mono.Goal(_) => false
+    if skip || Mono.inBucket(Coll.bTGetOr(made, h, Coll.Nil), k) then Mono.enqueue(cx, rest, todo, made)
     else
-      val Mono.Cx(_, fs, gvs) = cx
       val todo2 = k match
         case Mono.Call(name, targs) => Coll.sLookup(fs, name) match
           case Coll.None => todo
@@ -198,7 +238,7 @@ def Mono.matchAll(xs: Coll.List[Sym.Sym], ps: Coll.List[K.Term], ts: Coll.List[K
 def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[Mono.Key]): Coll.List[Mono.Key] = e match
   case El.CallFn(_, f, ts, _, args) =>
     val acc2 = ts match
-      case Coll.Nil => acc
+      case Coll.Nil => Coll.Cons(Mono.Call(f, Coll.Nil), acc)
       case Coll.Cons(_, _) => Coll.Cons(Mono.Call(f, Mono.groundAll(s, sub, ts, Coll.Nil)), acc)
     Mono.callsAll(s, sub, args, acc2)
   case El.New(_, _, _, _, _, args) => Mono.callsAll(s, sub, args, acc)
