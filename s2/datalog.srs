@@ -349,18 +349,27 @@ def D.inst(env: Coll.List[D.Bind], args: Coll.List[D.Arg], acc: Coll.List[D.Val]
     case D.Unbound => Coll.None
     case D.Is(v) => D.inst(env, rest, Coll.Cons(v, acc))
 
-// each env's head tuple added as a row of round rd, unless its relation has it (from any round)
-def D.heads(rels: Coll.IMap[D.Rel], h: D.CAtom, rule: D.CRule, rd: I64, envs: Coll.List[Coll.List[D.Bind]]): Coll.IMap[D.Rel] = envs match
-  case Coll.Nil => rels
-  case Coll.Cons(e, rest) =>
-    val D.CAtom(relRef, args) = h
-    val rel = D.idOfRef(relRef)
-    D.inst(e, args, Coll.Nil) match
-      case Coll.None => D.heads(rels, h, rule, rd, rest)
-      case Coll.Some(t) =>
-        D.addNew(D.relOf(rels, rel), D.Made(rd, rule, t)) match
-          case Coll.None => D.heads(rels, h, rule, rd, rest)
-          case Coll.Some(rl) => D.heads(Coll.insert(rels, rel, rl), h, rule, rd, rest)
+// each env's head tuple added as a row of round rd, unless its relation has it (from any round). Every env writes the
+// one head relation: its rows go into rl, and rels takes rl once at the end (not one path copy of rels per row)
+def D.heads(rels: Coll.IMap[D.Rel], h: D.CAtom, rule: D.CRule, rd: I64, envs: Coll.List[Coll.List[D.Bind]]): Coll.IMap[D.Rel] =
+  val D.CAtom(relRef, args) = h
+  val rel = D.idOfRef(relRef)
+  D.headRows(rels, rel, D.relOf(rels, rel), D.Same, args, rule, rd, envs)
+
+// whether rl has rows that rels does not have yet
+enum D.Grew:
+  case D.Same
+  case D.Grown
+
+def D.headRows(rels: Coll.IMap[D.Rel], rel: I64, rl: D.Rel, g: D.Grew, args: Coll.List[D.Arg], rule: D.CRule, rd: I64, envs: Coll.List[Coll.List[D.Bind]]): Coll.IMap[D.Rel] = envs match
+  case Coll.Nil => g match
+    case D.Same => rels
+    case D.Grown => Coll.insert(rels, rel, rl)
+  case Coll.Cons(e, rest) => D.inst(e, args, Coll.Nil) match
+    case Coll.None => D.headRows(rels, rel, rl, g, args, rule, rd, rest)
+    case Coll.Some(t) => D.addNew(rl, D.Made(rd, rule, t)) match
+      case Coll.None => D.headRows(rels, rel, rl, g, args, rule, rd, rest)
+      case Coll.Some(rl2) => D.headRows(rels, rel, rl2, D.Grown, args, rule, rd, rest)
 
 // the envs whose negated atoms all fail: each tuple is in no round of its relation (a lower stratum, complete)
 def D.negOk(rels: Coll.IMap[D.Rel], negs: Coll.List[D.CAtom], e: Coll.List[D.Bind]): Bool = negs match
