@@ -1538,10 +1538,11 @@ def Emit.keepExtern(abi: Ast.Abi, cs: Coll.ISet, n: Sym.Sym): Bool = abi match
   case Ast.AbiSrs => Coll.setHas(cs, Sym.hash(n))
 
 // the prototype of a libc extern: the C compiler checks it against the real declaration (C11 6.7p4). A ghost param (an
-// Array length) is no C param, an Array param is void* (the call converts uint8_t* to it), `...` ends a variadic one
+// Array length) is no C param, an Array param is void* (the call converts uint8_t* to it), `...` ends a variadic one.
+// A Unit result is void (no call of one compiles yet: the first prelude caller adds its call form, with a test)
 def Emit.libcSig(cx: Emit.Cx, fi: Emit.Fi, ghost: Coll.List[Bool], va: Bool): Unit =
   val Emit.Fi(self, _, _, slots, ret) = fi
-  Emit.ctype(cx, ret)
+  if Emit.isUnitTy(ret) then Console.print("void") else Emit.ctype(cx, ret)
   Console.print(" ")
   Emit.id(self)
   Console.print("(")
@@ -1688,6 +1689,10 @@ def Emit.isLibcValCall(cx: Emit.Cx, f: Sym.Sym): Bool = Emit.libcValTy(cx, f) ma
   case Coll.Some(_) => true
   case Coll.None => false
 
+def Emit.isUnitTy(t: K.Term): Bool = t match
+  case K.Con(n, _) => Str.eq(Sym.str(n), "Unit")
+  case _ => false
+
 // ((T)(NAME)): the cast gives the srs type whatever the C type of the macro
 def Emit.libcValRead(cx: Emit.Cx, f: Sym.Sym): Unit = Emit.libcValTy(cx, f) match
   case Coll.Some(t) =>
@@ -1701,7 +1706,7 @@ def Emit.libcValRead(cx: Emit.Cx, f: Sym.Sym): Unit = Emit.libcValTy(cx, f) matc
 // a program with a libc extern includes the libc headers, so the C compiler checks our prototype of each libc extern
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
 def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl], cs: Coll.ISet): Unit =
-  if Emit.anyLibc(fs, cs) || Emit.anyCStruct(ds) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
+  if Emit.anyLibc(fs, cs) || Emit.anyCStruct(ds) then Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\n#include <termios.h>\n#include <time.h>\n#include <poll.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n") else ()
 
 // a program that declares an extern "libc" struct includes the libc headers: the C compiler checks every field against them
 def Emit.anyCStruct(ds: Coll.List[Ast.Decl]): Bool = ds match
