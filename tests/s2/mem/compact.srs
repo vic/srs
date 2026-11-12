@@ -1,0 +1,49 @@
+// mem: a def that makes many boxes and returns a few new ones can run in a scratch region and copy its result out;
+// not when its result holds no new box, a box of its run reaches a sink, it calls itself, it returns only its param, or
+// its run makes a bounded few boxes
+enum CL:
+  case CN
+  case CC(h: I64, t: CL)
+
+enum CS:
+  case CS(v: I64)
+
+def CL.build(n: I64, acc: CL): CL = if n == 0 then acc else CL.build(n - 1, CC(n, acc))
+
+def CL.total(l: CL, s: I64): I64 = l match
+  case CN => s
+  case CC(h, t) => CL.total(t, s + h)
+
+def CS.get(c: CS): I64 = c match
+  case CS(v) => v
+
+def C.summary(n: I64): CS = CS(CL.total(CL.build(n, CN), 0))
+
+def C.count(n: I64): I64 = CL.total(CL.build(n, CN), 0)
+
+def C.keep(b: CS, n: I64): CS =
+  val k = CL.total(CL.build(n, CN), 0)
+  b
+
+def C.store {r: Region} (m: I64, xs: Array[CS](m)<r>): I64 =
+  val i = 0
+  val u = if 0 <= i && i < m then Array.put(xs, i, CS(CL.total(CL.build(3, CN), 0))) else ()
+  0
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle mu = Srs.Mut()
+  val m = 1
+  val xs = Array.fill(m, CS(0))
+  Console.printI64(CS.get(C.summary(4)) + C.count(4) + CS.get(C.keep(CS(1), 2)) + C.store(m, xs) + CS.get(C.sink(2)) + CS.get(C.small(3)))
+  0
+
+def C.sink(n: I64): CS =
+  val k = 1
+  val ys = Array.fill(k, CS(0))
+  val i = 0
+  val u = if 0 <= i && i < k then Array.put(ys, i, CS(CL.total(CL.build(n, CN), 0))) else ()
+  CS(5)
+
+def C.small(x: I64): CS = CS(x)

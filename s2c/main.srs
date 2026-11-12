@@ -408,7 +408,7 @@ enum S2c.Mode:
 // for an Array.fill), then the total: the once sites and their bytes, the many sites
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs, rs) =>
+  case Mem.Ok(bs, rs, cs) =>
     val S2c.MemCount(once, onceB, many, die) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0, 0))
     Console.print("total: ")
     Console.printI64(once)
@@ -420,6 +420,7 @@ def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
     Console.printI64(die)
     Console.print(" die\n")
     S2c.memReuses(fs, rs)
+    S2c.memCompacts(fs, cs)
     0
 
 // "reuse file:line x: C -> K": the match at line on x can build its arm's K box in the cell of x's C box (M7a)
@@ -619,3 +620,15 @@ def S2c.terms(ts: Coll.List[K.Term]): Unit = ts match
     Console.eprint(", ")
     S2c.term(t)
     S2c.terms(rest)
+
+// "compact file:line F": F can run in a scratch region and copy its result out to the caller's (M6a)
+def S2c.memCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact]): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Mem.Compact(line, f) = c
+    Console.print("compact ")
+    S2c.place(fs, line)
+    Console.print(" ")
+    Console.print(Sym.str(f))
+    Console.print("\n")
+    S2c.memCompacts(fs, rest)
