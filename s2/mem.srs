@@ -306,12 +306,12 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
       val Mem.IT(defs, _, vars, _, mvs) = it
       val sm = Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
       val rin = Mem.groupN(D.tuples(m, Mem.eSym(Mem.ERin)), Coll.Tip)
-      val vrs = Mem.varRecs(vars, rin, sm, Coll.Nil)
+      val vrs = Mem.varRecs(vars, rin, sm, Mem.liveFns(Coll.revOnto(dfs, fl), Coll.sEmpty()), Coll.Nil)
       val Mem.Sh7(_, _, shared) = sm
       val mv0 = Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
       val outl = Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip)
       val mrs = Mem.moveRecs(Coll.revOnto(mv0, mvs), rin, Mem.groupN(D.tuples(m, Mem.eSym(Mem.EOwn)), Coll.Tip), shared, outl, Coll.Nil)
-      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil))
+      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), vrs, mrs, Mem.reuseRecs(Mem.byReuseLine(reuse), Mem.RegionsOf(defs, rin, Mem.groupN(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), byDef, outl), Coll.Nil), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil), Coll.revOnto(Mem.uafFails(bs, Mem.varsByDef(vrs, Coll.sEmpty()), Coll.Nil), Mem.noRegionFails(Coll.rev(esites), Mem.idSet(D.tuples(m, Mem.eSym(Mem.ENoRegion)), Coll.Tip), Coll.Nil)))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -322,9 +322,10 @@ enum Mem.Why7:
   case Mem.ByUnknown
   case Mem.ByFlow
 
-// a var node: its id, def and name, the regions whose boxes it can hold (rin), why it is shared
+// a var node: its id, def and name, the regions whose boxes it can hold (rin), why it is shared, and its lines: where it
+// is bound (0 when unknown: a name no binder of its def gives) and every line that reads it, newest first
 enum Mem.VarRec:
-  case Mem.VarRec(id: I64, f: Sym.Sym, x: Sym.Sym, regions: Coll.List[I64], why: Mem.Why7)
+  case Mem.VarRec(id: I64, f: Sym.Sym, x: Sym.Sym, regions: Coll.List[I64], why: Mem.Why7, lv: Mem.LV)
 
 // a move's region safety: a move that stores no box (bind, assign, pattern, ret, arg, result: the target names the same
 // box); a field move whose every source region outlives (or is) every region of the new box; else the first pair that
@@ -368,12 +369,142 @@ def Mem.inList(y: I64, xs: Coll.List[I64]): Bool = xs match
   case Coll.Cons(x, rest) => if x == y then true else Mem.inList(y, rest)
 
 // the var nodes in id order (vars is newest first)
-def Mem.varRecs(vars: Coll.List[Coll.KV[Mem.VarOf]], rin: Coll.IMap[Coll.List[I64]], sm: Mem.Sh7, acc: Coll.List[Mem.VarRec]): Coll.List[Mem.VarRec] = vars match
+def Mem.varRecs(vars: Coll.List[Coll.KV[Mem.VarOf]], rin: Coll.IMap[Coll.List[I64]], sm: Mem.Sh7, lv: Coll.SMap[Coll.SMap[Mem.LV]], acc: Coll.List[Mem.VarRec]): Coll.List[Mem.VarRec] = vars match
   case Coll.Nil => acc
   case Coll.Cons(kv, rest) =>
     val Coll.KV(i, vo) = kv
     val Mem.VarOf(f, x) = vo
-    Mem.varRecs(rest, rin, sm, Coll.Cons(Mem.VarRec(i, f, x, Mem.idsOf(rin, i), Mem.whyOf(sm, i)), acc))
+    Mem.varRecs(rest, rin, sm, lv, Coll.Cons(Mem.VarRec(i, f, x, Mem.idsOf(rin, i), Mem.whyOf(sm, i), Mem.lvOf(lv, f, x)), acc))
+
+// and each line that reads it, newest first. A read inside a while counts at the loop's last line: the loop runs again.
+// binds: how many binders give the name in the def (shadowing: more than one, and their lines merge); assigned: an
+// assignment changes its boxes at a point
+enum Mem.LV:
+  case Mem.LV(defAt: I64, uses: Coll.List[I64], binds: I64, assigned: Bool)
+
+def Mem.lvOf(lv: Coll.SMap[Coll.SMap[Mem.LV]], f: Sym.Sym, x: Sym.Sym): Mem.LV = Coll.sLookup(lv, f) match
+  case Coll.Some(m) => Mem.lvIn(m, x)
+  case Coll.None => Mem.LV(0, Coll.Nil, 0, false)
+
+def Mem.lvIn(m: Coll.SMap[Mem.LV], x: Sym.Sym): Mem.LV = Coll.sLookup(m, x) match
+  case Coll.Some(v) => v
+  case Coll.None => Mem.LV(0, Coll.Nil, 0, false)
+
+// the largest line of a list (0 when empty)
+def Mem.maxOf(xs: Coll.List[I64], m: I64): I64 = xs match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) => Mem.maxOf(rest, if x > m then x else m)
+
+// each fn's names: params bound at the fn's line, then its body
+def Mem.liveFns(fs: Coll.List[Ast.Fn], acc: Coll.SMap[Coll.SMap[Mem.LV]]): Coll.SMap[Coll.SMap[Mem.LV]] = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(line, n, _, ps, _, _, body) = f
+    val m0: Coll.SMap[Mem.LV] = Coll.sLookup(acc, n) match
+      case Coll.Some(m) => m
+      case Coll.None => Coll.sEmpty()
+    val m1 = Mem.lvParams(ps, line, m0)
+    val m2: Coll.SMap[Mem.LV] = body match
+      case Ast.Def(_, e) => Mem.lvx(e, 0, m1)
+      case Ast.Extern(_) => m1
+    Mem.liveFns(rest, Coll.sInsert(acc, n, m2))
+
+def Mem.lvParams(ps: Coll.List[Ast.Binder], line: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = ps match
+  case Coll.Nil => m
+  case Coll.Cons(p, rest) =>
+    val Ast.Binder(_, x, _) = p
+    Mem.lvParams(rest, line, Mem.lvBind(m, x, line))
+
+def Mem.lvBind(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64): Coll.SMap[Mem.LV] =
+  val Mem.LV(_, us, n, a) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(line, us, n + 1, a))
+
+// x is assigned in its def (its boxes change at a point: the analysis has no kill, so it claims nothing after a free)
+def Mem.lvAssign(m: Coll.SMap[Mem.LV], x: Sym.Sym): Coll.SMap[Mem.LV] =
+  val Mem.LV(d, us, n, _) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(d, us, n, true))
+
+// a read of x at line, or at floor when a loop around it ends later
+def Mem.lvUse(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64, floor: I64): Coll.SMap[Mem.LV] =
+  val Mem.LV(d, us, n, a) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(d, Coll.Cons(if line > floor then line else floor, us), n, a))
+
+def Mem.lvx(e: Ast.Expr, floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = e match
+  case Ast.Name(line, x) => Mem.lvUse(m, x, line, floor)
+  case Ast.Call(_, _, _, _, args) => Mem.lvxs(args, floor, m)
+  case Ast.Method(_, _, _, args) => Mem.lvxs(args, floor, m)
+  case Ast.Resume(_, _, x) => Mem.lvx(x, floor, m)
+  case Ast.Bin(_, _, l, r) => Mem.lvx(r, floor, Mem.lvx(l, floor, m))
+  case Ast.Un(_, _, x) => Mem.lvx(x, floor, m)
+  case Ast.If(_, c, t, x) => Mem.lvxs(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor, m)
+  case Ast.Match(_, s, arms) => Mem.lvArms(arms, floor, Mem.lvx(s, floor, m))
+  case Ast.Block(_, ss, last) => Mem.lvx(last, floor, Mem.lvStmts(ss, floor, m))
+  case Ast.While(_, c, b) =>
+    val end = Mem.lastLine(b, Mem.lastLine(c, floor))
+    Mem.lvx(b, end, Mem.lvx(c, end, m))
+  case Ast.Assign(line, x, v) => Mem.lvx(v, floor, Mem.lvAssign(Mem.lvUse(m, x, line, floor), x))
+  case _ => m
+
+def Mem.lvxs(es: Coll.List[Ast.Expr], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = es match
+  case Coll.Nil => m
+  case Coll.Cons(e, rest) => Mem.lvxs(rest, floor, Mem.lvx(e, floor, m))
+
+def Mem.lvArms(arms: Coll.List[Ast.Arm], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = arms match
+  case Coll.Nil => m
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(line, p, b) = a
+    val m2: Coll.SMap[Mem.LV] = p match
+      case Ast.PCase(_, xs) => Mem.lvBinds(xs, line, m)
+      case Ast.PAny => m
+    Mem.lvArms(rest, floor, Mem.lvx(b, floor, m2))
+
+def Mem.lvBinds(xs: Coll.List[Sym.Sym], line: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = xs match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) => Mem.lvBinds(rest, line, Mem.lvBind(m, x, line))
+
+def Mem.lvStmts(ss: Coll.List[Ast.Stmt], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = ss match
+  case Coll.Nil => m
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line))
+    case Ast.Var(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line))
+    case Ast.Handle(line, x, _, args) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvxs(args, floor, m), x, line))
+    case Ast.Do(e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
+    case Ast.Check(_, _, e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
+
+// the last line an expression spans (at least floor): the largest line of its parts
+def Mem.lastLine(e: Ast.Expr, floor: I64): I64 = e match
+  case Ast.Name(line, _) => if line > floor then line else floor
+  case Ast.Int(line, _) => if line > floor then line else floor
+  case Ast.Call(line, _, _, _, args) => Mem.lastLines(args, if line > floor then line else floor)
+  case Ast.Method(line, _, _, args) => Mem.lastLines(args, if line > floor then line else floor)
+  case Ast.Resume(_, _, x) => Mem.lastLine(x, floor)
+  case Ast.Bin(_, _, l, r) => Mem.lastLine(r, Mem.lastLine(l, floor))
+  case Ast.Un(_, _, x) => Mem.lastLine(x, floor)
+  case Ast.If(_, c, t, x) => Mem.lastLines(Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), floor)
+  case Ast.Match(_, s, arms) => Mem.lastArms(arms, Mem.lastLine(s, floor))
+  case Ast.Block(_, ss, last) => Mem.lastLine(last, Mem.lastStmts(ss, floor))
+  case Ast.While(_, c, b) => Mem.lastLine(b, Mem.lastLine(c, floor))
+  case Ast.Assign(line, _, x) => Mem.lastLine(x, if line > floor then line else floor)
+  case _ => floor
+
+def Mem.lastLines(es: Coll.List[Ast.Expr], floor: I64): I64 = es match
+  case Coll.Nil => floor
+  case Coll.Cons(e, rest) => Mem.lastLines(rest, Mem.lastLine(e, floor))
+
+def Mem.lastArms(arms: Coll.List[Ast.Arm], floor: I64): I64 = arms match
+  case Coll.Nil => floor
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(line, _, b) = a
+    Mem.lastArms(rest, Mem.lastLine(b, if line > floor then line else floor))
+
+def Mem.lastStmts(ss: Coll.List[Ast.Stmt], floor: I64): I64 = ss match
+  case Coll.Nil => floor
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
+    case Ast.Var(line, _, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, if line > floor then line else floor))
+    case Ast.Handle(line, _, _, args) => Mem.lastStmts(rest, Mem.lastLines(args, if line > floor then line else floor))
+    case Ast.Do(e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
+    case Ast.Check(_, _, e) => Mem.lastStmts(rest, Mem.lastLine(e, floor))
 
 // the node sets of the sharing relations
 enum Mem.Sh7:
@@ -1079,18 +1210,52 @@ def Mem.failRules(): Coll.List[D.Rule] =
   val none = D.Rule(Mem.eAtom(Mem.ENoRegion, Coll.Cons(Mem.v(14), Coll.Nil)), Coll.Cons(siteOf, Coll.Cons(reached, Coll.Cons(node, Mem.lit1(D.Neg(Mem.eAtom(Mem.EHasOwn, Mem.nN())))))))
   Coll.Cons(has, Coll.Cons(none, Coll.Nil))
 
-// a failed sanity check: which check, and the site it names (def, line, ctor)
-enum Mem.Check:
-  case Mem.CNoRegion
-
+// a failed sanity check, each with what it names: a site of a reached def whose box has no region (def, line, ctor); a
+// var that can hold a box of region r, read at line use after r.free() at line free in the def that handles r (Polonius
+// errors: a live loan invalidated)
 enum Mem.Fail:
-  case Mem.Fail(c: Mem.Check, f: Sym.Sym, line: I64, ctor: Sym.Sym)
+  case Mem.FNoRegion(f: Sym.Sym, line: I64, ctor: Sym.Sym)
+  case Mem.FUseAfterFree(f: Sym.Sym, x: Sym.Sym, use: I64, r: I64, free: I64)
 
 def Mem.noRegionFails(es: Coll.List[Mem.ESite], bad: Coll.IMap[Bool], acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = es match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(e, rest) =>
     val Mem.ESite(id, f, line, ctor) = e
-    Mem.noRegionFails(rest, bad, if Mem.hasId(bad, id) then Coll.Cons(Mem.Fail(Mem.CNoRegion, f, line, ctor), acc) else acc)
+    Mem.noRegionFails(rest, bad, if Mem.hasId(bad, id) then Coll.Cons(Mem.FNoRegion(f, line, ctor), acc) else acc)
+
+// each manual free of a handled region against the vars of its def that can hold its boxes: a read after the free.
+// Only a var bound once and never assigned: the analysis has one node per name and no kill at an assignment, so for
+// the others it claims nothing (vars[].binds and assigned show which)
+def Mem.uafFails(bs: Coll.List[Mem.Block], byDef: Coll.SMap[Coll.List[Mem.VarRec]], acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = bs match
+  case Coll.Nil => acc
+  case Coll.Cons(b, rest) =>
+    val Mem.Block(r, _, f, _, _, _, _, frees) = b
+    val vs: Coll.List[Mem.VarRec] = Coll.sLookup(byDef, f) match
+      case Coll.Some(xs) => xs
+      case Coll.None => Coll.Nil
+    Mem.uafFails(rest, byDef, Mem.uafFrees(frees, r, vs, acc))
+
+def Mem.uafFrees(frees: Coll.List[I64], r: I64, vs: Coll.List[Mem.VarRec], acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = frees match
+  case Coll.Nil => acc
+  case Coll.Cons(l, rest) => Mem.uafFrees(rest, r, vs, Mem.uafVars(vs, r, l, acc))
+
+def Mem.uafVars(vs: Coll.List[Mem.VarRec], r: I64, free: I64, acc: Coll.List[Mem.Fail]): Coll.List[Mem.Fail] = vs match
+  case Coll.Nil => acc
+  case Coll.Cons(v, rest) =>
+    val Mem.VarRec(_, f, x, regions, _, lv) = v
+    val Mem.LV(_, uses, binds, assigned) = lv
+    val last = Mem.maxOf(uses, 0)
+    Mem.uafVars(rest, r, free, if last > free && binds == 1 && !assigned && Mem.inList(r, regions) then Coll.Cons(Mem.FUseAfterFree(f, x, last, r, free), acc) else acc)
+
+// the var records by def
+def Mem.varsByDef(vs: Coll.List[Mem.VarRec], acc: Coll.SMap[Coll.List[Mem.VarRec]]): Coll.SMap[Coll.List[Mem.VarRec]] = vs match
+  case Coll.Nil => acc
+  case Coll.Cons(v, rest) =>
+    val Mem.VarRec(_, f, _, _, _, _) = v
+    val xs: Coll.List[Mem.VarRec] = Coll.sLookup(acc, f) match
+      case Coll.Some(ys) => ys
+      case Coll.None => Coll.Nil
+    Mem.varsByDef(rest, Coll.sInsert(acc, f, Coll.Cons(v, xs)))
 
 // the moves across a call: marg(M, G, P) an arg node into its callee's param, mres(X, G, C) a callee's result into its
 // call (vars: M 3, G 6, I 7, C 8, P 0, X 11)

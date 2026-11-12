@@ -420,7 +420,7 @@ def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
     S2c.jFrees(fs, bs, true)
     S2c.jParamFrees(fs, pf, Coll.length(bs) == 0)
     Console.print("],\"vars\":[")
-    S2c.jVars(vs, true)
+    S2c.jVars(fs, vs, true)
     Console.print("],\"moves\":[")
     S2c.jMoves(ms, true)
     Console.print("],\"total\":{\"once\":")
@@ -482,6 +482,16 @@ def S2c.jChar(c: I64): Unit =
 def S2c.jHex(d: I64): Unit = if d < 10 then Console.printChar(48 + d) else Console.printChar(87 + d)
 
 def S2c.jSym(x: Sym.Sym): Unit = S2c.jStr(Sym.str(x))
+
+// "file:line" of line, or null for 0 (no line)
+def S2c.jAtOr(fs: Coll.List[S2c.File], line: I64): Unit = if line == 0 then Console.print("null") else S2c.jAt(fs, line)
+
+def S2c.jAts(fs: Coll.List[S2c.File], ls: Coll.List[I64], first: Bool): Unit = ls match
+  case Coll.Nil => ()
+  case Coll.Cons(l, rest) =>
+    S2c.jSep(first)
+    S2c.jAt(fs, l)
+    S2c.jAts(fs, rest, false)
 
 // "file:line" of a program line as a JSON string
 def S2c.jAt(fs: Coll.List[S2c.File], line: I64): Unit =
@@ -548,11 +558,16 @@ def S2c.jManual(fs: Coll.List[S2c.File], ls: Coll.List[I64], id: I64): Unit = ls
     Console.print("},")
     S2c.jManual(fs, rest, id)
 
-// each var node: its id, def, name, the regions whose boxes it can hold, and why it is shared (false when it is not)
-def S2c.jVars(vs: Coll.List[Mem.VarRec], first: Bool): Unit = vs match
+// each var node: its id, def, name, the regions whose boxes it can hold, why it is shared (false when it is not), the
+// line that binds it (null when no binder of its def does), the lines that read it, the last, and movedAt: the last read
+// when the var is unshared (its value moves there; Polonius path_moved_at), else null; binds: how many binders give the
+// name in its def (more than one: shadowing, the lines merge); assigned: an assignment changes it
+def S2c.jVars(fs: Coll.List[S2c.File], vs: Coll.List[Mem.VarRec], first: Bool): Unit = vs match
   case Coll.Nil => ()
   case Coll.Cons(v, rest) =>
-    val Mem.VarRec(id, f, x, regions, why) = v
+    val Mem.VarRec(id, f, x, regions, why, lv) = v
+    val Mem.LV(defAt, uses, binds, assigned) = lv
+    val last = Mem.maxOf(uses, 0)
     S2c.jSep(first)
     Console.print("{\"id\":")
     Console.printI64(id)
@@ -564,8 +579,23 @@ def S2c.jVars(vs: Coll.List[Mem.VarRec], first: Bool): Unit = vs match
     S2c.jInts(regions, true)
     Console.print("],\"shared\":")
     S2c.jWhy7(why)
+    Console.print(",\"defAt\":")
+    S2c.jAtOr(fs, defAt)
+    Console.print(",\"uses\":[")
+    S2c.jAts(fs, Coll.rev(uses), true)
+    Console.print("],\"lastUse\":")
+    S2c.jAtOr(fs, last)
+    Console.print(",\"movedAt\":")
+    val moved: I64 = why match
+      case Mem.NotShared => last
+      case _ => 0
+    S2c.jAtOr(fs, moved)
+    Console.print(",\"binds\":")
+    Console.printI64(binds)
+    val asg = if assigned then ",\"assigned\":true" else ",\"assigned\":false"
+    Console.print(asg)
     Console.print("}")
-    S2c.jVars(rest, false)
+    S2c.jVars(fs, rest, false)
 
 // each move: kind, def (the def of a walk move; the callee of an arg or result move), the node ids it moves from and
 // to (a var's id is its vars id), unique (its source is unshared), the regions of both ends, and its region safety:
@@ -742,21 +772,35 @@ def S2c.jRV(v: Mem.RV): Unit = v match
     Console.print(",\"boxRegion\":")
     Console.printI64(b)
 
-// each failed sanity check: the check and the site it names; empty on every program
+// each failed sanity check and what it names; empty on every program
 def S2c.jFails(fs: Coll.List[S2c.File], xs: Coll.List[Mem.Fail], first: Bool): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(x, rest) =>
-    val Mem.Fail(c, f, line, k) = x
     S2c.jSep(first)
-    c match
-      case Mem.CNoRegion => Console.print("{\"check\":\"siteNoRegion\",\"def\":")
+    S2c.jFail(fs, x)
+    S2c.jFails(fs, rest, false)
+
+def S2c.jFail(fs: Coll.List[S2c.File], x: Mem.Fail): Unit = x match
+  case Mem.FNoRegion(f, line, k) =>
+    Console.print("{\"check\":\"siteNoRegion\",\"def\":")
     S2c.jSym(f)
     Console.print(",\"at\":")
     S2c.jAt(fs, line)
     Console.print(",\"ctor\":")
     S2c.jSym(k)
     Console.print("}")
-    S2c.jFails(fs, rest, false)
+  case Mem.FUseAfterFree(f, v, use, r, free) =>
+    Console.print("{\"check\":\"useAfterFree\",\"def\":")
+    S2c.jSym(f)
+    Console.print(",\"var\":")
+    S2c.jSym(v)
+    Console.print(",\"useAt\":")
+    S2c.jAt(fs, use)
+    Console.print(",\"region\":")
+    Console.printI64(r)
+    Console.print(",\"freeAt\":")
+    S2c.jAt(fs, free)
+    Console.print("}")
 
 def S2c.jCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact], first: Bool): Unit = cs match
   case Coll.Nil => ()
