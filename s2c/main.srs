@@ -839,13 +839,16 @@ def S2c.jFail(fs: Coll.List[S2c.File], x: Mem.Fail): Unit = x match
 def S2c.jCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact], first: Bool): Unit = cs match
   case Coll.Nil => ()
   case Coll.Cons(c, rest) =>
-    val Mem.Compact(line, f) = c
+    val Mem.Compact(line, f, runs) = c
     S2c.jSep(first)
     Console.print("{\"at\":")
     S2c.jAt(fs, line)
     Console.print(",\"def\":")
     S2c.jSym(f)
-    Console.print("}")
+    val rs = runs match
+      case Mem.RunsOnce => ",\"runs\":\"once\"}"
+      case Mem.RunsMany => ",\"runs\":\"many\"}"
+    Console.print(rs)
     S2c.jCompacts(fs, rest, false)
 
 // file:line of a program line (lines are numbered across the input files)
@@ -887,7 +890,8 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
     Emit.program(ds, res, Emit.Plain)
     0
   case S2c.EmitOpt =>
-    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res), Mem.ForEmit))), Emit.MemOpt)
+    val rep = Mem.report(ds, Emit.memSites(ds, res), Mem.ForEmit)
+    Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(rep)), Emit.MemOpt(Mem.scratchSet(rep)))
     0
   case S2c.EmitC =>
     Emit.program(ds, res, Emit.Plain)

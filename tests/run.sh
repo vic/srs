@@ -112,6 +112,10 @@ t_poison() {
 export -f t_poison
 poisoned=$(par t_poison tests/s2/prog/*.srs) || fail=1
 printf '%s\n' "$poisoned" | grep -v '^ok ' || true
+# scratch (M12a): prog/scratch with the poison prelude alone (one Region handle: a static capability) runs SC.total and
+# SC.keep in scratch Arenas in the optimized C; it prints its .out optimized and plain. armed: only the optimized C swaps
+sc() { timeout 5 "$B/s2c1" $1 "$B/poison.srs" tests/s2/prog/scratch.srs > "$B/sc_$2.c" && timeout 60 $CC -o "$B/sc_$2" "$B/sc_$2.c" rt/srs_rt.c && [ "$("$B/run1" "$B/sc_$2")" = "$(cat tests/s2/prog/scratch.out)" ]; }
+if sc "" opt && sc --no-mem-optimization plain && grep -q 'srs_cap sv_' "$B/sc_opt.c" && ! grep -q 'srs_cap sv_' "$B/sc_plain.c"; then echo "ok scratch (SC calls run in scratch Arenas, poison)"; else echo "FAIL scratch: output or swap"; fail=1; fi
 echo "ok poison: $(printf '%s\n' "$poisoned" | grep -c '^ok ') checks pass"
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)

@@ -529,7 +529,7 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB], need: Mem.Ne
       val reuse = Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(Mem.varMap(it), D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
       val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
       val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
-      val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
+      val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), fl, Coll.Nil)
       val mf = Mem.manualFrees(fl, Coll.Nil)
       val bs = Mem.blocks(md, cs, free, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
       val Mem.IT(defs, next, vars, _, mvs) = it
@@ -2205,16 +2205,22 @@ def Mem.runRules(): Coll.List[D.Rule] =
 
 // a candidate: its name and line
 enum Mem.Compact:
-  case Mem.Compact(line: I64, f: Sym.Sym)
+  case Mem.Compact(line: I64, f: Sym.Sym, runs: Mem.Runs)
 
-def Mem.pickCompacts(need: Coll.SMap[Bool], skip: Coll.SMap[Bool], newRet: Coll.SMap[Bool], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = fs match
+// how often a def runs per life of its region: Once (no loop or recursion repeats it: not RManyDef) or Many
+enum Mem.Runs:
+  case Mem.RunsOnce
+  case Mem.RunsMany
+
+def Mem.pickCompacts(need: Coll.SMap[Bool], skip: Coll.SMap[Bool], newRet: Coll.SMap[Bool], many: Coll.SMap[Bool], fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = fs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(f, rest) =>
     val Ast.Fn(line, n, gs, _, _, _, _) = f
     val x = Sym.str(n)
     val srs = Str.len(x) > 4 && Str.eq(Str.slice(x, 0, 4), "Srs.")
     val ok = Mem.isIn(need, n) && Mem.isIn(newRet, n) && !Mem.isIn(skip, n) && !Str.eq(x, "main") && !srs && !Mem.hasEvidence(gs)
-    Mem.pickCompacts(need, skip, newRet, rest, if ok then Coll.Cons(Mem.Compact(line, n), acc) else acc)
+    val runs: Mem.Runs = if Mem.isIn(many, n) then Mem.RunsMany else Mem.RunsOnce
+    Mem.pickCompacts(need, skip, newRet, many, rest, if ok then Coll.Cons(Mem.Compact(line, n, runs), acc) else acc)
 
 // a def with a {} binder: a second Region in its scope would make its implicit summons ambiguous (error[no-capability])
 def Mem.hasEvidence(gs: Coll.List[Ast.Group]): Bool = gs match
@@ -2230,7 +2236,7 @@ def Mem.hasEvidence(gs: Coll.List[Ast.Group]): Bool = gs match
 def Mem.reachedOnly(cs: Coll.List[Mem.Compact], reached: Coll.SMap[Bool], acc: Coll.List[Mem.Compact]): Coll.List[Mem.Compact] = cs match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(c, rest) =>
-    val Mem.Compact(_, f) = c
+    val Mem.Compact(_, f, _) = c
     Mem.reachedOnly(rest, reached, if Mem.isIn(reached, f) then Coll.Cons(c, acc) else acc)
 
 // ── the walk's facts, typed: a node is (def, key, kind) here; Mem.intern gives each node one id, so a probe on a node
@@ -2708,3 +2714,17 @@ def Mem.quietOp(quiet: Coll.SMap[Bool], g: Sym.Sym): Bool =
 
 // the index of the last dot at or before i, -1 when none
 def Mem.lastDot(s: Str, i: I64): I64 = if i < 0 then 0 - 1 else if Str.at(s, i) == 46 then i else Mem.lastDot(s, i - 1)
+
+// the defs whose calls run in a scratch Arena (M12a): the compact defs that run once
+def Mem.scratchSet(r: Mem.Report): Coll.SMap[Bool] = r match
+  case Mem.Ok(_, _, _, _, _, cs, _, _) => Mem.onceDefs(cs, Coll.sEmpty())
+  case Mem.RulesBad(_) => Coll.sEmpty()
+
+def Mem.onceDefs(cs: Coll.List[Mem.Compact], m: Coll.SMap[Bool]): Coll.SMap[Bool] = cs match
+  case Coll.Nil => m
+  case Coll.Cons(c, rest) =>
+    val Mem.Compact(_, f, runs) = c
+    val m2: Coll.SMap[Bool] = runs match
+      case Mem.RunsOnce => Coll.sInsert(m, f, true)
+      case Mem.RunsMany => m
+    Mem.onceDefs(rest, m2)

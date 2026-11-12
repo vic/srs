@@ -1,0 +1,44 @@
+// pass: a call of a def that runs once and makes many boxes runs in a scratch Arena under the mem optimization (M12a):
+// SC.total's result box holds a number, so its box is copied out and the scratch is freed; SC.keep's result is its list
+// (one box field: L2 makes it the list pointer) and SC.keep2's box holds a list made in the run: both keep the scratch.
+// Under the poison prelude a freed scratch that a result still read would print garbage
+enum SC.L:
+  case SC.Nil
+  case SC.Cons(h: I64, t: SC.L)
+
+enum SC.R:
+  case SC.R(v: I64)
+
+enum SC.Q:
+  case SC.Q(n: I64, l: SC.L)
+
+enum SC.P:
+  case SC.P(l: SC.L)
+
+def SC.build(n: I64, acc: SC.L): SC.L = if n == 0 then acc else SC.build(n - 1, SC.Cons(n, acc))
+
+def SC.sum(l: SC.L, s: I64): I64 = l match
+  case SC.Nil => s
+  case SC.Cons(h, t) => SC.sum(t, s + h)
+
+def SC.total(n: I64): SC.R = SC.R(SC.sum(SC.build(n, SC.Nil), 0))
+
+def SC.keep(n: I64): SC.P = SC.P(SC.build(n, SC.Nil))
+
+def SC.keep2(n: I64): SC.Q = SC.Q(n, SC.build(n, SC.Nil))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = SC.total(1000)
+  val b = SC.keep(10)
+  val q = SC.keep2(20)
+  val more = SC.build(5000, SC.Nil)
+  val x = a match
+    case SC.R(v) => v
+  val y = b match
+    case SC.P(l) => SC.sum(l, 0)
+  val z = q match
+    case SC.Q(m, l) => m + SC.sum(l, 0)
+  Console.printI64(x + y + z + SC.sum(more, 0))
+  0
