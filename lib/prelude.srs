@@ -613,3 +613,19 @@ handler Srs.StoreFile for StoreOut:
   def init(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr = rt_out_new(dir, a, b, c, d)
   def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
   def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// F64: a C double (IEEE 754 binary64): storage, no literal and no operator. Its arithmetic, compare and conversions are
+// prims (s2c Emit.f64Prims). ofBits and bits keep the 64 bits; truncI64 rounds toward 0, and is 0 out of the I64 range
+// and for NaN
+extern def F64.ofBits(b: I64): F64
+extern def F64.bits(x: F64): I64
+extern def F64.ofI64(i: I64): F64
+extern def F64.truncI64(x: F64): I64
+extern def F64.add(a: F64, b: F64): F64
+extern def F64.sub(a: F64, b: F64): F64
+extern def F64.mul(a: F64, b: F64): F64
+extern def F64.div(a: F64, b: F64): F64
+extern def F64.lt(a: F64, b: F64): Bool
+extern def F64.eq(a: F64, b: F64): Bool
+extern def F64.ceil(x: F64): F64
+extern def F64.floor(x: F64): F64

@@ -587,7 +587,7 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
 def Ty.isScalar(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
   case K.Con(n, args) =>
     val x = Sym.str(n)
-    Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64") || Str.eq(x, "U8"))
+    Coll.length(args) == 0 && (Str.eq(x, "I64") || Str.eq(x, "Bool") || Str.eq(x, "U32") || Str.eq(x, "U64") || Str.eq(x, "U8") || Str.eq(x, "F64"))
   case _ => false
 
 // extern "libc" struct Libc.name: `Libc.name.new()` allocates sizeof(struct name) bytes in the innermost Region (as Cell.new); a field is
@@ -2491,7 +2491,7 @@ def Ty.isEnum(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool = es match
 
 def Ty.isBuiltin(n: Sym.Sym): Bool =
   val s = Sym.str(n)
-  Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type") || Str.eq(s, "U32") || Str.eq(s, "U64") || Str.eq(s, "U8") || Str.eq(s, "I32") || Str.eq(s, "CStr")
+  Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "Str") || Str.eq(s, "Unit") || Str.eq(s, "Ptr") || Str.eq(s, "Type") || Str.eq(s, "U32") || Str.eq(s, "U64") || Str.eq(s, "U8") || Str.eq(s, "I32") || Str.eq(s, "CStr") || Str.eq(s, "F64")
 
 // x is a local whose type is protocol p
 def Ty.isCapOf(s: K.Subst, bs: Coll.List[Ty.Bind], x: Sym.Sym, p: Sym.Sym): Bool = Ty.lookup(bs, x) match
