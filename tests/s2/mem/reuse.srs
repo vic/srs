@@ -43,7 +43,7 @@ def main(): I64 =
   handle m = Srs.Mut()
   val n = 1
   val xs = Array.fill(n, RB(7))
-  Console.printI64(RB.local(1) + RB.twice(2) + RB.get(RB.bump(RB(3))) + k + RL.len(RL.rev(RCons(1, RCons(2, RNil)), RNil), 0) + RB.viaKeep(s) + RB.fromArr(n, xs) + RB.get(RB.arms(RB(8), true)) + RB.get(RB.marms(RB(9), KA)) + RB.split(RB(11), KA))
+  Console.printI64(RB.local(1) + RB.twice(2) + RB.get(RB.bump(RB(3))) + k + RL.len(RL.rev(RCons(1, RCons(2, RNil)), RNil), 0) + RB.viaKeep(s) + RB.fromArr(n, xs) + RB.get(RB.arms(RB(8), true)) + RB.get(RB.marms(RB(9), KA)) + RB.split(RB(11), KA) + RB.fromTwin(12))
   0
 
 def RB.keep(b: RB): RB = b
@@ -84,3 +84,16 @@ def RB.split(b: RB, k: RK): I64 = k match
       case RB(v) => RB(v + 7)
     RB.get(c) + RB.get(b)
   case KB => RB.get(b)
+
+// RB.twin reads b twice (a get, its result): its result is shared, so c (the result of a call with only a scalar arg)
+// is shared and its match is no reuse
+def RB.twin(x: I64): RB =
+  val b = RB(x)
+  val k = RB.get(b)
+  b
+
+def RB.fromTwin(x: I64): I64 =
+  val c = RB.twin(x)
+  val d = c match
+    case RB(v) => RB(v + 8)
+  RB.get(d)
