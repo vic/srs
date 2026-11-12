@@ -1,0 +1,35 @@
+// mem: one var per binder, and a call's result by call. BN.mk{s} builds in the region its call chooses: p holds r's
+// box, q holds t's (not both). The inner p shadows the outer one (p#2: its own binder). BN.wrap{s} builds in s from
+// its arg: w holds t (the call runs in t) and r (the arg reaches the result). BN.mk2 (no choice) runs in t, the
+// innermost handle
+enum BN:
+  case BN(v: I64)
+
+enum BW:
+  case BW(b: BN)
+
+def BN.get(b: BN): I64 = b match
+  case BN(v) => v
+
+def BN.mk {s: Region} (x: I64): BN = BN(x)
+
+def BN.wrap {s: Region} (b: BN): BW = BW(b)
+
+def BN.mk2(x: I64): BN = BN(x)
+
+def BW.get(w: BW): I64 = w match
+  case BW(b) => BN.get(b)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle t = Srs.Arena()
+  val p = BN.mk{r}(1)
+  val q = BN.mk{t}(2)
+  val k =
+    val p = BN.mk{t}(3)
+    BN.get(p)
+  val w = BN.wrap{t}(p)
+  val z = BN.mk2(4)
+  Console.printI64(BN.get(p) + BN.get(q) + k + BW.get(w) + BN.get(z))
+  0
