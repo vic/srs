@@ -2728,3 +2728,67 @@ def Mem.onceDefs(cs: Coll.List[Mem.Compact], m: Coll.SMap[Bool]): Coll.SMap[Bool
       case Mem.RunsOnce => Coll.sInsert(m, f, true)
       case Mem.RunsMany => m
     Mem.onceDefs(rest, m2)
+
+// ── field usage (layout by usage, the mem optimization): how often the program reads each field of each case: a match
+// arm or a val pattern on case c with a binder that is not `_` at field i reads field i of c. Emit lays a case's word
+// fields in this order (most read first, next to the tag) ──
+def Mem.fieldUse(ds: Coll.List[Ast.Decl]): Coll.SMap[Coll.IMap[I64]] = Mem.useFns(Mem.fnList(ds, Coll.Nil), Coll.sEmpty())
+
+def Mem.useFns(fs: Coll.List[Ast.Fn], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = fs match
+  case Coll.Nil => m
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, _, _, _, _, _, body) = f
+    val m2: Coll.SMap[Coll.IMap[I64]] = body match
+      case Ast.Def(_, e) => Mem.useE(e, m)
+      case Ast.Extern(_) => m
+    Mem.useFns(rest, m2)
+
+def Mem.useE(e: Ast.Expr, m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = e match
+  case Ast.Call(_, _, _, _, args) => Mem.useEs(args, m)
+  case Ast.Method(_, _, _, args) => Mem.useEs(args, m)
+  case Ast.Resume(_, _, x) => Mem.useE(x, m)
+  case Ast.Bin(_, _, l, r) => Mem.useE(r, Mem.useE(l, m))
+  case Ast.Un(_, _, x) => Mem.useE(x, m)
+  case Ast.If(_, c, t, x) => Mem.useE(x, Mem.useE(t, Mem.useE(c, m)))
+  case Ast.Match(_, s, arms) => Mem.useArms(arms, Mem.useE(s, m))
+  case Ast.Block(_, ss, last) => Mem.useE(last, Mem.useSs(ss, m))
+  case Ast.While(_, c, b) => Mem.useE(b, Mem.useE(c, m))
+  case Ast.Assign(_, _, x) => Mem.useE(x, m)
+  case Ast.Quant(_, _, _, _, x) => Mem.useE(x, m)
+  case _ => m
+
+def Mem.useEs(es: Coll.List[Ast.Expr], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = es match
+  case Coll.Nil => m
+  case Coll.Cons(e, rest) => Mem.useEs(rest, Mem.useE(e, m))
+
+def Mem.useSs(ss: Coll.List[Ast.Stmt], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = ss match
+  case Coll.Nil => m
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(_, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Var(_, _, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Handle(_, _, _, args) => Mem.useSs(rest, Mem.useEs(args, m))
+    case Ast.Do(e) => Mem.useSs(rest, Mem.useE(e, m))
+    case Ast.Check(_, _, e) => Mem.useSs(rest, Mem.useE(e, m))
+
+def Mem.useArms(arms: Coll.List[Ast.Arm], m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = arms match
+  case Coll.Nil => m
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, p, b) = a
+    val m2: Coll.SMap[Coll.IMap[I64]] = p match
+      case Ast.PCase(c, xs) => Mem.useBinds(c, xs, 0, m)
+      case Ast.PAny => m
+    Mem.useArms(rest, Mem.useE(b, m2))
+
+// each binder of case c that is not `_`: one more read of its field
+def Mem.useBinds(c: Sym.Sym, xs: Coll.List[Sym.Sym], i: I64, m: Coll.SMap[Coll.IMap[I64]]): Coll.SMap[Coll.IMap[I64]] = xs match
+  case Coll.Nil => m
+  case Coll.Cons(x, rest) =>
+    if Str.eq(Sym.str(x), "_") then Mem.useBinds(c, rest, i + 1, m)
+    else
+      val cm: Coll.IMap[I64] = Coll.sLookup(m, c) match
+        case Coll.Some(z) => z
+        case Coll.None => Coll.Tip
+      val k: I64 = Coll.lookup(cm, i) match
+        case Coll.Some(v) => v
+        case Coll.None => 0
+      Mem.useBinds(c, rest, i + 1, Coll.sInsert(m, c, Coll.insert(cm, i, k + 1)))

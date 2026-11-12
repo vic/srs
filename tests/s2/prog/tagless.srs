@@ -56,6 +56,20 @@ def TL.two(t: TL.Two): I64 = t match
 def TL.one(o: TL.One): I64 = o match
   case TL.TOne(a, b) => a * b
 
+// layout by usage: c of TL.Wide is read by three patterns, a and b by one, so the optimized C lays c first (next to
+// the box start); the plain C keeps the declaration order a, b, c (tests/run.sh)
+enum TL.Wide:
+  case TL.Wide(a: I64, b: I64, c: I64)
+
+def TL.wa(w: TL.Wide): I64 = w match
+  case TL.Wide(a, b, c) => a + b + c
+
+def TL.wc(w: TL.Wide): I64 = w match
+  case TL.Wide(_, _, c) => c
+
+def TL.wc2(w: TL.Wide): I64 = w match
+  case TL.Wide(_, _, c) => c * 2
+
 // nothing calls TL.unused: the optimized C has no f_TL__unused (tree shaking), the plain C has it (tests/run.sh)
 def TL.unused(x: I64): I64 = x + 1
 
@@ -67,5 +81,7 @@ def main(): I64 =
   val rest = TL.two(TL.TA(4)) + TL.two(TL.TB(5, 6)) + TL.one(TL.TOne(2, 3))
   val maybes = TL.first(TL.wrap(l, 1)) + TL.first(TL.wrap(l, 0)) + TL.first(TL.wrap(TL.TNil, 1))
   val strs = TL.slen(TL.SJust("abcd")) + TL.slen(TL.SNothing)
-  Console.printI64(TL.sum(l, 0) + TL.len(l, 0) + opts + rest + maybes + strs)
+  val w = TL.Wide(1, 2, 3)
+  val wide = TL.wa(w) + TL.wc(w) + TL.wc2(w)
+  Console.printI64(TL.sum(l, 0) + TL.len(l, 0) + opts + rest + maybes + strs + wide)
   0
