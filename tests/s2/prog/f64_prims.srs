@@ -1,0 +1,28 @@
+// pass: F64 prims (s2c Emit.f64Prims): IEEE 754 binary64 arithmetic on bit patterns, compare, round, total truncation
+def T.show(x: I64): Unit =
+  Console.printI64(x)
+  Console.print("\n")
+
+def T.b(x: Bool): I64 = if x then 1 else 0
+
+def main(): I64 =
+  handle c = Srs.Console()
+  val half = F64.div(F64.ofI64(1), F64.ofI64(2))
+  // 0.5 = 0x3FE0000000000000
+  T.show(F64.bits(half))
+  T.show(F64.bits(F64.ofBits(F64.bits(half))))
+  // 0.1 + 0.2 != 0.3, 0.1 + 0.2 > 0.3
+  val p1 = F64.div(F64.ofI64(1), F64.ofI64(10))
+  val p2 = F64.div(F64.ofI64(2), F64.ofI64(10))
+  val p3 = F64.div(F64.ofI64(3), F64.ofI64(10))
+  T.show(T.b(F64.eq(F64.add(p1, p2), p3)))
+  T.show(T.b(F64.lt(p3, F64.add(p1, p2))))
+  T.show(F64.truncI64(F64.mul(F64.ofI64(7), half)))
+  T.show(F64.truncI64(F64.ceil(F64.sub(F64.ofI64(0), F64.mul(F64.ofI64(7), half)))))
+  T.show(F64.truncI64(F64.floor(F64.sub(F64.ofI64(0), F64.mul(F64.ofI64(7), half)))))
+  // NaN and out of range truncate to 0; NaN is not equal to itself
+  val nan = F64.div(F64.ofI64(0), F64.ofI64(0))
+  T.show(F64.truncI64(nan))
+  T.show(T.b(F64.eq(nan, nan)))
+  T.show(F64.truncI64(F64.mul(F64.ofI64(4611686018427387904), F64.ofI64(4))))
+  0
