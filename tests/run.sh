@@ -150,11 +150,19 @@ for t in tests/s2/hash/*.srs; do
   done <<< "$rels"
   verdict "hash/$n" $pass
 done
-# s2c --mem (vic/c/mem-design.md): each Region and the sites that fill it, once or many; stdout == .out
+# s2c --mem (vic/c/mem-design.md): one JSON object (regions, sites once or many, total, reuse, compact); stdout == .out
 for t in tests/s2/mem/*.srs; do
   n=$(basename "$t" .srs); out=$(timeout 2 "$B/s2c1" --mem lib/prelude.srs "$t" 2>&1); code=$?
   pass=1; [ $code -eq 0 ] && [ "$out" = "$(cat "${t%.srs}.out")" ] || pass=0
   verdict "mem/$n" $pass "exit=$code out=$(printf '%s' "$out" | head -1)"
+done
+# --mem escapes a JSON string: a file path with a quote, one with a backslash, one with a tab, each reads back as itself
+for k in quote backslash tab; do
+  case $k in quote) q="$B/m\"q.srs";; backslash) q="$B/m\\q.srs";; tab) q="$B/m	q.srs";; esac
+  cp tests/s2/mem/once.srs "$q"
+  at=$(timeout 2 "$B/s2c1" --mem lib/prelude.srs "$q" 2>/dev/null | jq -r '.regions[0].at' 2>/dev/null)
+  pass=1; [ "$at" = "$q:12" ] || pass=0
+  verdict "mem/json-escape-$k" $pass "at=$at"
 done
 # --mem's "once" checked at run time: a prog test with one region (main's, one life) runs with its C rewritten so each
 # box names its case (tests/s2/cz.h prints "CZ case count"); a case --mem gives exactly one site, once, is allocated at
@@ -171,9 +179,8 @@ if [ "${armed:-0}" -gt 1 ]; then echo "ok mem census armed (MCons $armed)"; else
 memrun() { # test libs...
   local t=$1 n out once pass why cz x c; shift; n=$(basename "$(dirname "$t")")_$(basename "$t" .srs)
   out=$(timeout 2 "$B/s2c1" --mem "$@" "$t" 2>/dev/null) || return 0
-  [ "$(printf '%s\n' "$out" | grep -c '^region ')" = 1 ] || return 0
-  once=$(printf '%s\n' "$out" | grep '^  ' | awk '{print $2}' | sort | uniq -u | while read -r x; do
-    printf '%s\n' "$out" | grep -Eq "^  [^ ]+ $x( [0-9]+ B)? once(, (dies|escapes))?$" && echo "$x"; done)
+  [ "$(jq '.regions | length' <<< "$out")" = 1 ] || return 0
+  once=$(jq -r '.sites | group_by(.ctor)[] | select(length == 1) | .[0] | select(.mult == "once") | .ctor' <<< "$out")
   [ -n "$once" ] || return 0
   pass=1; why=""
   if czc "$n" "$t" "$@"; then
