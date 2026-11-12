@@ -1,0 +1,78 @@
+// mem: a match can rebuild its box in place only when the box is unshared: one reference, read once (the match) (two reads, a shared arg, a shared callee result, a read from an array are shared)
+enum RB:
+  case RB(v: I64)
+
+def RB.get(b: RB): I64 = b match
+  case RB(v) => v
+
+def RB.local(x: I64): I64 =
+  val b = RB(x)
+  val c = b match
+    case RB(v) => RB(v + 1)
+  RB.get(c)
+
+def RB.twice(x: I64): I64 =
+  val b = RB(x)
+  val c = b match
+    case RB(v) => RB(v + 1)
+  RB.get(c) + RB.get(b)
+
+def RB.bump(b: RB): RB = b match
+  case RB(v) => RB(v + 1)
+
+def RB.bumpS(b: RB): RB = b match
+  case RB(v) => RB(v + 2)
+
+enum RL:
+  case RNil
+  case RCons(h: I64, t: RL)
+
+def RL.rev(l: RL, acc: RL): RL = l match
+  case RNil => acc
+  case RCons(h, t) => RL.rev(t, RCons(h, acc))
+
+def RL.len(l: RL, n: I64): I64 = l match
+  case RNil => n
+  case RCons(_, t) => RL.len(t, n + 1)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val s = RB(5)
+  val k = RB.get(RB.bumpS(s)) + RB.get(s)
+  handle m = Srs.Mut()
+  val n = 1
+  val xs = Array.fill(n, RB(7))
+  Console.printI64(RB.local(1) + RB.twice(2) + RB.get(RB.bump(RB(3))) + k + RL.len(RL.rev(RCons(1, RCons(2, RNil)), RNil), 0) + RB.viaKeep(s) + RB.fromArr(n, xs) + RB.get(RB.arms(RB(8), true)) + RB.get(RB.marms(RB(9), KA)))
+  0
+
+def RB.keep(b: RB): RB = b
+
+def RB.viaKeep(s: RB): I64 =
+  val t = RB.keep(s)
+  val c = t match
+    case RB(v) => RB(v + 3)
+  RB.get(c)
+
+def RB.fromArr {r: Region} (n: I64, xs: Array[RB](n)<r>): I64 =
+  val i = 0
+  val e = if 0 <= i && i < n then xs(i) else RB(0)
+  val c = e match
+    case RB(v) => RB(v + 4)
+  RB.get(c)
+
+def RB.bumpT(b: RB): RB = b match
+  case RB(v) => RB(v + 5)
+
+def RB.arms(b: RB, f: Bool): RB = if f then RB.bumpT(b) else RB.bump(b)
+
+enum RK:
+  case KA
+  case KB
+
+def RB.bumpU(b: RB): RB = b match
+  case RB(v) => RB(v + 6)
+
+def RB.marms(b: RB, k: RK): RB = k match
+  case KA => RB.bumpU(b)
+  case KB => RB.bump(b)

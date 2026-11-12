@@ -408,7 +408,7 @@ enum S2c.Mode:
 // for an Array.fill), then the total: the once sites and their bytes, the many sites
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs) =>
+  case Mem.Ok(bs, rs) =>
     val S2c.MemCount(once, onceB, many, die) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0, 0))
     Console.print("total: ")
     Console.printI64(once)
@@ -419,7 +419,24 @@ def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
     Console.print(" many, ")
     Console.printI64(die)
     Console.print(" die\n")
+    S2c.memReuses(fs, rs)
     0
+
+// "reuse file:line x: C -> K": the match at line on x can build its arm's K box in the cell of x's C box (M7a)
+def S2c.memReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.Reuse]): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Mem.Reuse(line, x, c, k) = r
+    Console.print("reuse ")
+    S2c.place(fs, line)
+    Console.print(" ")
+    Console.print(Sym.str(x))
+    Console.print(": ")
+    Console.print(Sym.str(c))
+    Console.print(" -> ")
+    Console.print(Sym.str(k))
+    Console.print("\n")
+    S2c.memReuses(fs, rest)
 
 enum S2c.MemCount:
   case S2c.MemCount(once: I64, onceB: I64, many: I64, die: I64)
