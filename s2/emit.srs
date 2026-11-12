@@ -667,7 +667,7 @@ def Emit.slotName(sl: Emit.Slot): Sym.Sym = sl match
   case Emit.SVal(x, _) => x
 
 // where a constructor's box comes from: a new box of the region reg, or the cell of local x (a box of the same case that
-// a match took apart: s2c --mem-reuse)
+// a match took apart: the mem optimization)
 enum Emit.Src:
   case Emit.FromRegion(reg: Sym.Sym)
   case Emit.FromCell(x: Sym.Sym)
@@ -2978,7 +2978,7 @@ def Emit.staticCaps(st: Coll.List[Emit.Static]): Unit = st match
     Emit.staticCaps(rest)
 
 // ── the program (spec sec 1): one C file to stdout ──
-// the C of a program: Plain, or MemOpt (s2c --mem-reuse: the layout and reuse of the mem optimization)
+// the C of a program: Plain, or MemOpt (the default of s2c: the layout and reuse of the mem optimization; Plain: --no-mem-optimization)
 enum Emit.Opt:
   case Emit.Plain
   case Emit.MemOpt

@@ -388,8 +388,13 @@ def S2c.internal(phase: Str, rel: Sym.Sym): I64 =
   Console.eprint("\n")
   2
 
-// what a checked program becomes: C (the default), or the output of an s1 flag (vic 2026-11-09: s2 has every s1 flag)
+// what a checked program becomes: mem-optimized C (the default), or the output of a flag
 enum S2c.Mode:
+  // the default: C with the mem optimization (s2/mem.srs, vic/c/mem-design.md): a match on an unshared box builds its
+  // arm's box of the same case into the matched box's cell where --mem gives the reuse verdict ok (M13); an enum with
+  // one case with fields has no tag in its box (L1)
+  case S2c.EmitOpt
+  // --no-mem-optimization: the plain C
   case S2c.EmitC
   // --l2-agree: as the C output, but a fn the Flow shortcut skips is also checked by the engine (L2-UNSOUND on a disagreement)
   case S2c.EmitAgree
@@ -403,9 +408,6 @@ enum S2c.Mode:
   case S2c.Fragment
   // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
   case S2c.MemAll
-  // --mem-reuse: as the C output, but a match on an unshared box builds its arm's box of the same case into the matched
-  // box's cell where --mem gives the reuse verdict ok (s2/mem.srs M13)
-  case S2c.EmitReuse
 
 // --mem: one JSON object on one line (read it with jq). regions: each handled Region, its def and the defs whose sites
 // fill it; sites: each allocation site of a region, its def, its bytes (null for an Array.fill), once or many and why,
@@ -869,7 +871,7 @@ def S2c.finish(m: S2c.Mode, fs: Coll.List[S2c.File], ds: Coll.List[Ast.Decl], ro
   case S2c.EmitAgree =>
     Emit.program(ds, res, Emit.Plain)
     0
-  case S2c.EmitReuse =>
+  case S2c.EmitOpt =>
     Emit.program(ds, Mem.intoRes(res, Mem.reuseTable(Mem.report(ds, Emit.memSites(ds, res)))), Emit.MemOpt)
     0
   case S2c.EmitC =>
@@ -908,9 +910,9 @@ def S2c.args(): S2c.Args =
   else if Args.count() > 1 && Str.eq(Args.at(1), "--store-check") then S2c.Args(S2c.StoreCheck, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--fragment") then S2c.Args(S2c.Fragment, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--mem") then S2c.Args(S2c.MemAll, 2)
-  else if Args.count() > 1 && Str.eq(Args.at(1), "--mem-reuse") then S2c.Args(S2c.EmitReuse, 2)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--no-mem-optimization") then S2c.Args(S2c.EmitC, 2)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--l2-agree") then S2c.Args(S2c.EmitAgree, 2)
-  else S2c.Args(S2c.EmitC, 1)
+  else S2c.Args(S2c.EmitOpt, 1)
 
 def main(): I64 =
   handle p = Srs.Pages()

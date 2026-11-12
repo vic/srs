@@ -23,8 +23,8 @@ S2SRC=$(ls s2/*.srs | tr '\n' ' ')
 # compiles every tests/s2 program. no s0 or s1 on this path
 S2C="lib/prelude.srs $S2SRC s2c/main.srs"
 if timeout 120 $CCS -o "$B/s2c0" bootstrap/s2c-seed.c rt/srs_rt.c \
-  && timeout 5 "$B/s2c0" $S2C > "$B/s2c1.c" && timeout 120 $CCS -o "$B/s2c1" "$B/s2c1.c" rt/srs_rt.c \
-  && timeout 5 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
+  && timeout 20 "$B/s2c0" $S2C > "$B/s2c1.c" && timeout 120 $CCS -o "$B/s2c1" "$B/s2c1.c" rt/srs_rt.c \
+  && timeout 20 "$B/s2c1" $S2C > "$B/s2c2.c" && cmp -s "$B/s2c1.c" "$B/s2c2.c"; then echo "ok s2c fixpoint"
 else echo "FAIL s2c fixpoint"; fail=1; fi
 if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; else echo "FAIL s2c seed stale: seed-update"; fail=1; fi
 # the test loops run in parallel (xargs -P, GATE_JOBS at once, default one per core): each test is a fn of its file that
@@ -40,9 +40,10 @@ par() { # fn files...
   i=0; for x in "$@"; do i=$((i + 1)); cat "$d/$i" 2>/dev/null; done > "$d/all"; cat "$d/died" >> "$d/all" 2>/dev/null
   cat "$d/all"; ! grep -q '^FAIL' "$d/all"
 }
+# a component test is the s2 sources plus a test main: plain C (the mem optimization of s2 is checked by the fixpoint)
 t_comp() {
   local t=$1 n out code; n=s2c_$(basename "$t" .srs)
-  timeout 5 "$B/s2c1" lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; return 0; }
+  timeout 5 "$B/s2c1" --no-mem-optimization lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; return 0; }
   timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; return 0; }
   out=$(timeout 1 "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; else echo "ok $n"; fi
@@ -69,11 +70,11 @@ t_prog() {
 }
 export -f t_prog
 par t_prog tests/s2/prog/*.srs || fail=1
-# s2c --mem-reuse (s2/mem.srs M13): a prog test whose C changes (a box built into a matched box's cell) still prints its
-# .out; the others are the plain C. armed: prog/reuse_run must change
+# s2c --no-mem-optimization (the default C has the mem optimization, s2/mem.srs M13, L1): a prog test whose plain C
+# differs still prints its .out. armed: prog/reuse_run must differ
 t_reuse() {
   local t=$1 n m pass=0 out; n=$(basename "$t" .srs); m=s2c1_reuse_$n
-  timeout 5 "$B/s2c1" --mem-reuse $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || { verdict "reuse/$n" 0 "s2c"; return 0; }
+  timeout 5 "$B/s2c1" --no-mem-optimization $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || { verdict "reuse/$n" 0 "s2c"; return 0; }
   if cmp -s "$B/$m.c" "$B/s2c1_$n.c"; then return 0; fi
   echo "reused $n"
   timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
@@ -85,7 +86,7 @@ reused=$(par t_reuse tests/s2/prog/*.srs) || fail=1
 printf '%s\n' "$reused" | grep -v '^reused ' | grep . || true
 case "$reused" in *"reused reuse_run"*) echo "ok reuse armed (reuse_run changed)";; *) echo "FAIL reuse unarmed: reuse_run C unchanged"; fail=1;; esac
 # poison: with a prelude whose Arena fills each freed chunk's words with 0xA5.. before it is kept for reuse, a read of a
-# freed box reads garbage: every prog test still prints its .out (plain and --mem-reuse). armed: the sed changed the
+# freed box reads garbage: every prog test still prints its .out (optimized and plain). armed: the sed changed the
 # prelude (the line it edits is there)
 sed -e 's/^      rt_ptr_set(ch, Srs.Arena.hNext(), rt_ptr_get(g, Srs.Arena.gSpare()))$/      val pz = Srs.Arena.poison(ch, 3, cap \/ 8)\n&/' lib/prelude.srs > "$B/poison.srs"
 printf '%s\n' '' 'def Srs.Arena.poison(ch: Ptr, i: I64, n: I64): Unit = if i >= n then () else' \
@@ -93,12 +94,12 @@ printf '%s\n' '' 'def Srs.Arena.poison(ch: Ptr, i: I64, n: I64): Unit = if i >= 
 if grep -q 'Srs.Arena.poison(ch, 3' "$B/poison.srs"; then echo "ok poison armed"; else echo "FAIL poison unarmed: Arena release line not found"; fail=1; fi
 t_poison() {
   local t=$1 n m f pass out; n=$(basename "$t" .srs)
-  for f in "" --mem-reuse; do
-    m=s2c1_poison${f:+_reuse}_$n; pass=0
+  for f in "" --no-mem-optimization; do
+    m=s2c1_poison${f:+_plain}_$n; pass=0
     timeout 5 "$B/s2c1" $f "$B/poison.srs" ${S2LIBS#lib/prelude.srs} "$t" > "$B/$m.c" 2>/dev/null \
       && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
       && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
-    verdict "poison${f:+-reuse}/$n" $pass
+    verdict "poison${f:+-plain}/$n" $pass
   done
 }
 export -f t_poison
