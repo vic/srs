@@ -411,7 +411,7 @@ enum S2c.Mode:
 // compact: each def that can run in a scratch region and copy its result out (M6a)
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
-  case Mem.Ok(bs, pf, vs, rs, cs) =>
+  case Mem.Ok(bs, pf, vs, ms, rs, cs) =>
     Console.print("{\"regions\":[")
     S2c.jRegions(fs, bs, true)
     Console.print("],\"sites\":[")
@@ -421,6 +421,8 @@ def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
     S2c.jParamFrees(fs, pf, Coll.length(bs) == 0)
     Console.print("],\"vars\":[")
     S2c.jVars(vs, true)
+    Console.print("],\"moves\":[")
+    S2c.jMoves(ms, true)
     Console.print("],\"total\":{\"once\":")
     Console.printI64(once)
     Console.print(",\"onceBytes\":")
@@ -562,6 +564,51 @@ def S2c.jVars(vs: Coll.List[Mem.VarRec], first: Bool): Unit = vs match
     S2c.jWhy7(why)
     Console.print("}")
     S2c.jVars(rest, false)
+
+// each move: kind, def (the def of a walk move; the callee of an arg or result move), the node ids it moves from and
+// to (a var's id is its vars id), unique (its source is unshared), the regions of both ends, and its region safety:
+// safe true with why noStore or outlives, else false with the region pair that fails
+def S2c.jMoves(ms: Coll.List[Mem.MoveRec], first: Bool): Unit = ms match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Mem.MoveRec(m, unique, from, to, safe) = r
+    val Mem.Move(k, d, a, b) = m
+    S2c.jSep(first)
+    Console.print("{\"kind\":")
+    S2c.jMoveK(k)
+    Console.print(",\"def\":")
+    S2c.jSym(d)
+    Console.print(",\"from\":")
+    Console.printI64(a)
+    Console.print(",\"to\":")
+    Console.printI64(b)
+    val u = if unique then ",\"unique\":true,\"fromRegions\":[" else ",\"unique\":false,\"fromRegions\":["
+    Console.print(u)
+    S2c.jInts(from, true)
+    Console.print("],\"toRegions\":[")
+    S2c.jInts(to, true)
+    Console.print("],")
+    S2c.jSafe(safe)
+    Console.print("}")
+    S2c.jMoves(rest, false)
+
+def S2c.jMoveK(k: Mem.MoveK): Unit = k match
+  case Mem.MBind => Console.print("\"bind\"")
+  case Mem.MAssign => Console.print("\"assign\"")
+  case Mem.MPattern => Console.print("\"pattern\"")
+  case Mem.MField => Console.print("\"field\"")
+  case Mem.MRet => Console.print("\"ret\"")
+  case Mem.MArg => Console.print("\"arg\"")
+  case Mem.MResult => Console.print("\"result\"")
+
+def S2c.jSafe(s: Mem.Safe): Unit = s match
+  case Mem.NoStore => Console.print("\"safe\":true,\"why\":\"noStore\"")
+  case Mem.Outlives => Console.print("\"safe\":true,\"why\":\"outlives\"")
+  case Mem.Shorter(a, b) =>
+    Console.print("\"safe\":false,\"why\":\"shorter\",\"fromRegion\":")
+    Console.printI64(a)
+    Console.print(",\"intoRegion\":")
+    Console.printI64(b)
 
 def S2c.jWhy7(w: Mem.Why7): Unit = w match
   case Mem.NotShared => Console.print("false")

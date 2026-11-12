@@ -1,0 +1,35 @@
+// mem: moves. a (a box of r) is stored into w (a box of t, handled inside r): a field move from a longer-lived region,
+// safe. MW.into{r} builds its box in r (the chosen region), from b of t: a field move from a shorter-lived region,
+// unsafe. b moves into c (bind), c into MB.get's param (arg), w's field out by a pattern
+// MW.local handles q at its top and stores a (of r) into a box of q: q is inside t (MW.local runs in t), t inside r,
+// so r outlives q (through two outl steps): safe
+enum MB:
+  case MB(v: I64)
+
+enum MW:
+  case MW(b: MB)
+
+def MW.get(w: MW): I64 = w match
+  case MW(b) => MB.get(b)
+
+def MB.get(b: MB): I64 = b match
+  case MB(v) => v
+
+def MW.into {s: Region} (b: MB): MW = MW(b)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val a = MB(1)
+  handle t = Srs.Arena()
+  val w = MW(a)
+  val b = MB(2)
+  val c = b
+  val u = MW.into{r}(b)
+  Console.printI64(MW.get(w) + MB.get(c) + MW.get(u) + MW.local(a))
+  0
+
+def MW.local(x: MB): I64 =
+  handle q = Srs.Arena()
+  val w = MW(x)
+  MW.get(w)
