@@ -295,6 +295,9 @@ extern def Str.has(s: Str, c: I64, i: I64, e: I64): Bool
 extern def U8.of(x: I64): U8
 extern def I64.ofU8(x: U8): I64
 extern def Str.ofBytes {r: Region} (n: I64, xs: Array[U8](n)<r>): Str<r>
+// CStr.of copies the bytes of s and a NUL into the region r: the const char* a libc param takes (Emit.cstrOf). A NUL
+// inside s ends the C string there
+extern def CStr.of {r: Region} (s: Str): CStr<r>
 // rt_os_errno: errno after a failed libc call (a static inline in C), for the Srs.* handlers over libc
 extern def rt_os_errno(): I32
 
