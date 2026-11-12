@@ -31,6 +31,9 @@ if cmp -s bootstrap/s2c-seed.c "$B/s2c1.c"; then echo "ok s2c seed == s2c1.c"; e
 # prints its verdict line(s) into its own file; par prints them in file order, so the log reads as a serial run's. A
 # test fn that exits nonzero (killed, crashed) is a FAIL line, and par fails when any line is a FAIL
 GATE_JOBS=${GATE_JOBS:-$(nproc)}
+# a test program runs under $B/run1: 1 s of CPU time (ulimit -t), so load from other jobs on the host does not fail it;
+# a 10 s wall timeout ends one that blocks
+printf '%s\n' '#!/usr/bin/env bash' 'ulimit -t 1' 'exec timeout 10 "$@"' > "$B/run1"; chmod +x "$B/run1"
 export B S2SRC CC
 par() { # fn files...
   local f=$1 d i=0 x; shift; d=$(mktemp -d "$B/par.XXXXXX")
@@ -45,7 +48,7 @@ t_comp() {
   local t=$1 n out code; n=s2c_$(basename "$t" .srs)
   timeout 5 "$B/s2c1" --no-mem-optimization lib/prelude.srs $S2SRC "$t" > "$B/$n.c" || { echo "FAIL $n (s2c)"; return 0; }
   timeout 60 $CC -o "$B/$n" "$B/$n.c" rt/srs_rt.c || { echo "FAIL $n (cc)"; return 0; }
-  out=$(timeout 1 "$B/$n"); code=$?
+  out=$("$B/run1" "$B/$n"); code=$?
   if [ $code -ne 0 ] || [ "$out" != "$(cat "${t%.srs}.out")" ]; then echo "FAIL $n exit=$code out=$out"; else echo "ok $n"; fi
 }
 export -f t_comp
@@ -65,7 +68,7 @@ export -f todo verdict
 t_prog() {
   local t=$1 n m pass=0 out; n=$(basename "$t" .srs); m=s2c1_$n
   timeout 5 "$B/s2c1" $S2LIBS "$t" > "$B/$m.c" 2>/dev/null && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
-    && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+    && out=$(env $(sed -n 's|^// env: ||p' "$t") "$B/run1" "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "prog/$n" $pass
 }
 export -f t_prog
@@ -78,7 +81,7 @@ t_reuse() {
   if cmp -s "$B/$m.c" "$B/s2c1_$n.c"; then return 0; fi
   echo "reused $n"
   timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
-    && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+    && out=$(env $(sed -n 's|^// env: ||p' "$t") "$B/run1" "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
   verdict "reuse/$n" $pass
 }
 export -f t_reuse
@@ -102,7 +105,7 @@ t_poison() {
     m=s2c1_poison${f:+_plain}_$n; pass=0
     timeout 5 "$B/s2c1" $f "$B/poison.srs" ${S2LIBS#lib/prelude.srs} "$t" > "$B/$m.c" 2>/dev/null \
       && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
-      && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+      && out=$(env $(sed -n 's|^// env: ||p' "$t") "$B/run1" "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
     verdict "poison${f:+-plain}/$n" $pass
   done
 }
@@ -225,7 +228,7 @@ memrun() { # test libs...
   [ -n "$once" ] || return 0
   pass=1; why=""
   if czc "$n" "$t" "$@"; then
-    cz=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/cz_$n" 2>&1 >/dev/null)
+    cz=$(env $(sed -n 's|^// env: ||p' "$t") "$B/run1" "$B/cz_$n" 2>&1 >/dev/null)
     for x in $once; do c=$(czn "$cz" "$x"); [ "$c" -le 1 ] || { pass=0; why="$why $x=$c"; }; done
   else pass=0; why="census build"; fi
   memruns="$memruns $n "; verdict "memrun/$n" $pass "once but allocated:$why"
@@ -291,7 +294,7 @@ timeout 60 $CC -O0 -o "$B/s2c_coll0" "$B/s2c_coll.c" rt/srs_rt.c && out=$(timeou
 timeout 60 $CC -O0 -o "$B/s2c1_tailcall0" "$B/s2c1_tailcall.c" rt/srs_rt.c && out=$(timeout 2 "$B/s2c1_tailcall0") && [ "$out" = "$(cat tests/s2/prog/tailcall.out)" ] && echo "ok s2c prog tailcall -O0" || { echo "FAIL s2c prog tailcall -O0"; fail=1; }
 # words are total in C (U32, U64): prog/bits under shift and signed-overflow traps; a shift count not taken mod the
 # width is C undefined behavior, and x86 masks it silently, so the plain run cannot see it
-timeout 60 $CC -fsanitize=shift,signed-integer-overflow -fsanitize-trap=shift,signed-integer-overflow -o "$B/s2c1_bits_ub" "$B/s2c1_bits.c" rt/srs_rt.c && out=$(timeout 1 "$B/s2c1_bits_ub") && [ "$out" = "$(cat tests/s2/prog/bits.out)" ] && echo "ok s2c prog bits under UB traps" || { echo "FAIL s2c prog bits under UB traps"; fail=1; }
+timeout 60 $CC -fsanitize=shift,signed-integer-overflow -fsanitize-trap=shift,signed-integer-overflow -o "$B/s2c1_bits_ub" "$B/s2c1_bits.c" rt/srs_rt.c && out=$("$B/run1" "$B/s2c1_bits_ub") && [ "$out" = "$(cat tests/s2/prog/bits.out)" ] && echo "ok s2c prog bits under UB traps" || { echo "FAIL s2c prog bits under UB traps"; fail=1; }
 # static capabilities (s2/emit.srs Emit.staticsOf): main's one Console handle leaves no Console param in the rows;
 # a nested second Console handle, or a call of main, keeps the param
 if ! grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_static.c" && grep -q '^static srs_cap s_eff__Console = ' "$B/s2c1_cap_static.c"; then echo "ok s2c static Console: no param"; else echo "FAIL s2c static Console: param kept"; fail=1; fi
@@ -304,7 +307,7 @@ if grep -q 'srs_cap\* p_eff__Console' "$B/s2c1_cap_main_call.c" && ! grep -q 's_
 rowreg='f_[A-Za-z0-9_]*(srs_cap\* p_eff__Region'
 for n in one heap bytes two named nested handler trait traitg given givenfn; do
   t=tests/s2/prog/cap_region_$n; c="$B/s2c_rg_$n.c"
-  if timeout 5 "$B/s2c1" lib/prelude.srs "$t.srs" > "$c" && timeout 60 $CC -o "$B/s2c_rg_$n" "$c" rt/srs_rt.c && [ "$(timeout 1 "$B/s2c_rg_$n")" = "$(cat "$t.out")" ]; then
+  if timeout 5 "$B/s2c1" lib/prelude.srs "$t.srs" > "$c" && timeout 60 $CC -o "$B/s2c_rg_$n" "$c" rt/srs_rt.c && [ "$("$B/run1" "$B/s2c_rg_$n")" = "$(cat "$t.out")" ]; then
     case $n in
       one|heap|bytes) if ! grep -q "$rowreg" "$c" && grep -q '^static srs_cap s_eff__Region = ' "$c"; then echo "ok s2c static Region $n: no param"; else echo "FAIL s2c static Region $n: param kept"; fail=1; fi;;
       *) if grep -q "$rowreg" "$c" && ! grep -q 's_eff__Region' "$c"; then echo "ok s2c Region $n: param kept"; else echo "FAIL s2c Region $n: made static"; fail=1; fi;;
