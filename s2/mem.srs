@@ -233,13 +233,20 @@ enum Mem.Mult:
   case Mem.Many(why: Mem.Why)
 
 enum Mem.Row:
-  case Mem.Row(line: I64, ctor: Sym.Sym, bytes: Coll.Option[I64], dies: Bool, m: Mem.Mult)
+  case Mem.Row(line: I64, f: Sym.Sym, ctor: Sym.Sym, bytes: Coll.Option[I64], dies: Bool, m: Mem.Mult)
 
+// a handled region: the def f that handles it at line as x with handler h, its sites, the defs whose sites fill it (in
+// order of first site), and the lines of its manual frees (x.free()); the drop op frees it at the end of its block when
+// it is still live
 enum Mem.Block:
-  case Mem.Block(line: I64, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row])
+  case Mem.Block(line: I64, f: Sym.Sym, x: Sym.Sym, h: Sym.Sym, rows: Coll.List[Mem.Row], defs: Coll.List[Sym.Sym], frees: Coll.List[I64])
+
+// a call x.free() in def f at line
+enum Mem.FreeAt:
+  case Mem.FreeAt(f: Sym.Sym, line: I64, x: Sym.Sym)
 
 enum Mem.Report:
-  case Mem.Ok(bs: Coll.List[Mem.Block], rs: Coll.List[Mem.Reuse], cs: Coll.List[Mem.Compact])
+  case Mem.Ok(bs: Coll.List[Mem.Block], pf: Coll.List[Mem.FreeAt], rs: Coll.List[Mem.Reuse], cs: Coll.List[Mem.Compact])
   case Mem.RulesBad(rel: Sym.Sym)
 
 // what the model says, by name or id
@@ -267,7 +274,9 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
       val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
       val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
       val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
-      Mem.Ok(Mem.blocks(md, cs, free, sites, ns, regions, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil), Mem.byReuseLine(reuse), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
+      val mf = Mem.manualFrees(fl, Coll.Nil)
+      val bs = Mem.blocks(md, cs, free, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
+      Mem.Ok(bs, Mem.paramFrees(mf, bs, Coll.Nil), Mem.byReuseLine(reuse), Mem.reachedOnly(compact, Mem.names(D.tuples(m, Mem.relSym(Mem.RReached)), Coll.sEmpty()), Coll.Nil))
     case D.Unsafe(rel) => Mem.RulesBad(rel)
     case D.NegCycle(rel) => Mem.RulesBad(rel)
 
@@ -335,22 +344,93 @@ def Mem.vals(xs: Coll.List[Coll.KV[I64]], acc: Coll.List[I64]): Coll.List[I64] =
     val Coll.KV(_, v) = kv
     Mem.vals(rest, Coll.Cons(v, acc))
 
-def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ns: I64, rs: Coll.IMap[Mem.Region], ids: Coll.List[I64], acc: Coll.List[Mem.Block]): Coll.List[Mem.Block] = ids match
+def Mem.blocks(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ns: I64, rs: Coll.IMap[Mem.Region], mf: Coll.List[Mem.FreeAt], ids: Coll.List[I64], acc: Coll.List[Mem.Block]): Coll.List[Mem.Block] = ids match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(r, rest) => Coll.lookup(rs, r) match
     case Coll.Some(x) =>
-      val Mem.Region(_, line, nm, h) = x
+      val Mem.Region(f, line, nm, h) = x
       val Mem.Model(_, _, byRegion, _, _, _) = md
       val rows = Mem.rows(md, cs, free, ss, Mem.byLine(Mem.siteKeys(ss, ns, Mem.idsOf(byRegion, r), Coll.Nil)), Coll.Nil)
-      Mem.blocks(md, cs, free, ss, ns, rs, rest, Coll.Cons(Mem.Block(line, nm, h, rows), acc))
-    case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, rest, acc)
+      val b = Mem.Block(line, f, nm, h, rows, Mem.rowDefs(rows, Coll.sEmpty(), Coll.Nil), Mem.freeLines(mf, f, nm, line, Coll.Nil))
+      Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, Coll.Cons(b, acc))
+    case Coll.None => Mem.blocks(md, cs, free, ss, ns, rs, mf, rest, acc)
+
+// the defs of rows, each once, in order of first row
+def Mem.rowDefs(rows: Coll.List[Mem.Row], seen: Coll.SMap[Bool], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = rows match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(r, rest) =>
+    val Mem.Row(_, f, _, _, _, _) = r
+    if Mem.isIn(seen, f) then Mem.rowDefs(rest, seen, acc) else Mem.rowDefs(rest, Coll.sInsert(seen, f, true), Coll.Cons(f, acc))
+
+// the lines of the calls x.free() in def f after the handle at line, in order
+def Mem.freeLines(mf: Coll.List[Mem.FreeAt], f: Sym.Sym, x: Sym.Sym, line: I64, acc: Coll.List[I64]): Coll.List[I64] = mf match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(m, rest) =>
+    val Mem.FreeAt(g, l, y) = m
+    if l > line && Sym.eq(g, f) && Sym.eq(x, y) then Mem.freeLines(rest, f, x, line, Coll.Cons(l, acc)) else Mem.freeLines(rest, f, x, line, acc)
+
+// the frees of no region its def handles: x is a {} Region param, so the free ends the region its caller passes
+def Mem.paramFrees(mf: Coll.List[Mem.FreeAt], bs: Coll.List[Mem.Block], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = mf match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(m, rest) => Mem.paramFrees(rest, bs, if Mem.freedIn(m, bs) then acc else Coll.Cons(m, acc))
+
+def Mem.freedIn(m: Mem.FreeAt, bs: Coll.List[Mem.Block]): Bool = bs match
+  case Coll.Nil => false
+  case Coll.Cons(b, rest) =>
+    val Mem.FreeAt(f, l, x) = m
+    val Mem.Block(line, g, y, _, _, _, _) = b
+    if l > line && Sym.eq(f, g) && Sym.eq(x, y) then true else Mem.freedIn(m, rest)
+
+// every call x.free() in the bodies of fs, in program order
+def Mem.manualFrees(fs: Coll.List[Ast.Fn], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = fs match
+  case Coll.Nil => Coll.rev(acc)
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, body) = f
+    val acc2: Coll.List[Mem.FreeAt] = body match
+      case Ast.Def(_, e) => Mem.mfx(n, e, acc)
+      case Ast.Extern(_) => acc
+    Mem.manualFrees(rest, acc2)
+
+def Mem.mfx(f: Sym.Sym, e: Ast.Expr, acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = e match
+  case Ast.Method(line, r, op, args) =>
+    val acc2 = if Str.eq(Sym.str(op), "free") then Coll.Cons(Mem.FreeAt(f, line, r), acc) else acc
+    Mem.mfxs(f, args, acc2)
+  case Ast.Call(_, _, _, _, args) => Mem.mfxs(f, args, acc)
+  case Ast.Resume(_, _, x) => Mem.mfx(f, x, acc)
+  case Ast.Bin(_, _, l, r) => Mem.mfx(f, r, Mem.mfx(f, l, acc))
+  case Ast.Un(_, _, x) => Mem.mfx(f, x, acc)
+  case Ast.If(_, c, t, x) => Mem.mfxs(f, Coll.Cons(c, Coll.Cons(t, Coll.Cons(x, Coll.Nil))), acc)
+  case Ast.Match(_, s, arms) => Mem.mfArms(f, arms, Mem.mfx(f, s, acc))
+  case Ast.Block(_, ss, last) => Mem.mfx(f, last, Mem.mfStmts(f, ss, acc))
+  case Ast.While(_, c, b) => Mem.mfx(f, b, Mem.mfx(f, c, acc))
+  case Ast.Assign(_, _, x) => Mem.mfx(f, x, acc)
+  case _ => acc
+
+def Mem.mfxs(f: Sym.Sym, es: Coll.List[Ast.Expr], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = es match
+  case Coll.Nil => acc
+  case Coll.Cons(e, rest) => Mem.mfxs(f, rest, Mem.mfx(f, e, acc))
+
+def Mem.mfArms(f: Sym.Sym, arms: Coll.List[Ast.Arm], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = arms match
+  case Coll.Nil => acc
+  case Coll.Cons(a, rest) =>
+    val Ast.Arm(_, _, b) = a
+    Mem.mfArms(f, rest, Mem.mfx(f, b, acc))
+
+def Mem.mfStmts(f: Sym.Sym, ss: Coll.List[Ast.Stmt], acc: Coll.List[Mem.FreeAt]): Coll.List[Mem.FreeAt] = ss match
+  case Coll.Nil => acc
+  case Coll.Cons(s, rest) => s match
+    case Ast.Val(_, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Var(_, _, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Handle(_, _, _, args) => Mem.mfStmts(f, rest, Mem.mfxs(f, args, acc))
+    case Ast.Do(e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
+    case Ast.Check(_, _, e) => Mem.mfStmts(f, rest, Mem.mfx(f, e, acc))
 
 def Mem.rows(md: Mem.Model, cs: Coll.SMap[I64], free: Coll.List[Mem.Edge], ss: Coll.IMap[Mem.Site], ids: Coll.List[I64], acc: Coll.List[Mem.Row]): Coll.List[Mem.Row] = ids match
   case Coll.Nil => Coll.rev(acc)
   case Coll.Cons(s, rest) => Coll.lookup(ss, s) match
     case Coll.Some(x) =>
       val Mem.Site(f, line, ctor, loop) = x
-      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, ctor, Mem.bytesAt(md, line, ctor), Mem.dies(md, f, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
+      Mem.rows(md, cs, free, ss, rest, Coll.Cons(Mem.Row(line, f, ctor, Mem.bytesAt(md, line, ctor), Mem.dies(md, f, line, ctor), Mem.multOf(md, cs, free, f, loop)), acc))
     case Coll.None => Mem.rows(md, cs, free, ss, rest, acc)
 
 // a site in a loop of its def, else its def's reason to be many: its own call sites, a call in a loop, or a caller
