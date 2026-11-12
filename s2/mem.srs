@@ -87,7 +87,7 @@ enum Mem.Region:
 // what the walk knows of the program: defs by name, the constructors that allocate (a case with fields), the handlers
 // whose protocol is Region
 enum Mem.Cx:
-  case Mem.Cx(fns: Coll.SMap[Ast.Fn], ctors: Coll.SMap[Coll.List[Ast.Binder]], regionHs: Coll.SMap[Bool], ss: Eff.Syms, bound: Coll.SMap[Coll.SMap[Mem.LV]])
+  case Mem.Cx(fns: Coll.SMap[Ast.Fn], ctors: Coll.SMap[Coll.List[Ast.Binder]], regionHs: Coll.SMap[Bool], ss: Eff.Syms, bound: Coll.SMap[Coll.SMap[Mem.LV]], quiet: Coll.SMap[Bool])
 // where a walk is: the def, the innermost Region handle of the def around it (an id), whether a loop holds it, and the
 // handles in scope by name (a call that chooses one, f{r}(..), runs f in that region)
 enum Mem.At:
@@ -173,7 +173,7 @@ def Mem.callAll(w: Mem.W, ats: Coll.List[Mem.At], line: I64, f: Sym.Sym): Mem.W 
 
 def Mem.expr(cx: Mem.Cx, at: Mem.At, w: Mem.W, e: Ast.Expr): Mem.W = e match
   case Ast.Call(line, f, _, chosen, args) =>
-    val Mem.Cx(fns, ctors, _, ss, _) = cx
+    val Mem.Cx(fns, ctors, _, ss, _, _) = cx
     val ats = Mem.chosenAts(at, chosen, Coll.Nil)
     val at2: Mem.At = ats match
       case Coll.Cons(a, _) => a
@@ -214,7 +214,7 @@ def Mem.stmts(cx: Mem.Cx, at: Mem.At, w: Mem.W, ss: Coll.List[Ast.Stmt], last: A
   case Coll.Nil => Mem.expr(cx, at, w, last)
   case Coll.Cons(s, rest) => s match
     case Ast.Handle(line, x, h, args) =>
-      val Mem.Cx(_, _, rhs, _, _) = cx
+      val Mem.Cx(_, _, rhs, _, _, _) = cx
       val w2 = Mem.exprs(cx, at, w, args)
       val Mem.At(f, outer, loop, sc) = at
       if Mem.isIn(rhs, h) then Mem.stmts(cx, Mem.At(f, Coll.Some(Mem.nextRegion(w2)), loop, Coll.sInsert(sc, x, Mem.nextRegion(w2))), Mem.region(w2, f, line, x, h, outer, Mem.lastLine(last, Mem.lastStmts(rest, line))), rest, last)
@@ -501,7 +501,7 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB], need: Mem.Ne
   // the names each def binds (params, val, var, pattern, handle): only these are var nodes; a name no binder gives is a
   // nullary case, a global or an effect op, and holds no box of a handled region
   val bound = Mem.liveFns(Coll.revOnto(dfs, fl), Coll.sEmpty())
-  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms(), bound)
+  val cx = Mem.Cx(Ty.idxFns(fl, Coll.sEmpty()), Mem.ctors(ds, Coll.sEmpty()), Mem.regionHs(ds, Coll.sEmpty()), Eff.syms(), bound, Mem.quietPs(ds, Coll.sEmpty()))
   val w = Mem.decls(cx, Mem.W(Coll.Tip, 0, Coll.Tip, 0, Coll.Nil, Coll.sEmpty(), Coll.Nil), ds)
   val Mem.W(sites, ns, regions, nr, fs, cs, free) = w
   val facts = Coll.Cons(Mem.f1(Mem.RReached, D.VSym(Sym.of("main"))), Mem.multis(fl, cs, fs))
@@ -1149,7 +1149,7 @@ def Mem.allocates(ctors: Coll.SMap[Coll.List[Ast.Binder]], f: Sym.Sym): Bool = C
 def Mem.eExpr(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, e: Ast.Expr): Mem.EV = e match
   // a name its def binds is a var node; any other name (a nullary case, a global) is a static: no box, no node
   case Ast.Name(_, x) =>
-    val Mem.Cx(_, _, _, _, bound) = cx
+    val Mem.Cx(_, _, _, _, bound, _) = cx
     if Mem.binds(bound, f, x) then Mem.EV(w, Coll.Cons(Mem.nVar(f, x), Coll.Nil)) else Mem.EV(w, Coll.Nil)
   case Ast.Call(line, g, _, _, args) => Mem.eCall(cx, f, w, line, g, args)
   case Ast.Method(line, _, _, args) =>
@@ -1187,7 +1187,7 @@ def Mem.eExpr(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, e: Ast.Expr): Mem.EV = e match
 // gives its result (none when the result type holds no box); anything else (Array.put, a Cell op, an extern, a read
 // xs(i) of a local array) keeps its args: they are sinks, and its value is the named local's
 def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Coll.List[Ast.Expr]): Mem.EV =
-  val Mem.Cx(fns, ctors, _, ss, bound) = cx
+  val Mem.Cx(fns, ctors, _, ss, bound, quiet) = cx
   val Mem.EA(w2, nss) = Mem.eArgs(cx, f, w, args, Coll.Nil)
   if Mem.allocates(ctors, g) || Eff.isArrayNew(ss, g) then
     val Mem.EW(fs, n, sites) = w2
@@ -1216,7 +1216,14 @@ def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Co
         case Ast.Extern(_) =>
           val en = Mem.Node(Mem.kCall(), f, D.VInt(line))
           Mem.unknown(Mem.externArgs(w2, nss, ps, en, Mem.scalar(ret)), en)
-    case Coll.None => Mem.unknown(Mem.sinkAll(w2, Mem.flat(nss, Coll.Nil)), Mem.Node(Mem.kCall(), f, D.VInt(line)))
+    // no def: an op (P.op) or an unknown call. An op of a quiet protocol (Mem.quietPs: every handler stateless, every
+    // op param a Str or a scalar; srs has no mutable global) borrows its args: they can reach only its result (an
+    // alias flow) or a forwarded op of such a protocol; any other call keeps them (sinks)
+    case Coll.None =>
+      val on = Mem.Node(Mem.kCall(), f, D.VInt(line))
+      val ns = Mem.flat(nss, Coll.Nil)
+      val w3 = if Mem.quietOp(quiet, g) then Mem.flowTo(w2, ns, on, Mem.MBind) else Mem.sinkAll(w2, ns)
+      Mem.unknown(w3, on)
 
 // each arg's nodes, in arg order (the list of lists is built reversed and turned once)
 def Mem.eArgs(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, es: Coll.List[Ast.Expr], acc: Coll.List[Coll.List[Mem.Node]]): Mem.EA = es match
@@ -1266,7 +1273,7 @@ def Mem.eArms(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, ss: Coll.List[Mem.Node], arms: 
     val Ast.Arm(_, p, body) = a
     val w2: Mem.EW = p match
       case Ast.PCase(c, binds) =>
-        val Mem.Cx(_, ctors, _, _, _) = cx
+        val Mem.Cx(_, ctors, _, _, _, _) = cx
         val fields: Coll.List[Ast.Binder] = Coll.sLookup(ctors, c) match
           case Coll.Some(xs) => xs
           case Coll.None => Coll.Nil
@@ -1849,7 +1856,7 @@ def Mem.armReuse(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, f: Sym.Sym, line: I64, x: S
     val Ast.Arm(_, p, b) = a
     val acc2: Coll.List[Mem.Reuse] = p match
       case Ast.PCase(c, _) =>
-        val Mem.Cx(_, ctors, _, _, _) = cx
+        val Mem.Cx(_, ctors, _, _, _, _) = cx
         val k: Coll.Option[Mem.Built] = if Mem.allocates(ctors, c) then Mem.firstBuild(ce, cx, c, b) else Coll.None
         k match
           case Coll.Some(kk) =>
@@ -1862,7 +1869,7 @@ def Mem.armReuse(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, f: Sym.Sym, line: I64, x: S
 // the first box of c's enum that e builds, in evaluation order
 def Mem.firstBuild(ce: Coll.SMap[Sym.Sym], cx: Mem.Cx, c: Sym.Sym, e: Ast.Expr): Coll.Option[Mem.Built] = e match
   case Ast.Call(gl, g, _, _, args) =>
-    val Mem.Cx(_, ctors, _, _, _) = cx
+    val Mem.Cx(_, ctors, _, _, _, _) = cx
     Mem.firstOf(ce, cx, c, args) match
       case Coll.Some(k) => Coll.Some(k)
       case Coll.None => if Mem.allocates(ctors, g) && Mem.sameEnum(ce, c, g) then Coll.Some(Mem.Built(gl, g)) else Coll.None
@@ -2641,3 +2648,63 @@ def Mem.externArgs(w: Mem.EW, nss: Coll.List[Coll.List[Mem.Node]], ps: Coll.List
       val isStr = Str.eq(Sym.str(tn), "Str")
       val w2: Mem.EW = if isStr && retScalar then w else if isStr then Mem.flowTo(w, ns, r, Mem.MBind) else Mem.sinkAll(w, ns)
       Mem.externArgs(w2, rest, prest, r, retScalar)
+
+// the quiet protocols, as true: every handler is stateless (E5) and every op takes only Str or scalar params (an arg
+// can hold no other arg, so a stateless op cannot store one arg into another); else false
+def Mem.quietPs(ds: Coll.List[Ast.Decl], m: Coll.SMap[Bool]): Coll.SMap[Bool] = ds match
+  case Coll.Nil => Mem.trueOnly(Coll.sEntries(m, Coll.Nil), Coll.sEmpty())
+  case Coll.Cons(d, rest) => d match
+    case Ast.DHandler(h) =>
+      val Ast.Handler(_, _, p, fs, _) = h
+      Mem.quietPs(rest, Mem.quietAnd(m, p, !Mem.hasInit(fs)))
+    case Ast.DProto(pr) =>
+      val Ast.Proto(_, p, _, _, _, _, ops, _) = pr
+      Mem.quietPs(rest, Mem.quietAnd(m, p, Mem.plainOps(ops)))
+    case _ => Mem.quietPs(rest, m)
+
+def Mem.quietAnd(m: Coll.SMap[Bool], p: Sym.Sym, ok: Bool): Coll.SMap[Bool] =
+  val prev: Bool = Coll.sLookup(m, p) match
+    case Coll.Some(b) => b
+    case Coll.None => true
+  Coll.sInsert(m, p, prev && ok)
+
+// every op param is a Str or a scalar
+def Mem.plainOps(ops: Coll.List[Ast.Op]): Bool = ops match
+  case Coll.Nil => true
+  case Coll.Cons(o, rest) =>
+    val Ast.Op(_, _, _, ps, _, _) = o
+    Mem.plainParams(ps) && Mem.plainOps(rest)
+
+def Mem.plainParams(ps: Coll.List[Ast.Binder]): Bool = ps match
+  case Coll.Nil => true
+  case Coll.Cons(b, rest) =>
+    val Ast.Binder(_, _, t) = b
+    val Ast.Ty(_, n, _, _, _) = t
+    (Mem.scalar(t) || Str.eq(Sym.str(n), "Str")) && Mem.plainParams(rest)
+
+def Mem.trueOnly(xs: Coll.List[Coll.SEntry[Bool]], acc: Coll.SMap[Bool]): Coll.SMap[Bool] = xs match
+  case Coll.Nil => acc
+  case Coll.Cons(e, rest) =>
+    val Coll.SEntry(p, b) = e
+    Mem.trueOnly(rest, if b then Coll.sInsert(acc, p, true) else acc)
+
+// a handler keeps state: its init is not the parser's stateless one (Parse.stateless: init(): Ptr = Srs.noState())
+def Mem.hasInit(fs: Coll.List[Ast.Fn]): Bool = fs match
+  case Coll.Nil => false
+  case Coll.Cons(g, rest) =>
+    val Ast.Fn(_, n, _, _, _, _, body) = g
+    val noState: Bool = body match
+      case Ast.Def(_, e) => e match
+        case Ast.Call(_, h, _, _, _) => Str.eq(Sym.str(h), "Srs.noState")
+        case _ => false
+      case Ast.Extern(_) => false
+    (Str.eq(Sym.str(n), "init") && !noState) || Mem.hasInit(rest)
+
+// g is P.op with P a quiet protocol: the text before g's last dot is a key of quiet
+def Mem.quietOp(quiet: Coll.SMap[Bool], g: Sym.Sym): Bool =
+  val s = Sym.str(g)
+  val k = Mem.lastDot(s, Str.len(s) - 1)
+  if k <= 0 then false else Mem.isIn(quiet, Sym.of(Str.slice(s, 0, k)))
+
+// the index of the last dot at or before i, -1 when none
+def Mem.lastDot(s: Str, i: I64): I64 = if i < 0 then 0 - 1 else if Str.at(s, i) == 46 then i else Mem.lastDot(s, i - 1)

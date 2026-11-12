@@ -29,6 +29,18 @@ def BW.say(x: Str): I64 =
       Console.print(s)
       Str.len(s)
 
+// BW.sayDeep: as BW.deep, but Console.print reads a's Str: an op of a quiet protocol (Console: every handler stateless,
+// every op param a Str or a scalar) borrows its args, so a dies
+def BW.sayDeep(x: Str): I64 =
+  val a = BW(x)
+  val w = BW2(a)
+  val y: BW = w match
+    case BW2(z) => z
+  y match
+    case BW(s) =>
+      Console.print(s)
+      0
+
 def BW.cut(x: Str): BW =
   val b = BW(x)
   b match
@@ -40,5 +52,5 @@ def main(): I64 =
   val k = if BW.same("k") && BW.deep("k") then 1 else 0
   val c = BW.cut("xy") match
     case BW(s) => Str.len(s)
-  Console.printI64(k + BW.say("ab") + c)
+  Console.printI64(k + BW.say("ab") + c + BW.sayDeep("q"))
   0
