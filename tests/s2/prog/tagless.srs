@@ -10,6 +10,16 @@ enum TL.Opt:
   case TL.TNone
   case TL.TSome(v: I64)
 
+// L2: TL.Maybe's TL.Just holds one box, so under the mem optimization it is no box: its value is the list pointer
+enum TL.Maybe:
+  case TL.Nothing
+  case TL.Just(l: TL.List)
+
+// TL.SJust holds a Str (no pointer): it stays a box
+enum TL.SMaybe:
+  case TL.SNothing
+  case TL.SJust(s: Str)
+
 enum TL.One:
   case TL.TOne(a: I64, b: I64)
 
@@ -29,6 +39,16 @@ def TL.get(o: TL.Opt): I64 = o match
   case TL.TSome(v) => v
   case TL.TNone => 0
 
+def TL.first(m: TL.Maybe): I64 = m match
+  case TL.Nothing => 0
+  case TL.Just(l) => TL.sum(l, 0)
+
+def TL.wrap(l: TL.List, k: I64): TL.Maybe = if k > 0 then TL.Just(l) else TL.Nothing
+
+def TL.slen(m: TL.SMaybe): I64 = m match
+  case TL.SNothing => 0
+  case TL.SJust(s) => Str.len(s)
+
 def TL.two(t: TL.Two): I64 = t match
   case TL.TA(a) => a
   case TL.TB(b, c) => b + c
@@ -45,5 +65,7 @@ def main(): I64 =
   val l = TL.TCons(256, TL.TCons(2, TL.TCons(3, TL.TNil)))
   val opts = TL.get(TL.TSome(7)) + TL.get(TL.TNone)
   val rest = TL.two(TL.TA(4)) + TL.two(TL.TB(5, 6)) + TL.one(TL.TOne(2, 3))
-  Console.printI64(TL.sum(l, 0) + TL.len(l, 0) + opts + rest)
+  val maybes = TL.first(TL.wrap(l, 1)) + TL.first(TL.wrap(l, 0)) + TL.first(TL.wrap(TL.TNil, 1))
+  val strs = TL.slen(TL.SJust("abcd")) + TL.slen(TL.SNothing)
+  Console.printI64(TL.sum(l, 0) + TL.len(l, 0) + opts + rest + maybes + strs)
   0

@@ -676,6 +676,21 @@ enum Emit.Src:
 def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, src: Emit.Src, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
   case Coll.None => Console.print("0")
   case Coll.Some(ca) =>
+    Emit.boxForm(cx, ca, ts) match
+      case Emit.Unboxed =>
+        Console.print("((struct E_")
+        Emit.enumName(en, ts)
+        Console.print("*)(")
+        Emit.exs1(cx, fi, env, args)
+        Console.print("))")
+      case Emit.Boxed => Emit.ctorBox(cx, fi, env, en, ts, c, src, args, ca)
+
+// one Unboxed case's arg (a list of one)
+def Emit.exs1(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, args: Coll.List[El.Expr]): Unit = args match
+  case Coll.Cons(a, _) => Emit.ex(cx, fi, env, Emit.Inner, a)
+  case Coll.Nil => Console.print("0")
+
+def Emit.ctorBox(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, src: Emit.Src, args: Coll.List[El.Expr], ca: Emit.CaseAt): Unit =
     val Emit.CaseAt(tag, _, cs, w) = ca
     val Ast.Case(_, _, fields) = cs
     val Emit.Cx(_, _, _, _, _, _, al, _, _) = cx
@@ -873,7 +888,7 @@ def Emit.arms(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, ts: Coll.L
             case _ => Emit.Tag(tag)
           Emit.test(rest, n, g)
           Console.print("({ ")
-          Emit.ex(cx, fi, Emit.binds(env, n, c, binds, fields), pos, b)
+          Emit.ex(cx, fi, Emit.binds(env, n, c, binds, fields, Emit.boxForm(cx, ca, ts)), pos, b)
           Console.print("; })")
     rest match
       case Coll.Nil => ()
@@ -918,26 +933,63 @@ def Emit.notPs(cs: Coll.List[Ast.Case], n: I64, ts: Coll.List[K.Term]): Unit = c
       case Coll.Cons(_, _) => ()
     Emit.notPs(rest, n, ts)
 
-// each binder of an arm (not `_`) to its case field of s<n>
-def Emit.binds(env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder]): Emit.Env = xs match
+// L2 (niche, as Rust's Option<Box<T>>): a T0 case with one field whose ground type is an enum (a box or a static, never
+// a nullary static of this enum) is no box: its value is the field's pointer, cast; a match binds the field by the
+// cast back. Boxed: a box with fields
+enum Emit.BoxForm:
+  case Emit.Boxed
+  case Emit.Unboxed
+
+def Emit.boxForm(cx: Emit.Cx, ca: Emit.CaseAt, ts: Coll.List[K.Term]): Emit.BoxForm =
+  val Emit.CaseAt(_, e, cs, w) = ca
+  val Ast.Enum(_, _, gs, _) = e
+  val Ast.Case(_, _, fs) = cs
+  val Emit.Cx(_, _, _, es, _, _, _, _, _) = cx
+  w match
+    case Emit.T0 => fs match
+      case Coll.Cons(f, more) => more match
+        case Coll.Nil =>
+          val Ast.Binder(_, _, t) = f
+          Ty.term(t, Ty.zipBind(Ty.tparams(gs, Coll.Nil), ts, Coll.Nil)) match
+            case K.Con(fn, _) => Coll.sLookup(es, fn) match
+              case Coll.Some(_) => Emit.Unboxed
+              case Coll.None => Emit.Boxed
+            case _ => Emit.Boxed
+        case Coll.Cons(_, _) => Emit.Boxed
+      case Coll.Nil => Emit.Boxed
+    case _ => Emit.Boxed
+
+// each binder of an arm (not `_`) to its case field of s<n> (an Unboxed case: s<n> itself, cast to the field's type)
+def Emit.binds(env: Emit.Env, n: I64, c: Sym.Sym, xs: Coll.List[Sym.Sym], fs: Coll.List[Ast.Binder], bf: Emit.BoxForm): Emit.Env = xs match
   case Coll.Nil => env
   case Coll.Cons(x, rest) => fs match
     case Coll.Nil => env
     case Coll.Cons(f, frest) =>
-      if Str.eq(Sym.str(x), "_") then Emit.binds(env, n, c, rest, frest)
+      if Str.eq(Sym.str(x), "_") then Emit.binds(env, n, c, rest, frest, bf)
       else
         val Ast.Binder(_, fx, _) = f
         val env2 = Emit.bind(env, x)
         Console.print("__auto_type ")
         Emit.cname(Emit.L(x, Emit.envN(env)))
-        Console.print(" = s")
-        Console.printI64(n)
-        Console.print("->u.C_")
-        Emit.id(c)
-        Console.print(".f_")
-        Emit.id(fx)
+        bf match
+          case Emit.Boxed =>
+            Console.print(" = s")
+            Console.printI64(n)
+            Console.print("->u.C_")
+            Emit.id(c)
+            Console.print(".f_")
+            Emit.id(fx)
+          case Emit.Unboxed =>
+            Console.print(" = (__typeof__(s")
+            Console.printI64(n)
+            Console.print("->u.C_")
+            Emit.id(c)
+            Console.print(".f_")
+            Emit.id(fx)
+            Console.print("))s")
+            Console.printI64(n)
         Console.print("; ")
-        Emit.binds(env2, n, c, rest, frest)
+        Emit.binds(env2, n, c, rest, frest, bf)
 
 // a block (spec sec 4.2): statements in order, the last expression in res_, then the drops of its handles (latest first)
 def Emit.block(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, ss: Coll.List[El.Stmt], last: El.Expr, drops: Coll.List[Emit.Drop]): Unit = ss match
