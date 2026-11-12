@@ -295,6 +295,16 @@ def Coll.sInsert [V: Type] (m: Coll.SMap[V], s: Sym.Sym, v: V): Coll.SMap[V] = m
 def Coll.sLookup [V: Type] (m: Coll.SMap[V], s: Sym.Sym): Coll.Option[V] = m match
   case Coll.SMap(t) => Coll.sFind(Coll.bTGetOr(t, Sym.hash(s), Coll.Nil), s)
 
+// every entry of m, by hash order, onto acc
+def Coll.sEntries [V: Type] (m: Coll.SMap[V], acc: Coll.List[Coll.SEntry[V]]): Coll.List[Coll.SEntry[V]] = m match
+  case Coll.SMap(t) => Coll.bBuckets(t, acc)
+
+def Coll.bBuckets [V: Type] (t: Coll.BTree[Coll.List[Coll.SEntry[V]]], acc: Coll.List[Coll.SEntry[V]]): Coll.List[Coll.SEntry[V]] = t match
+  case Coll.BTip => acc
+  case Coll.B2(a, _, v1, b) => Coll.bBuckets(a, Coll.revOnto(v1, Coll.bBuckets(b, acc)))
+  case Coll.B3(a, _, v1, b, _, v2, c) => Coll.bBuckets(a, Coll.revOnto(v1, Coll.bBuckets(b, Coll.revOnto(v2, Coll.bBuckets(c, acc)))))
+  case Coll.B4(a, _, v1, b, _, v2, c, _, v3, d) => Coll.bBuckets(a, Coll.revOnto(v1, Coll.bBuckets(b, Coll.revOnto(v2, Coll.bBuckets(c, Coll.revOnto(v3, Coll.bBuckets(d, acc)))))))
+
 // an I64 set: a BMap to the one value U, so its count is the set size
 enum Coll.Unit:
   case Coll.U

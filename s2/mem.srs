@@ -516,10 +516,11 @@ def Mem.report(ds0: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report 
       val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
       val mf = Mem.manualFrees(fl, Coll.Nil)
       val bs = Mem.blocks(md, cs, free, sites, ns, regions, mf, Mem.byLine(Mem.regionKeys(regions, nr, Mem.liveOf(md), Coll.Nil)), Coll.Nil)
-      val Mem.IT(defs, _, vars, _, mvs) = it
+      val Mem.IT(defs, next, vars, _, mvs) = it
       val sm = Mem.Sh7(Mem.idSet(D.tuples(m, Mem.s7(Mem.RMulti7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RUnknown7)), Coll.Tip), Mem.idSet(D.tuples(m, Mem.s7(Mem.RShared7)), Coll.Tip))
       val rin = Mem.groupN(D.tuples(m, Mem.eSym(Mem.ERin)), Coll.Tip)
-      val vrs = Mem.varRecs(vars, rin, sm, bound, Coll.Nil)
+      val Mem.Unnoded(_, extra) = Mem.unnoded(Coll.sEntries(bound, Coll.Nil), defs, Mem.Unnoded(next, Coll.Nil))
+      val vrs = Coll.revOnto(Coll.rev(Mem.varRecs(vars, rin, sm, bound, Coll.Nil)), Coll.rev(extra))
       val Mem.Sh7(_, _, shared) = sm
       val mv0 = Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMRes)), Mem.MResult, Mem.movesOf(D.tuples(m, Mem.eSym(Mem.EMArg)), Mem.MArg, Coll.Nil))
       val outl = Mem.groupN(D.tuples(m, Mem.relSym(Mem.ROutl)), Coll.Tip)
@@ -589,24 +590,59 @@ def Mem.varRecs(vars: Coll.List[Coll.KV[Mem.VarOf]], rin: Coll.IMap[Coll.List[I6
     val Mem.VarOf(f, x) = vo
     Mem.varRecs(rest, rin, sm, lv, Coll.Cons(Mem.VarRec(i, f, x, Mem.idsOf(rin, i), Mem.whyOf(sm, i), Mem.lvOf(lv, f, x)), acc))
 
+// the binders no fact names (no node: a scalar read only by ops), ids from i on, newest first onto acc: every binder
+// gets a record (Polonius var_defined_at / var_used_at)
+enum Mem.Unnoded:
+  case Mem.Unnoded(i: I64, acc: Coll.List[Mem.VarRec])
+
+def Mem.unnoded(fs: Coll.List[Coll.SEntry[Coll.SMap[Mem.LV]]], defs: Coll.SMap[Mem.DefIds], u: Mem.Unnoded): Mem.Unnoded = fs match
+  case Coll.Nil => u
+  case Coll.Cons(e, rest) =>
+    val Coll.SEntry(f, m) = e
+    val names: Coll.SMap[I64] = Coll.sLookup(defs, f) match
+      case Coll.Some(d) =>
+        val Mem.DefIds(ns, _) = d
+        ns
+      case Coll.None => Coll.sEmpty()
+    Mem.unnoded(rest, defs, Mem.unnodedIn(f, Coll.sEntries(m, Coll.Nil), names, u))
+
+def Mem.unnodedIn(f: Sym.Sym, xs: Coll.List[Coll.SEntry[Mem.LV]], names: Coll.SMap[I64], u: Mem.Unnoded): Mem.Unnoded = xs match
+  case Coll.Nil => u
+  case Coll.Cons(e, rest) =>
+    val Coll.SEntry(x, lv) = e
+    val Mem.Unnoded(i, acc) = u
+    val Mem.LV(_, _, n, _, k) = lv
+    // n = 0: a name read but not bound in f (a nullary case such as Coll.Nil), no var
+    val u2: Mem.Unnoded = Coll.sLookup(names, x) match
+      case Coll.Some(_) => u
+      case Coll.None => k match
+        case Mem.BCap => u
+        case Mem.BVal => if n == 0 then u else Mem.Unnoded(i + 1, Coll.Cons(Mem.VarRec(i, f, x, Coll.Nil, Mem.NotShared, lv), acc))
+    Mem.unnodedIn(f, rest, names, u2)
+
 // and each line that reads it, newest first. A read inside a while counts at the loop's last line: the loop runs again.
 // binds: how many binders give the name in the def (shadowing: more than one, and their lines merge); assigned: an
-// assignment changes its boxes at a point
+// assignment changes its boxes at a point; k: a value or a handle's capability
 enum Mem.LV:
-  case Mem.LV(defAt: I64, uses: Coll.List[I64], binds: I64, assigned: Bool)
+  case Mem.LV(defAt: I64, uses: Coll.List[I64], binds: I64, assigned: Bool, k: Mem.BindK)
+
+// what a binder names: a value (a param, val, var or pattern) or a capability (a handle: a region is in regions, not vars)
+enum Mem.BindK:
+  case Mem.BVal
+  case Mem.BCap
 
 // def f binds x (a param, val, var, pattern or handle)
 def Mem.binds(lv: Coll.SMap[Coll.SMap[Mem.LV]], f: Sym.Sym, x: Sym.Sym): Bool =
-  val Mem.LV(_, _, n, _) = Mem.lvOf(lv, f, x)
+  val Mem.LV(_, _, n, _, _) = Mem.lvOf(lv, f, x)
   n > 0
 
 def Mem.lvOf(lv: Coll.SMap[Coll.SMap[Mem.LV]], f: Sym.Sym, x: Sym.Sym): Mem.LV = Coll.sLookup(lv, f) match
   case Coll.Some(m) => Mem.lvIn(m, x)
-  case Coll.None => Mem.LV(0, Coll.Nil, 0, false)
+  case Coll.None => Mem.LV(0, Coll.Nil, 0, false, Mem.BVal)
 
 def Mem.lvIn(m: Coll.SMap[Mem.LV], x: Sym.Sym): Mem.LV = Coll.sLookup(m, x) match
   case Coll.Some(v) => v
-  case Coll.None => Mem.LV(0, Coll.Nil, 0, false)
+  case Coll.None => Mem.LV(0, Coll.Nil, 0, false, Mem.BVal)
 
 // the largest line of a list (0 when empty)
 def Mem.maxOf(xs: Coll.List[I64], m: I64): I64 = xs match
@@ -631,21 +667,21 @@ def Mem.lvParams(ps: Coll.List[Ast.Binder], line: I64, m: Coll.SMap[Mem.LV]): Co
   case Coll.Nil => m
   case Coll.Cons(p, rest) =>
     val Ast.Binder(_, x, _) = p
-    Mem.lvParams(rest, line, Mem.lvBind(m, x, line))
+    Mem.lvParams(rest, line, Mem.lvBind(m, x, line, Mem.BVal))
 
-def Mem.lvBind(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64): Coll.SMap[Mem.LV] =
-  val Mem.LV(_, us, n, a) = Mem.lvIn(m, x)
-  Coll.sInsert(m, x, Mem.LV(line, us, n + 1, a))
+def Mem.lvBind(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64, k: Mem.BindK): Coll.SMap[Mem.LV] =
+  val Mem.LV(_, us, n, a, _) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(line, us, n + 1, a, k))
 
 // x is assigned in its def (its boxes change at a point: the analysis has no kill, so it claims nothing after a free)
 def Mem.lvAssign(m: Coll.SMap[Mem.LV], x: Sym.Sym): Coll.SMap[Mem.LV] =
-  val Mem.LV(d, us, n, _) = Mem.lvIn(m, x)
-  Coll.sInsert(m, x, Mem.LV(d, us, n, true))
+  val Mem.LV(d, us, n, _, k) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(d, us, n, true, k))
 
 // a read of x at line, or at floor when a loop around it ends later
 def Mem.lvUse(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64, floor: I64): Coll.SMap[Mem.LV] =
-  val Mem.LV(d, us, n, a) = Mem.lvIn(m, x)
-  Coll.sInsert(m, x, Mem.LV(d, Coll.Cons(if line > floor then line else floor, us), n, a))
+  val Mem.LV(d, us, n, a, k) = Mem.lvIn(m, x)
+  Coll.sInsert(m, x, Mem.LV(d, Coll.Cons(if line > floor then line else floor, us), n, a, k))
 
 def Mem.lvx(e: Ast.Expr, floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = e match
   case Ast.Name(line, x) => Mem.lvUse(m, x, line, floor)
@@ -660,7 +696,7 @@ def Mem.lvx(e: Ast.Expr, floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = 
   case Ast.While(_, c, b) =>
     val end = Mem.lastLine(b, Mem.lastLine(c, floor))
     Mem.lvx(b, end, Mem.lvx(c, end, m))
-  case Ast.Assign(line, x, v) => Mem.lvx(v, floor, Mem.lvAssign(Mem.lvUse(m, x, line, floor), x))
+  case Ast.Assign(_, x, v) => Mem.lvx(v, floor, Mem.lvAssign(m, x))
   case _ => m
 
 def Mem.lvxs(es: Coll.List[Ast.Expr], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = es match
@@ -678,14 +714,14 @@ def Mem.lvArms(arms: Coll.List[Ast.Arm], floor: I64, m: Coll.SMap[Mem.LV]): Coll
 
 def Mem.lvBinds(xs: Coll.List[Sym.Sym], line: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = xs match
   case Coll.Nil => m
-  case Coll.Cons(x, rest) => Mem.lvBinds(rest, line, Mem.lvBind(m, x, line))
+  case Coll.Cons(x, rest) => Mem.lvBinds(rest, line, Mem.lvBind(m, x, line, Mem.BVal))
 
 def Mem.lvStmts(ss: Coll.List[Ast.Stmt], floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = ss match
   case Coll.Nil => m
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line))
-    case Ast.Var(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line))
-    case Ast.Handle(line, x, _, args) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvxs(args, floor, m), x, line))
+    case Ast.Val(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
+    case Ast.Var(line, x, _, e) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvx(e, floor, m), x, line, Mem.BVal))
+    case Ast.Handle(line, x, _, args) => Mem.lvStmts(rest, floor, Mem.lvBind(Mem.lvxs(args, floor, m), x, line, Mem.BCap))
     case Ast.Do(e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
     case Ast.Check(_, _, e) => Mem.lvStmts(rest, floor, Mem.lvx(e, floor, m))
 
@@ -1480,7 +1516,7 @@ def Mem.uafVars(vs: Coll.List[Mem.VarRec], r: I64, free: I64, acc: Coll.List[Mem
   case Coll.Nil => acc
   case Coll.Cons(v, rest) =>
     val Mem.VarRec(_, f, x, regions, _, lv) = v
-    val Mem.LV(_, uses, _, assigned) = lv
+    val Mem.LV(_, uses, _, assigned, _) = lv
     val last = Mem.maxOf(uses, 0)
     Mem.uafVars(rest, r, free, if last > free && !assigned && Mem.inList(r, regions) then Coll.Cons(Mem.FUseAfterFree(f, x, last, r, free), acc) else acc)
 
@@ -1502,7 +1538,7 @@ def Mem.varsLast(vs: Coll.List[Mem.VarRec], r: I64, m: I64): I64 = vs match
   case Coll.Nil => m
   case Coll.Cons(v, rest) =>
     val Mem.VarRec(_, _, _, regions, _, lv) = v
-    val Mem.LV(_, uses, _, _) = lv
+    val Mem.LV(_, uses, _, _, _) = lv
     val last = Mem.maxOf(uses, 0)
     Mem.varsLast(rest, r, if Mem.inList(r, regions) && last > m then last else m)
 
