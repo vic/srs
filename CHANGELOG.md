@@ -2,32 +2,37 @@
 
 Every change to srs that lands, newest first. A project that builds with srs (snx, tot) pins a jj bookmark; this file says what each landing changed, so you can see what moving the bookmark brings.
 
-## 2026-11-12 main@origin 91235cae (PR #84)
+## Unreleased (datalog bulk load)
 
-- F64: a C double scalar with arithmetic, compare and conversion prims; F64.fmt and F64.parse.
-- Cell[A] of any A; Cseal: a Cell of region data is written only where one Arena is open.
-- emit: the enums in a non-enum type's args get their structs (a handler's Cell[T] state).
+- Speed: Datalog input facts are gathered per relation, then each index (tuple set, probed columns) is built once from a sorted run, not by one persistent-tree path copy per row. s2c on the bench corpus: 0.77 s -> 0.68 s, peak 592 MB -> 527 MB. Output byte-identical.
+- This file is newest first again.
 
-## 2026-11-12 main@origin 2150d5c4 (PR #85)
-
-- Speed: `--mem` and the optimized C find the first free caller of a many def from an index built at the first site that needs it (it was a scan of every call edge per site). Output byte-identical. snx gate program: 98.3 s -> 22.2 s user.
-
-## 2026-11-12 main@origin cf6acaae (PR #86)
-
-- Speed: a Datalog rule firing adds its head rows to its relation and inserts that relation into the map once, not once per row. Output byte-identical. Bench corpus-self -3.4% instructions, -3.3% peak; snx gate program peak 7.62 -> 7.28 GB.
-
-## 2026-11-12 main@origin 1327d881 (PR #87, from tot)
-
-- emit: a program with a libc extern also includes termios.h, time.h and poll.h; a libc extern whose result is Unit has a void prototype.
-- tests: prog/arena_tick: a game loop with a per-tick Srs.Arena keeps its peak RSS flat.
-
-## Unreleased (local main, not yet on main@origin)
+## 2026-11-12 main@origin 580630ac (PR #88)
 
 - `s2c fmt [--check] FILES`: compiles srs to srs. Comments are AST docs, the layout is Scala 3 style at 120 columns, and decls that no `main`, top-level `val` or `// format: off` region reaches are removed with their comments. A file is written only when its text changes. `--check` lists the files that would change and exits 1. A file set with no root is refused (`error[fmt-no-root]`).
 - `// format: off` / `// format: on` (column 0) keep whole decls as written: they are roots and they may hold code that does not parse.
 - The repo itself is formatted, and the gate checks `fmt --check` over every source.
 - Fix: a negative literal such as -9223372036854775808 now prints back as itself.
 - Captures nest (`Console.captureBegin`/`captureEnd`), and `Console.column()` gives the column. New handler `Srs.FileOut` writes a file through a temp file and a rename.
+
+## 2026-11-12 main@origin 1327d881 (PR #87, from tot)
+
+- emit: a program with a libc extern also includes termios.h, time.h and poll.h; a libc extern whose result is Unit has a void prototype.
+- tests: prog/arena_tick: a game loop with a per-tick Srs.Arena keeps its peak RSS flat.
+
+## 2026-11-12 main@origin cf6acaae (PR #86)
+
+- Speed: a Datalog rule firing adds its head rows to its relation and inserts that relation into the map once, not once per row. Output byte-identical. Bench corpus-self -3.4% instructions, -3.3% peak; snx gate program peak 7.62 -> 7.28 GB.
+
+## 2026-11-12 main@origin 2150d5c4 (PR #85)
+
+- Speed: `--mem` and the optimized C find the first free caller of a many def from an index built at the first site that needs it (it was a scan of every call edge per site). Output byte-identical. snx gate program: 98.3 s -> 22.2 s user.
+
+## 2026-11-12 main@origin 91235cae (PR #84)
+
+- F64: a C double scalar with arithmetic, compare and conversion prims; F64.fmt and F64.parse.
+- Cell[A] of any A; Cseal: a Cell of region data is written only where one Arena is open.
+- emit: the enums in a non-enum type's args get their structs (a handler's Cell[T] state).
 
 ## History
 
