@@ -3401,11 +3401,12 @@ def Emit.useVals(kvs: Coll.List[Coll.KV[Ast.Binder]], acc: Coll.List[Ast.Binder]
 // F64 (a C double, IEEE 754 binary64): no literal and no operator; these prims are its arithmetic, compare and
 // conversions, each one C expression. F64.ofBits and F64.bits keep the 64 bits; F64.truncI64 is total (0 out of
 // [-2^63, 2^63) and for NaN: a C cast out of range is undefined)
-def Emit.f64Prim(s: Str): Bool = Emit.f64Arith(s) || Str.eq(s, "F64.ofBits") || Str.eq(s, "F64.bits") || Str.eq(s, "F64.ofI64") || Str.eq(s, "F64.truncI64") || Str.eq(s, "F64.ceil") || Str.eq(s, "F64.floor")
+def Emit.f64Prim(s: Str): Bool = Emit.f64Arith(s) || Str.eq(s, "F64.fmt") || Str.eq(s, "F64.parse") || Str.eq(s, "F64.ofBits") || Str.eq(s, "F64.bits") || Str.eq(s, "F64.ofI64") || Str.eq(s, "F64.truncI64") || Str.eq(s, "F64.ceil") || Str.eq(s, "F64.floor")
 
 def Emit.f64Arith(s: Str): Bool = Str.eq(s, "F64.add") || Str.eq(s, "F64.sub") || Str.eq(s, "F64.mul") || Str.eq(s, "F64.div") || Str.eq(s, "F64.lt") || Str.eq(s, "F64.eq")
 
 def Emit.f64Prims(): Unit =
+  Console.print("#include <stdio.h>\n#include <stdlib.h>\n")
   Console.print("static inline double F64__ofBits(int64_t b) { double x; memcpy(&x, &b, 8); return x; }\n")
   Console.print("static inline int64_t F64__bits(double x) { int64_t b; memcpy(&b, &x, 8); return b; }\n")
   Console.print("static inline double F64__ofI64(int64_t i) { return (double)i; }\n")
@@ -3418,3 +3419,7 @@ def Emit.f64Prims(): Unit =
   Console.print("static inline bool F64__eq(double a, double b) { return a == b; }\n")
   Console.print("static inline double F64__ceil(double x) { return __builtin_ceil(x); }\n")
   Console.print("static inline double F64__floor(double x) { return __builtin_floor(x); }\n")
+  // fmt: how 0 = %g, 1 = %f, 2 = %.*e (prec digits); into the n bytes at buf, the length it would have (snprintf: C11
+  // 7.21.6.5; a result over n bytes is cut to n - 1). parse: strtod of the first 511 bytes of s, as a C string
+  Console.print("static inline int64_t F64__fmt(int64_t n, uint8_t* buf, int64_t how, int64_t prec, double x) { if (n <= 0) return 0; int k = how == 0 ? snprintf((char*)buf, (size_t)n, \"%g\", x) : how == 1 ? snprintf((char*)buf, (size_t)n, \"%f\", x) : snprintf((char*)buf, (size_t)n, \"%.*e\", (int)prec, x); return k < 0 ? 0 : k < n ? k : n - 1; }\n")
+  Console.print("static inline double F64__parse(srs_str s) { char b[512]; int64_t n = s.n < 511 ? s.n : 511; if (n > 0) memcpy(b, s.p, (size_t)n); b[n] = 0; return strtod(b, 0); }\n")
