@@ -1,0 +1,45 @@
+// mem: one box per escape reason and per local use (as nanofil's per-reason escape classes): a box escapes when a rule can
+// carry it out of its def, else it dies there
+enum ME:
+  case ME(v: I64)
+
+def ME.get(e: ME): I64 = e match
+  case ME(v) => v
+
+def ME.put {r: Region} (n: I64, xs: Array[ME](n)<r>): I64 =
+  val i = 0
+  val u = if 0 <= i && i < n then Array.put(xs, i, ME(1)) else ()
+  0
+
+def ME.read(x: I64): I64 = ME.get(ME(x))
+
+def ME.nest(x: I64): I64 =
+  val b = ME(x)
+  val c = MF(b)
+  MF.get(c)
+
+def ME.give(x: I64): ME = ME.pass(ME(x))
+
+def ME.pass(e: ME): ME = e
+
+def ME.drop(x: I64): I64 = ME.get(ME.pass(ME(x)))
+
+enum MF:
+  case MF(e: ME)
+
+def MF.get(f: MF): I64 = f match
+  case MF(e) => ME.get(e)
+
+def MF.out(x: I64): ME =
+  val f = MF(ME(x))
+  f match
+    case MF(e) => e
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val n = 1
+  val xs = Array.fill(n, ME(0))
+  Console.printI64(ME.put(n, xs) + ME.read(2) + ME.nest(3) + ME.get(ME.give(4)) + ME.drop(5) + ME.get(MF.out(6)))
+  0
