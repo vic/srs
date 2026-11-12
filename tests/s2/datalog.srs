@@ -10,17 +10,20 @@ def T.n {r: Region} (a: D.Atom): D.Lit = D.Neg(a)
 def T.b1 {r: Region} (x: D.Lit): Coll.List[D.Lit] = Coll.Cons(x, Coll.Nil)
 def T.b2 {r: Region} (x: D.Lit, y: D.Lit): Coll.List[D.Lit] = Coll.Cons(x, Coll.Cons(y, Coll.Nil))
 def T.f1 {r: Region} (rel: Str, x: D.Val): D.Fact = D.Fact(Sym.of(rel), Coll.Cons(x, Coll.Nil))
-def T.f2 {r: Region} (rel: Str, x: Str, y: Str): D.Fact = D.Fact(Sym.of(rel), Coll.Cons(T.s(x), Coll.Cons(T.s(y), Coll.Nil)))
+def T.f2 {r: Region} (rel: Str, x: Str, y: Str): D.Fact =
+  D.Fact(Sym.of(rel), Coll.Cons(T.s(x), Coll.Cons(T.s(y), Coll.Nil)))
 
 def T.edges {r: Region} (i: I64, n: I64, ring: Bool, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
   if i == n then acc
   else if !ring && i == n - 1 then acc
-  else T.edges(i + 1, n, ring, Coll.Cons(D.Fact(Sym.of("edge"), Coll.Cons(D.VInt(i), Coll.Cons(D.VInt((i + 1) % n), Coll.Nil))), acc))
+  else
+    T.edges(i + 1, n, ring, Coll.Cons(D.Fact(Sym.of("edge"), Coll.Cons(D.VInt(i), Coll.Cons(D.VInt((i + 1) % n), Coll.Nil))), acc))
 
 // path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).
 def T.tc {r: Region} (): Coll.List[D.Rule] =
   val r1 = D.Rule(T.a2("path", T.v(0), T.v(1)), T.b1(T.p(T.a2("edge", T.v(0), T.v(1)))))
-  val r2 = D.Rule(T.a2("path", T.v(0), T.v(2)), T.b2(T.p(T.a2("edge", T.v(0), T.v(1))), T.p(T.a2("path", T.v(1), T.v(2)))))
+  val r2 =
+    D.Rule(T.a2("path", T.v(0), T.v(2)), T.b2(T.p(T.a2("edge", T.v(0), T.v(1))), T.p(T.a2("path", T.v(1), T.v(2)))))
   Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
 
 def T.count {r: Region} (res: D.Result, rel: Str): Unit = res match
@@ -93,27 +96,33 @@ def main(): I64 =
   Console.print("\n")
   val x = T.v(0)
   val y = T.v(1)
-  val edges = Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "b", "c"), Coll.Cons(T.f2("edge", "c", "d"), Coll.Nil)))
+  val edges =
+    Coll.Cons(T.f2("edge", "a", "b"), Coll.Cons(T.f2("edge", "b", "c"), Coll.Cons(T.f2("edge", "c", "d"), Coll.Nil)))
   T.show(D.solve(T.tc(), edges), "path")
   // unreach(X) :- node(X), not reach(X).  reach(Y) :- reach(X), edge(X, Y).  reach(a).  nodes a..e
-  val nodes = Coll.Cons(T.f1("node", T.s("a")), Coll.Cons(T.f1("node", T.s("b")), Coll.Cons(T.f1("node", T.s("c")), Coll.Cons(T.f1("node", T.s("d")), Coll.Cons(T.f1("node", T.s("e")), edges)))))
+  val nodes =
+    Coll.Cons(T.f1("node", T.s("a")), Coll.Cons(T.f1("node", T.s("b")), Coll.Cons(T.f1("node", T.s("c")), Coll.Cons(T.f1("node", T.s("d")), Coll.Cons(T.f1("node", T.s("e")), edges)))))
   val db = Coll.Cons(T.f1("reach", T.s("a")), nodes)
-  val un = Coll.Cons(D.Rule(T.a1("unreach", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("reach", x)))), Coll.Cons(D.Rule(T.a1("reach", y), T.b2(T.p(T.a1("reach", x)), T.p(T.a2("edge", x, y)))), Coll.Nil))
+  val un =
+    Coll.Cons(D.Rule(T.a1("unreach", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("reach", x)))), Coll.Cons(D.Rule(T.a1("reach", y), T.b2(T.p(T.a1("reach", x)), T.p(T.a2("edge", x, y)))), Coll.Nil))
   T.show(D.solve(un, db), "unreach")
   // p(X) :- node(X), not q(X).  q(X) :- node(X), not p(X).
-  val nc = Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Nil))
+  val nc =
+    Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Nil))
   T.show(D.solve(nc, nodes), "p")
   // p(X) :- node(Y).  p(Y) :- node(Y), not q(X).
   T.show(D.solve(Coll.Cons(D.Rule(T.a1("p", x), T.b1(T.p(T.a1("node", y)))), Coll.Nil), nodes), "p")
   T.show(D.solve(Coll.Cons(D.Rule(T.a1("p", y), T.b2(T.p(T.a1("node", y)), T.n(T.a1("q", x)))), Coll.Nil), nodes), "p")
   // self(X) :- edge(X, X).  from_a(X) :- edge(a, X).  with edge(e, e)
   val loops = Coll.Cons(T.f2("edge", "e", "e"), edges)
-  val sc = Coll.Cons(D.Rule(T.a1("self", x), T.b1(T.p(T.a2("edge", x, x)))), Coll.Cons(D.Rule(T.a1("from_a", x), T.b1(T.p(T.a2("edge", D.AVal(T.s("a")), x)))), Coll.Nil))
+  val sc =
+    Coll.Cons(D.Rule(T.a1("self", x), T.b1(T.p(T.a2("edge", x, x)))), Coll.Cons(D.Rule(T.a1("from_a", x), T.b1(T.p(T.a2("edge", D.AVal(T.s("a")), x)))), Coll.Nil))
   val m = D.solve(sc, loops)
   T.show(m, "self")
   T.show(m, "from_a")
   // big(X) :- num(X), not small(X).  num(1) num(2) small(1)
-  val nums = Coll.Cons(T.f1("num", D.VInt(1)), Coll.Cons(T.f1("num", D.VInt(2)), Coll.Cons(T.f1("small", D.VInt(1)), Coll.Nil)))
+  val nums =
+    Coll.Cons(T.f1("num", D.VInt(1)), Coll.Cons(T.f1("num", D.VInt(2)), Coll.Cons(T.f1("small", D.VInt(1)), Coll.Nil)))
   T.show(D.solve(Coll.Cons(D.Rule(T.a1("big", x), T.b2(T.p(T.a1("num", x)), T.n(T.a1("small", x)))), Coll.Nil), nums), "big")
   // the negcycle names the smallest id among the relations on a cycle through negation, however many relations the
   // facts add and whatever lies downstream. ids are in order of first mention: p(0) node(1) q(2) in nc
@@ -123,7 +132,8 @@ def main(): I64 =
   val down = Coll.Cons(D.Rule(T.a1("r", x), T.b1(T.p(T.a1("p", x)))), nc)
   T.agree(down, nodes, "r")
   // q is mentioned first, so q has the smaller id
-  val ncq = Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Nil))
+  val ncq =
+    Coll.Cons(D.Rule(T.a1("q", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("p", x)))), Coll.Cons(D.Rule(T.a1("p", x), T.b2(T.p(T.a1("node", x)), T.n(T.a1("q", x)))), Coll.Nil))
   T.agree(ncq, nodes, "p")
   // a stratified program: both paths solve it
   T.agree(un, db, "unreach")

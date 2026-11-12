@@ -166,8 +166,7 @@ def dropNeg(es: Envs, body: Lits, db: Facts): Envs = body match
 
 def keepAbsent(es: Envs, a: Atom, db: Facts): Envs = es match
   case EnvsNil => EnvsNil
-  case EnvsCons(e, t) =>
-    if hasFact(db, factOf(e, a)) then keepAbsent(t, a, db) else EnvsCons(e, keepAbsent(t, a, db))
+  case EnvsCons(e, t) => if hasFact(db, factOf(e, a)) then keepAbsent(t, a, db) else EnvsCons(e, keepAbsent(t, a, db))
 
 // ── safety ──
 def argsHave(args: ArgList, n: I64): Bool = args match
@@ -264,10 +263,6 @@ def factAppend(db: Facts, f: Fact, src: Source): Facts = db match
   case FactNil => FactCons(f, src, FactNil)
   case FactCons(h, s, t) => FactCons(h, s, factAppend(t, f, src))
 
-def factCount(db: Facts): I64 = db match
-  case FactNil => 0
-  case FactCons(_, _, t) => 1 + factCount(t)
-
 // ── semi-naive evaluation over one store per relation ──
 // a relation's facts: all of them, delta = the ones the last round added (order-free: vic 2026-11-05), and one
 // index per column: value hash -> the facts with that value there, in the order of all (a bucket is a subsequence)
@@ -285,16 +280,21 @@ enum Rels:
 
 def valHash(v: Val): I64 = v match
   case VSym(s) => strHash(s)
-  case VInt(n) => ((n % 4294967296) + 4294967296) % 4294967296
+  case VInt(n) => (n % 4294967296 + 4294967296) % 4294967296
 
 def fmGet(m: FMap, h: I64): Facts = m match
   case FmTip => FactNil
-  case FmBin(k, b, l, rt) => if h == k then b else if h < k then fmGet(l, h) else fmGet(rt, h)
+  case FmBin(k, b, l, rt) =>
+    if h == k then b
+    else if h < k then fmGet(l, h)
+    else fmGet(rt, h)
 
 def fmAdd(m: FMap, h: I64, f: Fact, src: Source): FMap = m match
   case FmTip => FmBin(h, FactCons(f, src, FactNil), FmTip, FmTip)
   case FmBin(k, b, l, rt) =>
-    if h == k then FmBin(k, FactCons(f, src, b), l, rt) else if h < k then FmBin(k, b, fmAdd(l, h, f, src), rt) else FmBin(k, b, l, fmAdd(rt, h, f, src))
+    if h == k then FmBin(k, FactCons(f, src, b), l, rt)
+    else if h < k then FmBin(k, b, fmAdd(l, h, f, src), rt)
+    else FmBin(k, b, l, fmAdd(rt, h, f, src))
 
 def colsAdd(cs: Cols, vs: Vals, f: Fact, src: Source): Cols = vs match
   case ValNil => cs
@@ -308,9 +308,11 @@ def factsOf(rs: Rels, p: Str, delta: Bool): Facts = rs match
 
 def addFact(rs: Rels, f: Fact, src: Source, delta: Bool): Rels = f match
   case Fact(p, vs) => rs match
-    case RelNil => Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, colsAdd(ColNil, vs, f, src), RelNil)
+    case RelNil =>
+      Rel(p, FactCons(f, src, FactNil), if delta then FactCons(f, src, FactNil) else FactNil, colsAdd(ColNil, vs, f, src), RelNil)
     case Rel(q, all, d, cs, t) =>
-      if Str.eq(p, q) then Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
+      if Str.eq(p, q) then
+        Rel(q, FactCons(f, src, all), if delta then FactCons(f, src, d) else d, colsAdd(cs, vs, f, src), t)
       else Rel(q, all, d, cs, addFact(t, f, src, delta))
 
 def resetDelta(rs: Rels): Rels = rs match
@@ -372,12 +374,12 @@ def dropNegRels(es: Envs, body: Lits, rs: Rels): Envs = body match
 
 def absentIn(es: Envs, a: Atom, rs: Rels): Envs = es match
   case EnvsNil => EnvsNil
-  case EnvsCons(e, t) =>
-    if knownFact(rs, factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
+  case EnvsCons(e, t) => if knownFact(rs, factOf(e, a)) then absentIn(t, a, rs) else EnvsCons(e, absentIn(t, a, rs))
 
 // the new facts of clause i (at = its delta literal, -1 = none) added to acc, the new facts of this round
 def fireRule(c: Clause, i: I64, at: I64, rs: Rels, acc: Facts): Facts = c match
-  case Clause(h, body) => addNew(dropNegRels(joinRels(EnvsCons(EnvNil, EnvsNil), body, rs, at, 0), body, rs), h, i, rs, acc)
+  case Clause(h, body) =>
+    addNew(dropNegRels(joinRels(EnvsCons(EnvNil, EnvsNil), body, rs, at, 0), body, rs), h, i, rs, acc)
 
 def addNew(es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts = es match
   case EnvsNil => acc
@@ -390,7 +392,8 @@ def addNew(es: Envs, h: Atom, i: I64, rs: Rels, acc: Facts): Facts = es match
 def fireDeltas(c: Clause, i: I64, body: Lits, at: I64, rs: Rels, acc: Facts): Facts = body match
   case LitNil => acc
   case LitCons(l, t) => l match
-    case Pos(a) => fireDeltas(c, i, t, at + 1, rs, if noFacts(factsOf(rs, relOf(a), true)) then acc else fireRule(c, i, at, rs, acc))
+    case Pos(a) =>
+      fireDeltas(c, i, t, at + 1, rs, if noFacts(factsOf(rs, relOf(a), true)) then acc else fireRule(c, i, at, rs, acc))
     case Neg(_) => fireDeltas(c, i, t, at + 1, rs, acc)
 
 // one round of every clause of stratum k
@@ -398,7 +401,10 @@ def dlRound(st: Strata, cs: Clauses, i: I64, k: I64, first: Bool, rs: Rels, acc:
   case ClNil => acc
   case ClCons(c, t) => c match
     case Clause(h, body) =>
-      val acc2 = if stratum(st, relOf(h)) != k then acc else if first then fireRule(c, i, -1, rs, acc) else fireDeltas(c, i, body, 0, rs, acc)
+      val acc2 =
+        if stratum(st, relOf(h)) != k then acc
+        else if first then fireRule(c, i, -1, rs, acc)
+        else fireDeltas(c, i, body, 0, rs, acc)
       dlRound(st, t, i + 1, k, first, rs, acc2)
 
 def noFacts(fs: Facts): Bool = fs match
@@ -419,8 +425,10 @@ enum Safety:
 
 def safety(cs: Clauses): Safety = cs match
   case ClNil => AllSafe
-  case ClCons(c, t) => if safe(c) then safety(t) else c match
-    case Clause(h, _) => UnsafeIn(relOf(h))
+  case ClCons(c, t) =>
+    if safe(c) then safety(t)
+    else c match
+      case Clause(h, _) => UnsafeIn(relOf(h))
 
 // the model of rules cs over facts db, strata in order
 def evalDatalog(cs: Clauses, edb: Edb): Model = safety(cs) match

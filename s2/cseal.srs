@@ -30,7 +30,8 @@ def Cs.isArena(h: Sym.Sym): Bool = Str.eq(Sym.str(h), "Srs.Arena")
 def Cs.ex(e: El.Expr, sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = e match
   case El.CallFn(_, f, _, _, args) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, f))
   case El.New(_, _, _, _, _, args) => Cs.exs(args, sealed, open, acc)
-  case El.MHandled(_, _, h, _, args, rest, _, _) => Cs.ex(rest, sealed, open, Cs.exs(args, sealed, open, Cs.call(acc, sealed, h)))
+  case El.MHandled(_, _, h, _, args, rest, _, _) =>
+    Cs.ex(rest, sealed, open, Cs.exs(args, sealed, open, Cs.call(acc, sealed, h)))
   case El.Resume(_, _, a) => Cs.ex(a, sealed, open, acc)
   case El.Op(_, _, _, op, args, _) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, op))
   case El.TCall(_, _, op, _, args) => Cs.exs(args, sealed, open, Cs.call(acc, sealed, op))
@@ -85,10 +86,11 @@ def Cs.bodies(fs: Coll.List[El.Fn], n: Sym.Sym, acc: Coll.List[El.Expr]): Coll.L
   case Coll.Nil => acc
   case Coll.Cons(f, rest) =>
     val El.Fn(_, m, _, _, _, _, b) = f
-    val acc2 = if Sym.eq(m, n) then b match
-      case El.Def(e) => Coll.Cons(e, acc)
-      case El.Extern(_, _) => acc
-    else acc
+    val acc2 =
+      if Sym.eq(m, n) then b match
+        case El.Def(e) => Coll.Cons(e, acc)
+        case El.Extern(_, _) => acc
+      else acc
     Cs.bodies(rest, n, acc2)
 
 def Cs.handlerFns(hs: Coll.List[El.Handler], acc: Coll.List[El.Fn]): Coll.List[El.Fn] = hs match
@@ -132,7 +134,8 @@ def Cs.run(res: Ty.Result): Coll.List[I64] =
 // xs without a line seen before it
 def Cs.uniq(xs: Coll.List[I64], seen: Coll.List[I64]): Coll.List[I64] = xs match
   case Coll.Nil => Coll.Nil
-  case Coll.Cons(x, rest) => if Cs.has(seen, x) then Cs.uniq(rest, seen) else Coll.Cons(x, Cs.uniq(rest, Coll.Cons(x, seen)))
+  case Coll.Cons(x, rest) =>
+    if Cs.has(seen, x) then Cs.uniq(rest, seen) else Coll.Cons(x, Cs.uniq(rest, Coll.Cons(x, seen)))
 
 def Cs.has(xs: Coll.List[I64], x: I64): Bool = xs match
   case Coll.Nil => false

@@ -1,16 +1,18 @@
 // s2 COL b3: Coll.SMap (Sym -> value over BMap buckets) and Coll.ISet (I64 set over BMap). Three Syms are built with
 // one hash, so they share a bucket and only their strings tell them apart.
-def T.show (o: Coll.Option[I64]): Unit = o match
+def T.show(o: Coll.Option[I64]): Unit = o match
   case Coll.None => Console.print("none ")
   case Coll.Some(v) =>
     Console.printI64(v)
     Console.print(" ")
 
 // every i in [i, n) put into s
-def T.adds {r: Region} (s: Coll.ISet, i: I64, n: I64, step: I64): Coll.ISet = if i >= n then s else T.adds(Coll.setAdd(s, i), i + step, n, step)
+def T.adds {r: Region} (s: Coll.ISet, i: I64, n: I64, step: I64): Coll.ISet =
+  if i >= n then s else T.adds(Coll.setAdd(s, i), i + step, n, step)
 
 // how many i in [i, n) are in s
-def T.hits (s: Coll.ISet, i: I64, n: I64, acc: I64): I64 = if i == n then acc else T.hits(s, i + 1, n, acc + (if Coll.setHas(s, i) then 1 else 0))
+def T.hits(s: Coll.ISet, i: I64, n: I64, acc: I64): I64 =
+  if i == n then acc else T.hits(s, i + 1, n, acc + (if Coll.setHas(s, i) then 1 else 0))
 
 def main(): I64 =
   handle io = Srs.Console()

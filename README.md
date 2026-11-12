@@ -1,5 +1,7 @@
 # srs: Scala 3 Syntax Meets Zero-GC C
 
+[![Sponsor](https://img.shields.io/badge/sponsor-vic-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/vic)
+
 Welcome to **srs**—a small, modern systems programming language designed to give you the clean expression of Scala 3 with the bare-metal performance and predictable memory footprint of C. 
 
 The compiler, s2c, is self-hosting: it is written in srs (`./s2` and `./s2c`), and its own C output (`bootstrap/s2c-seed.c`) builds it again, byte for byte. Rather than relying on a garbage collector, srs verifies memory lifetimes, mutable state, and custom resource transitions entirely at compile time using algebraic flow effects and typestate protocols. The compiled output is clean, portable C with zero runtime bookkeeping overhead.

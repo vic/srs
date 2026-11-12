@@ -51,7 +51,8 @@ def Pure.uses(w: Pure.Who): Pure.Rel = w match
   case Pure.In(_) => Pure.RHUses
 
 def Pure.f1(rel: Pure.Rel, a: Sym.Sym): D.Fact = D.Fact(Pure.relSym(rel), Coll.Cons(D.VSym(a), Coll.Nil))
-def Pure.f2(rel: Pure.Rel, a: Sym.Sym, b: Sym.Sym): D.Fact = D.Fact(Pure.relSym(rel), Coll.Cons(D.VSym(a), Coll.Cons(D.VSym(b), Coll.Nil)))
+def Pure.f2(rel: Pure.Rel, a: Sym.Sym, b: Sym.Sym): D.Fact =
+  D.Fact(Pure.relSym(rel), Coll.Cons(D.VSym(a), Coll.Cons(D.VSym(b), Coll.Nil)))
 
 def Pure.atom(rel: Pure.Rel, xs: Coll.List[I64]): D.Atom = D.Atom(Pure.relSym(rel), Pure.vars(xs))
 def Pure.vars(xs: Coll.List[I64]): Coll.List[D.Arg] = xs match
@@ -60,16 +61,19 @@ def Pure.vars(xs: Coll.List[I64]): Coll.List[D.Arg] = xs match
 def Pure.pos(rel: Pure.Rel, xs: Coll.List[I64]): D.Lit = D.Pos(Pure.atom(rel, xs))
 def Pure.one(x: I64): Coll.List[I64] = Coll.Cons(x, Coll.Nil)
 def Pure.two(x: I64, y: I64): Coll.List[I64] = Coll.Cons(x, Pure.one(y))
-def Pure.rule1(h: Pure.Rel, b: Pure.Rel): D.Rule = D.Rule(Pure.atom(h, Pure.one(0)), Coll.Cons(Pure.pos(b, Pure.one(0)), Coll.Nil))
+def Pure.rule1(h: Pure.Rel, b: Pure.Rel): D.Rule =
+  D.Rule(Pure.atom(h, Pure.one(0)), Coll.Cons(Pure.pos(b, Pure.one(0)), Coll.Nil))
 // h(0) :- b(0, 1), c(1)
-def Pure.rule2(h: Pure.Rel, b: Pure.Rel, c: Pure.Rel): D.Rule = D.Rule(Pure.atom(h, Pure.one(0)), Coll.Cons(Pure.pos(b, Pure.two(0, 1)), Coll.Cons(Pure.pos(c, Pure.one(1)), Coll.Nil)))
+def Pure.rule2(h: Pure.Rel, b: Pure.Rel, c: Pure.Rel): D.Rule =
+  D.Rule(Pure.atom(h, Pure.one(0)), Coll.Cons(Pure.pos(b, Pure.two(0, 1)), Coll.Cons(Pure.pos(c, Pure.one(1)), Coll.Nil)))
 
 def Pure.rules(): Coll.List[D.Rule] =
   val i1 = Pure.rule1(Pure.RImpure, Pure.RDirect)
   val i2 = Pure.rule2(Pure.RImpure, Pure.RCalls, Pure.RImpure)
   val i3 = Pure.rule2(Pure.RImpure, Pure.RUses, Pure.REffectful)
   // effectful(P) :- handles(H, P), impureH(H): written with P first as the head var
-  val e1 = D.Rule(Pure.atom(Pure.REffectful, Pure.one(0)), Coll.Cons(Pure.pos(Pure.RHandles, Pure.two(1, 0)), Coll.Cons(Pure.pos(Pure.RImpureH, Pure.one(1)), Coll.Nil)))
+  val e1 =
+    D.Rule(Pure.atom(Pure.REffectful, Pure.one(0)), Coll.Cons(Pure.pos(Pure.RHandles, Pure.two(1, 0)), Coll.Cons(Pure.pos(Pure.RImpureH, Pure.one(1)), Coll.Nil)))
   val h1 = Pure.rule1(Pure.RImpureH, Pure.RHDirect)
   val h2 = Pure.rule2(Pure.RImpureH, Pure.RHCalls, Pure.RImpure)
   val h3 = Pure.rule2(Pure.RImpureH, Pure.RHUses, Pure.REffectful)
@@ -96,13 +100,14 @@ def Pure.prim(n: Sym.Sym): Coll.Option[Pure.Prim] =
   else Coll.None
 
 // ── facts ──
-def Pure.facts(ds: Coll.List[Ast.Decl], rows: Eff.Rows): Coll.List[D.Fact] = Pure.decls(Pure.protos(ds, Coll.Nil), Pure.hprotos(ds, Coll.sEmpty()), rows, ds, Coll.Nil)
+def Pure.facts(ds: Coll.List[Ast.Decl], rows: Eff.Rows): Coll.List[D.Fact] =
+  Pure.decls(Pure.protos(ds, Coll.Nil), Pure.hprotos(ds, Coll.sEmpty()), rows, ds, Coll.Nil)
 
 def Pure.protos(ds: Coll.List[Ast.Decl], acc: Coll.List[Sym.Sym]): Coll.List[Sym.Sym] = ds match
   case Coll.Nil => acc
   case Coll.Cons(d, rest) => d match
     case Ast.DProto(p) =>
-      val Ast.Proto(_, n, _, _, _, _, _, _) = p
+      val Ast.Proto(_, _, n, _, _, _, _, _, _) = p
       Pure.protos(rest, Coll.Cons(n, acc))
     case _ => Pure.protos(rest, acc)
 
@@ -110,7 +115,7 @@ def Pure.hprotos(ds: Coll.List[Ast.Decl], m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym.
   case Coll.Nil => m
   case Coll.Cons(d, rest) => d match
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, n, p, _, _) = h
+      val Ast.Handler(_, _, n, p, _, _, _) = h
       Pure.hprotos(rest, Coll.sInsert(m, n, p))
     case _ => Pure.hprotos(rest, m)
 
@@ -119,10 +124,10 @@ def Pure.decls(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], rows: Eff.Rows, d
   case Coll.Nil => acc
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
-      val Ast.Fn(_, n, _, _, _, _, _) = f
+      val Ast.Fn(_, _, n, _, _, _, _, _) = f
       Pure.decls(ps, hp, rows, rest, Pure.rowUses(Pure.Def(n), Eff.row(rows, n), Pure.fn(ps, hp, Pure.Def(n), f, acc)))
     case Ast.DHandler(h) =>
-      val Ast.Handler(_, n, p, fs, _) = h
+      val Ast.Handler(_, _, n, p, fs, _, _) = h
       Pure.decls(ps, hp, rows, rest, Pure.rowUses(Pure.In(n), Eff.row(rows, n), Pure.fns(ps, hp, Pure.In(n), fs, Coll.Cons(Pure.f2(Pure.RHandles, n, p), acc))))
     case _ => Pure.decls(ps, hp, rows, rest, acc)
 
@@ -142,7 +147,7 @@ def Pure.fns(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], w: Pure.Who, fs: Co
 
 // an extern not in the pure set is a direct effect; a {} binder of a protocol uses it, any other {} binder is evidence
 def Pure.fn(ps: Coll.List[Sym.Sym], hp: Coll.SMap[Sym.Sym], w: Pure.Who, f: Ast.Fn, acc: Coll.List[D.Fact]): Coll.List[D.Fact] =
-  val Ast.Fn(_, n, gs, _, _, _, body) = f
+  val Ast.Fn(_, _, n, gs, _, _, _, body) = f
   val Pure.Ev(ev, acc2) = Pure.binders(ps, w, Ty.evidence(gs, Coll.Nil), Coll.Nil, acc)
   body match
     case Ast.Extern(_) => if Pure.pureExtern(n) then acc2 else Coll.Cons(Pure.f1(Pure.direct(w), Pure.subj(w)), acc2)
@@ -157,7 +162,8 @@ def Pure.binders(ps: Coll.List[Sym.Sym], w: Pure.Who, bs: Coll.List[Ast.Binder],
     val Ast.Binder(_, x, t) = b
     val Ast.Ty(_, tn, _, _, _) = t
     if Pure.isRegion(tn) then Pure.binders(ps, w, rest, ev, acc)
-    else if Ty.memberSym(tn, ps) then Pure.binders(ps, w, rest, ev, Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), tn), acc))
+    else if Ty.memberSym(tn, ps) then
+      Pure.binders(ps, w, rest, ev, Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), tn), acc))
     else Pure.binders(ps, w, rest, Coll.Cons(x, ev), acc)
 
 // a call is calls(who, f); a handle uses the handler's protocol; a method on {} evidence is a direct effect (the given
@@ -172,9 +178,9 @@ def Pure.expr(hp: Coll.SMap[Sym.Sym], w: Pure.Who, ev: Coll.List[Sym.Sym], e: As
   case Ast.Resume(_, _, x) => Pure.expr(hp, w, ev, x, Coll.Cons(Pure.f1(Pure.direct(w), Pure.subj(w)), acc))
   case Ast.Bin(_, _, l, x) => Pure.expr(hp, w, ev, x, Pure.expr(hp, w, ev, l, acc))
   case Ast.Un(_, _, x) => Pure.expr(hp, w, ev, x, acc)
-  case Ast.If(_, c, t, x) => Pure.expr(hp, w, ev, x, Pure.expr(hp, w, ev, t, Pure.expr(hp, w, ev, c, acc)))
-  case Ast.Match(_, s, arms) => Pure.arms(hp, w, ev, arms, Pure.expr(hp, w, ev, s, acc))
-  case Ast.Block(_, ss, last) => Pure.expr(hp, w, ev, last, Pure.stmts(hp, w, ev, ss, acc))
+  case Ast.If(_, _, c, t, x) => Pure.expr(hp, w, ev, x, Pure.expr(hp, w, ev, t, Pure.expr(hp, w, ev, c, acc)))
+  case Ast.Match(_, _, s, arms) => Pure.arms(hp, w, ev, arms, Pure.expr(hp, w, ev, s, acc))
+  case Ast.Block(_, _, ss, last) => Pure.expr(hp, w, ev, last, Pure.stmts(hp, w, ev, ss, acc))
   case Ast.While(_, c, b) => Pure.expr(hp, w, ev, b, Pure.expr(hp, w, ev, c, acc))
   case Ast.Assign(_, _, x) => Pure.expr(hp, w, ev, x, acc)
   case _ => acc
@@ -186,21 +192,21 @@ def Pure.exprs(hp: Coll.SMap[Sym.Sym], w: Pure.Who, ev: Coll.List[Sym.Sym], xs: 
 def Pure.arms(hp: Coll.SMap[Sym.Sym], w: Pure.Who, ev: Coll.List[Sym.Sym], as: Coll.List[Ast.Arm], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = as match
   case Coll.Nil => acc
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, _, b) = a
+    val Ast.Arm(_, _, _, b) = a
     Pure.arms(hp, w, ev, rest, Pure.expr(hp, w, ev, b, acc))
 
 def Pure.stmts(hp: Coll.SMap[Sym.Sym], w: Pure.Who, ev: Coll.List[Sym.Sym], ss: Coll.List[Ast.Stmt], acc: Coll.List[D.Fact]): Coll.List[D.Fact] = ss match
   case Coll.Nil => acc
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, _, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
-    case Ast.Var(_, _, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
-    case Ast.Handle(_, _, h, xs) =>
+    case Ast.Val(_, _, _, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
+    case Ast.Var(_, _, _, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
+    case Ast.Handle(_, _, _, h, xs) =>
       val acc2 = Coll.sLookup(hp, h) match
         case Coll.Some(p) => Coll.Cons(Pure.f2(Pure.uses(w), Pure.subj(w), p), acc)
         case Coll.None => acc
       Pure.stmts(hp, w, ev, rest, Pure.exprs(hp, w, ev, xs, acc2))
-    case Ast.Do(e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
-    case Ast.Check(_, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
+    case Ast.Do(_, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
+    case Ast.Check(_, _, _, e) => Pure.stmts(hp, w, ev, rest, Pure.expr(hp, w, ev, e, acc))
 
 // ── the fns with effects, by name; a rule library that is not Datalog is a bug, as data ──
 enum Pure.Set:

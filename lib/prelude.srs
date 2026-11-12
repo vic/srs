@@ -58,7 +58,8 @@ def Srs.Arena.addr(p: Ptr): I64 = I64.ofU64(rt_ptr_addr(p))
 def Srs.Arena.at(a: I64): Ptr = rt_ptr_of(U64.ofI64(a))
 def Srs.Arena.up(n: I64, to: I64): I64 = (n + to - 1) / to * to
 
-def Srs.Arena.flags(): I32 = I32.of(I64.ofU64(U64.ofI64(I64.ofI32(MAP_PRIVATE)) | U64.ofI64(I64.ofI32(MAP_ANONYMOUS)) | U64.ofI64(I64.ofI32(MAP_NORESERVE))))
+def Srs.Arena.flags(): I32 =
+  I32.of(I64.ofU64(U64.ofI64(I64.ofI32(MAP_PRIVATE)) | U64.ofI64(I64.ofI32(MAP_ANONYMOUS)) | U64.ofI64(I64.ofI32(MAP_NORESERVE))))
 def Srs.Arena.prot(): I32 = I32.of(I64.ofU64(U64.ofI64(I64.ofI32(PROT_READ)) | U64.ofI64(I64.ofI32(PROT_WRITE))))
 
 // len bytes of fresh zeroed pages; failure is the C arena's: a message and exit 70
@@ -79,7 +80,7 @@ def Srs.Arena.pages(size: I64): Ptr =
     val want = if n > Srs.Arena.reserve() then Srs.Arena.up(n, Srs.Arena.huge()) else Srs.Arena.reserve()
     val p = Srs.Arena.map(want + Srs.Arena.huge())
     val mask = U64.ofI64(Srs.Arena.huge() - 1)
-    val a = rt_ptr_of((rt_ptr_addr(p) + mask) & ~mask)
+    val a = rt_ptr_of(rt_ptr_addr(p) + mask & ~mask)
     val adv = Srs.Pages.advise(g, a, want)
     rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
     rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
@@ -120,7 +121,8 @@ def Srs.Arena.open(self: Ptr, n: I64): Ptr =
   val g = rt_globals()
   val spare = rt_ptr_get(g, Srs.Arena.gSpare())
   val big = n > Srs.Arena.chunk()
-  val c = if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)
+  val c =
+    if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)
   rt_ptr_set(c, Srs.Arena.hNext(), rt_ptr_get(self, 0))
   rt_ptr_set(c, Srs.Arena.hUsed(), 0)
   rt_ptr_set(c, Srs.Arena.hCap(), if big then n else Srs.Arena.chunk())
@@ -137,7 +139,8 @@ def Srs.Arena.fresh(g: Ptr, spare: I64): Ptr =
 def Srs.Arena.alloc(self: Ptr, size: I64): Ptr =
   val n = Srs.Arena.up(size, 8)
   val head = rt_ptr_get(self, 0)
-  if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then Srs.Arena.bump(Srs.Arena.at(head), n)
+  if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then
+    Srs.Arena.bump(Srs.Arena.at(head), n)
   else Srs.Arena.bump(Srs.Arena.open(self, n), n)
 
 // every chunk of the arena: a chunk size goes on the spare list, a big block is unmapped; then the struct is kept for reuse
@@ -152,6 +155,7 @@ def Srs.Arena.release(g: Ptr, c: I64): Unit =
       rt_ptr_set(g, Srs.Arena.gSpare(), c)
     else
       val un = munmap(ch, U64.ofI64(Srs.Arena.up(Srs.Arena.header() + cap, Srs.Arena.page())))
+      ()
     Srs.Arena.release(g, next)
 
 def Srs.Arena.free(self: Ptr): Unit =
@@ -209,7 +213,8 @@ def Srs.Pages.eol(s: Str, i: I64): I64 =
   else Srs.Pages.eol(s, i + 1)
 
 def Srs.Pages.num(s: Str, i: I64, acc: I64): I64 =
-  if i < Str.len(s) && Str.at(s, i) >= 48 && Str.at(s, i) <= 57 then Srs.Pages.num(s, i + 1, acc * 10 + Str.at(s, i) - 48)
+  if i < Str.len(s) && Str.at(s, i) >= 48 && Str.at(s, i) <= 57 then
+    Srs.Pages.num(s, i + 1, acc * 10 + Str.at(s, i) - 48)
   else acc
 
 def Srs.Pages.keep(g: Ptr, n: I64): Bool =
@@ -234,7 +239,8 @@ def Srs.Pages.huge(a: Ptr, len: I64): Unit =
 
 // an unreadable count or more than limit() failures since arming shuts the gate
 def Srs.Pages.step(g: Ptr, a: Ptr, len: I64, ok: Bool): Unit =
-  if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then Srs.Pages.huge(a, len)
+  if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then
+    Srs.Pages.huge(a, len)
   else Srs.Gate.shut(g)
 
 // advise len bytes at a (a fresh, 2 MiB aligned reservation) while the gate is On
@@ -317,10 +323,10 @@ extern "libc" val MAP_NORESERVE: I32
 extern "libc" val MADV_HUGEPAGE: I32
 
 // rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
-def U32.rotr(x: U32, n: I64): U32 = (x >> n) | (x << (32 - n))
-def U32.rotl(x: U32, n: I64): U32 = (x << n) | (x >> (32 - n))
-def U64.rotr(x: U64, n: I64): U64 = (x >> n) | (x << (64 - n))
-def U64.rotl(x: U64, n: I64): U64 = (x << n) | (x >> (64 - n))
+def U32.rotr(x: U32, n: I64): U32 = x >> n | x << 32 - n
+def U32.rotl(x: U32, n: I64): U32 = x << n | x >> 32 - n
+def U64.rotr(x: U64, n: I64): U64 = x >> n | x << 64 - n
+def U64.rotl(x: U64, n: I64): U64 = x << n | x >> 64 - n
 
 // the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
 // main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
@@ -329,8 +335,11 @@ extern def Srs.noState(): Ptr
 // what rt_print and rt_print_i64 write between begin and end, as one string
 extern def rt_capture_begin(): Unit
 extern def rt_capture_end(): Str
+// the bytes printed since the last newline (stdout: since its last flush)
+extern def rt_column(): I64
 
-// captureBegin .. captureEnd: the prints between them are one string, not output
+// captureBegin .. captureEnd: the prints between them are one string, not output (captures nest); column: the bytes
+// printed since the last newline
 capability Console:
   def print(s: Str): Unit
   def printI64(v: I64): Unit
@@ -339,6 +348,7 @@ capability Console:
   def eprintI64(v: I64): Unit
   def captureBegin(): Unit
   def captureEnd(): Str
+  def column(): I64
 
 handler Srs.Console for Console:
   def print(s: Str): Unit = rt_print(s)
@@ -348,6 +358,7 @@ handler Srs.Console for Console:
   def eprintI64(v: I64): Unit = rt_eprint_i64(v)
   def captureBegin(): Unit = rt_capture_begin()
   def captureEnd(): Str = rt_capture_end()
+  def column(): I64 = rt_column()
 
 capability Args:
   def count(): I64
@@ -452,7 +463,11 @@ def Os.follow(l: Os.Links): Bool = l match
 
 // rt_fs_kind's code, in Os.Kind order
 def Os.kind(k: I64): Os.Kind =
-  if k == 1 then Os.Regular else if k == 2 then Os.Dir else if k == 3 then Os.Link else if k == 4 then Os.Special else Os.Absent
+  if k == 1 then Os.Regular
+  else if k == 2 then Os.Dir
+  else if k == 3 then Os.Link
+  else if k == 4 then Os.Special
+  else Os.Absent
 
 // names each followed by a NUL, cut from the end so the list keeps their order
 def Os.names(s: Str): Os.Strs =
@@ -460,8 +475,7 @@ def Os.names(s: Str): Os.Strs =
   var j = Str.len(s) - 1
   while j >= 0 do
     var k = j - 1
-    while k >= 0 && Str.at(s, k) != 0 do
-      k = k - 1
+    while k >= 0 && Str.at(s, k) != 0 do k = k - 1
     acc = Os.More(Str.slice(s, k + 1, j), acc)
     j = k
   acc
@@ -474,7 +488,9 @@ def Os.var(s: Str): Os.Var = if Str.len(s) < 0 then Os.Unset else Os.Set(s)
 def Os.ran(r: I64): Os.Ran =
   val how = r / 1048576
   val v = r % 1048576
-  if how == 0 then Os.Exited(v) else if how == 1 then Os.Killed(v) else Os.NoStart(Os.err(v))
+  if how == 0 then Os.Exited(v)
+  else if how == 1 then Os.Killed(v)
+  else Os.NoStart(Os.err(v))
 
 capability Files:
   def read(path: Str): Str
@@ -544,12 +560,11 @@ handler Srs.Process for Process:
     val p = rt_proc_new()
     var a = argv
     var go = true
-    while go do
-      a match
-        case Os.End => go = false
-        case Os.More(s, rest) =>
-          rt_proc_arg(p, s)
-          a = rest
+    while go do a match
+      case Os.End => go = false
+      case Os.More(s, rest) =>
+        rt_proc_arg(p, s)
+        a = rest
     Os.ran(rt_proc_run(p))
 
 capability Exit:
@@ -564,7 +579,7 @@ def strHash(s: Str): I64 =
   var i = 0
   val n = Str.len(s)
   while i < n do
-    h = ((h + Str.at(s, i)) * 16777619) % 4294967296
+    h = (h + Str.at(s, i)) * 16777619 % 4294967296
     i = i + 1
   h
 
@@ -588,8 +603,8 @@ handler Srs.Mut for Mut:
 extern def rt_store_dir(): Str
 extern def rt_out_new(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr
 extern def rt_out_str(self: Ptr, s: Str): Unit
-extern def rt_out_i64(self: Ptr, n: I64): Unit
 extern def rt_out_commit(self: Ptr): Unit
+extern def rt_fout_new(path: Str): Ptr
 extern def rt_store_read(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
 
 // the store's root and its entries, read (the authority of the store: SRS_STORE, else $HOME/.srs/store)
@@ -633,3 +648,9 @@ extern def F64.floor(x: F64): F64
 // snprintf); the text of s as a float (C strtod of its first 511 bytes: 0 when none is read)
 extern def F64.fmt(n: I64, buf: Array[U8](n), how: I64, prec: I64, x: F64): I64
 extern def F64.parse(s: Str): F64
+
+// a source file rewritten whole (srs fmt): the new text goes to a file beside it, renamed over it at commit
+handler Srs.FileOut for StoreOut:
+  def init(path: Str): Ptr = rt_fout_new(path)
+  def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
+  def commit(self: Ptr): Unit = rt_out_commit(self)

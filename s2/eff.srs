@@ -41,7 +41,9 @@ def Eff.reqOf(ps: Coll.List[Ast.Proto], f: Sym.Sym): Coll.Option[Eff.Req] =
 
 // 46 = `.`
 def Eff.lastDot(s: Str, i: I64): Coll.Option[I64] =
-  if i < 0 then Coll.None else if Str.at(s, i) == 46 then Coll.Some(i) else Eff.lastDot(s, i - 1)
+  if i < 0 then Coll.None
+  else if Str.at(s, i) == 46 then Coll.Some(i)
+  else Eff.lastDot(s, i - 1)
 
 // the symbol `a.b` (srs has no string concatenation: the printer writes it)
 def Eff.dotted(a: Str, b: Sym.Sym): Sym.Sym =
@@ -115,7 +117,7 @@ def Eff.capNames(cx: Eff.Cx): Coll.SMap[Sym.Sym] =
 def Eff.namesOf(ps: Coll.List[Ast.Proto], m: Coll.SMap[Sym.Sym]): Coll.SMap[Sym.Sym] = ps match
   case Coll.Nil => m
   case Coll.Cons(p, rest) =>
-    val Ast.Proto(_, n, _, _, _, _, _, _) = p
+    val Ast.Proto(_, _, n, _, _, _, _, _, _) = p
     Eff.namesOf(rest, Coll.sInsert(m, n, Eff.dotted("eff", n)))
 
 // ── rules ──
@@ -126,8 +128,10 @@ def Eff.rules(): Coll.List[D.Rule] =
   val n2 = D.Rule(Eff.atom(Eff.RNeeds, Pure.two(0, 1)), Coll.Cons(D.Pos(Eff.atom(Eff.RDecl, Pure.two(0, 1))), Coll.Nil))
   // needs(0, 1) :- calls(0, 2, 3), needs(2, 1), not hd(3, 1)
   val callsA = D.Pos(D.Atom(Eff.relSym(Eff.RCalls), Pure.vars(Coll.Cons(0, Pure.two(2, 3)))))
-  val n3 = D.Rule(Eff.atom(Eff.RNeeds, Pure.two(0, 1)), Coll.Cons(callsA, Coll.Cons(D.Pos(Eff.atom(Eff.RNeeds, Pure.two(2, 1))), Coll.Cons(D.Neg(Eff.atom(Eff.RHd, Pure.two(3, 1))), Coll.Nil))))
-  val w1 = D.Rule(Eff.atom(Eff.RRow, Pure.two(0, 1)), Coll.Cons(D.Pos(Eff.atom(Eff.RNeeds, Pure.two(0, 1))), Coll.Cons(D.Neg(Eff.atom(Eff.RDecl, Pure.two(0, 1))), Coll.Nil)))
+  val n3 =
+    D.Rule(Eff.atom(Eff.RNeeds, Pure.two(0, 1)), Coll.Cons(callsA, Coll.Cons(D.Pos(Eff.atom(Eff.RNeeds, Pure.two(2, 1))), Coll.Cons(D.Neg(Eff.atom(Eff.RHd, Pure.two(3, 1))), Coll.Nil))))
+  val w1 =
+    D.Rule(Eff.atom(Eff.RRow, Pure.two(0, 1)), Coll.Cons(D.Pos(Eff.atom(Eff.RNeeds, Pure.two(0, 1))), Coll.Cons(D.Neg(Eff.atom(Eff.RDecl, Pure.two(0, 1))), Coll.Nil)))
   Coll.Cons(n1, Coll.Cons(n2, Coll.Cons(n3, Coll.Cons(w1, Coll.Nil))))
 
 // ── facts ──
@@ -145,7 +149,8 @@ enum Eff.Syms:
 enum Eff.Cx:
   case Eff.Cx(ps: Coll.List[Ast.Proto], hp: Coll.SMap[Sym.Sym], fns: Coll.SMap[Eff.Callee], ctors: Coll.SMap[Bool], ss: Eff.Syms, trs: Coll.List[Ast.Trait])
 
-def Eff.syms(): Eff.Syms = Eff.Syms(Eff.relSym(Eff.RReq), Eff.relSym(Eff.RDecl), Eff.relSym(Eff.RCalls), Eff.relSym(Eff.RHd), Sym.of("Region"), Names.keys(), Sym.of("Cell.new"))
+def Eff.syms(): Eff.Syms =
+  Eff.Syms(Eff.relSym(Eff.RReq), Eff.relSym(Eff.RDecl), Eff.relSym(Eff.RCalls), Eff.relSym(Eff.RHd), Sym.of("Region"), Names.keys(), Sym.of("Cell.new"))
 
 def Eff.cxOf(ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds match
   case Coll.Nil => cx
@@ -154,20 +159,20 @@ def Eff.cxOf(ds: Coll.List[Ast.Decl], cx: Eff.Cx): Eff.Cx = ds match
     d match
       case Ast.DProto(p) => Eff.cxOf(rest, Eff.Cx(Coll.Cons(p, ps), hp, fns, ctors, ss, trs))
       case Ast.DHandler(h) =>
-        val Ast.Handler(_, n, p, _, _) = h
+        val Ast.Handler(_, _, n, p, _, _, _) = h
         Eff.cxOf(rest, Eff.Cx(ps, Coll.sInsert(hp, n, p), Coll.sInsert(fns, n, Eff.Runs), ctors, ss, trs))
       case Ast.DFn(f) =>
-        val Ast.Fn(_, n, _, _, _, _, _) = f
+        val Ast.Fn(_, _, n, _, _, _, _, _) = f
         Eff.cxOf(rest, Eff.Cx(ps, hp, Coll.sInsert(fns, n, Eff.calleeOf(f)), ctors, ss, trs))
       case Ast.DEnum(e) =>
-        val Ast.Enum(_, _, _, cases) = e
+        val Ast.Enum(_, _, _, _, cases) = e
         Eff.cxOf(rest, Eff.Cx(ps, hp, fns, Eff.ctorsOf(cases, ctors), ss, trs))
       case Ast.DTrait(t) => Eff.cxOf(rest, Eff.Cx(ps, hp, fns, ctors, ss, Coll.Cons(t, trs)))
       case _ => Eff.cxOf(rest, cx)
 
 // an extern with no {} binder is a leaf (rt_print, rt_str_eq, ...)
 def Eff.calleeOf(f: Ast.Fn): Eff.Callee =
-  val Ast.Fn(_, _, gs, _, _, _, body) = f
+  val Ast.Fn(_, _, _, gs, _, _, _, body) = f
   body match
     case Ast.Extern(_) => Ty.evidence(gs, Coll.Nil) match
       case Coll.Nil => Eff.Leaf
@@ -177,7 +182,7 @@ def Eff.calleeOf(f: Ast.Fn): Eff.Callee =
 def Eff.ctorsOf(cs: Coll.List[Ast.Case], m: Coll.SMap[Bool]): Coll.SMap[Bool] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
-    val Ast.Case(_, n, fields) = c
+    val Ast.Case(_, _, n, fields) = c
     fields match
       case Coll.Nil => Eff.ctorsOf(rest, m)
       case Coll.Cons(_, _) => Eff.ctorsOf(rest, Coll.sInsert(m, n, true))
@@ -214,12 +219,12 @@ def Eff.decls(cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.List[D.Fact] 
   case Coll.Cons(d, rest) => d match
     case Ast.DFn(f) =>
       val Eff.W(n, fs, _, _) = w
-      val Ast.Fn(_, fname, _, _, _, _, _) = f
+      val Ast.Fn(_, _, fname, _, _, _, _, _) = f
       Eff.decls(cx, rest, Eff.fn(cx, fname, f, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
     // a handler is one subject: its row is what all its fns need (E1b), kept at its handle site
     case Ast.DHandler(h) =>
       val Eff.W(n, fs, _, _) = w
-      val Ast.Handler(_, hn, _, hfs, _) = h
+      val Ast.Handler(_, _, hn, _, hfs, _, _) = h
       Eff.decls(cx, rest, Eff.hfns(cx, hn, hfs, Eff.W(n, fs, Coll.Nil, Coll.sEmpty())))
     case _ => Eff.decls(cx, rest, w)
 
@@ -232,13 +237,13 @@ def Eff.opOwn(cx: Eff.Cx, h: Sym.Sym, fname: Sym.Sym): Coll.List[Sym.Sym] =
     case Coll.Some(p) => Ty.protoOp(ps, p, fname) match
       case Coll.None => Coll.Nil
       case Coll.Some(o) =>
-        val Ast.Op(_, _, ogs, _, _, _) = o
+        val Ast.Op(_, _, _, ogs, _, _, _) = o
         Fx.binderNames(Ty.evidence(ogs, Coll.Nil), Coll.Nil)
 
 // decl(F, P) for each {} binder of a protocol; the body of a run def
 // n: the subject, the def itself or its handler
 def Eff.fn(cx: Eff.Cx, n: Sym.Sym, f: Ast.Fn, w: Eff.W): Eff.W =
-  val Ast.Fn(_, fname, gs, ps, _, _, body) = f
+  val Ast.Fn(_, _, fname, gs, ps, _, _, body) = f
   val ev = Ty.evidence(gs, Coll.Nil)
   val w1 = Eff.declsOf(cx, n, ev, Eff.opOwn(cx, n, fname), w)
   body match
@@ -261,7 +266,8 @@ def Eff.declsOf(cx: Eff.Cx, f: Sym.Sym, bs: Coll.List[Ast.Binder], own: Coll.Lis
     val rel = Coll.sLookup(hp, f) match
       case Coll.Some(_) => if Ty.memberSym(bx, own) then decl else req
       case Coll.None => decl
-    if Ty.isProto(ps, tn) then Eff.declsOf(cx, f, rest, own, Eff.add(w, rel, Eff.v2(D.VSym(f), D.VSym(tn)))) else Eff.declsOf(cx, f, rest, own, w)
+    if Ty.isProto(ps, tn) then Eff.declsOf(cx, f, rest, own, Eff.add(w, rel, Eff.v2(D.VSym(f), D.VSym(tn))))
+    else Eff.declsOf(cx, f, rest, own, w)
 
 def Eff.req(cx: Eff.Cx, at: Eff.At, p: Sym.Sym, w: Eff.W): Eff.W =
   val Eff.At(f, _, hd, _, _) = at
@@ -311,7 +317,7 @@ def Eff.opNeeds(cx: Eff.Cx, at: Eff.At, p: Sym.Sym, op: Sym.Sym, w: Eff.W): Eff.
   Ty.protoOp(ps, p, op) match
     case Coll.None => w
     case Coll.Some(o) =>
-      val Ast.Op(_, _, ogs, _, _, _) = o
+      val Ast.Op(_, _, _, ogs, _, _, _) = o
       Eff.needsOf(cx, at, Ty.evidence(ogs, Coll.Nil), w)
 
 def Eff.needsOf(cx: Eff.Cx, at: Eff.At, bs: Coll.List[Ast.Binder], w: Eff.W): Eff.W = bs match
@@ -357,7 +363,8 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     if Eff.isFn(fns, g) then Eff.call(cx, at, g, w1)
     else if Eff.isIn(ctors, g) || Eff.isArrayNew(ss, g) then Eff.req(cx, at, region, w1)
     // Cell.put(c, v) and Array.put(xs, i, v) write (A1, A1b): a request on Mut, so a fn that writes has Mut in its row
-    else if Str.eq(Sym.str(g), "Cell.put") || Str.eq(Sym.str(g), "Array.put") || Str.eq(Sym.str(g), "Array.blit") then Eff.req(cx, at, Sym.of("Mut"), w1)
+    else if Str.eq(Sym.str(g), "Cell.put") || Str.eq(Sym.str(g), "Array.put") || Str.eq(Sym.str(g), "Array.blit") then
+      Eff.req(cx, at, Sym.of("Mut"), w1)
     else Eff.opNeedsQ(cx, at, Eff.reqOf(ps, g), Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1))
   // a trait method on {} evidence requests the capabilities the method declares (vic Q2); xs.at(i) on a local (an
   // array, A1) builds an Array.Index in the innermost Region
@@ -366,15 +373,18 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     val Eff.Cx(ps, _, _, _, ss, trs) = cx
     val Eff.Syms(_, _, _, _, region, _, _) = ss
     Eff.binderTy(ev, recv) match
-      case Coll.Some(tn) => Eff.opNeeds(cx, at, tn, op, Eff.capReqs(cx, at, Ty.methodCaps(ps, trs, tn, op), Eff.exprs(cx, at, xs, w)))
-      case Coll.None => if Str.eq(Sym.str(op), "at") then Eff.req(cx, at, region, Eff.exprs(cx, at, xs, w)) else Eff.exprs(cx, at, xs, w)
+      case Coll.Some(tn) =>
+        Eff.opNeeds(cx, at, tn, op, Eff.capReqs(cx, at, Ty.methodCaps(ps, trs, tn, op), Eff.exprs(cx, at, xs, w)))
+      case Coll.None =>
+        if Str.eq(Sym.str(op), "at") then Eff.req(cx, at, region, Eff.exprs(cx, at, xs, w))
+        else Eff.exprs(cx, at, xs, w)
   // what the rest of the block requests is the handle site's, not the op's
   case Ast.Resume(_, _, x) => Eff.expr(cx, at, x, w)
   case Ast.Bin(_, _, l, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, l, w))
   case Ast.Un(_, _, x) => Eff.expr(cx, at, x, w)
-  case Ast.If(_, c, t, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, t, Eff.expr(cx, at, c, w)))
-  case Ast.Match(_, s, arms) => Eff.arms(cx, at, arms, Eff.expr(cx, at, s, w))
-  case Ast.Block(_, ss, last) => Eff.stmts(cx, at, ss, last, w)
+  case Ast.If(_, _, c, t, x) => Eff.expr(cx, at, x, Eff.expr(cx, at, t, Eff.expr(cx, at, c, w)))
+  case Ast.Match(_, _, s, arms) => Eff.arms(cx, at, arms, Eff.expr(cx, at, s, w))
+  case Ast.Block(_, _, ss, last) => Eff.stmts(cx, at, ss, last, w)
   case Ast.While(_, c, b) => Eff.expr(cx, at, b, Eff.expr(cx, at, c, w))
   case Ast.Assign(_, _, x) => Eff.expr(cx, at, x, w)
   case Ast.Quant(_, _, x, _, b) => Eff.expr(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), b, w)
@@ -387,7 +397,7 @@ def Eff.exprs(cx: Eff.Cx, at: Eff.At, xs: Coll.List[Ast.Expr], w: Eff.W): Eff.W 
 def Eff.arms(cx: Eff.Cx, at: Eff.At, as: Coll.List[Ast.Arm], w: Eff.W): Eff.W = as match
   case Coll.Nil => w
   case Coll.Cons(a, rest) =>
-    val Ast.Arm(_, p, b) = a
+    val Ast.Arm(_, _, p, b) = a
     val at2: Eff.At = p match
       case Ast.PCase(_, xs) => Eff.local(at, xs)
       case Ast.PAny => at
@@ -397,10 +407,12 @@ def Eff.arms(cx: Eff.Cx, at: Eff.At, as: Coll.List[Ast.Arm], w: Eff.W): Eff.W = 
 def Eff.stmts(cx: Eff.Cx, at: Eff.At, ss: Coll.List[Ast.Stmt], last: Ast.Expr, w: Eff.W): Eff.W = ss match
   case Coll.Nil => Eff.expr(cx, at, last, w)
   case Coll.Cons(s, rest) => s match
-    case Ast.Val(_, x, _, e) => Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
-    case Ast.Var(_, x, _, e) => Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
+    case Ast.Val(_, _, x, _, e) =>
+      Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
+    case Ast.Var(_, _, x, _, e) =>
+      Eff.stmts(cx, Eff.local(at, Coll.Cons(x, Coll.Nil)), rest, last, Eff.expr(cx, at, e, w))
     // the handler's row is needed here, in the scope outside its own handle (deep handlers, E1b)
-    case Ast.Handle(_, x, h, xs) =>
+    case Ast.Handle(_, _, x, h, xs) =>
       val Eff.W(n, fs, rq, cs) = Eff.call(cx, at, h, Eff.exprs(cx, at, xs, w))
       val Eff.Cx(_, hp, _, _, ss, _) = cx
       val Eff.Syms(_, _, _, hdRel, _, _, _) = ss
@@ -409,8 +421,8 @@ def Eff.stmts(cx: Eff.Cx, at: Eff.At, ss: Coll.List[Ast.Stmt], last: Ast.Expr, w
         case Coll.Some(p) => Coll.Cons(p, hd)
         case Coll.None => hd
       Eff.stmts(cx, Eff.At(f, n, hd2, Coll.Cons(x, ls), ev), rest, last, Eff.hds(hdRel, n, hd2, Eff.W(n + 1, fs, rq, cs)))
-    case Ast.Do(e) => Eff.stmts(cx, at, rest, last, Eff.expr(cx, at, e, w))
-    case Ast.Check(_, _, e) => Eff.stmts(cx, at, rest, last, Eff.expr(cx, at, e, w))
+    case Ast.Do(_, e) => Eff.stmts(cx, at, rest, last, Eff.expr(cx, at, e, w))
+    case Ast.Check(_, _, _, e) => Eff.stmts(cx, at, rest, last, Eff.expr(cx, at, e, w))
 
 def Eff.hds(rel: Sym.Sym, s: I64, ps: Coll.List[Sym.Sym], w: Eff.W): Eff.W = ps match
   case Coll.Nil => w

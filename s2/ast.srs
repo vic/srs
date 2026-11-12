@@ -29,6 +29,18 @@ enum Ast.UnOp:
   // ~x on U32 and U64
   case Ast.BitNot
 
+// the // lines before a node that starts a line, as written ("" = a blank line between them); only `srs fmt` lexes
+// comments (Lex.Keep), so a compiled AST has NoDoc everywhere. it is the first field of a node, as it is first in the
+// source; Block holds the doc of its last expression, If the doc of its else
+enum Ast.Doc:
+  case Ast.NoDoc
+  case Ast.Doc(lines: Coll.List[Str])
+
+// how a match was written: PatVal = val C(a, b) = e, the rest of the block as the body of its one arm
+enum Ast.Form:
+  case Ast.Written
+  case Ast.PatVal
+
 // T[args]<caps>: no caps written = inferred; written = a bound. T{self}: the result of a capability op whose type's {}
 // binders the receiver takes (only there: Parse.capDef)
 enum Ast.Caps:
@@ -62,10 +74,10 @@ enum Ast.Expr:
   case Ast.Resume(line: I64, k: Sym.Sym, arg: Ast.Expr)
   case Ast.Bin(line: I64, op: Ast.BinOp, l: Ast.Expr, rhs: Ast.Expr)
   case Ast.Un(line: I64, op: Ast.UnOp, e: Ast.Expr)
-  case Ast.If(line: I64, c: Ast.Expr, t: Ast.Expr, e: Ast.Expr)
-  case Ast.Match(line: I64, s: Ast.Expr, arms: Coll.List[Ast.Arm])
+  case Ast.If(elseDoc: Ast.Doc, line: I64, c: Ast.Expr, t: Ast.Expr, e: Ast.Expr)
+  case Ast.Match(form: Ast.Form, line: I64, s: Ast.Expr, arms: Coll.List[Ast.Arm])
   // a block always has a value: after a last val or handle it is Ast.Unit
-  case Ast.Block(line: I64, stmts: Coll.List[Ast.Stmt], last: Ast.Expr)
+  case Ast.Block(lastDoc: Ast.Doc, line: I64, stmts: Coll.List[Ast.Stmt], last: Ast.Expr)
   case Ast.While(line: I64, c: Ast.Expr, body: Ast.Expr)
   case Ast.Assign(line: I64, x: Sym.Sym, e: Ast.Expr)
   // forall x: T => e, exists x: T => e (contracts only)
@@ -76,15 +88,15 @@ enum Ast.Pat:
   case Ast.PAny
 
 enum Ast.Arm:
-  case Ast.Arm(line: I64, p: Ast.Pat, body: Ast.Expr)
+  case Ast.Arm(doc: Ast.Doc, line: I64, p: Ast.Pat, body: Ast.Expr)
 
 enum Ast.Stmt:
-  case Ast.Val(line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
-  case Ast.Var(line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
-  case Ast.Handle(line: I64, x: Sym.Sym, h: Sym.Sym, args: Coll.List[Ast.Expr])
-  case Ast.Do(e: Ast.Expr)
+  case Ast.Val(doc: Ast.Doc, line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
+  case Ast.Var(doc: Ast.Doc, line: I64, x: Sym.Sym, ann: Coll.Option[Ast.Ty], e: Ast.Expr)
+  case Ast.Handle(doc: Ast.Doc, line: I64, x: Sym.Sym, h: Sym.Sym, args: Coll.List[Ast.Expr])
+  case Ast.Do(doc: Ast.Doc, e: Ast.Expr)
   // a loop invariant or measure in a block (s1/parse.srs:494)
-  case Ast.Check(line: I64, k: Ast.LoopCond, e: Ast.Expr)
+  case Ast.Check(doc: Ast.Doc, line: I64, k: Ast.LoopCond, e: Ast.Expr)
 
 // <> atoms. a name is a variable or a constant by its position (s1/facts.srs:1-3: lowercase in a state position is a
 // variable, but `knock` in next(s, knock, s2) is an op): the checker decides, not the parser
@@ -135,25 +147,31 @@ enum Ast.Body:
   case Ast.Extern(abi: Ast.Abi)
 
 enum Ast.Fn:
-  case Ast.Fn(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
+  case Ast.Fn(doc: Ast.Doc, line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, exit: Coll.List[Ast.Atom], body: Ast.Body)
 
 enum Ast.Trans:
   case Ast.Trans(from: Sym.Sym, to: Sym.Sym)
 
 enum Ast.Op:
-  case Ast.Op(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, trans: Coll.List[Ast.Trans])
+  case Ast.Op(doc: Ast.Doc, line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], params: Coll.List[Ast.Binder], ret: Ast.Ty, trans: Coll.List[Ast.Trans])
 
 enum Ast.RuleDef:
   case Ast.RuleDef(line: I64, name: Sym.Sym, params: Coll.List[Sym.Sym], body: Coll.List[Ast.Atom])
 
 enum Ast.Proto:
-  case Ast.Proto(line: I64, name: Sym.Sym, states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], dropOp: Coll.Option[Sym.Sym], ops: Coll.List[Ast.Op], rules: Coll.List[Ast.RuleDef])
+  case Ast.Proto(doc: Ast.Doc, line: I64, name: Sym.Sym, states: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym], dropOp: Coll.Option[Sym.Sym], ops: Coll.List[Ast.Op], rules: Coll.List[Ast.RuleDef])
 
 enum Ast.Handler:
-  case Ast.Handler(line: I64, name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[Ast.Fn], shots: Ast.Shots)
+  case Ast.Handler(doc: Ast.Doc, line: I64, name: Sym.Sym, proto: Sym.Sym, fns: Coll.List[Ast.Fn], shots: Ast.Shots, st: Ast.HState)
 
 // a handler resumes once, at once (plain C), or names its continuations (vic-hm63): handler H [A: Type] for P, the
 // block type A, and per op its continuation k (def choose(k): R)
+// a handler written with no init keeps no state: the parser adds init(): Ptr = Srs.noState() and a self: Ptr first
+// param to each op (Parse.stateless); the printer leaves them out again
+enum Ast.HState:
+  case Ast.Stateful
+  case Ast.Stateless
+
 enum Ast.Shots:
   case Ast.OneShot
   case Ast.MultiShot(ans: Sym.Sym, ks: Coll.List[Ast.KOp])
@@ -162,18 +180,18 @@ enum Ast.KOp:
   case Ast.KOp(op: Sym.Sym, k: Sym.Sym)
 
 enum Ast.Case:
-  case Ast.Case(line: I64, name: Sym.Sym, fields: Coll.List[Ast.Binder])
+  case Ast.Case(doc: Ast.Doc, line: I64, name: Sym.Sym, fields: Coll.List[Ast.Binder])
 
 enum Ast.Enum:
-  case Ast.Enum(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], cases: Coll.List[Ast.Case])
+  case Ast.Enum(doc: Ast.Doc, line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], cases: Coll.List[Ast.Case])
 
 // trait Name groups: its method signatures (no body)
 enum Ast.Trait:
-  case Ast.Trait(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], sigs: Coll.List[Ast.Fn])
+  case Ast.Trait(doc: Ast.Doc, line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], sigs: Coll.List[Ast.Fn])
 
 // given groups Head[args]: the methods of the trait Head for those args
 enum Ast.Given:
-  case Ast.Given(line: I64, groups: Coll.List[Ast.Group], head: Ast.Ty, fns: Coll.List[Ast.Fn])
+  case Ast.Given(doc: Ast.Doc, line: I64, groups: Coll.List[Ast.Group], head: Ast.Ty, fns: Coll.List[Ast.Fn])
 
 // a value pattern of a type value match: an int, a string, true or false, or _
 enum Ast.VPat:
@@ -203,7 +221,7 @@ enum Ast.CField:
 
 // type Name groups (value binders) = body
 enum Ast.TypeDecl:
-  case Ast.TypeDecl(line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody)
+  case Ast.TypeDecl(doc: Ast.Doc, line: I64, name: Sym.Sym, groups: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody)
 
 enum Ast.Decl:
   case Ast.DFn(f: Ast.Fn)
@@ -230,6 +248,89 @@ def Ast.indent(n: I64): Unit =
 def Ast.line(ind: I64): Unit =
   Console.print("\n")
   Ast.indent(ind)
+
+// a node's comments, each on its own line at ind, after the line break that starts the node; a blank line only at
+// the top level (in a body it would leave spaces at the end of a line)
+def Ast.doc(d: Ast.Doc, ind: I64): Unit = d match
+  case Ast.NoDoc => ()
+  case Ast.Doc(ls) => Ast.docLines(ls, ind)
+
+def Ast.docLines(ls: Coll.List[Str], ind: I64): Unit = ls match
+  case Coll.Nil => ()
+  case Coll.Cons(l, rest) =>
+    if Str.len(l) > 0 then
+      Console.print(l)
+      Ast.line(ind)
+    else if ind == 0 then Console.print("\n")
+    else ()
+    Ast.docLines(rest, ind)
+
+def Ast.hasDoc(d: Ast.Doc): Bool = d match
+  case Ast.NoDoc => false
+  case Ast.Doc(_) => true
+
+def Ast.fnDocOut(f: Ast.Fn, ind: I64): Unit =
+  val Ast.Fn(d, _, _, _, _, _, _, _) = f
+  Ast.doc(d, ind)
+
+def Ast.stmtDocOf(s: Ast.Stmt): Ast.Doc = s match
+  case Ast.Val(d, _, _, _, _) => d
+  case Ast.Var(d, _, _, _, _) => d
+  case Ast.Handle(d, _, _, _, _) => d
+  case Ast.Do(d, _) => d
+  case Ast.Check(d, _, _, _) => d
+
+def Ast.declDocOf(decl: Ast.Decl): Ast.Doc = decl match
+  case Ast.DFn(f) =>
+    val Ast.Fn(d, _, _, _, _, _, _, _) = f
+    d
+  case Ast.DVal(f) =>
+    val Ast.Fn(d, _, _, _, _, _, _, _) = f
+    d
+  case Ast.DEnum(e) =>
+    val Ast.Enum(d, _, _, _, _) = e
+    d
+  case Ast.DProto(p) =>
+    val Ast.Proto(d, _, _, _, _, _, _, _, _) = p
+    d
+  case Ast.DHandler(h) =>
+    val Ast.Handler(d, _, _, _, _, _, _) = h
+    d
+  case Ast.DTrait(t) =>
+    val Ast.Trait(d, _, _, _, _) = t
+    d
+  case Ast.DGiven(g) =>
+    val Ast.Given(d, _, _, _, _) = g
+    d
+  case Ast.DType(t) =>
+    val Ast.TypeDecl(d, _, _, _, _, _) = t
+    d
+
+// the rest of a block after a pattern val, at ind: its statements and its value, each on its own line
+def Ast.rest(b: Ast.Expr, ind: I64): Unit = b match
+  case Ast.Block(ld, _, ss, last) =>
+    Ast.stmts(ss, ind)
+    Ast.last(ld, last, ind)
+  case _ => Ast.last(Ast.NoDoc, b, ind)
+
+// the last expression of a block on its own line; a PatVal match prints as the val it was written as, its arm's
+// block going on at the same indent
+def Ast.last(ld: Ast.Doc, e: Ast.Expr, ind: I64): Unit =
+  Ast.line(ind)
+  Ast.doc(ld, ind)
+  e match
+    case Ast.Match(f, _, s, arms) => f match
+      case Ast.Written => Ast.expr(e, ind)
+      case Ast.PatVal => arms match
+        case Coll.Nil => Ast.expr(e, ind)
+        case Coll.Cons(a, _) =>
+          val Ast.Arm(_, _, p, b) = a
+          Console.print("val ")
+          Ast.pat(p)
+          Console.print(" =")
+          Ast.body(s, ind)
+          Ast.rest(b, ind)
+    case _ => Ast.lineExpr(e, ind)
 
 // names separated by sep
 def Ast.syms(xs: Coll.List[Sym.Sym], sep: Str): Unit = xs match
@@ -341,9 +442,9 @@ def Ast.rank(b: Ast.Bind): I64 = b match
 def Ast.bindOf(e: Ast.Expr): Ast.Bind = e match
   case Ast.Bin(_, op, _, _) => Ast.Infix(op)
   case Ast.Un(_, _, _) => Ast.Prefix
-  case Ast.If(_, _, _, _) => Ast.Loose
-  case Ast.Match(_, _, _) => Ast.Loose
-  case Ast.Block(_, _, _) => Ast.Loose
+  case Ast.If(_, _, _, _, _) => Ast.Loose
+  case Ast.Match(_, _, _, _) => Ast.Loose
+  case Ast.Block(_, _, _, _) => Ast.Loose
   case Ast.While(_, _, _) => Ast.Loose
   case Ast.Assign(_, _, _) => Ast.Loose
   case Ast.Quant(_, _, _, _, _) => Ast.Loose
@@ -371,18 +472,28 @@ def Ast.args(xs: Coll.List[Ast.Expr], ind: I64): Unit = xs match
         Console.print(", ")
         Ast.args(t, ind)
 
-// e after `=`, `then`, `else`, `do` or `=>`: a block on its own lines one level in, anything else on this line
+// e after `=`, `then`, `else`, `do` or `=>`: a block on its own lines one level in; a match on this line, its arms
+// below; anything else on this line when it fits Ast.width() on one line, else on the next line one level in (the
+// parser reads both as e: Parse.blockOf)
 def Ast.body(e: Ast.Expr, ind: I64): Unit = e match
-  case Ast.Block(_, ss, last) =>
+  case Ast.Block(ld, _, ss, last) =>
     Ast.stmts(ss, ind + Ast.step())
-    Ast.line(ind + Ast.step())
-    Ast.expr(last, ind + Ast.step())
-  case _ =>
-    Console.print(" ")
-    Ast.expr(e, ind)
+    Ast.last(ld, last, ind + Ast.step())
+  case Ast.Match(f, _, _, _) => f match
+    case Ast.PatVal => Ast.last(Ast.NoDoc, e, ind + Ast.step())
+    case Ast.Written =>
+      Console.print(" ")
+      Ast.expr(e, ind)
+  case _ => Ast.oneLine(e, ind, 1) match
+    case Coll.Some(s) =>
+      Console.print(" ")
+      Console.print(s)
+    case Coll.None =>
+      Ast.line(ind + Ast.step())
+      Ast.lineExpr(e, ind + Ast.step())
 
 def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
-  case Ast.Int(_, v) => Console.printI64(v)
+  case Ast.Int(_, v) => Ast.int(v)
   case Ast.Bool(_, v) => Console.print(if v then "true" else "false")
   case Ast.Str(_, s) =>
     Console.print("\"")
@@ -429,26 +540,20 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
   case Ast.Un(_, op, x) =>
     Console.print(Ast.unText(op))
     Ast.operand(x, Ast.AtLeast(Ast.Prefix), ind)
-  case Ast.If(_, c, t, x) =>
-    Console.print("if ")
-    Ast.expr(c, ind)
-    Console.print(" then")
-    Ast.body(t, ind)
-    Ast.elseBody(t, x, ind)
-  case Ast.Match(_, s, arms) =>
+  case Ast.If(ed, _, c, t, x) => Ast.ifExpr(ed, c, t, x, ind, false)
+  case Ast.Match(_, _, s, arms) =>
     Ast.operand(s, Ast.AtLeast(Ast.Atomic), ind)
     Console.print(" match")
     Ast.arms(arms, ind + Ast.step())
-  case Ast.Block(_, ss, last) =>
+  case Ast.Block(ld, _, ss, last) =>
     Ast.stmts(ss, ind)
-    Ast.line(ind)
-    Ast.expr(last, ind)
+    Ast.last(ld, last, ind)
   case Ast.While(_, c, b) =>
     Console.print("while ")
     Ast.expr(c, ind)
     // a match condition ends with its arms: do starts the next line (as tests/s2/prog/contracts.srs)
     c match
-      case Ast.Match(_, _, _) =>
+      case Ast.Match(_, _, _, _) =>
         Ast.line(ind)
         Console.print("do")
       case _ => Console.print(" do")
@@ -466,35 +571,97 @@ def Ast.expr(e: Ast.Expr, ind: I64): Unit = e match
     Console.print(" = ")
     Ast.expr(v, ind)
 
+// a literal: the lexer reads decimal digits mod 2^64 (9223372036854775808 is I64 min), so a negative value prints as
+// its unsigned digits, which read back as it (2^64 = 1844674407370955161 * 10 + 6)
+def Ast.int(v: I64): Unit =
+  if v >= 0 then Console.printI64(v)
+  else
+    // v = 10q + r, r in -9..0: 2^64 + v = 10(1844674407370955161 + q) + 6 + r, with a borrow when 6 + r < 0
+    val q = v / 10
+    val r = v % 10
+    Console.printI64(if 6 + r < 0 then 1844674407370955160 + q else 1844674407370955161 + q)
+    Console.printI64(if 6 + r < 0 then 16 + r else 6 + r)
+
 def Ast.unText(op: Ast.UnOp): Str = op match
   case Ast.Neg => "-"
   case Ast.Not => "!"
   case Ast.BitNot => "~"
 
-// `else` on the line of a one-line then, on its own line after a block then
-// else starts a new line when either branch takes more than one line (a block, a match, a multi-line if or while):
-// after one, a same-line else would read as part of its last line
-def Ast.elseBody(t: Ast.Expr, x: Ast.Expr, ind: I64): Unit =
-  if Ast.multiLine(t) || Ast.multiLine(x) then
-    Ast.line(ind)
-    Console.print("else")
-    Ast.body(x, ind)
+// ── if (Scala 3 style, vic 2026-11-12: readability first) ──
+// an if at the start of a line, or after = or =>, is one line when it fits Ast.width() and no else of it must start
+// a line (a branch on more lines, a comment before else, an else-if chain); else it breaks: each else on its own
+// line, and after = or => the whole if goes on the next line one step in. An if inside an expression (an argument,
+// an operand) is always one line: a line break inside ( ) does not lex there
+
+// the line width: 19921 of the 20926 code lines of lib, s2 and s2c are within it, and comments wrap at it (2026-11-12)
+def Ast.width(): I64 = 120
+
+// an else of e must start a line
+def Ast.breaks(e: Ast.Expr): Bool = e match
+  case Ast.If(ed, _, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x) || Ast.hasDoc(ed) || Ast.isIf(x)
+  case _ => false
+
+// e printed on one line lead columns after the current one, when it fits
+def Ast.oneLine(e: Ast.Expr, ind: I64, lead: I64): Coll.Option[Str] =
+  if Ast.breaks(e) || Ast.multiLine(e) then Coll.None
   else
-    Console.print(" else")
-    Ast.body(x, ind)
+    val col = Console.column() + lead
+    Console.captureBegin()
+    Ast.expr(e, ind)
+    val s = Console.captureEnd()
+    if col + Str.len(s) <= Ast.width() then Coll.Some(s) else Coll.None
+
+// e at the start of a line at ind
+def Ast.lineExpr(e: Ast.Expr, ind: I64): Unit = e match
+  case Ast.If(ed, _, c, t, x) => Ast.oneLine(e, ind, 0) match
+    case Coll.Some(s) => Console.print(s)
+    case Coll.None => Ast.ifExpr(ed, c, t, x, ind, true)
+  case _ => Ast.expr(e, ind)
+
+// split: each else starts a line at ind
+def Ast.ifExpr(ed: Ast.Doc, c: Ast.Expr, t: Ast.Expr, x: Ast.Expr, ind: I64, split: Bool): Unit =
+  Console.print("if ")
+  Ast.expr(c, ind)
+  Console.print(" then")
+  if Ast.isIf(t) && !Ast.breaks(t) then
+    // a one-line if in a then keeps its parens: if a then (if b then c else d) else e
+    Console.print(" (")
+    Ast.expr(t, ind)
+    Console.print(")")
+  else if split || Ast.multiLine(t) then Ast.body(t, ind)
+  else
+    Console.print(" ")
+    Ast.expr(t, ind)
+  if split || Ast.multiLine(t) || Ast.multiLine(x) || Ast.hasDoc(ed) then
+    Ast.line(ind)
+    Ast.doc(ed, ind)
+    Console.print("else")
+    x match
+      case Ast.If(ed2, _, c2, t2, x2) =>
+        Console.print(" ")
+        Ast.ifExpr(ed2, c2, t2, x2, ind, true)
+      case _ => Ast.body(x, ind)
+  else
+    Console.print(" else ")
+    Ast.expr(x, ind)
+
+def Ast.isIf(e: Ast.Expr): Bool = e match
+  case Ast.If(_, _, _, _, _) => true
+  case _ => false
 
 def Ast.multiLine(e: Ast.Expr): Bool = e match
-  case Ast.Block(_, _, _) => true
-  case Ast.Match(_, _, _) => true
+  case Ast.Block(_, _, _, _) => true
+  case Ast.Match(_, _, _, _) => true
   case Ast.While(_, _, _) => true
-  case Ast.If(_, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x)
+  case Ast.If(ed, _, _, t, x) => Ast.multiLine(t) || Ast.multiLine(x) || Ast.hasDoc(ed)
   case _ => false
 
 def Ast.arms(xs: Coll.List[Ast.Arm], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(a, t) =>
-    val Ast.Arm(_, p, b) = a
+    val Ast.Arm(d, _, p, b) = a
     Ast.line(ind)
+    Ast.doc(d, ind)
     Console.print("case ")
     Ast.pat(p)
     Console.print(" =>")
@@ -517,17 +684,18 @@ def Ast.stmts(xs: Coll.List[Ast.Stmt], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(s, t) =>
     Ast.line(ind)
+    Ast.doc(Ast.stmtDocOf(s), ind)
     Ast.stmt(s, ind)
     Ast.stmts(t, ind)
 
 def Ast.stmt(s: Ast.Stmt, ind: I64): Unit = s match
-  case Ast.Val(_, x, ann, e) =>
+  case Ast.Val(_, _, x, ann, e) =>
     Console.print("val ")
     Ast.binding(x, ann, e, ind)
-  case Ast.Var(_, x, ann, e) =>
+  case Ast.Var(_, _, x, ann, e) =>
     Console.print("var ")
     Ast.binding(x, ann, e, ind)
-  case Ast.Handle(_, x, h, xs) =>
+  case Ast.Handle(_, _, x, h, xs) =>
     Console.print("handle ")
     Ast.sym(x)
     Console.print(" = ")
@@ -535,8 +703,8 @@ def Ast.stmt(s: Ast.Stmt, ind: I64): Unit = s match
     Console.print("(")
     Ast.args(xs, ind)
     Console.print(")")
-  case Ast.Do(e) => Ast.expr(e, ind)
-  case Ast.Check(_, k, e) =>
+  case Ast.Do(_, e) => Ast.lineExpr(e, ind)
+  case Ast.Check(_, _, k, e) =>
     Console.print(Ast.loopText(k))
     Console.print(" ")
     Ast.expr(e, ind)
@@ -634,17 +802,28 @@ def Ast.groups(xs: Coll.List[Ast.Group]): Unit = xs match
     Ast.groups(t)
 
 def Ast.fn(f: Ast.Fn, ind: I64): Unit =
-  val Ast.Fn(_, _, _, _, _, _, body) = f
+  val Ast.Fn(_, _, name, _, _, ret, _, body) = f
   body match
-    case Ast.Extern(_) => Console.print("extern ")
-    case Ast.Def(_, _) => ()
-  Ast.fnSig(f, ind)
+    case Ast.Extern(abi) => abi match
+      case Ast.AbiSrs =>
+        Console.print("extern ")
+        Ast.fnSig(f, ind)
+      case Ast.AbiLibcVal =>
+        Console.print("extern \"libc\" val ")
+        Ast.sym(name)
+        Console.print(": ")
+        Ast.ty(ret)
+      case _ =>
+        Console.print("extern \"libc\" ")
+        Ast.fnSig(f, ind)
+    case Ast.Def(_, _) => Ast.fnSig(f, ind)
 
 // a trait method signature: a def without body and without extern
 def Ast.sigs(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
     Ast.line(ind)
+    Ast.fnDocOut(f, ind)
     Ast.fnSig(f, ind)
     Ast.sigs(t, ind)
 
@@ -653,7 +832,7 @@ def Ast.fnSig(f: Ast.Fn, ind: I64): Unit = Ast.fnSigK(f, ind, Coll.None)
 
 // k: the continuation param of a multi-shot handler op, written first
 def Ast.fnSigK(f: Ast.Fn, ind: I64, k: Coll.Option[Sym.Sym]): Unit =
-  val Ast.Fn(_, name, gs, ps, ret, exit, body) = f
+  val Ast.Fn(_, _, name, gs, ps, ret, exit, body) = f
   Console.print("def ")
   Ast.sym(name)
   Ast.groups(gs)
@@ -669,6 +848,11 @@ def Ast.fnSigK(f: Ast.Fn, ind: I64, k: Coll.Option[Sym.Sym]): Unit =
         case Coll.Nil => ()
         case Coll.Cons(_, _) => Console.print(", ")
   Ast.binders(ps)
+  body match
+    case Ast.Extern(abi) => abi match
+      case Ast.AbiLibcVar => Console.print(Ast.varText(ps))
+      case _ => ()
+    case Ast.Def(_, _) => ()
   Console.print("): ")
   Ast.ty(ret)
   exit match
@@ -680,6 +864,11 @@ def Ast.fnSigK(f: Ast.Fn, ind: I64, k: Coll.Option[Sym.Sym]): Unit =
   body match
     case Ast.Extern(_) => ()
     case Ast.Def(cs, e) => Ast.withClauses(cs, e, ind)
+
+// the trailing ... of a variadic libc extern
+def Ast.varText(ps: Coll.List[Ast.Binder]): Str = ps match
+  case Coll.Nil => "..."
+  case Coll.Cons(_, _) => ", ..."
 
 // = body; with clauses: each on its own line one step in, then = at the start of a line (as tests/s2/prog/contracts.srs)
 def Ast.withClauses(cs: Coll.List[Ast.Clause], e: Ast.Expr, ind: I64): Unit = cs match
@@ -724,21 +913,38 @@ def Ast.clauses(cs: Coll.List[Ast.Clause], ind: I64): Unit = cs match
 def Ast.hfns(xs: Coll.List[Ast.Fn], ks: Coll.List[Ast.KOp], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
-    val Ast.Fn(_, n, _, _, _, _, _) = f
+    val Ast.Fn(_, _, n, _, _, _, _, _) = f
     Ast.line(ind)
+    Ast.fnDocOut(f, ind)
     Ast.kOf(ks, n) match
       case Coll.None => Ast.fn(f, ind)
       case Coll.Some(k) => Ast.fnSigK(f, ind, Coll.Some(k))
     Ast.hfns(t, ks, ind)
 
+// a stateless handler's fns as written: no init (Parse.stateless puts it first), no self param
+def Ast.asWritten(st: Ast.HState, fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = st match
+  case Ast.Stateful => fs
+  case Ast.Stateless => fs match
+    case Coll.Nil => fs
+    case Coll.Cons(_, ops) => Ast.noSelf(ops)
+
+def Ast.noSelf(fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Ast.Fn(d, l, n, gs, ps, ret, exit, body) = f
+    val ps2: Coll.List[Ast.Binder] = ps match
+      case Coll.Nil => ps
+      case Coll.Cons(_, pt) => pt
+    Coll.Cons(Ast.Fn(d, l, n, gs, ps2, ret, exit, body), Ast.noSelf(rest))
+
 def Ast.dropGroup(fs: Coll.List[Ast.Fn]): Coll.List[Ast.Fn] = fs match
   case Coll.Nil => Coll.Nil
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(l, n, gs, ps, ret, exit, body) = f
+    val Ast.Fn(d, l, n, gs, ps, ret, exit, body) = f
     val gs2: Coll.List[Ast.Group] = gs match
       case Coll.Nil => gs
       case Coll.Cons(_, gt) => gt
-    Coll.Cons(Ast.Fn(l, n, gs2, ps, ret, exit, body), Ast.dropGroup(rest))
+    Coll.Cons(Ast.Fn(d, l, n, gs2, ps, ret, exit, body), Ast.dropGroup(rest))
 
 def Ast.kOf(ks: Coll.List[Ast.KOp], op: Sym.Sym): Coll.Option[Sym.Sym] = ks match
   case Coll.Nil => Coll.None
@@ -750,6 +956,7 @@ def Ast.fns(xs: Coll.List[Ast.Fn], ind: I64): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(f, t) =>
     Ast.line(ind)
+    Ast.fnDocOut(f, ind)
     Ast.fn(f, ind)
     Ast.fns(t, ind)
 
@@ -766,27 +973,86 @@ def Ast.trans(xs: Coll.List[Ast.Trans]): Unit = xs match
         Console.print(", ")
         Ast.trans(t)
 
-def Ast.ops(xs: Coll.List[Ast.Op]): Unit = xs match
+// a capability's ops as written (Parse.capDef): an op every state keeps has no facts; one move is <A> .. <B>; any
+// other set of moves is a transition named as the op, def name <s name t> .. <t>. Parsing the text back gives the
+// same transitions (Parse.resolveOps)
+def Ast.ops(xs: Coll.List[Ast.Op], sts: Coll.List[Sym.Sym]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(o, t) =>
-    // each def moves by a transition named as itself: parsing the text back gives the same transitions
-    val Ast.Op(_, name, _, ps, ret, trs) = o
+    val Ast.Op(d, _, name, gs, ps, ret, trs) = o
     Ast.line(Ast.step())
-    Console.print("transition ")
-    Ast.sym(name)
-    Console.print(" ")
-    Ast.trans(trs)
-    Ast.line(Ast.step())
+    Ast.doc(d, Ast.step())
+    val mv = Ast.movesOf(trs, sts)
+    mv match
+      case Ast.ByRel =>
+        Console.print("transition ")
+        Ast.sym(name)
+        Console.print(" ")
+        Ast.trans(trs)
+        Ast.line(Ast.step())
+      case _ => ()
     Console.print("def ")
     Ast.sym(name)
-    Console.print(" <s ")
-    Ast.sym(name)
-    Console.print(" t> (")
+    mv match
+      case Ast.Stays => ()
+      case Ast.OneMove(a, _) =>
+        Console.print(" <")
+        Ast.sym(a)
+        Console.print(">")
+      case Ast.ByRel =>
+        Console.print(" <s ")
+        Ast.sym(name)
+        Console.print(" t>")
+    Ast.groups(gs)
+    mv match
+      case Ast.Stays => gs match
+        case Coll.Nil => ()
+        case Coll.Cons(_, _) => Console.print(" ")
+      case _ => Console.print(" ")
+    Console.print("(")
     Ast.binders(ps)
     Console.print("): ")
     Ast.ty(ret)
-    Console.print(" <t>")
-    Ast.ops(t)
+    mv match
+      case Ast.Stays => ()
+      case Ast.OneMove(_, b) =>
+        Console.print(" <")
+        Ast.sym(b)
+        Console.print(">")
+      case Ast.ByRel => Console.print(" <t>")
+    Ast.ops(t, sts)
+
+// how an op's transitions are written
+enum Ast.Moves:
+  case Ast.Stays
+  case Ast.OneMove(from: Sym.Sym, to: Sym.Sym)
+  case Ast.ByRel
+
+def Ast.movesOf(trs: Coll.List[Ast.Trans], sts: Coll.List[Sym.Sym]): Ast.Moves =
+  if Ast.allStay(trs) && Coll.length(trs) == Coll.length(sts) then Ast.Stays
+  else trs match
+    case Coll.Cons(tr, rest) => rest match
+      case Coll.Nil =>
+        val Ast.Trans(a, b) = tr
+        Ast.OneMove(a, b)
+      case Coll.Cons(_, _) => Ast.ByRel
+    case Coll.Nil => Ast.ByRel
+
+def Ast.allStay(trs: Coll.List[Ast.Trans]): Bool = trs match
+  case Coll.Nil => true
+  case Coll.Cons(tr, rest) =>
+    val Ast.Trans(a, b) = tr
+    Sym.eq(a, b) && Ast.allStay(rest)
+
+// no state line: one state Live, the start and the stop (Parse.proto)
+def Ast.oneLive(sts: Coll.List[Sym.Sym], start: Sym.Sym, ends: Coll.List[Sym.Sym]): Bool =
+  Ast.onlyLive(sts) && Str.eq(Sym.str(start), "Live") && Ast.onlyLive(ends)
+
+def Ast.onlyLive(xs: Coll.List[Sym.Sym]): Bool = xs match
+  case Coll.Cons(x, rest) => rest match
+    case Coll.Nil => Str.eq(Sym.str(x), "Live")
+    case Coll.Cons(_, _) => false
+  case Coll.Nil => false
 
 def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
   case Coll.Nil => ()
@@ -804,8 +1070,9 @@ def Ast.rules(xs: Coll.List[Ast.RuleDef]): Unit = xs match
 def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
   case Coll.Nil => ()
   case Coll.Cons(c, t) =>
-    val Ast.Case(_, name, fs) = c
+    val Ast.Case(d, _, name, fs) = c
     Ast.line(Ast.step())
+    Ast.doc(d, Ast.step())
     Console.print("case ")
     Ast.sym(name)
     fs match
@@ -819,7 +1086,7 @@ def Ast.cases(xs: Coll.List[Ast.Case]): Unit = xs match
 def Ast.decl(d: Ast.Decl): Unit = d match
   case Ast.DFn(f) => Ast.fn(f, 0)
   case Ast.DVal(v) =>
-    val Ast.Fn(_, name, _, _, ret, _, body) = v
+    val Ast.Fn(_, _, name, _, _, ret, _, body) = v
     Console.print("val ")
     Ast.sym(name)
     Console.print(": ")
@@ -830,27 +1097,29 @@ def Ast.decl(d: Ast.Decl): Unit = d match
         Ast.body(e, 0)
       case _ => ()
   case Ast.DEnum(en) =>
-    val Ast.Enum(_, name, gs, cs) = en
+    val Ast.Enum(_, _, name, gs, cs) = en
     Console.print("enum ")
     Ast.sym(name)
     Ast.groups(gs)
     Console.print(":")
     Ast.cases(cs)
   case Ast.DProto(p) =>
-    val Ast.Proto(_, name, sts, start, ends, dropOp, ops, rules) = p
+    val Ast.Proto(_, _, name, sts, start, ends, dropOp, ops, rules) = p
     Console.print("capability ")
     Ast.sym(name)
     Console.print(":")
-    Ast.line(Ast.step())
-    Console.print("state ")
-    Ast.syms(sts, ", ")
-    Ast.line(Ast.step())
-    Console.print("start ")
-    Ast.sym(start)
-    Ast.line(Ast.step())
-    Console.print("stop ")
-    Ast.syms(ends, ", ")
-    Ast.ops(ops)
+    if Ast.oneLive(sts, start, ends) then ()
+    else
+      Ast.line(Ast.step())
+      Console.print("state ")
+      Ast.syms(sts, ", ")
+      Ast.line(Ast.step())
+      Console.print("start ")
+      Ast.sym(start)
+      Ast.line(Ast.step())
+      Console.print("stop ")
+      Ast.syms(ends, ", ")
+    Ast.ops(ops, sts)
     dropOp match
       case Coll.None => ()
       case Coll.Some(o) =>
@@ -859,7 +1128,7 @@ def Ast.decl(d: Ast.Decl): Unit = d match
         Ast.sym(o)
     Ast.rules(rules)
   case Ast.DHandler(h) =>
-    val Ast.Handler(_, name, proto, fs, shots) = h
+    val Ast.Handler(_, _, name, proto, fs, shots, st) = h
     Console.print("handler ")
     Ast.sym(name)
     val ks: Coll.List[Ast.KOp] = shots match
@@ -876,16 +1145,16 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     Console.print(" for ")
     Ast.sym(proto)
     Console.print(":")
-    Ast.hfns(fs2, ks, Ast.step())
+    Ast.hfns(Ast.asWritten(st, fs2), ks, Ast.step())
   case Ast.DTrait(tr) =>
-    val Ast.Trait(_, name, gs, sigs) = tr
+    val Ast.Trait(_, _, name, gs, sigs) = tr
     Console.print("trait ")
     Ast.sym(name)
     Ast.groups(gs)
     Console.print(":")
     Ast.sigs(sigs, Ast.step())
   case Ast.DGiven(g) =>
-    val Ast.Given(_, gs, head, fs) = g
+    val Ast.Given(_, _, gs, head, fs) = g
     Console.print("given")
     Ast.groups(gs)
     Console.print(" ")
@@ -893,7 +1162,7 @@ def Ast.decl(d: Ast.Decl): Unit = d match
     Console.print(":")
     Ast.fns(fs, Ast.step())
   case Ast.DType(td) =>
-    val Ast.TypeDecl(_, name, gs, vals, body) = td
+    val Ast.TypeDecl(_, _, name, gs, vals, body) = td
     body match
       case Ast.CStruct(fs) => Ast.cstruct(name, fs)
       case _ => Ast.typeDecl(name, gs, vals, body)
@@ -927,10 +1196,21 @@ def Ast.valArms(xs: Coll.List[Ast.ValArm]): Unit = xs match
     Ast.ty(res)
     Ast.valArms(t)
 
+// a source file as srs fmt writes it (decls parsed with Lex.Keep): each decl after its doc, which keeps the blank
+// lines and comments written before it
+def Ast.source(ds: Coll.List[Ast.Decl]): Unit = ds match
+  case Coll.Nil => ()
+  case Coll.Cons(d, t) =>
+    Ast.doc(Ast.declDocOf(d), 0)
+    Ast.decl(d)
+    Console.print("\n")
+    Ast.source(t)
+
 // a program: its decls, one blank line between two, a newline after the last
 def Ast.print(ds: Coll.List[Ast.Decl]): Unit = ds match
   case Coll.Nil => ()
   case Coll.Cons(d, t) =>
+    Ast.doc(Ast.declDocOf(d), 0)
     Ast.decl(d)
     Console.print("\n")
     t match
@@ -941,27 +1221,27 @@ def Ast.print(ds: Coll.List[Ast.Decl]): Unit = ds match
 
 // type Name groups (value binders) = body
 def Ast.typeDecl(name: Sym.Sym, gs: Coll.List[Ast.Group], vals: Coll.List[Ast.Binder], body: Ast.TBody): Unit =
-    Console.print("type ")
-    Ast.sym(name)
-    Ast.groups(gs)
-    vals match
-      case Coll.Nil => ()
-      case Coll.Cons(_, _) =>
-        Console.print(" (")
-        Ast.binders(vals)
-        Console.print(")")
-    Console.print(" = ")
-    body match
-      case Ast.Alias(t) => Ast.ty(t)
-      case Ast.TyMatch(s, arms) =>
-        Ast.ty(s)
-        Console.print(" match")
-        Ast.tyArms(arms)
-      case Ast.ValMatch(x, arms) =>
-        Ast.sym(x)
-        Console.print(" match")
-        Ast.valArms(arms)
-      case Ast.CStruct(_) => ()
+  Console.print("type ")
+  Ast.sym(name)
+  Ast.groups(gs)
+  vals match
+    case Coll.Nil => ()
+    case Coll.Cons(_, _) =>
+      Console.print(" (")
+      Ast.binders(vals)
+      Console.print(")")
+  Console.print(" = ")
+  body match
+    case Ast.Alias(t) => Ast.ty(t)
+    case Ast.TyMatch(s, arms) =>
+      Ast.ty(s)
+      Console.print(" match")
+      Ast.tyArms(arms)
+    case Ast.ValMatch(x, arms) =>
+      Ast.sym(x)
+      Console.print(" match")
+      Ast.valArms(arms)
+    case Ast.CStruct(_) => ()
 
 // extern "libc" struct Libc.name:, one field per line
 def Ast.cstruct(name: Sym.Sym, fs: Coll.List[Ast.CField]): Unit =

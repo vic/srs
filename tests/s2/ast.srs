@@ -6,15 +6,21 @@ def AT.s {r: Region} (x: Str): Sym.Sym = Sym.of(x)
 def AT.ty {r: Region} (n: Str): Ast.Ty = Ast.Ty(0, Sym.of(n), Coll.Nil, Ast.Inferred, Coll.Nil)
 def AT.nm {r: Region} (line: I64, x: Str): Ast.Expr = Ast.Name(line, Sym.of(x))
 def AT.op {r: Region} (line: I64, recv: Str, op: Str): Ast.Expr = Ast.Method(line, Sym.of(recv), Sym.of(op), Coll.Nil)
-def AT.call {r: Region} (line: I64, f: Str, xs: Coll.List[Ast.Expr]): Ast.Expr = Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, xs)
+def AT.call {r: Region} (line: I64, f: Str, xs: Coll.List[Ast.Expr]): Ast.Expr =
+  Ast.Call(line, Sym.of(f), Coll.Nil, Coll.Nil, xs)
 def AT.t {r: Region} (x: Str): Ast.Term = Ast.TName(Sym.of(x))
-def AT.a2 {r: Region} (line: I64, rel: Str, a: Str, b: Str): Ast.Atom = Ast.Atom(line, Sym.of(rel), AT.l2(AT.t(a), AT.t(b)))
-def AT.a3 {r: Region} (line: I64, rel: Str, a: Str, b: Str, c: Str): Ast.Atom = Ast.Atom(line, Sym.of(rel), AT.l3(AT.t(a), AT.t(b), AT.t(c)))
+def AT.a2 {r: Region} (line: I64, rel: Str, a: Str, b: Str): Ast.Atom =
+  Ast.Atom(line, Sym.of(rel), AT.l2(AT.t(a), AT.t(b)))
+def AT.a3 {r: Region} (line: I64, rel: Str, a: Str, b: Str, c: Str): Ast.Atom =
+  Ast.Atom(line, Sym.of(rel), AT.l3(AT.t(a), AT.t(b), AT.t(c)))
 def AT.tr {r: Region} (a: Str, b: Str): Ast.Trans = Ast.Trans(Sym.of(a), Sym.of(b))
-def AT.cap {r: Region} (line: I64, x: Str, p: Str): Ast.Group = Ast.Evidence(AT.l1(Ast.Binder(line, Sym.of(x), AT.ty(p))))
-def AT.val {r: Region} (line: I64, x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(line, Sym.of(x), Coll.None, e)
-def AT.handle {r: Region} (line: I64, x: Str, h: Str): Ast.Stmt = Ast.Handle(line, Sym.of(x), Sym.of(h), Coll.Nil)
-def AT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of("main"), Coll.Nil, Coll.Nil, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body)))
+def AT.cap {r: Region} (line: I64, x: Str, p: Str): Ast.Group =
+  Ast.Evidence(AT.l1(Ast.Binder(line, Sym.of(x), AT.ty(p))))
+def AT.val {r: Region} (line: I64, x: Str, e: Ast.Expr): Ast.Stmt = Ast.Val(Ast.NoDoc, line, Sym.of(x), Coll.None, e)
+def AT.handle {r: Region} (line: I64, x: Str, h: Str): Ast.Stmt =
+  Ast.Handle(Ast.NoDoc, line, Sym.of(x), Sym.of(h), Coll.Nil)
+def AT.main {r: Region} (line: I64, body: Ast.Expr): Ast.Decl =
+  Ast.DFn(Ast.Fn(Ast.NoDoc, line, Sym.of("main"), Coll.Nil, Coll.Nil, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, body)))
 
 def AT.l1 [A: Type] {r: Region} (a: A): Coll.List[A] = Coll.Cons(a, Coll.Nil)
 def AT.l2 [A: Type] {r: Region} (a: A, b: A): Coll.List[A] = Coll.Cons(a, AT.l1(b))
@@ -23,81 +29,108 @@ def AT.l4 [A: Type] {r: Region} (a: A, b: A, c: A, d: A): Coll.List[A] = Coll.Co
 
 // tests/rules.srs
 def AT.door {r: Region} (): Ast.Decl =
-  val knock = Ast.Op(7, AT.s("knock"), Coll.Nil, Coll.Nil, AT.ty("I64"), AT.l2(AT.tr("Shut", "Open1"), AT.tr("Open1", "Open2")))
-  val leave = Ast.Op(8, AT.s("leave"), Coll.Nil, Coll.Nil, AT.ty("Unit"), AT.l2(AT.tr("Open1", "Gone"), AT.tr("Open2", "Gone")))
-  val two = Ast.RuleDef(9, AT.s("twoKnocks"), AT.l2(AT.s("s"), AT.s("s3")), AT.l2(AT.a3(9, "next", "s", "knock", "s2"), AT.a3(9, "next", "s2", "knock", "s3")))
+  val knock =
+    Ast.Op(Ast.NoDoc, 7, AT.s("knock"), Coll.Nil, Coll.Nil, AT.ty("I64"), AT.l2(AT.tr("Shut", "Open1"), AT.tr("Open1", "Open2")))
+  val leave =
+    Ast.Op(Ast.NoDoc, 8, AT.s("leave"), Coll.Nil, Coll.Nil, AT.ty("Unit"), AT.l2(AT.tr("Open1", "Gone"), AT.tr("Open2", "Gone")))
+  val two =
+    Ast.RuleDef(9, AT.s("twoKnocks"), AT.l2(AT.s("s"), AT.s("s3")), AT.l2(AT.a3(9, "next", "s", "knock", "s2"), AT.a3(9, "next", "s2", "knock", "s3")))
   val reach1 = Ast.RuleDef(10, AT.s("reach"), AT.l2(AT.s("s"), AT.s("t")), AT.l1(AT.a3(10, "next", "s", "knock", "t")))
-  val reach2 = Ast.RuleDef(11, AT.s("reach"), AT.l2(AT.s("s"), AT.s("t")), AT.l2(AT.a3(11, "next", "s", "knock", "u"), AT.a2(11, "reach", "u", "t")))
+  val reach2 =
+    Ast.RuleDef(11, AT.s("reach"), AT.l2(AT.s("s"), AT.s("t")), AT.l2(AT.a3(11, "next", "s", "knock", "u"), AT.a2(11, "reach", "u", "t")))
   val states = AT.l4(AT.s("Shut"), AT.s("Open1"), AT.s("Open2"), AT.s("Gone"))
-  Ast.DProto(Ast.Proto(3, AT.s("Door"), states, AT.s("Shut"), AT.l1(AT.s("Gone")), Coll.None, AT.l2(knock, leave), AT.l3(two, reach1, reach2)))
+  Ast.DProto(Ast.Proto(Ast.NoDoc, 3, AT.s("Door"), states, AT.s("Shut"), AT.l1(AT.s("Gone")), Coll.None, AT.l2(knock, leave), AT.l3(two, reach1, reach2)))
 
 def AT.hdoor {r: Region} (): Ast.Decl =
   val self = AT.l1(Ast.Binder(15, AT.s("self"), AT.ty("Ptr")))
-  val init = Ast.Fn(14, AT.s("init"), Coll.Nil, Coll.Nil, AT.ty("Ptr"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(14, "rt_arena_new", Coll.Nil)))
-  val knock = Ast.Fn(15, AT.s("knock"), Coll.Nil, self, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(15, 3)))
-  val leave = Ast.Fn(16, AT.s("leave"), Coll.Nil, self, AT.ty("Unit"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(16, "rt_arena_free", AT.l1(AT.nm(16, "self")))))
-  Ast.DHandler(Ast.Handler(13, AT.s("HDoor"), AT.s("Door"), AT.l3(init, knock, leave), Ast.OneShot))
+  val init =
+    Ast.Fn(Ast.NoDoc, 14, AT.s("init"), Coll.Nil, Coll.Nil, AT.ty("Ptr"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(14, "rt_arena_new", Coll.Nil)))
+  val knock =
+    Ast.Fn(Ast.NoDoc, 15, AT.s("knock"), Coll.Nil, self, AT.ty("I64"), Coll.Nil, Ast.Def(Coll.Nil, Ast.Int(15, 3)))
+  val leave =
+    Ast.Fn(Ast.NoDoc, 16, AT.s("leave"), Coll.Nil, self, AT.ty("Unit"), Coll.Nil, Ast.Def(Coll.Nil, AT.call(16, "rt_arena_free", AT.l1(AT.nm(16, "self")))))
+  Ast.DHandler(Ast.Handler(Ast.NoDoc, 13, AT.s("HDoor"), AT.s("Door"), AT.l3(init, knock, leave), Ast.OneShot, Ast.Stateful))
 
 def AT.knockTwice {r: Region} (): Ast.Decl =
-  val gs = AT.l2(AT.cap(18, "d", "Door"), Ast.Facts(AT.l2(AT.a2(18, "at", "d", "s"), AT.a2(18, "twoKnocks", "s", "s3"))))
-  val body = Ast.Block(19, AT.l1(AT.val(19, "a", AT.op(19, "d", "knock"))), Ast.Bin(20, Ast.Add, AT.nm(20, "a"), AT.op(20, "d", "knock")))
-  Ast.DFn(Ast.Fn(18, AT.s("knockTwice"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(18, "at", "d", "s3")), Ast.Def(Coll.Nil, body)))
+  val gs =
+    AT.l2(AT.cap(18, "d", "Door"), Ast.Facts(AT.l2(AT.a2(18, "at", "d", "s"), AT.a2(18, "twoKnocks", "s", "s3"))))
+  val body =
+    Ast.Block(Ast.NoDoc, 19, AT.l1(AT.val(19, "a", AT.op(19, "d", "knock"))), Ast.Bin(20, Ast.Add, AT.nm(20, "a"), AT.op(20, "d", "knock")))
+  Ast.DFn(Ast.Fn(Ast.NoDoc, 18, AT.s("knockTwice"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(18, "at", "d", "s3")), Ast.Def(Coll.Nil, body)))
 
 def AT.knockOnce {r: Region} (): Ast.Decl =
-  val facts = AT.l3(AT.a2(23, "at", "d", "Shut"), AT.a2(23, "reach", "Shut", "t"), AT.a3(23, "next", "Shut", "knock", "t"))
+  val facts =
+    AT.l3(AT.a2(23, "at", "d", "Shut"), AT.a2(23, "reach", "Shut", "t"), AT.a3(23, "next", "Shut", "knock", "t"))
   val gs = AT.l2(AT.cap(23, "d", "Door"), Ast.Facts(facts))
-  Ast.DFn(Ast.Fn(23, AT.s("knockOnce"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(23, "at", "d", "t")), Ast.Def(Coll.Nil, AT.op(23, "d", "knock"))))
+  Ast.DFn(Ast.Fn(Ast.NoDoc, 23, AT.s("knockOnce"), gs, Coll.Nil, AT.ty("I64"), AT.l1(AT.a2(23, "at", "d", "t")), Ast.Def(Coll.Nil, AT.op(23, "d", "knock"))))
 
 def AT.rulesMain {r: Region} (): Ast.Decl =
   val once = Ast.Call(30, AT.s("knockOnce"), Coll.Nil, AT.l1(AT.s("e")), Coll.Nil)
-  val ss1 = AT.l4(AT.handle(26, "d", "HDoor"), AT.val(27, "x", AT.call(27, "knockTwice", Coll.Nil)), Ast.Do(AT.op(28, "d", "leave")), AT.handle(29, "e", "HDoor"))
+  val ss1 =
+    AT.l4(AT.handle(26, "d", "HDoor"), AT.val(27, "x", AT.call(27, "knockTwice", Coll.Nil)), Ast.Do(Ast.NoDoc, AT.op(28, "d", "leave")), AT.handle(29, "e", "HDoor"))
   val sum = Ast.Bin(32, Ast.Add, AT.nm(32, "x"), AT.nm(32, "y"))
-  val ss2 = AT.l4(AT.val(30, "y", once), Ast.Do(AT.op(31, "e", "leave")), Ast.Do(AT.call(32, "rt_print_i64", AT.l1(sum))), Ast.Do(AT.call(33, "rt_print", AT.l1(Ast.Str(33, "\\n")))))
-  AT.main(25, Ast.Block(26, Coll.revOnto(Coll.rev(ss1), ss2), Ast.Int(34, 0)))
+  val ss2 =
+    AT.l4(AT.val(30, "y", once), Ast.Do(Ast.NoDoc, AT.op(31, "e", "leave")), Ast.Do(Ast.NoDoc, AT.call(32, "rt_print_i64", AT.l1(sum))), Ast.Do(Ast.NoDoc, AT.call(33, "rt_print", AT.l1(Ast.Str(33, "\\n")))))
+  AT.main(25, Ast.Block(Ast.NoDoc, 26, Coll.revOnto(Coll.rev(ss1), ss2), Ast.Int(34, 0)))
 
 // tests/neg/branch_state.srs
 def AT.branch {r: Region} (): Ast.Decl =
-  val n = AT.val(4, "n", Ast.If(4, Ast.Bool(4, true), AT.op(4, "f", "read"), Ast.Int(4, 0)))
-  AT.main(2, Ast.Block(3, AT.l3(AT.handle(3, "f", "CFile"), n, Ast.Do(AT.op(5, "f", "close"))), AT.nm(6, "n")))
+  val n = AT.val(4, "n", Ast.If(Ast.NoDoc, 4, Ast.Bool(4, true), AT.op(4, "f", "read"), Ast.Int(4, 0)))
+  AT.main(2, Ast.Block(Ast.NoDoc, 3, AT.l3(AT.handle(3, "f", "CFile"), n, Ast.Do(Ast.NoDoc, AT.op(5, "f", "close"))), AT.nm(6, "n")))
 
 // tests/neg/loop_state.srs
 def AT.loop {r: Region} (): Ast.Decl =
   val inc = Ast.Assign(7, AT.s("i"), Ast.Bin(7, Ast.Add, AT.nm(7, "i"), Ast.Int(7, 1)))
-  val w = Ast.While(5, Ast.Bin(5, Ast.Lt, AT.nm(5, "i"), Ast.Int(5, 2)), Ast.Block(6, AT.l1(Ast.Do(AT.op(6, "f", "read"))), inc))
-  val ss = AT.l4(AT.handle(3, "f", "CFile"), Ast.Var(4, AT.s("i"), Coll.None, Ast.Int(4, 0)), Ast.Do(w), Ast.Do(AT.op(8, "f", "close")))
-  AT.main(2, Ast.Block(3, ss, Ast.Int(9, 0)))
+  val w =
+    Ast.While(5, Ast.Bin(5, Ast.Lt, AT.nm(5, "i"), Ast.Int(5, 2)), Ast.Block(Ast.NoDoc, 6, AT.l1(Ast.Do(Ast.NoDoc, AT.op(6, "f", "read"))), inc))
+  val ss =
+    AT.l4(AT.handle(3, "f", "CFile"), Ast.Var(Ast.NoDoc, 4, AT.s("i"), Coll.None, Ast.Int(4, 0)), Ast.Do(Ast.NoDoc, w), Ast.Do(Ast.NoDoc, AT.op(8, "f", "close")))
+  AT.main(2, Ast.Block(Ast.NoDoc, 3, ss, Ast.Int(9, 0)))
 
 // tests/generic_enum.srs
 def AT.cat [A: Type] {r: Region} (a: Coll.List[A], b: Coll.List[A]): Coll.List[A] = Coll.revOnto(Coll.rev(a), b)
 def AT.tA {r: Region} (n: Str, a: Ast.Ty): Ast.Ty = Ast.Ty(0, Sym.of(n), AT.l1(a), Ast.Inferred, Coll.Nil)
 def AT.tp {r: Region} (line: I64, a: Str): Ast.Group = Ast.Types(AT.l1(Ast.Binder(line, Sym.of(a), AT.ty("Type"))))
 def AT.bd {r: Region} (line: I64, x: Str, t: Ast.Ty): Ast.Binder = Ast.Binder(line, Sym.of(x), t)
-def AT.arm {r: Region} (line: I64, c: Str, bs: Coll.List[Sym.Sym], body: Ast.Expr): Ast.Arm = Ast.Arm(line, Ast.PCase(Sym.of(c), bs), body)
+def AT.arm {r: Region} (line: I64, c: Str, bs: Coll.List[Sym.Sym], body: Ast.Expr): Ast.Arm =
+  Ast.Arm(Ast.NoDoc, line, Ast.PCase(Sym.of(c), bs), body)
 def AT.c1 {r: Region} (line: I64, f: Str, a: Ast.Expr): Ast.Expr = AT.call(line, f, AT.l1(a))
 def AT.c2 {r: Region} (line: I64, f: Str, a: Ast.Expr, b: Ast.Expr): Ast.Expr = AT.call(line, f, AT.l2(a, b))
-def AT.nl {r: Region} (line: I64): Ast.Stmt = Ast.Do(AT.c1(line, "rt_print", Ast.Str(line, "\\n")))
-def AT.pr {r: Region} (line: I64, e: Ast.Expr): Ast.Stmt = Ast.Do(AT.c1(line, "rt_print_i64", e))
-def AT.fn {r: Region} (line: I64, n: Str, gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl = Ast.DFn(Ast.Fn(line, Sym.of(n), gs, ps, ret, Coll.Nil, Ast.Def(Coll.Nil, body)))
+def AT.nl {r: Region} (line: I64): Ast.Stmt = Ast.Do(Ast.NoDoc, AT.c1(line, "rt_print", Ast.Str(line, "\\n")))
+def AT.pr {r: Region} (line: I64, e: Ast.Expr): Ast.Stmt = Ast.Do(Ast.NoDoc, AT.c1(line, "rt_print_i64", e))
+def AT.fn {r: Region} (line: I64, n: Str, gs: Coll.List[Ast.Group], ps: Coll.List[Ast.Binder], ret: Ast.Ty, body: Ast.Expr): Ast.Decl =
+  Ast.DFn(Ast.Fn(Ast.NoDoc, line, Sym.of(n), gs, ps, ret, Coll.Nil, Ast.Def(Coll.Nil, body)))
 
 def AT.genEnums {r: Region} (): Coll.List[Ast.Decl] =
-  val opt = Ast.Enum(3, AT.s("Opt"), AT.l1(AT.tp(3, "A")), AT.l2(Ast.Case(4, AT.s("None"), Coll.Nil), Ast.Case(5, AT.s("Some"), AT.l1(AT.bd(5, "v", AT.ty("A"))))))
-  val pair = Ast.Enum(7, AT.s("Pair"), AT.l2(AT.tp(7, "A"), AT.tp(7, "B")), AT.l1(Ast.Case(8, AT.s("Pair"), AT.l2(AT.bd(8, "a", AT.ty("A")), AT.bd(8, "b", AT.ty("B"))))))
-  val get = Ast.Match(10, AT.nm(10, "o"), AT.l2(AT.arm(11, "None", Coll.Nil, AT.nm(11, "d")), AT.arm(12, "Some", AT.l1(AT.s("v")), AT.nm(12, "v"))))
-  val getF = AT.fn(10, "get", AT.l1(AT.tp(10, "A")), AT.l2(AT.bd(10, "o", AT.tA("Opt", AT.ty("A"))), AT.bd(10, "d", AT.ty("A"))), AT.ty("A"), get)
+  val opt =
+    Ast.Enum(Ast.NoDoc, 3, AT.s("Opt"), AT.l1(AT.tp(3, "A")), AT.l2(Ast.Case(Ast.NoDoc, 4, AT.s("None"), Coll.Nil), Ast.Case(Ast.NoDoc, 5, AT.s("Some"), AT.l1(AT.bd(5, "v", AT.ty("A"))))))
+  val pair =
+    Ast.Enum(Ast.NoDoc, 7, AT.s("Pair"), AT.l2(AT.tp(7, "A"), AT.tp(7, "B")), AT.l1(Ast.Case(Ast.NoDoc, 8, AT.s("Pair"), AT.l2(AT.bd(8, "a", AT.ty("A")), AT.bd(8, "b", AT.ty("B"))))))
+  val get =
+    Ast.Match(Ast.Written, 10, AT.nm(10, "o"), AT.l2(AT.arm(11, "None", Coll.Nil, AT.nm(11, "d")), AT.arm(12, "Some", AT.l1(AT.s("v")), AT.nm(12, "v"))))
+  val getF =
+    AT.fn(10, "get", AT.l1(AT.tp(10, "A")), AT.l2(AT.bd(10, "o", AT.tA("Opt", AT.ty("A"))), AT.bd(10, "d", AT.ty("A"))), AT.ty("A"), get)
   val pairAB = Ast.Ty(0, AT.s("Pair"), AT.l2(AT.ty("A"), AT.ty("B")), Ast.Inferred, Coll.Nil)
-  val first = Ast.Match(14, AT.nm(14, "p"), AT.l1(AT.arm(15, "Pair", AT.l2(AT.s("a"), AT.s("_")), AT.nm(15, "a"))))
-  val firstF = AT.fn(14, "first", AT.l2(AT.tp(14, "A"), AT.tp(14, "B")), AT.l1(AT.bd(14, "p", pairAB)), AT.ty("A"), first)
+  val first =
+    Ast.Match(Ast.Written, 14, AT.nm(14, "p"), AT.l1(AT.arm(15, "Pair", AT.l2(AT.s("a"), AT.s("_")), AT.nm(15, "a"))))
+  val firstF =
+    AT.fn(14, "first", AT.l2(AT.tp(14, "A"), AT.tp(14, "B")), AT.l1(AT.bd(14, "p", pairAB)), AT.ty("A"), first)
   AT.l4(Ast.DEnum(opt), Ast.DEnum(pair), getF, firstF)
 
 def AT.genMain {r: Region} (): Ast.Decl =
   val optI = AT.tA("Opt", AT.ty("I64"))
   val inR = Ast.Ty(0, AT.s("Opt"), AT.l1(AT.ty("I64")), Ast.Stated(AT.l1(AT.s("r"))), Coll.Nil)
-  val sum = Ast.Bin(20, Ast.Add, AT.c2(20, "get", AT.c1(20, "Some", Ast.Int(20, 41)), Ast.Int(20, 0)), AT.c2(20, "get", AT.nm(20, "n"), Ast.Int(20, 1)))
-  val cond = Ast.If(22, AT.c2(22, "get", AT.c1(22, "Some", Ast.Bool(22, true)), Ast.Bool(22, false)), Ast.Int(22, 1), Ast.Int(22, 0))
-  val a = AT.l4(AT.handle(18, "r", "Srs.Arena"), Ast.Val(19, AT.s("n"), Coll.Some(optI), AT.nm(19, "None")), AT.pr(20, sum), AT.nl(21))
-  val b = AT.l4(AT.pr(22, cond), AT.nl(23), AT.val(24, "p", AT.c2(24, "Pair", AT.c1(24, "Some", Ast.Int(24, 7)), Ast.Bool(24, false))), AT.pr(25, AT.c2(25, "get", AT.c1(25, "first", AT.nm(25, "p")), Ast.Int(25, 0))))
-  val c = AT.l4(AT.nl(26), Ast.Val(28, AT.s("q"), Coll.Some(inR), AT.c1(28, "Some", Ast.Int(28, 5))), AT.pr(29, AT.c2(29, "get", AT.nm(29, "q"), Ast.Int(29, 0))), AT.nl(30))
-  AT.main(17, Ast.Block(18, AT.cat(a, AT.cat(b, c)), Ast.Int(31, 0)))
+  val sum =
+    Ast.Bin(20, Ast.Add, AT.c2(20, "get", AT.c1(20, "Some", Ast.Int(20, 41)), Ast.Int(20, 0)), AT.c2(20, "get", AT.nm(20, "n"), Ast.Int(20, 1)))
+  val cond =
+    Ast.If(Ast.NoDoc, 22, AT.c2(22, "get", AT.c1(22, "Some", Ast.Bool(22, true)), Ast.Bool(22, false)), Ast.Int(22, 1), Ast.Int(22, 0))
+  val a =
+    AT.l4(AT.handle(18, "r", "Srs.Arena"), Ast.Val(Ast.NoDoc, 19, AT.s("n"), Coll.Some(optI), AT.nm(19, "None")), AT.pr(20, sum), AT.nl(21))
+  val b =
+    AT.l4(AT.pr(22, cond), AT.nl(23), AT.val(24, "p", AT.c2(24, "Pair", AT.c1(24, "Some", Ast.Int(24, 7)), Ast.Bool(24, false))), AT.pr(25, AT.c2(25, "get", AT.c1(25, "first", AT.nm(25, "p")), Ast.Int(25, 0))))
+  val c =
+    AT.l4(AT.nl(26), Ast.Val(Ast.NoDoc, 28, AT.s("q"), Coll.Some(inR), AT.c1(28, "Some", Ast.Int(28, 5))), AT.pr(29, AT.c2(29, "get", AT.nm(29, "q"), Ast.Int(29, 0))), AT.nl(30))
+  AT.main(17, Ast.Block(Ast.NoDoc, 18, AT.cat(a, AT.cat(b, c)), Ast.Int(31, 0)))
 
 // tests/eval/basic.srs:37 and :39: three levels without ( ), and a right operand of the same level in ( )
 def AT.ce7 {r: Region} (): Ast.Decl =

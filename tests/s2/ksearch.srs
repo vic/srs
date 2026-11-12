@@ -4,7 +4,8 @@ def T.c0 {r: Region} (f: Str): K.Term = K.Con(Sym.of(f), Coll.Nil)
 def T.c1 {r: Region} (f: Str, a: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Nil))
 def T.c2 {r: Region} (f: Str, a: K.Term, b: K.Term): K.Term = K.Con(Sym.of(f), Coll.Cons(a, Coll.Cons(b, Coll.Nil)))
 def T.l1 {r: Region} (a: K.Term): Coll.List[K.Term] = Coll.Cons(a, Coll.Nil)
-def T.l3 {r: Region} (a: K.Term, b: K.Term, c: K.Term): Coll.List[K.Term] = Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil)))
+def T.l3 {r: Region} (a: K.Term, b: K.Term, c: K.Term): Coll.List[K.Term] =
+  Coll.Cons(a, Coll.Cons(b, Coll.Cons(c, Coll.Nil)))
 
 def T.show(t: K.Term): Unit = t match
   case K.Var(n) =>
@@ -57,7 +58,8 @@ def T.appendo {r: Region} (): Coll.List[K.Rule] =
   val app = Sym.of("append")
   val nil = T.c0("nil")
   val r1 = K.Rule(app, T.l3(nil, K.Var(0), K.Var(0)), K.True, 1)
-  val r2 = K.Rule(app, T.l3(T.c2("cons", K.Var(0), K.Var(1)), K.Var(2), T.c2("cons", K.Var(0), K.Var(3))), K.Call(app, T.l3(K.Var(1), K.Var(2), K.Var(3))), 4)
+  val r2 =
+    K.Rule(app, T.l3(T.c2("cons", K.Var(0), K.Var(1)), K.Var(2), T.c2("cons", K.Var(0), K.Var(3))), K.Call(app, T.l3(K.Var(1), K.Var(2), K.Var(3))), 4)
   Coll.Cons(r1, Coll.Cons(r2, Coll.Nil))
 
 // nat(z).  nat(s(N)) :- nat(N).

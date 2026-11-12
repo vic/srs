@@ -1,9 +1,8 @@
 // pass: main installs Srs.Env and hands it to a def with an Env binder (object capability, no ambient authority)
 // env: SRS_T_AMB=abc
-def AE.read {Env} (): Str =
-  Env.get("SRS_T_AMB") match
-    case Os.Unset => "unset"
-    case Os.Set(s) => s
+def AE.read {_: Env} (): Str = Env.get("SRS_T_AMB") match
+  case Os.Unset => "unset"
+  case Os.Set(s) => s
 
 def main(): I64 =
   handle c = Srs.Console()

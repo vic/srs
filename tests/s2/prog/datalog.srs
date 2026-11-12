@@ -59,15 +59,19 @@ def main(): I64 =
   val z = AVar(2)
   val edges = fc(f2("edge", "a", "b"), fc(f2("edge", "b", "c"), fc(f2("edge", "c", "d"), EdbNil)))
   // path(X, Y) :- edge(X, Y).  path(X, Z) :- edge(X, Y), path(Y, Z).
-  val tc = cl(rule("path", a2(x, y), body1(pos("edge", a2(x, y)))), cl(rule("path", a2(x, z), body2(pos("edge", a2(x, y)), pos("path", a2(y, z)))), ClNil))
+  val tc =
+    cl(rule("path", a2(x, y), body1(pos("edge", a2(x, y)))), cl(rule("path", a2(x, z), body2(pos("edge", a2(x, y)), pos("path", a2(y, z)))), ClNil))
   show(evalDatalog(tc, edges), "path")
   // unreach(X) :- node(X), not reach(X).  reach(Y) :- reach(X), edge(X, Y).  reach(a).  nodes a..e
-  val nodes = fc(f1("node", VSym("a")), fc(f1("node", VSym("b")), fc(f1("node", VSym("c")), fc(f1("node", VSym("d")), fc(f1("node", VSym("e")), edges)))))
+  val nodes =
+    fc(f1("node", VSym("a")), fc(f1("node", VSym("b")), fc(f1("node", VSym("c")), fc(f1("node", VSym("d")), fc(f1("node", VSym("e")), edges)))))
   val db = fc(f1("reach", VSym("a")), nodes)
-  val un = cl(rule("unreach", a1(x), body2(pos("node", a1(x)), neg("reach", a1(x)))), cl(rule("reach", a1(y), body2(pos("reach", a1(x)), pos("edge", a2(x, y)))), ClNil))
+  val un =
+    cl(rule("unreach", a1(x), body2(pos("node", a1(x)), neg("reach", a1(x)))), cl(rule("reach", a1(y), body2(pos("reach", a1(x)), pos("edge", a2(x, y)))), ClNil))
   show(evalDatalog(un, db), "unreach")
   // p(X) :- node(X), not q(X).  q(X) :- node(X), not p(X).  =>  negation cycle
-  val nc = cl(rule("p", a1(x), body2(pos("node", a1(x)), neg("q", a1(x)))), cl(rule("q", a1(x), body2(pos("node", a1(x)), neg("p", a1(x)))), ClNil))
+  val nc =
+    cl(rule("p", a1(x), body2(pos("node", a1(x)), neg("q", a1(x)))), cl(rule("q", a1(x), body2(pos("node", a1(x)), neg("p", a1(x)))), ClNil))
   show(evalDatalog(nc, nodes), "p")
   // p(X) :- node(Y).  =>  unsafe head variable
   show(evalDatalog(cl(rule("p", a1(x), body1(pos("node", a1(y)))), ClNil), nodes), "p")
@@ -75,7 +79,8 @@ def main(): I64 =
   show(evalDatalog(cl(rule("p", a1(y), body2(pos("node", a1(y)), neg("q", a1(x)))), ClNil), nodes), "p")
   // self(X) :- edge(X, X).  from_a(X) :- edge(a, X).  with edge(e, e)
   val loops = fc(f2("edge", "e", "e"), edges)
-  val sc = cl(rule("self", a1(x), body1(pos("edge", a2(x, x)))), cl(rule("from_a", a1(x), body1(pos("edge", a2(sym("a"), x)))), ClNil))
+  val sc =
+    cl(rule("self", a1(x), body1(pos("edge", a2(x, x)))), cl(rule("from_a", a1(x), body1(pos("edge", a2(sym("a"), x)))), ClNil))
   val m = evalDatalog(sc, loops)
   show(m, "self")
   show(m, "from_a")

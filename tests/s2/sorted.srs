@@ -17,7 +17,7 @@ def T.asc(xs: Coll.List[Coll.KV[I64]], prev: I64): I64 = xs match
   case Coll.Cons(e, t) => if Coll.kvKey(e) > prev then T.asc(t, Coll.kvKey(e)) else 0
 
 def T.scr {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
-  if i == n then acc else T.scr(i + 1, n, Coll.Cons(Coll.KV((i * 7919) % 100003, i), acc))
+  if i == n then acc else T.scr(i + 1, n, Coll.Cons(Coll.KV(i * 7919 % 100003, i), acc))
 
 def T.none(): Coll.List[Coll.KV[I64]] = Coll.Nil
 
@@ -27,7 +27,7 @@ def T.val(s: Coll.Sorted[I64]): Coll.List[Coll.KV[I64]] = s match
 // the input lists of the oracle, in list order: keys (i * 7919) % 1009 (many duplicates, short runs both ways),
 // keys i / 2 ascending (one run, adjacent duplicates), keys n - 1 down to 0 (one descending run)
 def T.genMod {r: Region} (i: I64, n: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
-  if i == n then acc else T.genMod(i + 1, n, Coll.Cons(Coll.KV((i * 7919) % 1009, i), acc))
+  if i == n then acc else T.genMod(i + 1, n, Coll.Cons(Coll.KV(i * 7919 % 1009, i), acc))
 
 def T.genUp {r: Region} (i: I64, acc: Coll.List[Coll.KV[I64]]): Coll.List[Coll.KV[I64]] =
   if i == 0 then acc else T.genUp(i - 1, Coll.Cons(Coll.KV((i - 1) / 2, i - 1), acc))
@@ -43,7 +43,7 @@ def T.bm {r: Region} (xs: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64]): Coll.BMap
 def T.bmKV {r: Region} (e: Coll.KV[I64], t: Coll.List[Coll.KV[I64]], m: Coll.BMap[I64]): Coll.BMap[I64] = e match
   case Coll.KV(k, v) => T.bm(t, Coll.bInsert(m, k, v))
 
-def T.is (o: Coll.Option[I64], v: I64): Bool = o match
+def T.is(o: Coll.Option[I64], v: I64): Bool = o match
   case Coll.None => false
   case Coll.Some(w) => w == v
 
@@ -68,7 +68,8 @@ def T.oracle {r: Region} (xs: Coll.List[Coll.KV[I64]]): I64 =
 def main(): I64 =
   handle io = Srs.Console()
   handle r = Srs.Arena()
-  val l = Coll.Cons(Coll.KV(5, 1), Coll.Cons(Coll.KV(3, 2), Coll.Cons(Coll.KV(9, 3), Coll.Cons(Coll.KV(5, 4), Coll.Cons(Coll.KV(1, 5), Coll.Cons(Coll.KV(3, 6), Coll.Cons(Coll.KV(7, 7), Coll.Cons(Coll.KV(5, 8), Coll.Cons(Coll.KV(0, 9), Coll.Cons(Coll.KV(8, 10), Coll.Nil))))))))))
+  val l =
+    Coll.Cons(Coll.KV(5, 1), Coll.Cons(Coll.KV(3, 2), Coll.Cons(Coll.KV(9, 3), Coll.Cons(Coll.KV(5, 4), Coll.Cons(Coll.KV(1, 5), Coll.Cons(Coll.KV(3, 6), Coll.Cons(Coll.KV(7, 7), Coll.Cons(Coll.KV(5, 8), Coll.Cons(Coll.KV(0, 9), Coll.Cons(Coll.KV(8, 10), Coll.Nil))))))))))
   val s = Coll.sortDedup(l)
   T.show(T.val(s))
   Console.print("\n")

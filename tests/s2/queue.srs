@@ -4,7 +4,8 @@ def T.drain {r: Region} (q: Queue.Queue[I64], i: I64, acc: I64): I64 = Queue.pop
   case Queue.Empty => acc
   case Queue.Got(x, rest) => T.drain(rest, i + 1, acc + i * x)
 
-def T.fill {r: Region} (q: Queue.Queue[I64], i: I64, n: I64): Queue.Queue[I64] = if i > n then q else T.fill(Queue.push(q, i), i + 1, n)
+def T.fill {r: Region} (q: Queue.Queue[I64], i: I64, n: I64): Queue.Queue[I64] =
+  if i > n then q else T.fill(Queue.push(q, i), i + 1, n)
 
 // push 2, pop 1, n times: the queue grows by one per turn; the sum of the popped values
 def T.churn {r: Region} (q: Queue.Queue[I64], i: I64, n: I64, acc: I64): I64 =

@@ -132,7 +132,8 @@ def K.kstep(ix: Coll.IMap[Coll.List[K.Rule]], b: K.Branch): K.Step =
         case K.NoPick => K.More(K.Branch(st, rest))
         case K.Pick(t, d) => K.Split(K.labelBranches(st, t, K.ints(d), gs, Coll.Nil), K.domSize(d))
       case K.Conj(x, y) => K.More(K.Branch(st, Coll.Cons(x, Coll.Cons(y, rest))))
-      case K.Disj(x, y) => K.Split(Coll.Cons(K.Branch(st, Coll.Cons(x, rest)), Coll.Cons(K.Branch(st, Coll.Cons(y, rest)), Coll.Nil)), 1)
+      case K.Disj(x, y) =>
+        K.Split(Coll.Cons(K.Branch(st, Coll.Cons(x, rest)), Coll.Cons(K.Branch(st, Coll.Cons(y, rest)), Coll.Nil)), 1)
       case K.Call(f, args) => Coll.node(ix, Sym.hash(f)) match
         case Coll.Tip => K.Split(Coll.Nil, 0)
         case Coll.Bin(_, _, rs, _, _) => K.picks(rs, f, args, st, rest, Coll.Nil, 0)
@@ -144,10 +145,14 @@ def K.loop(ix: Coll.IMap[Coll.List[K.Rule]], cur: Coll.Option[K.Branch], q: Queu
     case Queue.Empty => K.Run(Coll.rev(found), K.Ended)
     case Queue.Got(b, rest) => K.loop(ix, Coll.Some(b), rest, fuel, limit, found, n)
   case Coll.Some(b) => K.kstep(ix, b) match
-    case K.Done(st) => if n + 1 >= limit then K.Run(Coll.rev(Coll.Cons(st, found)), K.Limit) else K.loop(ix, Coll.None, q, fuel, limit, Coll.Cons(st, found), n + 1)
+    case K.Done(st) =>
+      if n + 1 >= limit then K.Run(Coll.rev(Coll.Cons(st, found)), K.Limit)
+      else K.loop(ix, Coll.None, q, fuel, limit, Coll.Cons(st, found), n + 1)
     case K.Dead => K.loop(ix, Coll.None, q, fuel, limit, found, n)
     case K.More(b2) => K.loop(ix, Coll.Some(b2), q, fuel, limit, found, n)
-    case K.Split(bs, cost) => if cost > fuel then K.Run(Coll.rev(found), K.NoFuel) else K.loop(ix, Coll.None, Queue.pushAll(q, bs), fuel - cost, limit, found, n)
+    case K.Split(bs, cost) =>
+      if cost > fuel then K.Run(Coll.rev(found), K.NoFuel)
+      else K.loop(ix, Coll.None, Queue.pushAll(q, bs), fuel - cost, limit, found, n)
 
 // prove g (variables 0..nvars-1) over rules: at most limit answers, within fuel
 def K.solve(rules: Coll.List[K.Rule], g: K.Goal, nvars: I64, fuel: I64, limit: I64): K.Run =
