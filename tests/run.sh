@@ -84,6 +84,27 @@ export -f t_reuse
 reused=$(par t_reuse tests/s2/prog/*.srs) || fail=1
 printf '%s\n' "$reused" | grep -v '^reused ' | grep . || true
 case "$reused" in *"reused reuse_run"*) echo "ok reuse armed (reuse_run changed)";; *) echo "FAIL reuse unarmed: reuse_run C unchanged"; fail=1;; esac
+# poison: with a prelude whose Arena fills each freed chunk's words with 0xA5.. before it is kept for reuse, a read of a
+# freed box reads garbage: every prog test still prints its .out (plain and --mem-reuse). armed: the sed changed the
+# prelude (the line it edits is there)
+sed -e 's/^      rt_ptr_set(ch, Srs.Arena.hNext(), rt_ptr_get(g, Srs.Arena.gSpare()))$/      val pz = Srs.Arena.poison(ch, 3, cap \/ 8)\n&/' lib/prelude.srs > "$B/poison.srs"
+printf '%s\n' '' 'def Srs.Arena.poison(ch: Ptr, i: I64, n: I64): Unit = if i >= n then () else' \
+  '  val u = rt_ptr_set(ch, i, -6510615555426900571)' '  Srs.Arena.poison(ch, i + 1, n)' >> "$B/poison.srs"
+if grep -q 'Srs.Arena.poison(ch, 3' "$B/poison.srs"; then echo "ok poison armed"; else echo "FAIL poison unarmed: Arena release line not found"; fail=1; fi
+t_poison() {
+  local t=$1 n m f pass out; n=$(basename "$t" .srs)
+  for f in "" --mem-reuse; do
+    m=s2c1_poison${f:+_reuse}_$n; pass=0
+    timeout 5 "$B/s2c1" $f "$B/poison.srs" ${S2LIBS#lib/prelude.srs} "$t" > "$B/$m.c" 2>/dev/null \
+      && timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
+      && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+    verdict "poison${f:+-reuse}/$n" $pass
+  done
+}
+export -f t_poison
+poisoned=$(par t_poison tests/s2/prog/*.srs) || fail=1
+printf '%s\n' "$poisoned" | grep -v '^ok ' || true
+echo "ok poison: $(printf '%s\n' "$poisoned" | grep -c '^ok ') checks pass"
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
