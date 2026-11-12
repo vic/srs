@@ -404,107 +404,195 @@ enum S2c.Mode:
   // --mem: each Region and the allocation sites that fill it, once or many (s2/mem.srs, vic/c/mem-design.md)
   case S2c.MemAll
 
-// --mem: "region x file:line handler", then "  file:line ctor N B once" or "  file:line ctor N B many: why" (no bytes
-// for an Array.fill), then the total: the once sites and their bytes, the many sites
+// --mem: one JSON object on one line (read it with jq). regions: each handled Region; sites:
+// each allocation site of a region, with its bytes (null for an Array.fill), once or many and why, dies or escapes;
+// total: the once sites and their bytes, the many sites, the sites that die; reuse: each match that can build its
+// arm's box in the scrutinee's cell (M7a); compact: each def that can run in a scratch region and copy its result out
+// (M6a)
 def S2c.mem(fs: Coll.List[S2c.File], r: Mem.Report): I64 = r match
   case Mem.RulesBad(rel) => S2c.internal("mem", rel)
   case Mem.Ok(bs, rs, cs) =>
-    val S2c.MemCount(once, onceB, many, die) = S2c.memBlocks(fs, bs, S2c.MemCount(0, 0, 0, 0))
-    Console.print("total: ")
+    Console.print("{\"regions\":[")
+    S2c.jRegions(fs, bs, 0)
+    Console.print("],\"sites\":[")
+    val S2c.MemCount(once, onceB, many, die, _) = S2c.jBlocks(fs, bs, 0, S2c.MemCount(0, 0, 0, 0, 0))
+    Console.print("],\"total\":{\"once\":")
     Console.printI64(once)
-    Console.print(" once ")
+    Console.print(",\"onceBytes\":")
     Console.printI64(onceB)
-    Console.print(" B, ")
+    Console.print(",\"many\":")
     Console.printI64(many)
-    Console.print(" many, ")
+    Console.print(",\"dies\":")
     Console.printI64(die)
-    Console.print(" die\n")
-    S2c.memReuses(fs, rs)
-    S2c.memCompacts(fs, cs)
+    Console.print("},\"reuse\":[")
+    S2c.jReuses(fs, rs, true)
+    Console.print("],\"compact\":[")
+    S2c.jCompacts(fs, cs, true)
+    Console.print("]}\n")
     0
 
-// "reuse file:line x: C -> K": the match at line on x can build its arm's K box in the cell of x's C box (M7a)
-def S2c.memReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.Reuse]): Unit = rs match
-  case Coll.Nil => ()
-  case Coll.Cons(r, rest) =>
-    val Mem.Reuse(line, x, c, k) = r
-    Console.print("reuse ")
-    S2c.place(fs, line)
-    Console.print(" ")
-    Console.print(Sym.str(x))
-    Console.print(": ")
-    Console.print(Sym.str(c))
-    Console.print(" -> ")
-    Console.print(Sym.str(k))
-    Console.print("\n")
-    S2c.memReuses(fs, rest)
-
+// the counts so far and the next site id
 enum S2c.MemCount:
-  case S2c.MemCount(once: I64, onceB: I64, many: I64, die: I64)
+  case S2c.MemCount(once: I64, onceB: I64, many: I64, die: I64, site: I64)
 
-def S2c.memBytes(b: Coll.Option[I64]): I64 = b match
-  case Coll.Some(n) =>
-    Console.print(" ")
-    Console.printI64(n)
-    Console.print(" B")
-    n
-  case Coll.None => 0
+// a JSON string: the bytes of s, with " \ and control bytes escaped
+def S2c.jStr(s: Str): Unit =
+  Console.print("\"")
+  S2c.jBody(s)
+  Console.print("\"")
 
-// ", dies" or ", escapes" and the line end; 1 for a site that dies
-def S2c.memDeath(dies: Bool): I64 =
-  if dies then
-    Console.print(", dies\n")
-    1
+// s inside a JSON string: printed whole when no byte needs an escape
+def S2c.jBody(s: Str): Unit =
+  val n = Str.len(s)
+  if S2c.jPlain(s, 0, n) then Console.print(s) else S2c.jChars(s, 0, n)
+
+def S2c.jPlain(s: Str, i: I64, n: I64): Bool =
+  if i == n then true
+  else if S2c.jEsc(Str.at(s, i)) then false
+  else S2c.jPlain(s, i + 1, n)
+
+def S2c.jEsc(c: I64): Bool = c == 34 || c == 92 || c < 32
+
+def S2c.jChars(s: Str, i: I64, n: I64): Unit =
+  if i == n then ()
   else
-    Console.print(", escapes\n")
-    0
+    val c = Str.at(s, i)
+    S2c.jChar(c)
+    S2c.jChars(s, i + 1, n)
 
-def S2c.memBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], c: S2c.MemCount): S2c.MemCount = bs match
+// one byte of a JSON string; a control byte is \u00XY
+def S2c.jChar(c: I64): Unit =
+  if c == 34 then Console.print("\\\"")
+  else if c == 92 then Console.print("\\\\")
+  else if c < 32 then
+    Console.print("\\u00")
+    S2c.jHex(c / 16)
+    S2c.jHex(c % 16)
+  else Console.printChar(c)
+
+def S2c.jHex(d: I64): Unit = if d < 10 then Console.printChar(48 + d) else Console.printChar(87 + d)
+
+def S2c.jSym(x: Sym.Sym): Unit = S2c.jStr(Sym.str(x))
+
+// "file:line" of a program line as a JSON string
+def S2c.jAt(fs: Coll.List[S2c.File], line: I64): Unit =
+  Console.print("\"")
+  S2c.fileOf(fs, line) match
+    case Coll.Some(f) =>
+      val S2c.File(p, base, _) = f
+      S2c.jBody(p)
+      Console.print(":")
+      Console.printI64(line - base + 1)
+    case Coll.None => Console.printI64(line)
+  Console.print("\"")
+
+// "," before every element but the first
+def S2c.jSep(first: Bool): Unit = if first then () else Console.print(",")
+
+def S2c.jRegions(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], id: I64): Unit = bs match
+  case Coll.Nil => ()
+  case Coll.Cons(b, rest) =>
+    val Mem.Block(line, x, h, _) = b
+    S2c.jSep(id == 0)
+    Console.print("{\"id\":")
+    Console.printI64(id)
+    Console.print(",\"at\":")
+    S2c.jAt(fs, line)
+    Console.print(",\"var\":")
+    S2c.jSym(x)
+    Console.print(",\"handler\":")
+    S2c.jSym(h)
+    Console.print("}")
+    S2c.jRegions(fs, rest, id + 1)
+
+def S2c.jBlocks(fs: Coll.List[S2c.File], bs: Coll.List[Mem.Block], region: I64, c: S2c.MemCount): S2c.MemCount = bs match
   case Coll.Nil => c
   case Coll.Cons(b, rest) =>
-    val Mem.Block(line, x, h, rows) = b
-    Console.print("region ")
-    Console.print(Sym.str(x))
-    Console.print(" ")
-    S2c.place(fs, line)
-    Console.print(" ")
-    Console.print(Sym.str(h))
-    Console.print("\n")
-    S2c.memBlocks(fs, rest, S2c.memRows(fs, rows, c))
+    val Mem.Block(_, _, _, rows) = b
+    S2c.jBlocks(fs, rest, region + 1, S2c.jRows(fs, rows, region, c))
 
-def S2c.memRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], c: S2c.MemCount): S2c.MemCount = rows match
+def S2c.jRows(fs: Coll.List[S2c.File], rows: Coll.List[Mem.Row], region: I64, c: S2c.MemCount): S2c.MemCount = rows match
   case Coll.Nil => c
   case Coll.Cons(r, rest) =>
     val Mem.Row(line, ctor, bytes, dies, m) = r
-    val S2c.MemCount(once, onceB, many, die) = c
-    Console.print("  ")
-    S2c.place(fs, line)
-    Console.print(" ")
-    Console.print(Sym.str(ctor))
-    val n = S2c.memBytes(bytes)
+    val S2c.MemCount(once, onceB, many, die, site) = c
+    S2c.jSep(site == 0)
+    Console.print("{\"id\":")
+    Console.printI64(site)
+    Console.print(",\"region\":")
+    Console.printI64(region)
+    Console.print(",\"at\":")
+    S2c.jAt(fs, line)
+    Console.print(",\"ctor\":")
+    S2c.jSym(ctor)
+    Console.print(",\"bytes\":")
+    val n = S2c.jBytes(bytes)
+    val d = if dies then 1 else 0
+    val fate = if dies then ",\"fate\":\"dies\"" else ",\"fate\":\"escapes\""
+    Console.print(fate)
     m match
       case Mem.Once =>
-        Console.print(" once")
-        S2c.memRows(fs, rest, S2c.MemCount(once + 1, onceB + n, many, die + S2c.memDeath(dies)))
+        Console.print(",\"mult\":\"once\"}")
+        S2c.jRows(fs, rest, region, S2c.MemCount(once + 1, onceB + n, many, die + d, site + 1))
       case Mem.Many(why) =>
-        Console.print(" many: ")
-        S2c.memWhy(why)
-        S2c.memRows(fs, rest, S2c.MemCount(once, onceB, many + 1, die + S2c.memDeath(dies)))
+        Console.print(",\"mult\":\"many\",\"why\":")
+        S2c.jWhy(why)
+        Console.print("}")
+        S2c.jRows(fs, rest, region, S2c.MemCount(once, onceB, many + 1, die + d, site + 1))
 
-def S2c.memWhy(w: Mem.Why): Unit = w match
-  case Mem.InLoop => Console.print("in a loop")
-  case Mem.Sites(f, n) =>
-    Console.print(Sym.str(f))
-    Console.print(" called at ")
+// the bytes of a site, null when unknown (an Array.fill); 0 counts for an unknown size
+def S2c.jBytes(b: Coll.Option[I64]): I64 = b match
+  case Coll.Some(n) =>
     Console.printI64(n)
-    Console.print(" sites")
+    n
+  case Coll.None =>
+    Console.print("null")
+    0
+
+def S2c.jWhy(w: Mem.Why): Unit = w match
+  case Mem.InLoop => Console.print("{\"kind\":\"loop\"}")
+  case Mem.Sites(f, n) =>
+    Console.print("{\"kind\":\"sites\",\"def\":")
+    S2c.jSym(f)
+    Console.print(",\"n\":")
+    Console.printI64(n)
+    Console.print("}")
   case Mem.LoopCalled(f) =>
-    Console.print(Sym.str(f))
-    Console.print(" called in a loop")
+    Console.print("{\"kind\":\"loopCalled\",\"def\":")
+    S2c.jSym(f)
+    Console.print("}")
   case Mem.Via(f) =>
-    Console.print("called from ")
-    Console.print(Sym.str(f))
-    Console.print(" (many)")
+    Console.print("{\"kind\":\"via\",\"def\":")
+    S2c.jSym(f)
+    Console.print("}")
+
+def S2c.jReuses(fs: Coll.List[S2c.File], rs: Coll.List[Mem.Reuse], first: Bool): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Mem.Reuse(line, x, c, k) = r
+    S2c.jSep(first)
+    Console.print("{\"at\":")
+    S2c.jAt(fs, line)
+    Console.print(",\"var\":")
+    S2c.jSym(x)
+    Console.print(",\"case\":")
+    S2c.jSym(c)
+    Console.print(",\"ctor\":")
+    S2c.jSym(k)
+    Console.print("}")
+    S2c.jReuses(fs, rest, false)
+
+def S2c.jCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact], first: Bool): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Mem.Compact(line, f) = c
+    S2c.jSep(first)
+    Console.print("{\"at\":")
+    S2c.jAt(fs, line)
+    Console.print(",\"def\":")
+    S2c.jSym(f)
+    Console.print("}")
+    S2c.jCompacts(fs, rest, false)
 
 // file:line of a program line (lines are numbered across the input files)
 def S2c.place(fs: Coll.List[S2c.File], line: I64): Unit = S2c.fileOf(fs, line) match
@@ -621,14 +709,3 @@ def S2c.terms(ts: Coll.List[K.Term]): Unit = ts match
     S2c.term(t)
     S2c.terms(rest)
 
-// "compact file:line F": F can run in a scratch region and copy its result out to the caller's (M6a)
-def S2c.memCompacts(fs: Coll.List[S2c.File], cs: Coll.List[Mem.Compact]): Unit = cs match
-  case Coll.Nil => ()
-  case Coll.Cons(c, rest) =>
-    val Mem.Compact(line, f) = c
-    Console.print("compact ")
-    S2c.place(fs, line)
-    Console.print(" ")
-    Console.print(Sym.str(f))
-    Console.print("\n")
-    S2c.memCompacts(fs, rest)
