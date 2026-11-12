@@ -279,7 +279,8 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
         case Coll.Some(_) => Console.print(")")
         case Coll.None => ()
   case El.New(_, en, ts, c, at, args) => at match
-    case El.In(reg) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, reg, args)
+    case El.In(reg) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, Emit.FromRegion(reg), args)
+    case El.Into(x) => Emit.ctor(cx, fi, env, en, Emit.grAll(cx, fi, ts), c, Emit.FromCell(x), args)
     case El.Comptime => Console.print("0")
   // a nullary case is P_, the address of its read-only static (Emit.nullaries)
   case El.Nullary(_, _, ts, c) =>
@@ -623,8 +624,14 @@ def Emit.slotName(sl: Emit.Slot): Sym.Sym = sl match
   case Emit.SCap(x) => x
   case Emit.SVal(x, _) => x
 
-// a constructor (spec sec 4.3): its own case's size in the region reg, then the fields in order
-def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, reg: Sym.Sym, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
+// where a constructor's box comes from: a new box of the region reg, or the cell of local x (a box of the same case that
+// a match took apart: s2c --mem-reuse)
+enum Emit.Src:
+  case Emit.FromRegion(reg: Sym.Sym)
+  case Emit.FromCell(x: Sym.Sym)
+
+// a constructor (spec sec 4.3): its own case's size in the region reg (or the reused cell), then the fields in order
+def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.List[K.Term], c: Sym.Sym, src: Emit.Src, args: Coll.List[El.Expr]): Unit = Emit.caseAt(cx, c) match
   case Coll.None => Console.print("0")
   case Coll.Some(ca) =>
     val Emit.CaseAt(tag, _, cs) = ca
@@ -638,26 +645,32 @@ def Emit.ctor(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, en: Sym.Sym, ts: Coll.Lis
     Console.print(" = (struct E_")
     Emit.enumName(en, ts)
     Console.print("*)")
-    al match
-      case Emit.Inline =>
-        Console.print("srs_alloc(")
-        Emit.local(Emit.vs(env), reg)
-        Console.print(", ")
-      case Emit.VTable =>
-        Console.print("((void*(*)(void*, int64_t))(")
-        Emit.local(Emit.vs(env), reg)
-        Console.print("->vt[")
-        Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
-        Console.print("]))(")
-        Emit.local(Emit.vs(env), reg)
-        Console.print("->self, ")
-    Console.print("(int64_t)(offsetof(struct E_")
-    Emit.enumName(en, ts)
-    Console.print(", u) + sizeof(((struct E_")
-    Emit.enumName(en, ts)
-    Console.print("*)0)->u.C_")
-    Emit.id(c)
-    Console.print("))); o")
+    src match
+      case Emit.FromCell(x) =>
+        Console.print("(")
+        Emit.local(Emit.vs(env), x)
+        Console.print("); o")
+      case Emit.FromRegion(reg) =>
+        al match
+          case Emit.Inline =>
+            Console.print("srs_alloc(")
+            Emit.local(Emit.vs(env), reg)
+            Console.print(", ")
+          case Emit.VTable =>
+            Console.print("((void*(*)(void*, int64_t))(")
+            Emit.local(Emit.vs(env), reg)
+            Console.print("->vt[")
+            Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
+            Console.print("]))(")
+            Emit.local(Emit.vs(env), reg)
+            Console.print("->self, ")
+        Console.print("(int64_t)(offsetof(struct E_")
+        Emit.enumName(en, ts)
+        Console.print(", u) + sizeof(((struct E_")
+        Emit.enumName(en, ts)
+        Console.print("*)0)->u.C_")
+        Emit.id(c)
+        Console.print("))); o")
     Console.printI64(n)
     // the tag is written through the case struct (its t_), as every field is: one union member per box
     Console.print("->u.C_")

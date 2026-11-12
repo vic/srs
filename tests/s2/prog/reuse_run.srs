@@ -1,0 +1,42 @@
+// pass: matches that rebuild their box in place under s2c --mem-reuse (the program prints the same either way): UL.inc
+// maps a fresh list cell by cell (each cell is read once), UP.flip rebuilds a pair, UL.keep reads its list twice (shared:
+// no reuse, the list it returns is read again)
+enum UL:
+  case UNil
+  case UCons(h: I64, t: UL)
+
+enum UP:
+  case UP(a: I64, b: I64)
+
+def UL.make(n: I64, acc: UL): UL = if n == 0 then acc else UL.make(n - 1, UCons(n, acc))
+
+def UL.inc(l: UL): UL = l match
+  case UNil => UNil
+  case UCons(h, t) => UCons(h + 10, UL.inc(t))
+
+def UL.sum(l: UL, s: I64): I64 = l match
+  case UNil => s
+  case UCons(h, t) => UL.sum(t, s + h)
+
+def UL.keep(l: UL): I64 =
+  val m = l match
+    case UNil => UNil
+    case UCons(h, t) => UCons(h + 1, t)
+  UL.sum(m, 0) + UL.sum(l, 0)
+
+def UP.flip(p: UP): UP = p match
+  case UP(a, b) => UP(b, a)
+
+def UP.diff(p: UP): I64 = p match
+  case UP(a, b) => a - b
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(UL.sum(UL.inc(UL.make(5, UNil)), 0))
+  Console.print(" ")
+  Console.printI64(UP.diff(UP.flip(UP(1, 7))))
+  Console.print(" ")
+  Console.printI64(UL.keep(UL.make(3, UNil)))
+  Console.print("\n")
+  0

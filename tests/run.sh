@@ -69,6 +69,21 @@ t_prog() {
 }
 export -f t_prog
 par t_prog tests/s2/prog/*.srs || fail=1
+# s2c --mem-reuse (s2/mem.srs M13): a prog test whose C changes (a box built into a matched box's cell) still prints its
+# .out; the others are the plain C. armed: prog/reuse_run must change
+t_reuse() {
+  local t=$1 n m pass=0 out; n=$(basename "$t" .srs); m=s2c1_reuse_$n
+  timeout 5 "$B/s2c1" --mem-reuse $S2LIBS "$t" > "$B/$m.c" 2>/dev/null || { verdict "reuse/$n" 0 "s2c"; return 0; }
+  if cmp -s "$B/$m.c" "$B/s2c1_$n.c"; then return 0; fi
+  echo "reused $n"
+  timeout 60 $CC -o "$B/$m" "$B/$m.c" rt/srs_rt.c $(sed -n 's|^// c: ||p' "$t") 2>/dev/null \
+    && out=$(env $(sed -n 's|^// env: ||p' "$t") timeout 1 "$B/$m") && [ "$out" = "$(cat tests/s2/prog/$n.out)" ] && pass=1
+  verdict "reuse/$n" $pass
+}
+export -f t_reuse
+reused=$(par t_reuse tests/s2/prog/*.srs) || fail=1
+printf '%s\n' "$reused" | grep -v '^reused ' | grep . || true
+case "$reused" in *"reused reuse_run"*) echo "ok reuse armed (reuse_run changed)";; *) echo "FAIL reuse unarmed: reuse_run C unchanged"; fail=1;; esac
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')

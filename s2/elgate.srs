@@ -110,6 +110,7 @@ def Elgate.ex(cx: Emit.Cx, fn: Sym.Sym, tail: Bool, e: El.Expr, acc: Coll.List[E
         val a2 = Elgate.add(a1, Elgate.StmtExpr, Elgate.CNew, l, fn)
         if Emit.isInline(al) then a2 else Elgate.add(a2, Elgate.VtableCall, Elgate.CNew, l, fn)
       case El.Comptime => a1
+      case El.Into(_) => Elgate.add(a1, Elgate.StmtExpr, Elgate.CNew, l, fn)
   case El.Op(l, _, ty, op, args, _) =>
     val a1 = Elgate.exs(cx, fn, args, acc)
     val a2 = if Sym.eq(op, Sym.of("exit")) then Elgate.add(a1, Elgate.Exit, Elgate.COp, l, fn) else a1
