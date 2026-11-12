@@ -685,7 +685,10 @@ def Mem.lvUse(m: Coll.SMap[Mem.LV], x: Sym.Sym, line: I64, floor: I64): Coll.SMa
 
 def Mem.lvx(e: Ast.Expr, floor: I64, m: Coll.SMap[Mem.LV]): Coll.SMap[Mem.LV] = e match
   case Ast.Name(line, x) => Mem.lvUse(m, x, line, floor)
-  case Ast.Call(_, _, _, _, args) => Mem.lvxs(args, floor, m)
+  // a call of a name the def binds reads it (xs(i): an array read)
+  case Ast.Call(line, g, _, _, args) =>
+    val Mem.LV(_, _, n, _, _) = Mem.lvIn(m, g)
+    Mem.lvxs(args, floor, if n > 0 then Mem.lvUse(m, g, line, floor) else m)
   case Ast.Method(_, _, _, args) => Mem.lvxs(args, floor, m)
   case Ast.Resume(_, _, x) => Mem.lvx(x, floor, m)
   case Ast.Bin(_, _, l, r) => Mem.lvx(r, floor, Mem.lvx(l, floor, m))
@@ -1145,7 +1148,7 @@ def Mem.eExpr(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, e: Ast.Expr): Mem.EV = e match
 // gives its result (none when the result type holds no box); anything else (Array.put, a Cell op, an extern, a read
 // xs(i) of a local array) keeps its args: they are sinks, and its value is the named local's
 def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Coll.List[Ast.Expr]): Mem.EV =
-  val Mem.Cx(fns, ctors, _, ss, _) = cx
+  val Mem.Cx(fns, ctors, _, ss, bound) = cx
   val Mem.EA(w2, nss) = Mem.eArgs(cx, f, w, args, Coll.Nil)
   if Mem.allocates(ctors, g) || Eff.isArrayNew(ss, g) then
     val Mem.EW(fs, n, sites) = w2
@@ -1158,6 +1161,11 @@ def Mem.eCall(cx: Mem.Cx, f: Sym.Sym, w: Mem.EW, line: I64, g: Sym.Sym, args: Co
         case Coll.Nil => Coll.Nil
     Mem.EV(Mem.flowTo(w3, Mem.flat(held, Coll.Nil), node, Mem.MField), Coll.Cons(node, Coll.Nil))
   else if Mem.isIn(ctors, g) then Mem.EV(w2, Coll.Nil)
+  // xs(i) of an array the def binds: the element comes out of xs (a pattern move: it holds xs's regions) and stays in
+  // the array, so it is shared (unknown), never a unique box to reuse
+  else if Mem.binds(bound, f, g) then
+    val el = Mem.Node(Mem.kCall(), f, D.VInt(line))
+    Mem.unknown(Mem.flowTo(w2, Coll.Cons(Mem.nVar(f, g), Coll.Nil), el, Mem.MPattern), el)
   else Coll.sLookup(fns, g) match
     case Coll.Some(gf) =>
       val Ast.Fn(_, _, _, ps, ret, _, body) = gf
