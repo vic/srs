@@ -1,0 +1,27 @@
+// pass: F64.fmt (C snprintf %g, %f, %.*e into an array, cut to its length) and F64.parse (C strtod)
+def T.show(n: I64, xs: Array[U8](n), how: I64, prec: I64, x: F64): Unit =
+  val k = F64.fmt(n, xs, how, prec, x)
+  Console.print(Str.slice(Str.ofBytes(n, xs), 0, k))
+  Console.print("\n")
+
+def main(): I64 =
+  handle c = Srs.Console()
+  handle r = Srs.Arena()
+  val n = 64
+  val xs = Array.fill(n, U8.of(0))
+  val third = F64.div(F64.ofI64(1), F64.ofI64(3))
+  T.show(n, xs, 0, 0, third)
+  T.show(n, xs, 1, 0, third)
+  T.show(n, xs, 2, 3, third)
+  T.show(n, xs, 0, 0, F64.mul(F64.ofI64(1000000), F64.ofI64(1000000)))
+  // cut: 4 bytes hold 3 of "0.333333"
+  val m = 4
+  val ys = Array.fill(m, U8.of(0))
+  T.show(m, ys, 1, 0, third)
+  Console.printI64(F64.bits(F64.parse("0.5")))
+  Console.print("\n")
+  Console.printI64(F64.truncI64(F64.parse("-12.75e1")))
+  Console.print("\n")
+  Console.printI64(F64.bits(F64.parse("junk")))
+  Console.print("\n")
+  0
