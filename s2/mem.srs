@@ -263,7 +263,7 @@ def Mem.report(ds: Coll.List[Ast.Decl], sb: Coll.List[Emit.SiteB]): Mem.Report =
     case D.Solved(m) =>
       val esc = Mem.marks(esites, Mem.idSet(D.tuples(m, Mem.eSym(Mem.EEsc)), Coll.Tip), true, Coll.Nil)
       val md = Mem.Model(Mem.names(D.tuples(m, Mem.relSym(Mem.RManyDef)), Coll.sEmpty()), Mem.names(D.tuples(m, Mem.relSym(Mem.RLoopCall)), Coll.sEmpty()), Mem.group(D.tuples(m, Mem.relSym(Mem.RFills)), Coll.Tip), Mem.ints(D.tuples(m, Mem.relSym(Mem.RLive)), Coll.Nil), Mem.siteMap(sb, Coll.Tip), esc)
-      val reuse = Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(it, D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
+      val reuse = Mem.scanFns(Mem.caseEnums(ds, Coll.sEmpty()), cx, Mem.sharedSet(Mem.varMap(it), D.tuples(m, Mem.s7(Mem.RShared7)), Coll.sEmpty()), fl, Coll.Nil)
       val need = Mem.names(D.tuples(m, Mem.sSym(Mem.SNeed)), Coll.sEmpty())
       val skip = Mem.names(D.tuples(m, Mem.sSym(Mem.SRunSink)), Mem.names(D.tuples(m, Mem.sSym(Mem.SSelf)), Mem.regionDefs(regions, 0, nr, Coll.sEmpty())))
       val compact = Mem.pickCompacts(need, skip, Mem.names(D.tuples(m, Mem.sSym(Mem.SNewRet)), Coll.sEmpty()), fl, Coll.Nil)
@@ -864,18 +864,17 @@ enum Mem.Reuse:
   case Mem.Reuse(line: I64, x: Sym.Sym, c: Sym.Sym, ctor: Sym.Sym)
 
 // shared var nodes by def: def -> the names shared in it
-def Mem.sharedSet(it: Mem.IT, ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Coll.SMap[Bool]]): Coll.SMap[Coll.SMap[Bool]] = ts match
+def Mem.sharedSet(vars: Coll.BMap[Mem.VarOf], ts: Coll.List[Coll.List[D.Val]], m: Coll.SMap[Coll.SMap[Bool]]): Coll.SMap[Coll.SMap[Bool]] = ts match
   case Coll.Nil => m
   case Coll.Cons(t, rest) => t match
     case Coll.Cons(v, _) => v match
-      case D.VInt(i) => Mem.sharedSet(it, rest, Mem.addShared(it, m, i))
-      case D.VSym(_) => Mem.sharedSet(it, rest, m)
-    case Coll.Nil => Mem.sharedSet(it, rest, m)
+      case D.VInt(i) => Mem.sharedSet(vars, rest, Mem.addShared(vars, m, i))
+      case D.VSym(_) => Mem.sharedSet(vars, rest, m)
+    case Coll.Nil => Mem.sharedSet(vars, rest, m)
 
 // a shared node that is a var: its def and name into m (a site or call node is never a scrutinee name)
-def Mem.addShared(it: Mem.IT, m: Coll.SMap[Coll.SMap[Bool]], i: I64): Coll.SMap[Coll.SMap[Bool]] =
-  val Mem.IT(_, _, vars, _) = it
-  Coll.lookup(vars, i) match
+def Mem.addShared(vars: Coll.BMap[Mem.VarOf], m: Coll.SMap[Coll.SMap[Bool]], i: I64): Coll.SMap[Coll.SMap[Bool]] =
+  Coll.bLookup(vars, i) match
     case Coll.Some(vo) =>
       val Mem.VarOf(f, n) = vo
       val inner: Coll.SMap[Bool] = Coll.sLookup(m, f) match
@@ -1156,9 +1155,9 @@ enum Mem.EF:
 enum Mem.DefIds:
   case Mem.DefIds(names: Coll.SMap[I64], byKind: Coll.IMap[Coll.IMap[I64]])
 
-// the ids given so far, the next, each var node's def and name (sharing is read back by name), and the facts
+// the ids given so far, the next, each var node's def and name newest first (sharing is read back by name), and the facts
 enum Mem.IT:
-  case Mem.IT(defs: Coll.SMap[Mem.DefIds], next: I64, vars: Coll.IMap[Mem.VarOf], out: Coll.List[D.Fact])
+  case Mem.IT(defs: Coll.SMap[Mem.DefIds], next: I64, vars: Coll.List[Coll.KV[Mem.VarOf]], out: Coll.List[D.Fact])
 
 enum Mem.VarOf:
   case Mem.VarOf(f: Sym.Sym, x: Sym.Sym)
@@ -1170,24 +1169,24 @@ def Mem.defIds(defs: Coll.SMap[Mem.DefIds], d: Sym.Sym): Mem.DefIds = Coll.sLook
   case Coll.Some(x) => x
   case Coll.None => Mem.DefIds(Coll.sEmpty(), Coll.Tip)
 
-// the id of node n, new the first time (with its enode(N, def, kind) fact); a node with an int key is found by its kind,
-// then its key: a site and a call of the same number are two nodes
+// the id of node n, new the first time; a node with an int key is found by its kind, then its key: a site and a call of
+// the same number are two nodes. Only an int-keyed node gets an enode(N, def, kind) fact: Mem.ofKind reads sites and
+// calls, and a var node (the only one keyed by a name) is read back through vars
 def Mem.idOf(it: Mem.IT, n: Mem.Node): Mem.Got =
   val Mem.Node(k, d, x) = n
   val Mem.IT(defs, next, vars, out) = it
   val Mem.DefIds(names, byKind) = Mem.defIds(defs, d)
-  val node = D.Fact(Mem.eSym(Mem.ENode), Coll.Cons(D.VInt(next), Coll.Cons(D.VSym(d), Coll.Cons(D.VInt(k), Coll.Nil))))
   x match
     case D.VSym(s) => Coll.sLookup(names, s) match
       case Coll.Some(i) => Mem.Got(it, i)
-      case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(Coll.sInsert(names, s, next), byKind)), next + 1, Coll.insert(vars, next, Mem.VarOf(d, s)), Coll.Cons(node, out)), next)
+      case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(Coll.sInsert(names, s, next), byKind)), next + 1, Coll.Cons(Coll.KV(next, Mem.VarOf(d, s)), vars), out), next)
     case D.VInt(v) =>
       val ints: Coll.IMap[I64] = Coll.lookup(byKind, k) match
         case Coll.Some(m) => m
         case Coll.None => Coll.Tip
       Coll.lookup(ints, v) match
         case Coll.Some(i) => Mem.Got(it, i)
-        case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(names, Coll.insert(byKind, k, Coll.insert(ints, v, next)))), next + 1, vars, Coll.Cons(node, out)), next)
+        case Coll.None => Mem.Got(Mem.IT(Coll.sInsert(defs, d, Mem.DefIds(names, Coll.insert(byKind, k, Coll.insert(ints, v, next)))), next + 1, vars, Coll.Cons(D.Fact(Mem.eSym(Mem.ENode), Coll.Cons(D.VInt(next), Coll.Cons(D.VSym(d), Coll.Cons(D.VInt(k), Coll.Nil)))), out)), next)
 
 def Mem.emit(it: Mem.IT, rel: Sym.Sym, vals: Coll.List[D.Val]): Mem.IT =
   val Mem.IT(defs, next, vars, out) = it
@@ -1227,7 +1226,12 @@ def Mem.intern1(x: Mem.EF, it: Mem.IT): Mem.IT = x match
     val Mem.Got(it1, i) = Mem.idOf(it, a)
     Mem.emit(it1, Mem.s7(Mem.RUnknown7), Mem.one(i))
 
-def Mem.interned(fs: Coll.List[Mem.EF]): Mem.IT = Mem.intern(fs, Mem.IT(Coll.sEmpty(), 0, Coll.Tip, Coll.Nil))
+def Mem.interned(fs: Coll.List[Mem.EF]): Mem.IT = Mem.intern(fs, Mem.IT(Coll.sEmpty(), 0, Coll.Nil, Coll.Nil))
+
+// each var node's def and name by id, built once: the ids were given in order, so the list is one run
+def Mem.varMap(it: Mem.IT): Coll.BMap[Mem.VarOf] =
+  val Mem.IT(_, _, vars, _) = it
+  Coll.bFromSorted(Coll.sortDedup(vars))
 
 def Mem.factsOf(it: Mem.IT): Coll.List[D.Fact] =
   val Mem.IT(_, _, _, out) = it
