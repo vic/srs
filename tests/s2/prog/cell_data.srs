@@ -1,0 +1,33 @@
+// pass: a Cell of region data (s2/cseal.srs): a string and an enum box made in main's region, written and read back;
+// an inner Arena that only reads the cell is allowed
+enum CD.T:
+  case CD.Leaf(s: Str)
+  case CD.Pair(a: CD.T, b: CD.T)
+
+def CD.show(t: CD.T): Unit = t match
+  case CD.Leaf(s) => Console.print(s)
+  case CD.Pair(a, b) =>
+    CD.show(a)
+    Console.print("+")
+    CD.show(b)
+
+def CD.len(c: Cell[Str]): I64 =
+  handle q = Srs.Arena()
+  Str.len(Cell.get(c))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val c = Cell.new("x")
+  val n = 3
+  Cell.put(c, Str.ofBytes(n, Array.fill(n, U8.of(65))))
+  Console.print(Cell.get(c))
+  Console.print("\n")
+  val t = Cell.new(CD.Leaf("a"))
+  Cell.put(t, CD.Pair(Cell.get(t), CD.Leaf("b")))
+  CD.show(Cell.get(t))
+  Console.print("\n")
+  Console.printI64(CD.len(c))
+  Console.print("\n")
+  0

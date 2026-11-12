@@ -649,7 +649,8 @@ def Ty.cellNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.S
           case _ => Coll.None
         case Coll.None => Coll.None
       val Ty.Ex(st1, ta, eV) = Ty.expr(cx, st, bs, ev, wa)
-      val st2 = if Ty.isScalar(Ty.subst(st1), ta) then st1 else Ty.clash(st1, Ty.Mismatch(line, ta, Ty.con("I64")))
+      // any A: the cell is made in the innermost Region, which every value in scope outlives (Cseal checks the puts)
+      val st2 = st1
       val Ty.RegAt(st3, reg) = Ty.regionAt(cx, st2, bs, line)
       Ty.lit(st3, line, K.Con(Sym.of("Cell"), Coll.Cons(ta, Coll.Nil)), want, El.CellNew(line, reg, eV, ta))
     case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
@@ -684,7 +685,7 @@ def Ty.cellPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.S
       case Coll.Nil =>
         val Ty.Ex(st1, a, eC) = Ty.cellArg(cx, st, bs, ec)
         val Ty.Ex(st2, _, eV) = Ty.expr(cx, st1, bs, ev, Coll.Some(a))
-        Ty.lit(Ty.needMut(cx, st2, bs, line), line, Ty.con("Unit"), want, El.CellPut(line, eC, eV))
+        Ty.lit(Ty.needMut(cx, st2, bs, line), line, Ty.con("Unit"), want, El.CellPut(line, eC, eV, !Ty.isScalar(Ty.subst(st2), a)))
       case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
     case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
   case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
@@ -2175,7 +2176,7 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.CellGet(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.CNew(_, _, _) => Ty.mhNone(st, Coll.Nil)
       case El.CField(_, c, _, _, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
-      case El.CellPut(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
+      case El.CellPut(_, c, v, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case El.ArrPut(_, _, i, v) => Ty.mhNone(st, Coll.Cons(i, Coll.Cons(v, Coll.Nil)))
       case _ => st
     Ty.mhNone(st1, rest)
