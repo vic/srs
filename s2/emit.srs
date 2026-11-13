@@ -3392,7 +3392,7 @@ def Emit.fieldK(cx: Emit.Cx, t: K.Term): Emit.FieldK =
 // with it. Sound because values are immutable: a box made before the call cannot point into the scratch, so only the
 // result reaches it. A field the copy cannot follow (an Array, a Cell, a Ptr) sets srs_ev_keep: the scratch is kept ──
 def Emit.evPrims(ai: I64): Unit =
-  Console.print("static int64_t srs_ev_made, srs_ev_cp; static void* srs_ev_sc; static char** srs_ev_lo; static int64_t srs_ev_n; static int64_t srs_ev_keep;\n")
+  Console.print("static int64_t srs_ev_made, srs_ev_cp; static void* srs_ev_sc; static char** srs_ev_lo; static int64_t srs_ev_n; static int64_t srs_ev_keep; static char *srs_ev_min, *srs_ev_max;\n")
   Console.print("typedef struct { void* p; void (*s)(void*); } srs_ev_w; static srs_ev_w* srs_ev_q; static int64_t srs_ev_qn; static int64_t srs_ev_qcap;\n")
   Console.print("static void* srs_ev_mem(int64_t n) { return ((void*(*)(void*, int64_t))(vt_Srs__Arena[")
   Console.printI64(ai)
@@ -3403,14 +3403,17 @@ def Emit.evPrims(ai: I64): Unit =
   // srs_ev_lo: per chunk of the scratch, sorted by address: its data start, the end of its used bytes and its forward
   // bitmap (one bit per
   // word, made at the chunk's first copied box)
-  Console.print("static void srs_ev_open(void* sc) { srs_ev_sc = sc; srs_ev_cp = 0; srs_ev_made = 0; srs_ev_keep = 0; srs_ev_qn = 0; srs_ev_qcap = 0; srs_ev_q = 0; char* h = (char*)(*(int64_t*)sc); int64_t n = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { n++; srs_ev_made += ((int64_t*)ch)[1]; } char** a = srs_ev_mem(24 * n + 24); int64_t i = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { int64_t j = i++; while (j > 0 && a[3 * (j - 1)] > ch + 24) { a[3 * j] = a[3 * (j - 1)]; a[3 * j + 1] = a[3 * (j - 1) + 1]; a[3 * j + 2] = a[3 * (j - 1) + 2]; j--; } a[3 * j] = ch + 24; a[3 * j + 1] = ch + 24 + ((int64_t*)ch)[1]; a[3 * j + 2] = 0; } srs_ev_lo = a; srs_ev_n = n; }\n")
-  Console.print("static int64_t srs_ev_at(void* p) { char* c = (char*)p; int64_t lo = 0, hi = srs_ev_n - 1; while (lo <= hi) { int64_t m = (lo + hi) >> 1; if (c < srs_ev_lo[3 * m]) hi = m - 1; else if (c >= srs_ev_lo[3 * m + 1]) lo = m + 1; else return m; } return -1; }\n")
+  Console.print("static void srs_ev_open(void* sc) { srs_ev_sc = sc; srs_ev_cp = 0; srs_ev_made = 0; srs_ev_keep = 0; srs_ev_qn = 0; srs_ev_qcap = 0; srs_ev_q = 0; char* h = (char*)(*(int64_t*)sc); int64_t n = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { n++; srs_ev_made += ((int64_t*)ch)[1]; } char** a = srs_ev_mem(24 * n + 24); int64_t i = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { int64_t j = i++; while (j > 0 && a[3 * (j - 1)] > ch + 24) { a[3 * j] = a[3 * (j - 1)]; a[3 * j + 1] = a[3 * (j - 1) + 1]; a[3 * j + 2] = a[3 * (j - 1) + 2]; j--; } a[3 * j] = ch + 24; a[3 * j + 1] = ch + 24 + ((int64_t*)ch)[1]; a[3 * j + 2] = 0; } srs_ev_lo = a; srs_ev_n = n; srs_ev_min = n ? a[0] : 0; srs_ev_max = n ? a[3 * (n - 1) + 1] : 0; }\n")
+  // the chunk of p, or -1: a pointer outside the whole span of the scratch's chunks costs two compares, one inside it a
+  // binary search. A copy function searches once per box and hands the chunk to srs_ev_get and srs_ev_dup (one search
+  // per box instead of three: s2c self-compile 6.15 -> 5.08 G instructions)
+  Console.print("static int64_t srs_ev_at(void* p) { char* c = (char*)p; if (c < srs_ev_min || c >= srs_ev_max) return -1; int64_t lo = 0, hi = srs_ev_n - 1; while (lo <= hi) { int64_t m = (lo + hi) >> 1; if (c < srs_ev_lo[3 * m]) hi = m - 1; else if (c >= srs_ev_lo[3 * m + 1]) lo = m + 1; else return m; } return -1; }\n")
   Console.print("static int64_t srs_ev_in(void* p) { return srs_ev_at(p) >= 0; }\n")
   // a copied box's first word holds its copy (the scratch is freed after the copy-out, and no reader outside the copy
   // can reach an old box: Emit.followAll), and its bit is set
-  Console.print("static void* srs_ev_get(void* p) { int64_t i = srs_ev_at(p); uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) return 0; int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; return (bm[w >> 3] >> (w & 7)) & 1 ? *(void**)p : 0; }\n")
-  Console.print("static void srs_ev_put(void* p, void* q) { int64_t i = srs_ev_at(p); uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) { int64_t z = ((srs_ev_lo[3 * i + 1] - srs_ev_lo[3 * i]) >> 6) + 1; bm = srs_ev_mem(z); memset(bm, 0, (size_t)z); srs_ev_lo[3 * i + 2] = (char*)bm; } int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; bm[w >> 3] |= (uint8_t)(1 << (w & 7)); *(void**)p = q; }\n")
-  Console.print("static void* srs_ev_dup(void* p, int64_t z, void (*s)(void*)) { srs_ev_cp += z; void* q = srs_alloc(eff__Region, z); memcpy(q, p, (size_t)z); srs_ev_put(p, q); if (srs_ev_qn == srs_ev_qcap) { int64_t c = srs_ev_qcap ? 2 * srs_ev_qcap : 1024; srs_ev_w* w = srs_ev_mem(16 * c); if (srs_ev_qn) memcpy(w, srs_ev_q, (size_t)(16 * srs_ev_qn)); srs_ev_q = w; srs_ev_qcap = c; } srs_ev_q[srs_ev_qn].p = q; srs_ev_q[srs_ev_qn].s = s; srs_ev_qn++; return q; }\n")
+  Console.print("static void* srs_ev_get(int64_t i, void* p) { uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) return 0; int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; return (bm[w >> 3] >> (w & 7)) & 1 ? *(void**)p : 0; }\n")
+  Console.print("static void srs_ev_put(int64_t i, void* p, void* q) { uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) { int64_t z = ((srs_ev_lo[3 * i + 1] - srs_ev_lo[3 * i]) >> 6) + 1; bm = srs_ev_mem(z); memset(bm, 0, (size_t)z); srs_ev_lo[3 * i + 2] = (char*)bm; } int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; bm[w >> 3] |= (uint8_t)(1 << (w & 7)); *(void**)p = q; }\n")
+  Console.print("static void* srs_ev_dup(int64_t i, void* p, int64_t z, void (*s)(void*)) { srs_ev_cp += z; void* q = srs_alloc(eff__Region, z); memcpy(q, p, (size_t)z); srs_ev_put(i, p, q); if (srs_ev_qn == srs_ev_qcap) { int64_t c = srs_ev_qcap ? 2 * srs_ev_qcap : 1024; srs_ev_w* w = srs_ev_mem(16 * c); if (srs_ev_qn) memcpy(w, srs_ev_q, (size_t)(16 * srs_ev_qn)); srs_ev_q = w; srs_ev_qcap = c; } srs_ev_q[srs_ev_qn].p = q; srs_ev_q[srs_ev_qn].s = s; srs_ev_qn++; return q; }\n")
   Console.print("static void srs_ev_run(void) { while (srs_ev_qn > 0) { srs_ev_qn--; srs_ev_w w = srs_ev_q[srs_ev_qn]; w.s(w.p); } }\n")
   Console.print("static srs_str srs_ev_str(srs_str s) { if (s.n == 0 || !srs_ev_in((void*)s.p)) return s; uint8_t* b = srs_alloc(eff__Region, s.n); memcpy(b, s.p, (size_t)s.n); return (srs_str){b, s.n}; }\n")
 
@@ -3468,7 +3471,7 @@ def Emit.evBody(cx: Emit.Cx, t: K.Term, en: Sym.Sym, targs: Coll.List[K.Term], t
   Emit.evName(t)
   Console.print("(void* p0) { struct E_")
   Emit.enumName(en, targs)
-  Console.print("* p = p0; (void)p; if (!srs_ev_in(p0)) return p0; void* f = srs_ev_get(p0); if (f) return f; ")
+  Console.print("* p = p0; (void)p; int64_t i_ = srs_ev_at(p0); if (i_ < 0) return p0; void* f = srs_ev_get(i_, p0); if (f) return f; ")
   w match
     case Emit.T0 => ()
     case _ => Console.print("switch (p->tag) { ")
@@ -3512,7 +3515,7 @@ def Emit.evDups(cx: Emit.Cx, t: K.Term, en: Sym.Sym, targs: Coll.List[K.Term], t
               Emit.evName(Ty.term(ft, tv))
               Console.print("(p0); ")
             case Emit.Boxed =>
-              Console.print("return srs_ev_dup(p0, (int64_t)(offsetof(struct E_")
+              Console.print("return srs_ev_dup(i_, p0, (int64_t)(offsetof(struct E_")
               Emit.enumName(en, targs)
               Console.print(", u) + sizeof(p->u.C_")
               Emit.id(cn)

@@ -4,6 +4,8 @@ Every change to srs that lands, newest first. A project that builds with srs (sn
 
 ## Unreleased
 
+- emit: the scratch copy-out searches the scratch's chunk table once per box (the copy function hands the chunk to `srs_ev_get` and `srs_ev_dup`; before, `srs_ev_in`, `srs_ev_get` and `srs_ev_put` each ran the binary search), and a pointer outside the span of the scratch's chunks is settled by two compares. s2c compiling itself: 6.15 -> 4.94 G instructions (-19.7%), user 1.7 -> 1.5 s, same peak, same program semantics (the emitted prims text changes: new seed).
+
 - rt: a Console capture reuses the buffer of the last ended capture and returns its text as a tight copy; before, every capture kept its own fresh 4 KiB malloc block for the program's lifetime. s2c compiling itself (7,468 captures in `Mem.fresh`): page faults 8,617 -> 1,214 (-86%), peak RSS 417.5 -> 387.9 MB, same output. Test `tests/s2/prog/capture_many.srs`: 20,000 captures keep the peak flat (the old runtime grew it by 79 MB).
 
 - flow: a Region that ends (an op into an end state) while a handle that allocates in it is still open is an error (`error[region-ended-under-handle]`); before, the handle's next op wrote into or read freed memory. A handle already shut by an op does not count.
