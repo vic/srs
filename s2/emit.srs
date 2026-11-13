@@ -3217,10 +3217,11 @@ def Emit.plainCall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, f: Sym.Sym, gts: Col
     case Coll.Some(_) => Console.print(")")
     case Coll.None => ()
 
-// ── M12a (the mem optimization): a chosen call (Mem: a compact def that runs once) runs in a scratch Arena: the static
-// Region capability is swapped to a fresh Arena for the call and restored after; the result's top box, when the scratch
-// owns it, is copied into the restored region; the scratch is freed unless a field of that box still points into it
-// (a box made before the call cannot point into the scratch: values are immutable, so only the top box's fields can) ──
+// ── M12a (the mem optimization): a call of a compact def (Mem.scratchSet) can run in a scratch Arena: the static Region
+// capability is swapped to a fresh Arena for the call and restored after; every box of the result that the scratch owns
+// is copied into the restored region, then the scratch is freed (a box made before the call cannot point into the
+// scratch: values are immutable, so only the result can). Scratch calls nest. A def whose result reaches an Array, a
+// Cell or a Ptr never runs in one (Emit.followRet) ──
 def Emit.inScratch(cx: Emit.Cx, fi: Emit.Fi, f: Sym.Sym): Bool =
   val Emit.Cx(_, fns, _, _, _, _, al, _, _, sx) = cx
   val Emit.Fi(self, _, _, _, _) = fi
@@ -3231,33 +3232,94 @@ def Emit.inScratch(cx: Emit.Cx, fi: Emit.Fi, f: Sym.Sym): Bool =
         case Coll.Nil => true
         case Coll.Cons(_, _) => false
     case Coll.None => false
-  mono && Emit.isInline(al) && Emit.isStatic(cx, Sym.of("Region")) && Emit.has(Emit.scratchOf(sx), f) && !Emit.has(Emit.scratchOf(sx), self)
+  mono && Emit.isInline(al) && Emit.isStatic(cx, Sym.of("Region")) && Emit.has(Emit.scratchOf(sx), f) && Emit.followRet(cx, Emit.retOf(cx, fi, f, Coll.Nil))
 
+// a scratch call's result: its own kind and every enum it reaches can be followed
+def Emit.followRet(cx: Emit.Cx, t: K.Term): Bool = Emit.fieldK(cx, t) match
+  case Emit.FOther => false
+  case _ => Emit.followAll(cx, Emit.closeEnums(cx, Coll.Cons(t, Coll.Nil), Coll.BTip, Coll.Nil))
+
+// the copy-out can follow every field of these enums (a box, a Str, a scalar): no Array, Cell or Ptr, through which a
+// box left in the scratch could still be read after the copy
+def Emit.followAll(cx: Emit.Cx, ts: Coll.List[K.Term]): Bool = ts match
+  case Coll.Nil => true
+  case Coll.Cons(t, rest) =>
+    val Emit.Cx(_, _, _, es, _, _, _, _, _, _) = cx
+    val ok: Bool = t match
+      case K.Con(en, targs) => Coll.sLookup(es, en) match
+        case Coll.Some(e) =>
+          val Ast.Enum(_, _, _, gs, cases) = e
+          Emit.followCases(cx, Ty.zipBind(Ty.tparams(gs, Coll.Nil), targs, Coll.Nil), cases)
+        case Coll.None => false
+      case _ => false
+    if ok then Emit.followAll(cx, rest) else false
+
+def Emit.followCases(cx: Emit.Cx, tv: Coll.List[Ty.Bind], cs: Coll.List[Ast.Case]): Bool = cs match
+  case Coll.Nil => true
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, _, fs) = c
+    if Emit.followFields(cx, tv, fs) then Emit.followCases(cx, tv, rest) else false
+
+def Emit.followFields(cx: Emit.Cx, tv: Coll.List[Ty.Bind], fs: Coll.List[Ast.Binder]): Bool = fs match
+  case Coll.Nil => true
+  case Coll.Cons(f, rest) =>
+    val Ast.Binder(_, _, t) = f
+    Emit.fieldK(cx, Ty.term(t, tv)) match
+      case Emit.FOther => false
+      case _ => Emit.followFields(cx, tv, rest)
+
+// a scratch call site decides for itself (no annotation): it runs f in a fresh Arena and copies the result out while
+// the bytes f made stay at least twice the bytes copied (made - copied freed >= copied paid); once a site copies more
+// than it frees, it calls f in place from then on. The site's counters are C statics of its block
 def Emit.scratchCall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, f: Sym.Sym, gts: Coll.List[K.Term], caps: Coll.List[Sym.Sym], args: Coll.List[El.Expr]): Unit =
   val n = Emit.envN(env)
-  Console.print("({ srs_cap sv_")
+  Console.print("({ static int64_t sm_")
   Console.printI64(n)
-  Console.print(" = s_eff__Region; s_eff__Region.self = h_Srs__Arena_init(); s_eff__Region.cur = 0; s_eff__Region.end = 0; s_eff__Region.live = 1; __auto_type r_")
+  Console.print(", sk_")
+  Console.printI64(n)
+  Console.print("; static char so_")
+  Console.printI64(n)
+  Console.print("; char on_")
+  Console.printI64(n)
+  Console.print(" = !so_")
+  Console.printI64(n)
+  Console.print("; srs_cap sv_")
+  Console.printI64(n)
+  Console.print(" = s_eff__Region; if (on_")
+  Console.printI64(n)
+  Console.print(") { s_eff__Region.self = h_Srs__Arena_init(); s_eff__Region.cur = 0; s_eff__Region.end = 0; s_eff__Region.live = 1; } __auto_type r_")
   Console.printI64(n)
   Console.print(" = ")
   Emit.plainCall(cx, fi, env, f, gts, caps, args)
-  Console.print("; srs_ev_sync(&s_eff__Region); void* sc_")
-  Console.printI64(n)
-  Console.print(" = s_eff__Region.self; s_eff__Region = sv_")
-  Console.printI64(n)
   Console.print("; __auto_type c_")
   Console.printI64(n)
   Console.print(" = r_")
+  Console.printI64(n)
+  Console.print("; if (on_")
+  Console.printI64(n)
+  Console.print(") { srs_ev_sync(&s_eff__Region); void* sc_")
+  Console.printI64(n)
+  Console.print(" = s_eff__Region.self; s_eff__Region = sv_")
   Console.printI64(n)
   Console.print("; srs_ev_open(sc_")
   Console.printI64(n)
   Console.print("); ")
   Emit.scratchCopy(cx, n, Emit.retOf(cx, fi, f, gts))
-  Console.print(" srs_ev_run(); if (!srs_ev_keep) ((int64_t(*)(void*))(vt_Srs__Arena[")
+  Console.print(" srs_ev_run(); sm_")
+  Console.printI64(n)
+  Console.print(" += srs_ev_made; sk_")
+  Console.printI64(n)
+  Console.print(" += srs_ev_cp; if (sm_")
+  Console.printI64(n)
+  Console.print(" < 2 * sk_")
+  Console.printI64(n)
+  Console.print(") so_")
+  Console.printI64(n)
+  Console.print(" = 1; if (!srs_ev_keep) ((int64_t(*)(void*))(vt_Srs__Arena[")
   Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("free")))
   Console.print("]))(sc_")
   Console.printI64(n)
-  Console.print("); c_")
+  Console.print("); } c_")
   Console.printI64(n)
   Console.print("; })")
 
@@ -3320,8 +3382,7 @@ def Emit.fieldK(cx: Emit.Cx, t: K.Term): Emit.FieldK =
 // with it. Sound because values are immutable: a box made before the call cannot point into the scratch, so only the
 // result reaches it. A field the copy cannot follow (an Array, a Cell, a Ptr) sets srs_ev_keep: the scratch is kept ──
 def Emit.evPrims(ai: I64): Unit =
-  Console.print("static void* srs_ev_sc; static char** srs_ev_lo; static int64_t srs_ev_n; static int64_t srs_ev_keep;\n")
-  Console.print("static void** srs_ev_k; static void** srs_ev_v; static int64_t srs_ev_cap; static int64_t srs_ev_cnt;\n")
+  Console.print("static int64_t srs_ev_made, srs_ev_cp; static void* srs_ev_sc; static char** srs_ev_lo; static int64_t srs_ev_n; static int64_t srs_ev_keep;\n")
   Console.print("typedef struct { void* p; void (*s)(void*); } srs_ev_w; static srs_ev_w* srs_ev_q; static int64_t srs_ev_qn; static int64_t srs_ev_qcap;\n")
   Console.print("static void* srs_ev_mem(int64_t n) { return ((void*(*)(void*, int64_t))(vt_Srs__Arena[")
   Console.printI64(ai)
@@ -3329,12 +3390,17 @@ def Emit.evPrims(ai: I64): Unit =
   // the scratch's head chunk records its bump pointer (kept in the capability while the call runs: Emit.allocFast), so
   // the copy-out's own allocations in the scratch start after the result's boxes
   Console.print("static void srs_ev_sync(srs_cap* c) { if (c->end) { srs_chunk** hp = (srs_chunk**)c->self; (*hp)->used = (size_t)(c->cur - (char*)(*hp + 1)); } }\n")
-  Console.print("static void srs_ev_open(void* sc) { srs_ev_sc = sc; srs_ev_keep = 0; srs_ev_cnt = 0; srs_ev_qn = 0; srs_ev_qcap = 0; srs_ev_q = 0; char* h = (char*)(*(int64_t*)sc); int64_t n = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) n++; char** a = srs_ev_mem(16 * n + 16); int64_t i = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { int64_t j = i++; while (j > 0 && a[2 * (j - 1)] > ch + 24) { a[2 * j] = a[2 * (j - 1)]; a[2 * j + 1] = a[2 * (j - 1) + 1]; j--; } a[2 * j] = ch + 24; a[2 * j + 1] = ch + 24 + ((int64_t*)ch)[2]; } srs_ev_lo = a; srs_ev_n = n; srs_ev_cap = 1024; srs_ev_k = srs_ev_mem(8 * srs_ev_cap); srs_ev_v = srs_ev_mem(8 * srs_ev_cap); memset(srs_ev_k, 0, (size_t)(8 * srs_ev_cap)); }\n")
-  Console.print("static int64_t srs_ev_in(void* p) { char* c = (char*)p; int64_t lo = 0, hi = srs_ev_n - 1; while (lo <= hi) { int64_t m = (lo + hi) >> 1; if (c < srs_ev_lo[2 * m]) hi = m - 1; else if (c >= srs_ev_lo[2 * m + 1]) lo = m + 1; else return 1; } return 0; }\n")
-  Console.print("static int64_t srs_ev_h(void* p) { return (int64_t)(((uint64_t)(uintptr_t)p * 0x9E3779B97F4A7C15ull) >> 20) & (srs_ev_cap - 1); }\n")
-  Console.print("static void* srs_ev_get(void* p) { int64_t h = srs_ev_h(p); while (srs_ev_k[h]) { if (srs_ev_k[h] == p) return srs_ev_v[h]; h = (h + 1) & (srs_ev_cap - 1); } return 0; }\n")
-  Console.print("static void srs_ev_put(void* p, void* q) { if (2 * (srs_ev_cnt + 1) > srs_ev_cap) { void** ok = srs_ev_k; void** ov = srs_ev_v; int64_t oc = srs_ev_cap; srs_ev_cap = 2 * oc; srs_ev_k = srs_ev_mem(8 * srs_ev_cap); srs_ev_v = srs_ev_mem(8 * srs_ev_cap); memset(srs_ev_k, 0, (size_t)(8 * srs_ev_cap)); srs_ev_cnt = 0; for (int64_t i = 0; i < oc; i++) if (ok[i]) srs_ev_put(ok[i], ov[i]); } int64_t h = srs_ev_h(p); while (srs_ev_k[h]) h = (h + 1) & (srs_ev_cap - 1); srs_ev_k[h] = p; srs_ev_v[h] = q; srs_ev_cnt++; }\n")
-  Console.print("static void* srs_ev_dup(void* p, int64_t z, void (*s)(void*)) { void* q = srs_alloc(eff__Region, z); memcpy(q, p, (size_t)z); srs_ev_put(p, q); if (srs_ev_qn == srs_ev_qcap) { int64_t c = srs_ev_qcap ? 2 * srs_ev_qcap : 1024; srs_ev_w* w = srs_ev_mem(16 * c); if (srs_ev_qn) memcpy(w, srs_ev_q, (size_t)(16 * srs_ev_qn)); srs_ev_q = w; srs_ev_qcap = c; } srs_ev_q[srs_ev_qn].p = q; srs_ev_q[srs_ev_qn].s = s; srs_ev_qn++; return q; }\n")
+  // srs_ev_lo: per chunk of the scratch, sorted by address: its data start, the end of its used bytes and its forward
+  // bitmap (one bit per
+  // word, made at the chunk's first copied box)
+  Console.print("static void srs_ev_open(void* sc) { srs_ev_sc = sc; srs_ev_cp = 0; srs_ev_made = 0; srs_ev_keep = 0; srs_ev_qn = 0; srs_ev_qcap = 0; srs_ev_q = 0; char* h = (char*)(*(int64_t*)sc); int64_t n = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { n++; srs_ev_made += ((int64_t*)ch)[1]; } char** a = srs_ev_mem(24 * n + 24); int64_t i = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { int64_t j = i++; while (j > 0 && a[3 * (j - 1)] > ch + 24) { a[3 * j] = a[3 * (j - 1)]; a[3 * j + 1] = a[3 * (j - 1) + 1]; a[3 * j + 2] = a[3 * (j - 1) + 2]; j--; } a[3 * j] = ch + 24; a[3 * j + 1] = ch + 24 + ((int64_t*)ch)[1]; a[3 * j + 2] = 0; } srs_ev_lo = a; srs_ev_n = n; }\n")
+  Console.print("static int64_t srs_ev_at(void* p) { char* c = (char*)p; int64_t lo = 0, hi = srs_ev_n - 1; while (lo <= hi) { int64_t m = (lo + hi) >> 1; if (c < srs_ev_lo[3 * m]) hi = m - 1; else if (c >= srs_ev_lo[3 * m + 1]) lo = m + 1; else return m; } return -1; }\n")
+  Console.print("static int64_t srs_ev_in(void* p) { return srs_ev_at(p) >= 0; }\n")
+  // a copied box's first word holds its copy (the scratch is freed after the copy-out, and no reader outside the copy
+  // can reach an old box: Emit.followAll), and its bit is set
+  Console.print("static void* srs_ev_get(void* p) { int64_t i = srs_ev_at(p); uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) return 0; int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; return (bm[w >> 3] >> (w & 7)) & 1 ? *(void**)p : 0; }\n")
+  Console.print("static void srs_ev_put(void* p, void* q) { int64_t i = srs_ev_at(p); uint8_t* bm = (uint8_t*)srs_ev_lo[3 * i + 2]; if (!bm) { int64_t z = ((srs_ev_lo[3 * i + 1] - srs_ev_lo[3 * i]) >> 6) + 1; bm = srs_ev_mem(z); memset(bm, 0, (size_t)z); srs_ev_lo[3 * i + 2] = (char*)bm; } int64_t w = ((char*)p - srs_ev_lo[3 * i]) >> 3; bm[w >> 3] |= (uint8_t)(1 << (w & 7)); *(void**)p = q; }\n")
+  Console.print("static void* srs_ev_dup(void* p, int64_t z, void (*s)(void*)) { srs_ev_cp += z; void* q = srs_alloc(eff__Region, z); memcpy(q, p, (size_t)z); srs_ev_put(p, q); if (srs_ev_qn == srs_ev_qcap) { int64_t c = srs_ev_qcap ? 2 * srs_ev_qcap : 1024; srs_ev_w* w = srs_ev_mem(16 * c); if (srs_ev_qn) memcpy(w, srs_ev_q, (size_t)(16 * srs_ev_qn)); srs_ev_q = w; srs_ev_qcap = c; } srs_ev_q[srs_ev_qn].p = q; srs_ev_q[srs_ev_qn].s = s; srs_ev_qn++; return q; }\n")
   Console.print("static void srs_ev_run(void) { while (srs_ev_qn > 0) { srs_ev_qn--; srs_ev_w w = srs_ev_q[srs_ev_qn]; w.s(w.p); } }\n")
   Console.print("static srs_str srs_ev_str(srs_str s) { if (s.n == 0 || !srs_ev_in((void*)s.p)) return s; uint8_t* b = srs_alloc(eff__Region, s.n); memcpy(b, s.p, (size_t)s.n); return (srs_str){b, s.n}; }\n")
 

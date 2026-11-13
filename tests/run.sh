@@ -126,6 +126,10 @@ if [ "$sdo" = "680001801053 freed " ] && [ "$sdp" = "680001801053 kept " ]; then
 # a generic scratch def (Mem picks GS.make) gets no copy function for its open result type: the optimized C compiles
 sg=$(timeout 5 "$B/s2c1" "$B/poison.srs" tests/s2/scratch/generic.srs > "$B/sg.c" && timeout 60 $CC -o "$B/sg" "$B/sg.c" rt/srs_rt.c && "$B/run1" "$B/sg")
 if [ "$sg" = "500506" ]; then echo "ok scratch generic def (no copy for an open type)"; else echo "FAIL scratch generic: [$sg]"; fail=1; fi
+# a result that reaches an Array runs without a scratch: a copied box is overwritten by its forward pointer, and the
+# Array would still name it (poison: a read through the Array of a moved box prints garbage)
+sa=$(timeout 5 "$B/s2c1" "$B/poison.srs" tests/s2/scratch/array.srs > "$B/sa.c" && timeout 60 $CC -o "$B/sa" "$B/sa.c" rt/srs_rt.c && "$B/run1" "$B/sa")
+if [ "$sa" = "10000100110" ] && ! grep -q 'srs_ev_open(sc_' "$B/sa.c"; then echo "ok scratch array result (no scratch)"; else echo "FAIL scratch array: [$sa]"; fail=1; fi
 echo "ok poison: $(printf '%s\n' "$poisoned" | grep -c '^ok ') checks pass"
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
