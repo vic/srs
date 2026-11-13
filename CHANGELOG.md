@@ -4,6 +4,8 @@ Every change to srs that lands, newest first. A project that builds with srs (sn
 
 ## Unreleased
 
+- arena: the huge-page gate also counts compaction stalls (/proc/vmstat compact_stall, with thp_fault_fallback): on a fragmented host every huge fault stalls in direct compaction even when it succeeds, which cost more system time than the 4 KiB faults it replaced; after 64 stalls or failures since arming the program runs on 4 KiB pages. No change where huge pages are free (s2c on a 2.4 GB compile: 20,220 faults, 0.36 s sys, 0 stalls, both before and after).
+
 - arena: a program past 32 MiB gets huge pages without handling `Srs.Pages`: the Arena arms the gate itself at its second reservation, so a small program pays nothing and a large one faults once per 2 MiB (snx on a NixOS system: 881k -> 356k page faults, system time 5.3 -> 3.0 s; a 64 MB list program: 15.7k -> 8.0k faults).
 
 ## 2026-11-12 main@origin c1d40b41 (PR #93, from srs-toolchain)

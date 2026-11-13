@@ -173,10 +173,11 @@ handler Srs.Arena for Region:
 // ── Pages: the one authority to ask the kernel for huge pages. A program that never handles Srs.Pages (only main may,
 // Ty.worldHandler) gets no advice until its Arena makes a second 32 MiB reservation: the Arena arms the gate itself
 // (a program past 32 MiB pays the one /proc/vmstat read; a small one pays nothing). The Arena advises each fresh
-// reservation while the gate is On: main (or the Arena) arms it with the machine-wide count of failed huge-page faults
-// (/proc/vmstat thp_fault_fallback), and it shuts for good once more than
-// Srs.Pages.limit() failed since (each failure cost a compaction stall). The gate is the rt_globals words tag, base and
-// seen (the last count read); only Srs.Gate.arm and Srs.Gate.shut write tag, and nothing turns a Shut gate On again.
+// reservation while the gate is On: main (or the Arena) arms it with the machine-wide count of compaction stalls and
+// failed huge-page faults (/proc/vmstat compact_stall + thp_fault_fallback), and it shuts for good once more than
+// Srs.Pages.limit() of them happened since (each is a stall in direct compaction, which costs more than the 4 KiB
+// faults it replaces). The gate is the rt_globals words tag, base and seen (the last count read); only Srs.Gate.arm and
+// Srs.Gate.shut write tag, and nothing turns a Shut gate On again.
 // A constructor with a field allocates in a Region and the prelude fns have none, so the gate enum has no field: base is a word.
 enum Srs.Gate:
   case Srs.GateIdle
@@ -220,27 +221,35 @@ def Srs.Pages.num(s: Str, i: I64, acc: I64): I64 =
     Srs.Pages.num(s, i + 1, acc * 10 + Str.at(s, i) - 48)
   else acc
 
-def Srs.Pages.keep(g: Ptr, n: I64): Bool =
-  rt_ptr_set(g, Srs.Gate.seen(), n)
-  true
+// both lines read: their sum goes to seen
+def Srs.Pages.keep(g: Ptr, n: I64, found: I64): Bool =
+  if found == 2 then
+    rt_ptr_set(g, Srs.Gate.seen(), n)
+    true
+  else false
 
-// the line "thp_fault_fallback N" (the space ends the name: thp_fault_fallback_charge is another line): N goes to seen
-def Srs.Pages.scan(g: Ptr, s: Str, i: I64): Bool =
-  if i + 19 > Str.len(s) then false
-  else if Str.eq(Str.slice(s, i, i + 19), "thp_fault_fallback ") then Srs.Pages.keep(g, Srs.Pages.num(s, i + 19, 0))
-  else Srs.Pages.scan(g, s, Srs.Pages.eol(s, i))
+// the lines "compact_stall N" and "thp_fault_fallback N" (the space ends a name: thp_fault_fallback_charge is another
+// line), summed into seen: a huge fault that finds no 2 MiB page stalls in direct compaction, and then succeeds (a
+// stall) or fails (a fallback, after a stall); each stall costs more than the 4 KiB faults it replaces, so both count
+def Srs.Pages.scan(g: Ptr, s: Str, i: I64, acc: I64, found: I64): Bool =
+  if found == 2 || i + 19 > Str.len(s) then Srs.Pages.keep(g, acc, found)
+  else if Str.eq(Str.slice(s, i, i + 19), "thp_fault_fallback ") then
+    Srs.Pages.scan(g, s, Srs.Pages.eol(s, i), acc + Srs.Pages.num(s, i + 19, 0), found + 1)
+  else if Str.eq(Str.slice(s, i, i + 14), "compact_stall ") then
+    Srs.Pages.scan(g, s, Srs.Pages.eol(s, i), acc + Srs.Pages.num(s, i + 14, 0), found + 1)
+  else Srs.Pages.scan(g, s, Srs.Pages.eol(s, i), acc, found)
 
-// true when the count was read into seen
+// true when the counts were read into seen
 def Srs.Pages.sample(g: Ptr): Bool = Srs.Pages.read(g, rt_fs_read_all("/proc/vmstat"))
 
 // a failed read is a Str of negative length (rt_fs_read_all)
-def Srs.Pages.read(g: Ptr, s: Str): Bool = if Str.len(s) < 0 then false else Srs.Pages.scan(g, s, 0)
+def Srs.Pages.read(g: Ptr, s: Str): Bool = if Str.len(s) < 0 then false else Srs.Pages.scan(g, s, 0, 0, 0)
 
 def Srs.Pages.huge(a: Ptr, len: I64): Unit =
   val r = madvise(a, U64.ofI64(len), MADV_HUGEPAGE)
   ()
 
-// an unreadable count or more than limit() failures since arming shuts the gate
+// an unreadable count or more than limit() stalls and failures since arming shuts the gate
 def Srs.Pages.step(g: Ptr, a: Ptr, len: I64, ok: Bool): Unit =
   if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then
     Srs.Pages.huge(a, len)
