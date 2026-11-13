@@ -1,0 +1,18 @@
+// pass: a handler no handle site names leaves the C alone: UH.tick opens a Heap, a second Region handle, but main never
+// handles Uh, so Region stays static (tests/run.sh: no p_eff__Region in the C; prog/static_used_handler is the control)
+capability Uh:
+  def tick(): I64
+
+handler UH for Uh:
+  def tick(): I64 =
+    handle h = Srs.Heap()
+    7
+
+def SU.two(n: I64): I64 = n * 2
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  Console.printI64(SU.two(21))
+  Console.print("\n")
+  0

@@ -1,0 +1,19 @@
+// pass: the control of prog/static_unused_handler: main handles Uh, so UH.tick's Heap is a second Region handle and
+// Region stays a param (tests/run.sh: p_eff__Region in the C)
+capability Uh:
+  def tick(): I64
+
+handler UH for Uh:
+  def tick(): I64 =
+    handle h = Srs.Heap()
+    7
+
+def SU.two(n: I64): I64 = n * 2
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle u = UH()
+  Console.printI64(SU.two(21) + Uh.tick())
+  Console.print("\n")
+  0

@@ -2713,7 +2713,8 @@ def Emit.staticIn(st: Coll.List[Emit.Static], p: Sym.Sym): Bool = st match
 
 def Emit.staticsOf(cx: Emit.Cx, ds: Coll.List[Ast.Decl], res: Ty.Result, roots: Emit.Seen): Coll.List[Emit.Static] =
   val Ty.Result(_, _, _, fs, hs, _) = res
-  val Emit.Seen(ps, called, _, _, _) = Emit.seenHs(cx, hs, roots)
+  // only the handlers a handle site reaches: a handle in a handler no program site names opens no instance
+  val Emit.Seen(ps, called, _, _, _) = Emit.reach(cx, hs, roots, Coll.sEmpty())
   if called then Coll.Nil else Emit.mainStatics(cx, ps, Emit.namesRegion(ds), Emit.mainStmts(fs), Coll.Nil)
 
 // the program writes a Region binder {r: Region}: a def, a handler fn, a given fn or a trait method takes a named
@@ -2805,12 +2806,6 @@ def Emit.seenFns(cx: Emit.Cx, fs: Coll.List[El.Fn], s: Emit.Seen): Emit.Seen = f
       case El.Def(e) => Emit.seenE(cx, e, s)
       case El.Extern(_, _) => s
     Emit.seenFns(cx, rest, s1)
-
-def Emit.seenHs(cx: Emit.Cx, hs: Coll.List[El.Handler], s: Emit.Seen): Emit.Seen = hs match
-  case Coll.Nil => s
-  case Coll.Cons(h, rest) =>
-    val El.Handler(_, _, fs, _) = h
-    Emit.seenHs(cx, rest, Emit.seenFns(cx, fs, s))
 
 def Emit.seenGvs(cx: Emit.Cx, gs: Coll.List[El.Given], s: Emit.Seen): Emit.Seen = gs match
   case Coll.Nil => s

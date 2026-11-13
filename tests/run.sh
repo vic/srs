@@ -92,6 +92,12 @@ case "$reused" in *"reused reuse_run"*) echo "ok reuse armed (reuse_run changed)
 if ! grep -q 'f_TL__unused' "$B/s2c1_tagless.c" && grep -q 'f_TL__unused' "$B/s2c1_reuse_tagless.c"; then echo "ok shake (TL.unused only in the plain C)"; else echo "FAIL shake: TL.unused in the optimized C or not in the plain C"; fail=1; fi
 # niche (L2): the optimized C builds TL.Just as a cast of its list, the plain C allocates it
 if grep -q '((struct E_TL__Maybe\*)(' "$B/s2c1_tagless.c" && ! grep -q '((struct E_TL__Maybe\*)(' "$B/s2c1_reuse_tagless.c"; then echo "ok niche (TL.Just is a cast only in the optimized C)"; else echo "FAIL niche: TL.Just not a cast in the optimized C, or a cast in the plain C"; fail=1; fi
+# an unused handler leaves the C alone (Emit.staticsOf walks only the handlers a handle site reaches): with the prelude
+# alone (list.lib names a region), prog/static_unused_handler opens a Heap in a handler main never handles and Region
+# stays static (no p_eff__Region); armed: prog/static_used_handler handles it, a second Region handle keeps the param
+su() { timeout 5 "$B/s2c1" lib/prelude.srs "tests/s2/prog/$1.srs" > "$B/su_$1.c" && grep -c 'p_eff__Region' "$B/su_$1.c"; }
+u=$(su static_unused_handler); h=$(su static_used_handler)
+if [ "$u" = 0 ] && [ "${h:-0}" -gt 0 ]; then echo "ok unused handler keeps Region static ($h params when used)"; else echo "FAIL unused handler: Region params unused=${u:-s2c failed} used=${h:-s2c failed}"; fail=1; fi
 # layout by usage: TL.Wide's c (read by three patterns) comes first in the optimized C; the plain C keeps a, b, c
 if grep -q 'struct { int64_t f_c; int64_t f_a; int64_t f_b; } C_TL__Wide;' "$B/s2c1_tagless.c" && grep -q 'int64_t f_a; int64_t f_b; int64_t f_c; } C_TL__Wide;' "$B/s2c1_reuse_tagless.c"; then echo "ok usage layout (TL.Wide's most read field first)"; else echo "FAIL usage layout: TL.Wide field order"; fail=1; fi
 # poison: with a prelude whose Arena fills each freed chunk's words with 0xA5.. before it is kept for reuse, a read of a
