@@ -1,0 +1,70 @@
+// pass: a once def's scratch Arena is freed even when its result reaches boxes made in the run (deep copy-out, M12a).
+// SD.make builds 600k garbage boxes and returns a box that holds a list of 1M made in the run (copied cell by cell, not
+// by C recursion), the same list twice (shared: copied once), and the caller's box `old` (made before the call, not
+// copied), and a DAG of depth 40 whose two children are one node (a copy without the old -> copy table makes 2^40
+// boxes). Under the poison prelude a field left pointing into the freed scratch prints garbage. Then main makes the
+// same amount of garbage again: with the scratch freed its chunks are reused, so the peak RSS (VmHWM, kB) after the
+// second round stays under 1.5 times the peak after the first; a kept scratch makes it about twice
+enum SD.L:
+  case SD.Nil
+  case SD.Cons(h: I64, t: SD.L)
+
+enum SD.Box:
+  case SD.Box(v: I64)
+
+enum SD.Out:
+  case SD.Out(big: SD.L, a: SD.L, b: SD.L, old: SD.Box, d: SD.T)
+
+enum SD.T:
+  case SD.Leaf
+  case SD.Two(l: SD.T, r: SD.T)
+
+def SD.dag(n: I64, t: SD.T): SD.T = if n == 0 then t else SD.dag(n - 1, SD.Two(t, t))
+
+def SD.depth(t: SD.T, k: I64): I64 = t match
+  case SD.Leaf => k
+  case SD.Two(l, _) => SD.depth(l, k + 1)
+
+def SD.build(n: I64, acc: SD.L): SD.L = if n == 0 then acc else SD.build(n - 1, SD.Cons(n, acc))
+
+def SD.sum(l: SD.L, s: I64): I64 = l match
+  case SD.Nil => s
+  case SD.Cons(h, t) => SD.sum(t, s + h)
+
+def SD.make(old: SD.Box): SD.Out =
+  val junk = SD.sum(SD.build(600000, SD.Nil), 0)
+  val shared = SD.build(1000, SD.Nil)
+  SD.Out(SD.build(1000000, SD.Cons(junk, SD.Nil)), shared, shared, old, SD.dag(40, SD.Leaf))
+
+def SD.peak(): I64 = Files.readAll("/proc/self/status") match
+  case Os.Ok(s) => SD.hwm(s, 0)
+  case Os.Fail(_) => 0 - 1
+
+// the number after "VmHWM:" in s from i on, or -1
+def SD.hwm(s: Str, i: I64): I64 =
+  if i + 6 >= Str.len(s) then 0 - 1
+  else if Str.eq(Str.slice(s, i, i + 6), "VmHWM:") then SD.digits(s, SD.skipSp(s, i + 6), 0)
+  else SD.hwm(s, i + 1)
+
+def SD.skipSp(s: Str, j: I64): I64 =
+  if j < Str.len(s) && (Str.at(s, j) == 32 || Str.at(s, j) == 9) then SD.skipSp(s, j + 1) else j
+
+def SD.digits(s: Str, j: I64, x: I64): I64 =
+  if j < Str.len(s) && Str.at(s, j) >= 48 && Str.at(s, j) <= 57 then SD.digits(s, j + 1, x * 10 + Str.at(s, j) - 48)
+  else x
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle fs = Srs.Files()
+  val old = SD.Box(7)
+  val o = SD.make(old)
+  val first = SD.peak()
+  val again = SD.sum(SD.build(1600000, SD.Nil), 0)
+  val second = SD.peak()
+  val SD.Out(big, a, b, keep, d) = o
+  val SD.Box(v) = keep
+  Console.printI64(SD.sum(big, 0) + SD.sum(a, 0) + SD.sum(b, 0) + v + again % 7 + SD.depth(d, 0))
+  Console.print("\n")
+  Console.print(if first > 0 && second * 2 < first * 3 then "freed\n" else "kept\n")
+  0

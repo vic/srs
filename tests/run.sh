@@ -118,6 +118,11 @@ printf '%s\n' "$poisoned" | grep -v '^ok ' || true
 # SC.keep in scratch Arenas in the optimized C; it prints its .out optimized and plain. armed: only the optimized C swaps
 sc() { timeout 5 "$B/s2c1" $1 "$B/poison.srs" tests/s2/prog/scratch.srs > "$B/sc_$2.c" && timeout 60 $CC -o "$B/sc_$2" "$B/sc_$2.c" rt/srs_rt.c && [ "$("$B/run1" "$B/sc_$2")" = "$(cat tests/s2/prog/scratch.out)" ]; }
 if sc "" opt && sc --no-mem-optimization plain && grep -q 'srs_cap sv_' "$B/sc_opt.c" && ! grep -q 'srs_cap sv_' "$B/sc_plain.c"; then echo "ok scratch (SC calls run in scratch Arenas, poison)"; else echo "FAIL scratch: output or swap"; fail=1; fi
+# deep copy-out: scratch/deep's result reaches a 1M-cell list, a shared list and an older box; the optimized C copies
+# what the scratch owns and frees it ("freed": the peak stays flat), the plain C has no scratch ("kept"); both under poison
+sd() { timeout 5 "$B/s2c1" $1 "$B/poison.srs" tests/s2/scratch/deep.srs > "$B/sd_$2.c" && timeout 60 $CC -o "$B/sd_$2" "$B/sd_$2.c" rt/srs_rt.c && "$B/run1" "$B/sd_$2" | tr '\n' ' '; }
+sdo=$(sd "" opt); sdp=$(sd --no-mem-optimization plain)
+if [ "$sdo" = "680001801053 freed " ] && [ "$sdp" = "680001801053 kept " ]; then echo "ok scratch deep copy-out (freed optimized, kept plain, poison)"; else echo "FAIL scratch deep: opt=[$sdo] plain=[$sdp]"; fail=1; fi
 echo "ok poison: $(printf '%s\n' "$poisoned" | grep -c '^ok ') checks pass"
 # stdout is bounded at 1 MiB (vic-xg9m): prog/out_big prints 2.4 MB and must reach the fd in more than one write
 ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v strace' 2>/dev/null)
@@ -376,7 +381,7 @@ else echo "FAIL fmt fixture exits=$c1$c2$c3 out=$out mtime=$m1/$m2"; fail=1; fi
 g="$B/fmt_noroot.srs"; cp tests/s2/prog/list.lib "$g"
 msg=$(timeout 2 "$B/s2c1" fmt "$g" 2>&1); code=$?
 if [ $code -eq 1 ] && cmp -s "$g" tests/s2/prog/list.lib && printf '%s' "$msg" | grep -q 'error\[fmt-no-root\]'; then echo "ok fmt refuses a file set with no root"; else echo "FAIL fmt no root exit=$code: $msg"; fail=1; fi
-FMTF=$(ls lib/*.srs s2/*.srs s2c/main.srs tests/s2/*.srs tests/s2/prog/*.srs tests/s2/prog/*.lib tests/s2/{neg,cneg,cok,eval,frag,fragbase,hash,mem}/*.srs)
+FMTF=$(ls lib/*.srs s2/*.srs s2c/main.srs tests/s2/*.srs tests/s2/prog/*.srs tests/s2/prog/*.lib tests/s2/{neg,cneg,cok,eval,frag,fragbase,hash,mem,scratch}/*.srs)
 out=$(timeout 5 "$B/s2c1" fmt --check $FMTF 2>&1); code=$?
 if [ $code -eq 0 ]; then echo "ok fmt: the repo is formatted"; else echo "FAIL fmt --check exit=$code: $(printf '%s' "$out" | head -3 | tr '\n' ' ')"; fail=1; fi
 exit $fail
