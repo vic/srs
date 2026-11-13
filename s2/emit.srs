@@ -1721,7 +1721,7 @@ def Emit.libcValRead(cx: Emit.Cx, f: Sym.Sym): Unit = Emit.libcValTy(cx, f) matc
 // against the real declaration (C11 6.7p4: two declarations of one function must agree, else "conflicting types")
 def Emit.libcHeaders(fs: Coll.List[El.Fn], ds: Coll.List[Ast.Decl], cs: Coll.ISet): Unit =
   if Emit.anyLibc(fs, cs) || Emit.anyCStruct(ds) then
-    Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\n#include <termios.h>\n#include <time.h>\n#include <poll.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n")
+    Console.print("#include <errno.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/mman.h>\n#include <termios.h>\n#include <time.h>\n#include <poll.h>\n#include <sys/wait.h>\n#include <spawn.h>\nstatic inline int32_t rt_os_errno(void) { return errno; }\n")
   else ()
 
 // a program that declares an extern "libc" struct includes the libc headers: the C compiler checks every field against them
