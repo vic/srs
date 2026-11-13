@@ -1,0 +1,25 @@
+// pass: a generic def that Mem picks as a scratch def (it runs once and makes many boxes) is called without a scratch
+// (a scratch call needs a ground result type), and no copy function is emitted for its open result type GS.Box[A]: the
+// C compiles and prints the sum
+enum GS.L:
+  case GS.Nil
+  case GS.Cons(h: I64, t: GS.L)
+
+enum GS.Box [A: Type]:
+  case GS.Box(v: A, n: I64)
+
+def GS.build(n: I64, acc: GS.L): GS.L = if n == 0 then acc else GS.build(n - 1, GS.Cons(n, acc))
+
+def GS.sum(l: GS.L, s: I64): I64 = l match
+  case GS.Nil => s
+  case GS.Cons(h, t) => GS.sum(t, s + h)
+
+def GS.make [A: Type] (x: A): GS.Box[A] = GS.Box(x, GS.sum(GS.build(1000, GS.Nil), 0))
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val GS.Box(v, n) = GS.make(GS.build(3, GS.Nil))
+  Console.printI64(n + GS.sum(v, 0))
+  Console.print("\n")
+  0

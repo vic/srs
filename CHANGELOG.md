@@ -2,7 +2,11 @@
 
 Every change to srs that lands, newest first. A project that builds with srs (snx, tot) pins a jj bookmark; this file says what each landing changed, so you can see what moving the bookmark brings.
 
-## Unreleased (scratch deep copy-out)
+## Unreleased (scratch generic def)
+
+- Fix: a generic def that Mem picks as a scratch def no longer gets a copy function for its open result type (the optimized C failed to compile: incomplete type). Test: tests/s2/scratch/generic.srs.
+
+## 2026-11-12 main@origin fb0f7ed4 (PR #90, scratch deep copy-out)
 
 - Memory: a call that runs in a scratch Arena (M12a) now copies every box of its result that the scratch owns into the caller's region, then frees the scratch. Shared boxes stay shared, and a long list is copied without C recursion. Before, only the result's top box was copied, and the scratch was kept whenever a field pointed into it (7-8 of 11 scratches in s2c were kept). Test: tests/s2/scratch/deep.srs (poison prelude: a 1M-cell list, a shared list, an older box, a DAG of depth 40). s2c output byte-identical, fixpoint.
 
