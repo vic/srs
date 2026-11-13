@@ -290,6 +290,11 @@ extern def I64.ofU64(x: U64): I64
 // a sorts before b by bytes as unsigned values, a proper prefix first (memcmp); byte c is in s[i, e), i and e clamped
 // to [0, Str.len(s)) (memchr). Static inline (Emit.strPrims)
 extern def Str.less(a: Str, b: Str): Bool
+// scans, TOTAL (i clamped to [0, Str.len(s))), static inline when called (Emit.scanPrims): Str.find is the first index
+// >= i whose byte is c, else Str.len(s) (memchr); Str.runWhile is the first index >= i whose byte b is not in the run
+// table t (b >= n or t(b) == 0), else Str.len(s): one loop over raw bytes, no per-byte bound or call
+extern def Str.find(s: Str, i: I64, c: I64): I64
+extern def Str.runWhile(s: Str, i: I64, n: I64, t: Array[U8](n)): I64
 extern def Str.has(s: Str, c: I64, i: I64, e: I64): Bool
 
 // R0a bytes: U8 is storage only (an Array[U8](n) element), with no literal and no operator (C promotes uint8_t to
