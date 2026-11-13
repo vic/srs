@@ -3338,7 +3338,8 @@ def Emit.evPrims(ai: I64): Unit =
   Console.print("static void srs_ev_run(void) { while (srs_ev_qn > 0) { srs_ev_qn--; srs_ev_w w = srs_ev_q[srs_ev_qn]; w.s(w.p); } }\n")
   Console.print("static srs_str srs_ev_str(srs_str s) { if (s.n == 0 || !srs_ev_in((void*)s.p)) return s; uint8_t* b = srs_alloc(eff__Region, s.n); memcpy(b, s.p, (size_t)s.n); return (srs_str){b, s.n}; }\n")
 
-// the result types of the scratch defs
+// the result types of the scratch defs that a scratch call can run: a generic def is never one (Emit.inScratch), and its
+// result type is open
 def Emit.scratchTys(cx: Emit.Cx, es: Coll.List[Coll.SEntry[Bool]], acc: Coll.List[K.Term]): Coll.List[K.Term] = es match
   case Coll.Nil => acc
   case Coll.Cons(e, rest) =>
@@ -3346,8 +3347,10 @@ def Emit.scratchTys(cx: Emit.Cx, es: Coll.List[Coll.SEntry[Bool]], acc: Coll.Lis
     val Coll.SEntry(f, _) = e
     val acc2: Coll.List[K.Term] = Coll.sLookup(fns, f) match
       case Coll.Some(g) =>
-        val El.Fn(_, _, _, _, _, ret, _) = g
-        Coll.Cons(ret, acc)
+        val El.Fn(_, _, tps, _, _, ret, _) = g
+        tps match
+          case Coll.Nil => Coll.Cons(ret, acc)
+          case Coll.Cons(_, _) => acc
       case Coll.None => acc
     Emit.scratchTys(cx, rest, acc2)
 
