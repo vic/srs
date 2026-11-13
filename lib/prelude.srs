@@ -663,3 +663,11 @@ handler Srs.FileOut for StoreOut:
   def init(path: Str): Ptr = rt_fout_new(path)
   def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
   def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// ACell[A] (s2/types.srs Ty.atomCall): ACell.load, store, cas and fetchAdd are requests on Atomic, so a fn that touches an
+// atomic word has Atomic in its row (or an {a: Atomic} binder) and main handles it; the ops are the __atomic builtins
+capability Atomic:
+  def touch(): Unit
+
+handler Srs.Atomic for Atomic:
+  def touch(): Unit = ()

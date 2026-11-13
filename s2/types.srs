@@ -569,6 +569,8 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
     else if Str.eq(fs, "Array.tabulate") then Ty.tabulate(cx, st, bs, line, f, targs, xs, want)
     else if Str.eq(fs, "Cell.new") then Ty.cellNew(cx, st, bs, line, f, xs, want)
     else if Ty.isCNew(cx, f) then Ty.cstructNew(cx, st, bs, line, f, xs, want)
+    else if Str.eq(fs, "ACell.new") then Ty.atomNew(cx, st, bs, line, f, xs, want)
+    else if Eff.isAtomOp(f) then Ty.atomCall(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Array.put") then Ty.arrPut(cx, st, bs, line, f, xs, want)
@@ -667,10 +669,12 @@ def Ty.cellGet(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.S
 
 // a write is a request on Mut: its handler in scope, else unhandled-effect
 def Ty.needMut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64): Ty.St =
-  val mut = Sym.of("Mut")
-  Ty.innermost(Ty.subst(st), bs, mut) match
-    case Coll.Some(_) => st
-    case Coll.None => Ty.clash(st, Ty.unhandled(cx, line, mut))
+  Ty.needEff(cx, st, bs, line, Sym.of("Mut"))
+
+// a request on capability mut: its handler in scope, else unhandled-effect
+def Ty.needEff(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, mut: Sym.Sym): Ty.St = Ty.innermost(Ty.subst(st), bs, mut) match
+  case Coll.Some(_) => st
+  case Coll.None => Ty.clash(st, Ty.unhandled(cx, line, mut))
 
 // Cell.put(c, v): a write, a request on Mut
 def Ty.cellPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
@@ -682,6 +686,66 @@ def Ty.cellPut(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.S
         Ty.lit(Ty.needMut(cx, st2, bs, line), line, Ty.con("Unit"), want, El.CellPut(line, eC, eV, !Ty.isScalar(Ty.subst(st2), a)))
       case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
     case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// ── ACell[A]: one atomic word in the innermost Region (a Cell that only atomic ops touch). A is a word type (I64, U64, Ptr),
+// fetchAdd only an integer; load, store, cas and fetchAdd are requests on Atomic, so plain code cannot touch the word ──
+def Ty.isWord(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
+  case K.Con(n, args) => Coll.length(args) == 0 && (Str.eq(Sym.str(n), "Ptr") || Ty.isInt64(s, t))
+  case _ => false
+
+def Ty.isInt64(s: Coll.IMap[K.Term], t: K.Term): Bool = K.walk(s, t) match
+  case K.Con(n, args) => Coll.length(args) == 0 && (Str.eq(Sym.str(n), "I64") || Str.eq(Sym.str(n), "U64"))
+  case _ => false
+
+def Ty.acellTy(a: K.Term): K.Term = K.Con(Sym.of("ACell"), Coll.Cons(a, Coll.Nil))
+
+def Ty.atomNew(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ev, r1) => r1 match
+    case Coll.Nil =>
+      val wa: Coll.Option[K.Term] = want match
+        case Coll.Some(w) => K.walk(Ty.subst(st), w) match
+          case K.Con(wn, wargs) => if Str.eq(Sym.str(wn), "ACell") then Coll.headOpt(wargs) else Coll.None
+          case _ => Coll.None
+        case Coll.None => Coll.None
+      val Ty.Ex(st1, ta, eV) = Ty.expr(cx, st, bs, ev, wa)
+      val st2 = if Ty.isWord(Ty.subst(st1), ta) then st1 else Ty.clash(st1, Ty.Mismatch(line, ta, Ty.con("I64")))
+      val Ty.RegAt(st3, reg) = Ty.regionAt(cx, st2, bs, line)
+      Ty.lit(st3, line, Ty.acellTy(ta), want, El.CellNew(line, reg, eV, ta))
+    case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+
+// the cell arg c: ACell[a] at a fresh a, a word type
+def Ty.atomArg(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ec: Ast.Expr): Ty.Ex =
+  val Ty.At(st0, a) = Ty.fresh(st)
+  val Ty.Ex(st1, _, eC) = Ty.expr(cx, st0, bs, ec, Coll.Some(Ty.acellTy(a)))
+  val st2 = if Ty.isWord(Ty.subst(st1), a) then st1 else Ty.clash(st1, Ty.Mismatch(line, a, Ty.con("I64")))
+  Ty.Ex(Ty.needEff(cx, st2, bs, line, Sym.of("Atomic")), a, eC)
+
+// ACell.load(c), ACell.store(c, v), ACell.cas(c, want, v): Bool, ACell.fetchAdd(c, d): the word before the add
+def Ty.atomCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ec, r1) =>
+    val Ty.Ex(st1, a, eC) = Ty.atomArg(cx, st, bs, line, ec)
+    val fs = Sym.str(f)
+    r1 match
+      case Coll.Nil =>
+        if Str.eq(fs, "ACell.load") then Ty.lit(st1, line, a, want, El.AtomLoad(line, eC))
+        else Ty.bad(Ty.args(cx, Ty.clash(st1, Ty.Arity(line, f)), bs, xs), line)
+      case Coll.Cons(e2, r2) => r2 match
+        case Coll.Nil =>
+          val Ty.Ex(st2, _, eV) = Ty.expr(cx, st1, bs, e2, Coll.Some(a))
+          if Str.eq(fs, "ACell.store") then Ty.lit(st2, line, Ty.con("Unit"), want, El.AtomStore(line, eC, eV))
+          else if Str.eq(fs, "ACell.fetchAdd") then
+            val st3 = if Ty.isInt64(Ty.subst(st2), a) then st2 else Ty.clash(st2, Ty.Mismatch(line, a, Ty.con("I64")))
+            Ty.lit(st3, line, a, want, El.AtomAdd(line, eC, eV))
+          else Ty.bad(Ty.args(cx, Ty.clash(st2, Ty.Arity(line, f)), bs, xs), line)
+        case Coll.Cons(e3, r3) => r3 match
+          case Coll.Nil =>
+            val Ty.Ex(st2, _, eW) = Ty.expr(cx, st1, bs, e2, Coll.Some(a))
+            val Ty.Ex(st3, _, eV) = Ty.expr(cx, st2, bs, e3, Coll.Some(a))
+            if Str.eq(fs, "ACell.cas") then Ty.lit(st3, line, Ty.con("Bool"), want, El.AtomCas(line, eC, eW, eV))
+            else Ty.bad(Ty.args(cx, Ty.clash(st3, Ty.Arity(line, f)), bs, xs), line)
+          case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st1, Ty.Arity(line, f)), bs, xs), line)
   case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
 
 // the innermost Region in scope, where a new array lives (a constructor's rule, Ty.callCase); none at compile time
@@ -1830,7 +1894,7 @@ def Ty.initFn(fs: Coll.List[Ast.Fn]): Coll.Option[Ast.Fn] = fs match
 
 def Ty.stateShaped(es: Coll.List[Ast.Enum], n: Sym.Sym): Bool =
   val s = Sym.str(n)
-  Str.eq(s, "Ptr") || Str.eq(s, "Array") || Str.eq(s, "Cell") || Ty.isEnum(es, n)
+  Str.eq(s, "Ptr") || Str.eq(s, "Array") || Str.eq(s, "Cell") || Str.eq(s, "ACell") || Ty.isEnum(es, n)
 
 def Ty.selfAgree(sty: Ast.Ty, st: Ty.St, fs: Coll.List[Ast.Fn]): Ty.St = fs match
   case Coll.Nil => st
@@ -2231,6 +2295,10 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.CField(_, c, _, _, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.CellPut(_, c, v, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case El.ArrPut(_, _, i, v) => Ty.mhNone(st, Coll.Cons(i, Coll.Cons(v, Coll.Nil)))
+      case El.AtomLoad(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
+      case El.AtomStore(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
+      case El.AtomCas(_, c, w, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(w, Coll.Cons(v, Coll.Nil))))
+      case El.AtomAdd(_, c, d) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(d, Coll.Nil)))
       case _ => st
     Ty.mhNone(st1, rest)
 

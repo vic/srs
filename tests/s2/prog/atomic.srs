@@ -1,0 +1,30 @@
+// pass: ACell[A] (I64, U64, Ptr words): load, store, cas success and failure, fetchAdd (the word before the add); each op
+// is a request on Atomic, so main handles it and the fn that touches the word has Atomic in its inferred row
+def At.step(c: ACell[I64]): I64 = ACell.fetchAdd(c, 5)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle a = Srs.Atomic()
+  val c = ACell.new(40)
+  Console.printI64(ACell.load(c))
+  Console.print("\n")
+  ACell.store(c, 41)
+  Console.printI64(ACell.load(c))
+  Console.print("\n")
+  Console.print(if ACell.cas(c, 41, 50) then "cas-ok\n" else "cas-fail\n")
+  Console.printI64(ACell.load(c))
+  Console.print("\n")
+  Console.print(if ACell.cas(c, 41, 60) then "cas-ok\n" else "cas-fail\n")
+  Console.printI64(ACell.load(c))
+  Console.print("\n")
+  Console.printI64(At.step(c))
+  Console.print("\n")
+  Console.printI64(ACell.load(c))
+  Console.print("\n")
+  val u: ACell[U64] = ACell.new(7)
+  Console.print(if ACell.fetchAdd(u, 3) == 7 then "u64-ok" else "u64-bad")
+  Console.print("\n")
+  val p = ACell.new(Srs.noState())
+  Console.print(if ACell.cas(p, Srs.noState(), Srs.noState()) then "ptr-ok\n" else "ptr-fail\n")
+  0
