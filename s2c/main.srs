@@ -480,6 +480,8 @@ def S2c.showFlow(fs: Coll.List[S2c.File], cs: Coll.List[Flow.Clash]): Unit = cs 
         S2c.diag(fs, "entry-facts-unsolvable", l, "entry facts with no solution in", S2c.Name(n), "make the entry facts satisfiable")
       case Flow.Dead(l, n) =>
         S2c.diag(fs, "use-after-free", l, "use of a value after its region ended:", S2c.Name(n), "use it before the region ends, or allocate it in a longer region")
+      case Flow.RowEnd(l, n) =>
+        S2c.diag(fs, "region-ended-under-handle", l, "the region ends while a handle that allocates in it is still open:", S2c.Name(n), "end the handle's block first, or open the handle in a region that outlives it")
       case Flow.Escape(l, n) =>
         S2c.diag(fs, "region-escape", l, "a value escapes the scope of its region", S2c.Name(n), "allocate it in a region that outlives the block")
       case Flow.Stale(l, x) =>

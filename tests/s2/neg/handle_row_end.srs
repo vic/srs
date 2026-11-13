@@ -1,0 +1,25 @@
+// format: off
+// expect: error[region-ended-under-handle]
+// the handler Hb allocates in r (the Region at its handle site); r is freed while h is still open, so the next op would
+// write a box into freed memory
+enum Bx:
+  case Bx(v: I64)
+capability Bp:
+  def mk(n: I64): Bx
+
+handler Hb for Bp:
+  def mk(n: I64): Bx = Bx(n)
+
+def Bx.get(b: Bx): I64 = b match
+  case Bx(v) => v
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle h = Hb()
+  val a = Bp.mk(1)
+  r.free()
+  val b = Bp.mk(2)
+  Console.printI64(7)
+  0
+// expect: --> tests/s2/neg/handle_row_end.srs:21

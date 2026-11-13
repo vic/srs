@@ -4,6 +4,8 @@ Every change to srs that lands, newest first. A project that builds with srs (sn
 
 ## Unreleased
 
+- flow: a Region that ends (an op into an end state) while a handle that allocates in it is still open is an error (`error[region-ended-under-handle]`); before, the handle's next op wrote into or read freed memory. A handle already shut by an op does not count.
+
 - types: a handler fn takes its op's parameter types: each value param after `self` must have the op's declared type (`error[mismatch]` at the fn); before, only the count was checked, so a handler body read its op's arguments under types of its own choosing.
 
 - arena: a program past 32 MiB gets huge pages without handling `Srs.Pages`: the Arena arms the gate itself at its second reservation, so a small program pays nothing and a large one faults once per 2 MiB (snx on a NixOS system: 881k -> 356k page faults, system time 5.3 -> 3.0 s; a 64 MB list program: 15.7k -> 8.0k faults).
