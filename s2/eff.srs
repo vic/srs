@@ -206,10 +206,17 @@ def Eff.isIn(m: Coll.SMap[Bool], x: Sym.Sym): Bool = Coll.sLookup(m, x) match
   case Coll.Some(_) => true
   case Coll.None => false
 
-// A1: the builtins that allocate a new array (in the innermost Region, as a constructor)
+// the atomic ops (ACell's and an array slot's): each is a request on Atomic
 def Eff.isAtomOp(g: Sym.Sym): Bool =
   val s = Sym.str(g)
-  Str.eq(s, "ACell.load") || Str.eq(s, "ACell.store") || Str.eq(s, "ACell.cas") || Str.eq(s, "ACell.fetchAdd")
+  Str.eq(s, "ACell.load") || Str.eq(s, "ACell.store") || Str.eq(s, "ACell.cas") || Str.eq(s, "ACell.fetchAdd") || Eff.isArrAtom(g)
+
+// Array.aload(xs, i), astore(xs, i, v), cas(xs, i, want, v), fetchAdd(xs, i, d): an atomic op on a slot of a word array
+def Eff.isArrAtom(g: Sym.Sym): Bool =
+  val s = Sym.str(g)
+  Str.eq(s, "Array.aload") || Str.eq(s, "Array.astore") || Str.eq(s, "Array.cas") || Str.eq(s, "Array.fetchAdd")
+
+// A1: the builtins that allocate a new array (in the innermost Region, as a constructor)
 
 def Eff.isArrayNew(ss: Eff.Syms, g: Sym.Sym): Bool =
   val Eff.Syms(_, _, _, _, _, ks, c) = ss

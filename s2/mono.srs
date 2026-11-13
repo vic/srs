@@ -267,6 +267,7 @@ def Mono.calls(s: K.Subst, sub: Coll.List[Ty.Bind], e: El.Expr, acc: Coll.List[M
   case El.CellPut(_, c, v, _) => Mono.calls(s, sub, v, Mono.calls(s, sub, c, acc))
   case El.ArrPut(_, _, i, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, i, acc))
   case El.Blit(_, _, a, b, m) => Mono.calls(s, sub, m, Mono.calls(s, sub, b, Mono.calls(s, sub, a, acc)))
+  case El.Slot(_, _, i) => Mono.calls(s, sub, i, acc)
   case El.AtomLoad(_, c) => Mono.calls(s, sub, c, acc)
   case El.AtomStore(_, c, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, c, acc))
   case El.AtomCas(_, c, w, v) => Mono.calls(s, sub, v, Mono.calls(s, sub, w, Mono.calls(s, sub, c, acc)))

@@ -1,0 +1,29 @@
+// pass: atomic ops on the slots of one Array[I64]: aload, astore, cas success and failure, fetchAdd (the word before the
+// add); each is a request on Atomic and the index is proved in range like Array.put
+def Sl.load(n: I64, xs: Array[I64](n), i: I64): I64 = if 0 <= i && i < n then Array.aload(xs, i) else 0 - 1
+
+def Sl.store(n: I64, xs: Array[I64](n), i: I64, v: I64): Unit = if 0 <= i && i < n then Array.astore(xs, i, v) else ()
+
+def Sl.cas(n: I64, xs: Array[I64](n), i: I64, want: I64, v: I64): Str =
+  if 0 <= i && i < n then (if Array.cas(xs, i, want, v) then "cas-ok\n" else "cas-fail\n") else "out\n"
+
+def Sl.bump(n: I64, xs: Array[I64](n), i: I64): I64 = if 0 <= i && i < n then Array.fetchAdd(xs, i, 10) else 0 - 1
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle a = Srs.Atomic()
+  val n = 4
+  val xs = Array.fill(n, 7)
+  Sl.store(n, xs, 2, 40)
+  Console.printI64(Sl.load(n, xs, 2))
+  Console.print("\n")
+  Console.print(Sl.cas(n, xs, 2, 40, 50))
+  Console.print(Sl.cas(n, xs, 2, 40, 60))
+  Console.printI64(Sl.load(n, xs, 2))
+  Console.print("\n")
+  Console.printI64(Sl.bump(n, xs, 3))
+  Console.print("\n")
+  Console.printI64(Sl.load(n, xs, 3) + Sl.load(n, xs, 0))
+  Console.print("\n")
+  0

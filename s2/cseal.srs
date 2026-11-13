@@ -53,6 +53,7 @@ def Cs.ex(e: El.Expr, sealed: Bool, open: Bool, acc: Cs.Acc): Cs.Acc = e match
   case El.ArrPut(_, _, i, v) => Cs.ex(v, sealed, open, Cs.ex(i, sealed, open, acc))
   case El.Blit(_, _, at, s, m) => Cs.ex(m, sealed, open, Cs.ex(s, sealed, open, Cs.ex(at, sealed, open, acc)))
   // an atomic word holds a scalar (I64, U64, Ptr: Ty.atomNew), never region data, so its ops only walk their operands
+  case El.Slot(_, _, i) => Cs.ex(i, sealed, open, acc)
   case El.AtomLoad(_, c) => Cs.ex(c, sealed, open, acc)
   case El.AtomStore(_, c, v) => Cs.ex(v, sealed, open, Cs.ex(c, sealed, open, acc))
   case El.AtomCas(_, c, w, v) => Cs.ex(v, sealed, open, Cs.ex(w, sealed, open, Cs.ex(c, sealed, open, acc)))
