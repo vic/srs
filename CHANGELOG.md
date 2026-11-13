@@ -2,7 +2,11 @@
 
 Every change to srs that lands, newest first. A project that builds with srs (snx, tot) pins a jj bookmark; this file says what each landing changed, so you can see what moving the bookmark brings.
 
-## Unreleased (datalog bulk load)
+## Unreleased (scratch deep copy-out)
+
+- Memory: a call that runs in a scratch Arena (M12a) now copies every box of its result that the scratch owns into the caller's region, then frees the scratch. Shared boxes stay shared, and a long list is copied without C recursion. Before, only the result's top box was copied, and the scratch was kept whenever a field pointed into it (7-8 of 11 scratches in s2c were kept). Test: tests/s2/scratch/deep.srs (poison prelude: a 1M-cell list, a shared list, an older box, a DAG of depth 40). s2c output byte-identical, fixpoint.
+
+## 2026-11-12 main@origin 7119cabd (PR #89, datalog bulk load)
 
 - Speed: Datalog input facts are gathered per relation, then each index (tuple set, probed columns) is built once from a sorted run, not by one persistent-tree path copy per row. s2c on the bench corpus: 0.77 s -> 0.68 s, peak 592 MB -> 527 MB. Output byte-identical.
 - This file is newest first again.

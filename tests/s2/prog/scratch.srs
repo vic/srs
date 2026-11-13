@@ -1,6 +1,7 @@
 // pass: a call of a def that runs once and makes many boxes runs in a scratch Arena under the mem optimization (M12a):
-// SC.total's result box holds a number, so its box is copied out and the scratch is freed; SC.keep's result is its list
-// (one box field: L2 makes it the list pointer) and SC.keep2's box holds a list made in the run: both keep the scratch.
+// SC.total's result box holds a number; SC.keep's result is its list (one box field: L2 makes it the list pointer) and
+// SC.keep2's box holds a list made in the run: each result is copied out with the boxes it reaches, and the scratch is
+// freed (tests/s2/scratch/deep.srs checks the peak).
 // Under the poison prelude a freed scratch that a result still read would print garbage
 enum SC.L:
   case SC.Nil

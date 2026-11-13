@@ -3084,11 +3084,6 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit 
   // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
   // always null for other handlers
   Console.print("typedef struct srs_cap { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")
-  opt match
-    case Emit.MemOpt(sx, _) => Coll.sEntries(sx, Coll.Nil) match
-      case Coll.Cons(_, _) => Emit.ownsPrim()
-      case Coll.Nil => ()
-    case Emit.Plain => ()
   Console.print("typedef struct { void* st; srs_cap* c[]; } srs_env;\n")
   Console.print("void rt_init(int argc, char** argv);\n")
   Emit.fwds(ens)
@@ -3103,6 +3098,15 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit 
   al match
     case Emit.Inline => Emit.allocFast(cx)
     case Emit.VTable => ()
+  // the copy-out of scratch calls (Emit.inScratch: an inline Arena and a static Region)
+  val scs = Coll.sEntries(Emit.scratchOf(sx), Coll.Nil)
+  scs match
+    case Coll.Cons(_, _) =>
+      if Emit.isInline(al) && Emit.isStatic(cx, Sym.of("Region")) then
+        Emit.evPrims(Emit.opIndex(cx, Sym.of("Region"), Sym.of("alloc")))
+        Emit.evFns(cx, Emit.closeEnums(cx, Emit.scratchTys(cx, scs, Coll.Nil), Coll.BTip, Coll.Nil))
+      else ()
+    case Coll.Nil => ()
   Emit.cnewFns(cx, ds, cs)
   Emit.bodies(cx, hs, is)
   Emit.handlers(cx, Emit.oneShot(hsu), Emit.Code)
@@ -3237,7 +3241,7 @@ def Emit.scratchCall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, f: Sym.Sym, gts: C
   Console.printI64(n)
   Console.print(" = ")
   Emit.plainCall(cx, fi, env, f, gts, caps, args)
-  Console.print("; void* sc_")
+  Console.print("; srs_ev_sync(&s_eff__Region); void* sc_")
   Console.printI64(n)
   Console.print(" = s_eff__Region.self; s_eff__Region = sv_")
   Console.printI64(n)
@@ -3245,17 +3249,11 @@ def Emit.scratchCall(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, f: Sym.Sym, gts: C
   Console.printI64(n)
   Console.print(" = r_")
   Console.printI64(n)
-  Console.print("; int64_t k_")
+  Console.print("; srs_ev_open(sc_")
   Console.printI64(n)
-  Console.print(" = 0; if (srs_owns(sc_")
-  Console.printI64(n)
-  Console.print(", (void*)r_")
-  Console.printI64(n)
-  Console.print(")) { ")
+  Console.print("); ")
   Emit.scratchCopy(cx, n, Emit.retOf(cx, fi, f, gts))
-  Console.print(" } if (!k_")
-  Console.printI64(n)
-  Console.print(") ((int64_t(*)(void*))(vt_Srs__Arena[")
+  Console.print(" srs_ev_run(); if (!srs_ev_keep) ((int64_t(*)(void*))(vt_Srs__Arena[")
   Console.printI64(Emit.opIndex(cx, Sym.of("Region"), Sym.of("free")))
   Console.print("]))(sc_")
   Console.printI64(n)
@@ -3272,117 +3270,230 @@ def Emit.retOf(cx: Emit.Cx, fi: Emit.Fi, f: Sym.Sym, gts: Coll.List[K.Term]): K.
       ret
     case Coll.None => K.Con(Sym.of("Unit"), Coll.Nil)
 
-// the copy of an owned result box r_n of type t into c_n, and k_n = 1 when a field still points into sc_n: a box of an
-// enum is copied by its case (a T0 enum has one boxed case); any other owned value keeps the scratch
-def Emit.scratchCopy(cx: Emit.Cx, n: I64, t: K.Term): Unit =
-  val Emit.Cx(_, _, _, es, _, _, _, _, _, _) = cx
-  t match
-    case K.Con(en, targs) => Coll.sLookup(es, en) match
-      case Coll.Some(e) =>
-        val Ast.Enum(_, _, _, gs, cases) = e
-        Emit.scratchCases(cx, n, en, targs, Ty.zipBind(Ty.tparams(gs, Coll.Nil), targs, Coll.Nil), cases, Emit.enumW(cx, cases))
-      case Coll.None => Emit.keep(n)
-    case _ => Emit.keep(n)
+// the copy of the result r_n of type t into c_n: an enum value through its srs_ev_ function (every box the scratch owns
+// that it reaches), a Str's bytes when the scratch owns them, a scalar as it is; any other value keeps the scratch
+def Emit.scratchCopy(cx: Emit.Cx, n: I64, t: K.Term): Unit = Emit.fieldK(cx, t) match
+  case Emit.FScalar => ()
+  case Emit.FOther => Console.print("srs_ev_keep = 1;")
+  case Emit.FStr =>
+    Console.print("c_")
+    Console.printI64(n)
+    Console.print(" = srs_ev_str(r_")
+    Console.printI64(n)
+    Console.print(");")
+  case Emit.FBox =>
+    Console.print("c_")
+    Console.printI64(n)
+    Console.print(" = srs_ev_")
+    Emit.evName(t)
+    Console.print("((void*)r_")
+    Console.printI64(n)
+    Console.print(");")
 
-def Emit.keep(n: I64): Unit =
-  Console.print("k_")
-  Console.printI64(n)
-  Console.print(" = 1;")
+def Emit.evName(t: K.Term): Unit = t match
+  case K.Con(en, targs) => Emit.enumName(en, targs)
+  case _ => ()
 
-def Emit.scratchCases(cx: Emit.Cx, n: I64, en: Sym.Sym, targs: Coll.List[K.Term], tv: Coll.List[Ty.Bind], cs: Coll.List[Ast.Case], w: Emit.TagW): Unit = cs match
-  case Coll.Nil => ()
-  case Coll.Cons(c, rest) =>
-    val Ast.Case(_, _, cn, fs) = c
-    fs match
-      case Coll.Nil => ()
-      case Coll.Cons(_, _) => Emit.caseAt(cx, cn) match
-        case Coll.None => Emit.keep(n)
-        case Coll.Some(ca) =>
-          val Emit.CaseAt(tag, _, _, _) = ca
-          Emit.boxForm(cx, ca, targs) match
-            case Emit.Unboxed => Emit.keep(n)
-            case Emit.Boxed =>
-              w match
-                case Emit.T0 => Console.print("{ ")
-                case _ =>
-                  Console.print("if (r_")
-                  Console.printI64(n)
-                  Console.print("->tag == ")
-                  Console.printI64(tag)
-                  Console.print(") { ")
-              Console.print("int64_t z_ = (int64_t)(offsetof(struct E_")
-              Emit.enumName(en, targs)
-              Console.print(", u) + sizeof(r_")
-              Console.printI64(n)
-              Console.print("->u.C_")
-              Emit.id(cn)
-              Console.print(")); c_")
-              Console.printI64(n)
-              Console.print(" = srs_alloc(eff__Region, z_); memcpy(c_")
-              Console.printI64(n)
-              Console.print(", r_")
-              Console.printI64(n)
-              Console.print(", (size_t)z_); ")
-              Emit.ownedFields(cx, n, cn, tv, fs)
-              Console.print("} ")
-    Emit.scratchCases(cx, n, en, targs, tv, rest, w)
-
-// k_n |= a field of case cn that points into sc_n (an enum box, a Str's bytes); a field of another non-scalar type keeps
-def Emit.ownedFields(cx: Emit.Cx, n: I64, cn: Sym.Sym, tv: Coll.List[Ty.Bind], fs: Coll.List[Ast.Binder]): Unit = fs match
-  case Coll.Nil => ()
-  case Coll.Cons(f, rest) =>
-    val Emit.Cx(_, _, _, es, _, _, _, _, _, _) = cx
-    val Ast.Binder(_, x, t) = f
-    val ft = Ty.term(t, tv)
-    val kind: Emit.FieldK = ft match
-      case K.Con(fn, _) =>
-        val s = Sym.str(fn)
-        if Emit.has(es, fn) then Emit.FBox
-        else if Str.eq(s, "Str") then Emit.FStr
-        else if Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "U8") || Str.eq(s, "U32") || Str.eq(s, "U64") || Str.eq(s, "I32") || Str.eq(s, "Unit") then
-          Emit.FScalar
-        else Emit.FOther
-      case _ => Emit.FOther
-    kind match
-      case Emit.FScalar => ()
-      case Emit.FOther => Emit.keep(n)
-      case Emit.FBox =>
-        Console.print("k_")
-        Console.printI64(n)
-        Console.print(" |= srs_owns(sc_")
-        Console.printI64(n)
-        Console.print(", (void*)r_")
-        Console.printI64(n)
-        Console.print("->u.C_")
-        Emit.id(cn)
-        Console.print(".f_")
-        Emit.id(x)
-        Console.print("); ")
-      case Emit.FStr =>
-        Console.print("k_")
-        Console.printI64(n)
-        Console.print(" |= srs_owns(sc_")
-        Console.printI64(n)
-        Console.print(", (void*)r_")
-        Console.printI64(n)
-        Console.print("->u.C_")
-        Emit.id(cn)
-        Console.print(".f_")
-        Emit.id(x)
-        Console.print(".p); ")
-    Emit.ownedFields(cx, n, cn, tv, rest)
-
-// what a field holds, for the scratch copy: a box of an enum, a Str, a scalar, or something else
+// what a value of type t holds, for the scratch copy: a box of an enum, a Str, a scalar, or something else
 enum Emit.FieldK:
   case Emit.FBox
   case Emit.FStr
   case Emit.FScalar
   case Emit.FOther
 
-// srs_owns(a, p): p lies in a chunk of Arena a (its chunk list: a's word 0, a chunk's next at word 0, cap at word 2, data
-// at +24: lib/prelude.srs Srs.Arena)
-def Emit.ownsPrim(): Unit =
-  Console.print("static inline int64_t srs_owns(void* a, void* p) { char* ch = (char*)(*(int64_t*)a); while (ch) { int64_t cap = ((int64_t*)ch)[2]; if ((char*)p >= ch + 24 && (char*)p < ch + 24 + cap) return 1; ch = (char*)(((int64_t*)ch)[0]); } return 0; }\n")
+def Emit.fieldK(cx: Emit.Cx, t: K.Term): Emit.FieldK =
+  val Emit.Cx(_, _, _, es, _, _, _, _, _, _) = cx
+  t match
+    case K.Con(fn, _) =>
+      val s = Sym.str(fn)
+      if Emit.has(es, fn) then Emit.FBox
+      else if Str.eq(s, "Str") then Emit.FStr
+      else if Str.eq(s, "I64") || Str.eq(s, "Bool") || Str.eq(s, "U8") || Str.eq(s, "U32") || Str.eq(s, "U64") || Str.eq(s, "I32") || Str.eq(s, "Unit") || Str.eq(s, "F64") then
+        Emit.FScalar
+      else Emit.FOther
+    case _ => Emit.FOther
+
+// ── the deep copy-out of a scratch call (M12a): srs_ev_open sorts the scratch's chunk ranges (an owned test is a binary
+// search), srs_ev_X(p) copies the box p of enum X into the restored region when the scratch owns it and records old ->
+// copy (a box reached twice is copied once), and queues the copy; srs_ev_run copies the queued boxes' fields (no C
+// recursion: a list of a million cells is a loop). The ranges, the table and the queue live in the scratch and go
+// with it. Sound because values are immutable: a box made before the call cannot point into the scratch, so only the
+// result reaches it. A field the copy cannot follow (an Array, a Cell, a Ptr) sets srs_ev_keep: the scratch is kept ──
+def Emit.evPrims(ai: I64): Unit =
+  Console.print("static void* srs_ev_sc; static char** srs_ev_lo; static int64_t srs_ev_n; static int64_t srs_ev_keep;\n")
+  Console.print("static void** srs_ev_k; static void** srs_ev_v; static int64_t srs_ev_cap; static int64_t srs_ev_cnt;\n")
+  Console.print("typedef struct { void* p; void (*s)(void*); } srs_ev_w; static srs_ev_w* srs_ev_q; static int64_t srs_ev_qn; static int64_t srs_ev_qcap;\n")
+  Console.print("static void* srs_ev_mem(int64_t n) { return ((void*(*)(void*, int64_t))(vt_Srs__Arena[")
+  Console.printI64(ai)
+  Console.print("]))(srs_ev_sc, n); }\n")
+  // the scratch's head chunk records its bump pointer (kept in the capability while the call runs: Emit.allocFast), so
+  // the copy-out's own allocations in the scratch start after the result's boxes
+  Console.print("static void srs_ev_sync(srs_cap* c) { if (c->end) { srs_chunk** hp = (srs_chunk**)c->self; (*hp)->used = (size_t)(c->cur - (char*)(*hp + 1)); } }\n")
+  Console.print("static void srs_ev_open(void* sc) { srs_ev_sc = sc; srs_ev_keep = 0; srs_ev_cnt = 0; srs_ev_qn = 0; srs_ev_qcap = 0; srs_ev_q = 0; char* h = (char*)(*(int64_t*)sc); int64_t n = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) n++; char** a = srs_ev_mem(16 * n + 16); int64_t i = 0; for (char* ch = h; ch; ch = (char*)(((int64_t*)ch)[0])) { int64_t j = i++; while (j > 0 && a[2 * (j - 1)] > ch + 24) { a[2 * j] = a[2 * (j - 1)]; a[2 * j + 1] = a[2 * (j - 1) + 1]; j--; } a[2 * j] = ch + 24; a[2 * j + 1] = ch + 24 + ((int64_t*)ch)[2]; } srs_ev_lo = a; srs_ev_n = n; srs_ev_cap = 1024; srs_ev_k = srs_ev_mem(8 * srs_ev_cap); srs_ev_v = srs_ev_mem(8 * srs_ev_cap); memset(srs_ev_k, 0, (size_t)(8 * srs_ev_cap)); }\n")
+  Console.print("static int64_t srs_ev_in(void* p) { char* c = (char*)p; int64_t lo = 0, hi = srs_ev_n - 1; while (lo <= hi) { int64_t m = (lo + hi) >> 1; if (c < srs_ev_lo[2 * m]) hi = m - 1; else if (c >= srs_ev_lo[2 * m + 1]) lo = m + 1; else return 1; } return 0; }\n")
+  Console.print("static int64_t srs_ev_h(void* p) { return (int64_t)(((uint64_t)(uintptr_t)p * 0x9E3779B97F4A7C15ull) >> 20) & (srs_ev_cap - 1); }\n")
+  Console.print("static void* srs_ev_get(void* p) { int64_t h = srs_ev_h(p); while (srs_ev_k[h]) { if (srs_ev_k[h] == p) return srs_ev_v[h]; h = (h + 1) & (srs_ev_cap - 1); } return 0; }\n")
+  Console.print("static void srs_ev_put(void* p, void* q) { if (2 * (srs_ev_cnt + 1) > srs_ev_cap) { void** ok = srs_ev_k; void** ov = srs_ev_v; int64_t oc = srs_ev_cap; srs_ev_cap = 2 * oc; srs_ev_k = srs_ev_mem(8 * srs_ev_cap); srs_ev_v = srs_ev_mem(8 * srs_ev_cap); memset(srs_ev_k, 0, (size_t)(8 * srs_ev_cap)); srs_ev_cnt = 0; for (int64_t i = 0; i < oc; i++) if (ok[i]) srs_ev_put(ok[i], ov[i]); } int64_t h = srs_ev_h(p); while (srs_ev_k[h]) h = (h + 1) & (srs_ev_cap - 1); srs_ev_k[h] = p; srs_ev_v[h] = q; srs_ev_cnt++; }\n")
+  Console.print("static void* srs_ev_dup(void* p, int64_t z, void (*s)(void*)) { void* q = srs_alloc(eff__Region, z); memcpy(q, p, (size_t)z); srs_ev_put(p, q); if (srs_ev_qn == srs_ev_qcap) { int64_t c = srs_ev_qcap ? 2 * srs_ev_qcap : 1024; srs_ev_w* w = srs_ev_mem(16 * c); if (srs_ev_qn) memcpy(w, srs_ev_q, (size_t)(16 * srs_ev_qn)); srs_ev_q = w; srs_ev_qcap = c; } srs_ev_q[srs_ev_qn].p = q; srs_ev_q[srs_ev_qn].s = s; srs_ev_qn++; return q; }\n")
+  Console.print("static void srs_ev_run(void) { while (srs_ev_qn > 0) { srs_ev_qn--; srs_ev_w w = srs_ev_q[srs_ev_qn]; w.s(w.p); } }\n")
+  Console.print("static srs_str srs_ev_str(srs_str s) { if (s.n == 0 || !srs_ev_in((void*)s.p)) return s; uint8_t* b = srs_alloc(eff__Region, s.n); memcpy(b, s.p, (size_t)s.n); return (srs_str){b, s.n}; }\n")
+
+// the result types of the scratch defs
+def Emit.scratchTys(cx: Emit.Cx, es: Coll.List[Coll.SEntry[Bool]], acc: Coll.List[K.Term]): Coll.List[K.Term] = es match
+  case Coll.Nil => acc
+  case Coll.Cons(e, rest) =>
+    val Emit.Cx(_, fns, _, _, _, _, _, _, _, _) = cx
+    val Coll.SEntry(f, _) = e
+    val acc2: Coll.List[K.Term] = Coll.sLookup(fns, f) match
+      case Coll.Some(g) =>
+        val El.Fn(_, _, _, _, _, ret, _) = g
+        Coll.Cons(ret, acc)
+      case Coll.None => acc
+    Emit.scratchTys(cx, rest, acc2)
+
+// the copy functions of the enums ts: prototypes first (enums refer to each other), then the bodies
+def Emit.evFns(cx: Emit.Cx, ts: Coll.List[K.Term]): Unit =
+  Emit.evProtos(cx, ts)
+  Emit.evBodies(cx, ts)
+
+def Emit.evProtos(cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(t, rest) =>
+    Emit.fieldK(cx, t) match
+      case Emit.FBox =>
+        Console.print("static void* srs_ev_")
+        Emit.evName(t)
+        Console.print("(void* p0);\nstatic void srs_evs_")
+        Emit.evName(t)
+        Console.print("(void* q0);\n")
+      case _ => ()
+    Emit.evProtos(cx, rest)
+
+def Emit.evBodies(cx: Emit.Cx, ts: Coll.List[K.Term]): Unit = ts match
+  case Coll.Nil => ()
+  case Coll.Cons(t, rest) =>
+    val Emit.Cx(_, _, _, es, _, _, _, _, _, _) = cx
+    t match
+      case K.Con(en, targs) => Coll.sLookup(es, en) match
+        case Coll.Some(e) =>
+          val Ast.Enum(_, _, _, gs, cases) = e
+          Emit.evBody(cx, t, en, targs, Ty.zipBind(Ty.tparams(gs, Coll.Nil), targs, Coll.Nil), cases, Emit.enumW(cx, cases))
+        case Coll.None => ()
+      case _ => ()
+    Emit.evBodies(cx, rest)
+
+// srs_ev_X: a box of X the scratch owns is copied once; srs_evs_X: the fields of a copied box. A T0 enum has one boxed
+// case (its other cases are statics); an Unboxed case is its field's box (Emit.boxForm), copied as that type
+def Emit.evBody(cx: Emit.Cx, t: K.Term, en: Sym.Sym, targs: Coll.List[K.Term], tv: Coll.List[Ty.Bind], cs: Coll.List[Ast.Case], w: Emit.TagW): Unit =
+  Console.print("static void* srs_ev_")
+  Emit.evName(t)
+  Console.print("(void* p0) { struct E_")
+  Emit.enumName(en, targs)
+  Console.print("* p = p0; (void)p; if (!srs_ev_in(p0)) return p0; void* f = srs_ev_get(p0); if (f) return f; ")
+  w match
+    case Emit.T0 => ()
+    case _ => Console.print("switch (p->tag) { ")
+  Emit.evDups(cx, t, en, targs, tv, cs, w)
+  w match
+    case Emit.T0 => Console.print("return p0; }\n")
+    case _ => Console.print("default: return p0; } }\n")
+  Console.print("static void srs_evs_")
+  Emit.evName(t)
+  Console.print("(void* q0) { struct E_")
+  Emit.enumName(en, targs)
+  Console.print("* q = q0; (void)q; ")
+  w match
+    case Emit.T0 => ()
+    case _ => Console.print("switch (q->tag) { ")
+  Emit.evScans(cx, targs, tv, cs, w)
+  w match
+    case Emit.T0 => Console.print("}\n")
+    case _ => Console.print("default: break; } }\n")
+
+def Emit.evDups(cx: Emit.Cx, t: K.Term, en: Sym.Sym, targs: Coll.List[K.Term], tv: Coll.List[Ty.Bind], cs: Coll.List[Ast.Case], w: Emit.TagW): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, cn, fs) = c
+    fs match
+      case Coll.Nil => ()
+      case Coll.Cons(f, _) => Emit.caseAt(cx, cn) match
+        case Coll.None => ()
+        case Coll.Some(ca) =>
+          val Emit.CaseAt(tag, _, _, _) = ca
+          w match
+            case Emit.T0 => ()
+            case _ =>
+              Console.print("case ")
+              Console.printI64(tag)
+              Console.print(": ")
+          Emit.boxForm(cx, ca, targs) match
+            case Emit.Unboxed =>
+              val Ast.Binder(_, _, ft) = f
+              Console.print("return srs_ev_")
+              Emit.evName(Ty.term(ft, tv))
+              Console.print("(p0); ")
+            case Emit.Boxed =>
+              Console.print("return srs_ev_dup(p0, (int64_t)(offsetof(struct E_")
+              Emit.enumName(en, targs)
+              Console.print(", u) + sizeof(p->u.C_")
+              Emit.id(cn)
+              Console.print(")), srs_evs_")
+              Emit.evName(t)
+              Console.print("); ")
+    Emit.evDups(cx, t, en, targs, tv, rest, w)
+
+def Emit.evScans(cx: Emit.Cx, targs: Coll.List[K.Term], tv: Coll.List[Ty.Bind], cs: Coll.List[Ast.Case], w: Emit.TagW): Unit = cs match
+  case Coll.Nil => ()
+  case Coll.Cons(c, rest) =>
+    val Ast.Case(_, _, cn, fs) = c
+    fs match
+      case Coll.Nil => ()
+      case Coll.Cons(_, _) => Emit.caseAt(cx, cn) match
+        case Coll.None => ()
+        case Coll.Some(ca) =>
+          val Emit.CaseAt(tag, _, _, _) = ca
+          Emit.boxForm(cx, ca, targs) match
+            case Emit.Unboxed => ()
+            case Emit.Boxed =>
+              w match
+                case Emit.T0 => ()
+                case _ =>
+                  Console.print("case ")
+                  Console.printI64(tag)
+                  Console.print(": ")
+              Emit.evFields(cx, cn, tv, fs)
+              w match
+                case Emit.T0 => ()
+                case _ => Console.print("break; ")
+    Emit.evScans(cx, targs, tv, rest, w)
+
+def Emit.evFields(cx: Emit.Cx, cn: Sym.Sym, tv: Coll.List[Ty.Bind], fs: Coll.List[Ast.Binder]): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, rest) =>
+    val Ast.Binder(_, x, t) = f
+    val ft = Ty.term(t, tv)
+    Emit.fieldK(cx, ft) match
+      case Emit.FScalar => ()
+      case Emit.FOther => Console.print("srs_ev_keep = 1; ")
+      case Emit.FStr =>
+        Emit.evSlot(cn, x)
+        Console.print(" = srs_ev_str(")
+        Emit.evSlot(cn, x)
+        Console.print("); ")
+      case Emit.FBox =>
+        Emit.evSlot(cn, x)
+        Console.print(" = srs_ev_")
+        Emit.evName(ft)
+        Console.print("((void*)")
+        Emit.evSlot(cn, x)
+        Console.print("); ")
+    Emit.evFields(cx, cn, tv, rest)
+
+def Emit.evSlot(cn: Sym.Sym, x: Sym.Sym): Unit =
+  Console.print("q->u.C_")
+  Emit.id(cn)
+  Console.print(".f_")
+  Emit.id(x)
 
 // m binds s
 def Emit.has [V: Type] (m: Coll.SMap[V], s: Sym.Sym): Bool = Coll.sLookup(m, s) match
