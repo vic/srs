@@ -142,6 +142,13 @@ ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v stra
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
 if [ ! -x "${ST:-}" ]; then echo "FAIL prog/out_big: strace missing"; fail=1
 elif [ "${w:-0}" -gt 1 ]; then echo "ok prog/out_big writes $w"; else echo "FAIL prog/out_big writes ${w:-none}, want > 1"; fail=1; fi
+# prog/atomic: each ACell op is emitted as its __atomic builtin with its own memory order (not a plain access): every
+# call of the builtin carries the order inside its own parentheses (a match may not run on into the next call)
+for pp in '__atomic_load_n(|__atomic_load_n([^()]*, __ATOMIC_ACQUIRE)' '__atomic_store_n(|__atomic_store_n([^;]*), __ATOMIC_RELEASE)' \
+  '__atomic_compare_exchange_n(|__atomic_compare_exchange_n([^;]*, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)' '__atomic_fetch_add(|__atomic_fetch_add([^;]*, __ATOMIC_SEQ_CST)'; do
+  a=$(grep -o "${pp%%|*}" "$B/s2c1_atomic.c" | wc -l); g=$(grep -o "${pp#*|}" "$B/s2c1_atomic.c" | wc -l)
+  if [ "$a" -gt 0 ] && [ "$a" = "$g" ]; then echo "ok prog/atomic ${pp%%|*} $g with its order"; else echo "FAIL prog/atomic ${pp%%|*} calls $a, with its order $g"; fail=1; fi
+done
 # Arena chunks are advised for huge pages when main installs Srs.Pages, or from the Arena's second 32 MiB reservation on (it arms the
 # gate itself): prog/alloc_chunks (no Pages, under 32 MiB) gets no advice; prog/pages_off (no Pages, 60 MiB) gets some; prog/pages_gate (Pages) too
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_alloc_chunks" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)

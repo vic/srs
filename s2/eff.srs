@@ -207,10 +207,14 @@ def Eff.isIn(m: Coll.SMap[Bool], x: Sym.Sym): Bool = Coll.sLookup(m, x) match
   case Coll.None => false
 
 // A1: the builtins that allocate a new array (in the innermost Region, as a constructor)
+def Eff.isAtomOp(g: Sym.Sym): Bool =
+  val s = Sym.str(g)
+  Str.eq(s, "ACell.load") || Str.eq(s, "ACell.store") || Str.eq(s, "ACell.cas") || Str.eq(s, "ACell.fetchAdd")
+
 def Eff.isArrayNew(ss: Eff.Syms, g: Sym.Sym): Bool =
   val Eff.Syms(_, _, _, _, _, ks, c) = ss
   val Names.Keys(_, f, t, _, _) = ks
-  Sym.eq(g, f) || Sym.eq(g, t) || Sym.eq(g, c)
+  Sym.eq(g, f) || Sym.eq(g, t) || Sym.eq(g, c) || Str.eq(Sym.str(g), "ACell.new")
 
 def Eff.decls(cx: Eff.Cx, ds: Coll.List[Ast.Decl], w: Eff.W): Coll.List[D.Fact] = ds match
   case Coll.Nil =>
@@ -365,6 +369,8 @@ def Eff.expr(cx: Eff.Cx, at: Eff.At, e: Ast.Expr, w: Eff.W): Eff.W = e match
     // Cell.put(c, v) and Array.put(xs, i, v) write (A1, A1b): a request on Mut, so a fn that writes has Mut in its row
     else if Str.eq(Sym.str(g), "Cell.put") || Str.eq(Sym.str(g), "Array.put") || Str.eq(Sym.str(g), "Array.blit") then
       Eff.req(cx, at, Sym.of("Mut"), w1)
+    // ACell.load, store, cas and fetchAdd request Atomic: plain code cannot touch an atomic word
+    else if Eff.isAtomOp(g) then Eff.req(cx, at, Sym.of("Atomic"), w1)
     else Eff.opNeedsQ(cx, at, Eff.reqOf(ps, g), Eff.reqTo(cx, at, Eff.reqOf(ps, g), w1))
   // a trait method on {} evidence requests the capabilities the method declares (vic Q2); xs.at(i) on a local (an
   // array, A1) builds an Array.Index in the innermost Region

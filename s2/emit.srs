@@ -262,7 +262,7 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.len(x) > 8 && Str.eq(Str.slice(x, 0, 8), "CStruct.") then Emit.cstructPtr(Str.slice(x, 8, Str.len(x)))
     else if Str.eq(x, "U64") then Console.print("uint64_t")
     // A1: Array[A](n) is one pointer to its elements (no header); Cell[A] a pointer to its word
-    else if Str.eq(x, "Array") || Str.eq(x, "Cell") then Emit.arrayC(cx, args)
+    else if Str.eq(x, "Array") || Str.eq(x, "Cell") || Str.eq(x, "ACell") then Emit.arrayC(cx, args)
     else if Emit.isProto(cx, n) then Console.print("srs_cap*")
     else Emit.nominalOf(cx, n) match
       case Coll.Some(b) => Emit.ctype(cx, b)
@@ -417,6 +417,34 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print(") = (")
     Emit.ex(cx, fi, env, Emit.Inner, v)
     Console.print("), (int64_t)0)")
+  // ACell[A]: the GCC/clang __atomic builtins on the cell's word, each with its memory order: load acquire, store
+  // release, cas acq_rel (failure acquire), fetchAdd seq_cst (vic/notes/20261111T0600 B1: shared mutable state is only Atomic cells)
+  case El.AtomLoad(_, c) =>
+    Console.print("__atomic_load_n(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(", __ATOMIC_ACQUIRE)")
+  case El.AtomStore(_, c, v) =>
+    Console.print("(__atomic_store_n(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(", ")
+    Emit.ex(cx, fi, env, Emit.Inner, v)
+    Console.print(", __ATOMIC_RELEASE), (int64_t)0)")
+  case El.AtomCas(_, c, w, v) =>
+    Console.print("({ __typeof__(*")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(") ex_ = (")
+    Emit.ex(cx, fi, env, Emit.Inner, w)
+    Console.print("); __atomic_compare_exchange_n(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(", &ex_, (")
+    Emit.ex(cx, fi, env, Emit.Inner, v)
+    Console.print("), 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE); })")
+  case El.AtomAdd(_, c, d) =>
+    Console.print("__atomic_fetch_add(")
+    Emit.ex(cx, fi, env, Emit.Inner, c)
+    Console.print(", ")
+    Emit.ex(cx, fi, env, Emit.Inner, d)
+    Console.print(", __ATOMIC_SEQ_CST)")
   // A1b: the index is proved in range (Ty.arrPut): a plain store, no branch
   case El.ArrPut(_, x, i, v) =>
     Console.print("(")
@@ -1239,6 +1267,10 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CellPut(_, c, v, _) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
   case El.Blit(_, _, a, b, m) => Emit.exTys(cx, fi, m, Emit.exTys(cx, fi, b, Emit.exTys(cx, fi, a, acc)))
+  case El.AtomLoad(_, c) => Emit.exTys(cx, fi, c, acc)
+  case El.AtomStore(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
+  case El.AtomCas(_, c, w, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, w, Emit.exTys(cx, fi, c, acc)))
+  case El.AtomAdd(_, c, d) => Emit.exTys(cx, fi, d, Emit.exTys(cx, fi, c, acc))
   case _ => acc
 
 def Emit.exsTys(cx: Emit.Cx, fi: Emit.Fi, xs: Coll.List[El.Expr], acc: Coll.List[K.Term]): Coll.List[K.Term] = xs match
@@ -2849,6 +2881,10 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.CellPut(_, c, v, _) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
   case El.Blit(_, _, a, b, m) => Emit.seenE(cx, m, Emit.seenE(cx, b, Emit.seenE(cx, a, s)))
+  case El.AtomLoad(_, c) => Emit.seenE(cx, c, s)
+  case El.AtomStore(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
+  case El.AtomCas(_, c, w, v) => Emit.seenE(cx, v, Emit.seenE(cx, w, Emit.seenE(cx, c, s)))
+  case El.AtomAdd(_, c, d) => Emit.seenE(cx, d, Emit.seenE(cx, c, s))
   case _ => s
 
 def Emit.seenEs(cx: Emit.Cx, xs: Coll.List[El.Expr], s: Emit.Seen): Emit.Seen = xs match
@@ -3011,6 +3047,10 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.CellPut(l, c, v, d) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v), d)
   case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
   case El.Blit(l, x, a, b, k) => El.Blit(l, x, Emit.dropE(m, xs, a), Emit.dropE(m, xs, b), Emit.dropE(m, xs, k))
+  case El.AtomLoad(l, c) => El.AtomLoad(l, Emit.dropE(m, xs, c))
+  case El.AtomStore(l, c, v) => El.AtomStore(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
+  case El.AtomCas(l, c, w, v) => El.AtomCas(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, w), Emit.dropE(m, xs, v))
+  case El.AtomAdd(l, c, d) => El.AtomAdd(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, d))
   case _ => e
 
 def Emit.dropEs(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], es: Coll.List[El.Expr]): Coll.List[El.Expr] = es match

@@ -1,0 +1,8 @@
+// expect: error[unhandled-effect]
+// expect: --> tests/s2/neg/atom_noeffect.srs:8
+// an atomic op is a request on Atomic: plain code with no Atomic handle cannot touch an atomic word
+def At.get(c: ACell[I64]): I64 = ACell.load(c)
+def main(): I64 =
+  handle r = Srs.Arena()
+  val c = ACell.new(0)
+  At.get(c)

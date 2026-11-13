@@ -1,0 +1,8 @@
+// expect: error[no-capability]
+// expect: --> tests/s2/neg/atom_nocap.srs:8
+// a fn with an {a: Atomic} binder is called where no Atomic is in scope
+def At.get {a: Atomic} (c: ACell[I64]): I64 = ACell.load(c)
+def main(): I64 =
+  handle r = Srs.Arena()
+  val c = ACell.new(0)
+  At.get(c)
