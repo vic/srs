@@ -164,6 +164,9 @@ def Names.builtins(st: Names.St): Names.St =
 
 // the Atom type and its builtin calls, typed by Ty.atomCall (a typed atomic word; every op but new requests Atomic)
 def Names.atoms(st: Names.St): Names.St =
+  Names.declare(Names.declare(Names.declare(Names.declare(Names.atoms2(st), Names.NCall, Sym.of("Array.aload"), 0), Names.NCall, Sym.of("Array.astore"), 0), Names.NCall, Sym.of("Array.cas"), 0), Names.NCall, Sym.of("Array.fetchAdd"), 0)
+
+def Names.atoms2(st: Names.St): Names.St =
   Names.declare(Names.declare(Names.declare(Names.declare(Names.declare(Names.declare(st, Names.NType, Sym.of("ACell"), 0), Names.NCall, Sym.of("ACell.new"), 0), Names.NCall, Sym.of("ACell.load"), 0), Names.NCall, Sym.of("ACell.store"), 0), Names.NCall, Sym.of("ACell.cas"), 0), Names.NCall, Sym.of("ACell.fetchAdd"), 0)
 
 def Names.builtins7(st: Names.St): Names.St =

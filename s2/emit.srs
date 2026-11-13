@@ -419,6 +419,12 @@ def Emit.ex(cx: Emit.Cx, fi: Emit.Fi, env: Emit.Env, pos: Emit.Pos, e: El.Expr):
     Console.print("), (int64_t)0)")
   // ACell[A]: the GCC/clang __atomic builtins on the cell's word, each with its memory order: load acquire, store
   // release, cas acq_rel (failure acquire), fetchAdd seq_cst (vic/notes/20261111T0600 B1: shared mutable state is only Atomic cells)
+  case El.Slot(_, x, i) =>
+    Console.print("(&")
+    Emit.local(Emit.vs(env), x)
+    Console.print("[")
+    Emit.ex(cx, fi, env, Emit.Inner, i)
+    Console.print("])")
   case El.AtomLoad(_, c) =>
     Console.print("__atomic_load_n(")
     Emit.ex(cx, fi, env, Emit.Inner, c)
@@ -1267,6 +1273,7 @@ def Emit.exTys(cx: Emit.Cx, fi: Emit.Fi, e: El.Expr, acc: Coll.List[K.Term]): Co
   case El.CellPut(_, c, v, _) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.ArrPut(_, _, i, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, i, acc))
   case El.Blit(_, _, a, b, m) => Emit.exTys(cx, fi, m, Emit.exTys(cx, fi, b, Emit.exTys(cx, fi, a, acc)))
+  case El.Slot(_, _, i) => Emit.exTys(cx, fi, i, acc)
   case El.AtomLoad(_, c) => Emit.exTys(cx, fi, c, acc)
   case El.AtomStore(_, c, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, c, acc))
   case El.AtomCas(_, c, w, v) => Emit.exTys(cx, fi, v, Emit.exTys(cx, fi, w, Emit.exTys(cx, fi, c, acc)))
@@ -2881,6 +2888,7 @@ def Emit.seenE(cx: Emit.Cx, e: El.Expr, s: Emit.Seen): Emit.Seen = e match
   case El.CellPut(_, c, v, _) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.ArrPut(_, _, i, v) => Emit.seenE(cx, v, Emit.seenE(cx, i, s))
   case El.Blit(_, _, a, b, m) => Emit.seenE(cx, m, Emit.seenE(cx, b, Emit.seenE(cx, a, s)))
+  case El.Slot(_, _, i) => Emit.seenE(cx, i, s)
   case El.AtomLoad(_, c) => Emit.seenE(cx, c, s)
   case El.AtomStore(_, c, v) => Emit.seenE(cx, v, Emit.seenE(cx, c, s))
   case El.AtomCas(_, c, w, v) => Emit.seenE(cx, v, Emit.seenE(cx, w, Emit.seenE(cx, c, s)))
@@ -3047,6 +3055,7 @@ def Emit.dropE(m: Coll.SMap[El.Fn], xs: Coll.List[Sym.Sym], e: El.Expr): El.Expr
   case El.CellPut(l, c, v, d) => El.CellPut(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v), d)
   case El.ArrPut(l, x, i, v) => El.ArrPut(l, x, Emit.dropE(m, xs, i), Emit.dropE(m, xs, v))
   case El.Blit(l, x, a, b, k) => El.Blit(l, x, Emit.dropE(m, xs, a), Emit.dropE(m, xs, b), Emit.dropE(m, xs, k))
+  case El.Slot(l, x, i) => El.Slot(l, x, Emit.dropE(m, xs, i))
   case El.AtomLoad(l, c) => El.AtomLoad(l, Emit.dropE(m, xs, c))
   case El.AtomStore(l, c, v) => El.AtomStore(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, v))
   case El.AtomCas(l, c, w, v) => El.AtomCas(l, Emit.dropE(m, xs, c), Emit.dropE(m, xs, w), Emit.dropE(m, xs, v))

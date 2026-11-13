@@ -570,6 +570,7 @@ def Ty.arrayCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym
     else if Str.eq(fs, "Cell.new") then Ty.cellNew(cx, st, bs, line, f, xs, want)
     else if Ty.isCNew(cx, f) then Ty.cstructNew(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "ACell.new") then Ty.atomNew(cx, st, bs, line, f, xs, want)
+    else if Eff.isArrAtom(f) then Ty.arrAtom(cx, st, bs, line, f, xs, want)
     else if Eff.isAtomOp(f) then Ty.atomCall(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.get") then Ty.cellGet(cx, st, bs, line, f, xs, want)
     else if Str.eq(fs, "Cell.put") then Ty.cellPut(cx, st, bs, line, f, xs, want)
@@ -721,6 +722,48 @@ def Ty.atomArg(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, ec: Ast.
   val Ty.Ex(st1, _, eC) = Ty.expr(cx, st0, bs, ec, Coll.Some(Ty.acellTy(a)))
   val st2 = if Ty.isWord(Ty.subst(st1), a) then st1 else Ty.clash(st1, Ty.Mismatch(line, a, Ty.con("I64")))
   Ty.Ex(Ty.needEff(cx, st2, bs, line, Sym.of("Atomic")), a, eC)
+
+// the word of slot i of the local word array x (El.Slot, C &x[i]): i proved in [0, n) like x(i), the element a word type
+def Ty.arrSlot(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, ex: Ast.Expr, ix: Ast.Expr): Ty.Ex = ex match
+  case Ast.Name(_, x) => Ty.lookup(bs, x) match
+    case Coll.Some(t) => Ty.arrayOf(Ty.subst(st), t) match
+      case Coll.Some(at) =>
+        val Ty.ArrT(a, n) = at
+        val Ty.Ex(st1, _, eI) = Ty.expr(cx, st, bs, ix, Coll.Some(Ty.con("I64")))
+        val st2 = if Ty.isWord(Ty.subst(st1), a) then st1 else Ty.clash(st1, Ty.Mismatch(line, a, Ty.con("I64")))
+        Ty.Ex(Ty.needEff(cx, Ty.proved(st2, bs, line, x, n, ix), bs, line, Sym.of("Atomic")), a, El.Slot(line, x, eI))
+      case Coll.None => Ty.bad(Ty.clash(st, Ty.Mismatch(line, t, Ty.con("Array"))), line)
+    case Coll.None => Ty.bad(Ty.clash(st, Ty.Unknown(line, x)), line)
+  case _ => Ty.bad(Ty.clash(st, Ty.Unknown(line, f)), line)
+
+// Array.aload(xs, i), Array.astore(xs, i, v), Array.cas(xs, i, want, v): Bool, Array.fetchAdd(xs, i, d): the word before
+// the add; the ACell ops on the word of a proved slot of a local word array (one Array[I64] holds many atomic words)
+def Ty.arrAtom(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
+  case Coll.Cons(ex, r1) => r1 match
+    case Coll.Cons(ix, r2) =>
+      val Ty.Ex(st1, a, eS) = Ty.arrSlot(cx, st, bs, line, f, ex, ix)
+      val fs = Sym.str(f)
+      r2 match
+        case Coll.Nil =>
+          if Str.eq(fs, "Array.aload") then Ty.lit(st1, line, a, want, El.AtomLoad(line, eS))
+          else Ty.bad(Ty.args(cx, Ty.clash(st1, Ty.Arity(line, f)), bs, xs), line)
+        case Coll.Cons(e2, r3) => r3 match
+          case Coll.Nil =>
+            val Ty.Ex(st2, _, eV) = Ty.expr(cx, st1, bs, e2, Coll.Some(a))
+            if Str.eq(fs, "Array.astore") then Ty.lit(st2, line, Ty.con("Unit"), want, El.AtomStore(line, eS, eV))
+            else if Str.eq(fs, "Array.fetchAdd") then
+              val st3 = if Ty.isInt64(Ty.subst(st2), a) then st2 else Ty.clash(st2, Ty.Mismatch(line, a, Ty.con("I64")))
+              Ty.lit(st3, line, a, want, El.AtomAdd(line, eS, eV))
+            else Ty.bad(Ty.args(cx, Ty.clash(st2, Ty.Arity(line, f)), bs, xs), line)
+          case Coll.Cons(e3, r4) => r4 match
+            case Coll.Nil =>
+              val Ty.Ex(st2, _, eW) = Ty.expr(cx, st1, bs, e2, Coll.Some(a))
+              val Ty.Ex(st3, _, eV) = Ty.expr(cx, st2, bs, e3, Coll.Some(a))
+              if Str.eq(fs, "Array.cas") then Ty.lit(st3, line, Ty.con("Bool"), want, El.AtomCas(line, eS, eW, eV))
+              else Ty.bad(Ty.args(cx, Ty.clash(st3, Ty.Arity(line, f)), bs, xs), line)
+            case Coll.Cons(_, _) => Ty.bad(Ty.args(cx, Ty.clash(st1, Ty.Arity(line, f)), bs, xs), line)
+    case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
+  case Coll.Nil => Ty.bad(Ty.args(cx, Ty.clash(st, Ty.Arity(line, f)), bs, xs), line)
 
 // ACell.load(c), ACell.store(c, v), ACell.cas(c, want, v): Bool, ACell.fetchAdd(c, d): the word before the add
 def Ty.atomCall(cx: Ty.Cx, st: Ty.St, bs: Coll.List[Ty.Bind], line: I64, f: Sym.Sym, xs: Coll.List[Ast.Expr], want: Coll.Option[K.Term]): Ty.Ex = xs match
@@ -2295,6 +2338,7 @@ def Ty.mhNone(st: Ty.St, es: Coll.List[El.Expr]): Ty.St = es match
       case El.CField(_, c, _, _, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.CellPut(_, c, v, _) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case El.ArrPut(_, _, i, v) => Ty.mhNone(st, Coll.Cons(i, Coll.Cons(v, Coll.Nil)))
+      case El.Slot(_, _, i) => Ty.mhNone(st, Coll.Cons(i, Coll.Nil))
       case El.AtomLoad(_, c) => Ty.mhNone(st, Coll.Cons(c, Coll.Nil))
       case El.AtomStore(_, c, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(v, Coll.Nil)))
       case El.AtomCas(_, c, w, v) => Ty.mhNone(st, Coll.Cons(c, Coll.Cons(w, Coll.Cons(v, Coll.Nil))))
