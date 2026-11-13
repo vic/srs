@@ -7612,8 +7612,8 @@ static int64_t f_Srs__Gate__shut(void* p_g);
 static int64_t f_Srs__Gate__tag(void);
 static bool f_Srs__Pages__sample(void* p_g);
 static bool f_Srs__Pages__read(void* p_g, srs_str p_s);
-static bool f_Srs__Pages__scan(void* p_g, srs_str p_s, int64_t p_i);
-static bool f_Srs__Pages__keep(void* p_g, int64_t p_n);
+static bool f_Srs__Pages__scan(void* p_g, srs_str p_s, int64_t p_i, int64_t p_acc, int64_t p_found);
+static bool f_Srs__Pages__keep(void* p_g, int64_t p_n, int64_t p_found);
 static int64_t f_Srs__Pages__num(srs_str p_s, int64_t p_i, int64_t p_acc);
 static int64_t f_Srs__Pages__eol(srs_str p_s, int64_t p_i);
 static int64_t f_Srs__Arena__gCur(void);
@@ -12808,9 +12808,9 @@ static int64_t f_Srs__Pages__huge(void* p_a, int64_t p_len) { return ({ int32_t 
 static int64_t f_Srs__Gate__shut(void* p_g) { return rt_ptr_set(p_g, f_Srs__Gate__tag(), ((int64_t)2)); }
 static int64_t f_Srs__Gate__tag(void) { return ((int64_t)6); }
 static bool f_Srs__Pages__sample(void* p_g) { return f_Srs__Pages__read(p_g, rt_fs_read_all(((srs_str){(const uint8_t*)"/proc/vmstat", 12}))); }
-static bool f_Srs__Pages__read(void* p_g, srs_str p_s) { return ((Str__len(p_s) < ((int64_t)0)) ? false : f_Srs__Pages__scan(p_g, p_s, ((int64_t)0))); }
-static bool f_Srs__Pages__scan(void* p_g, srs_str p_s, int64_t p_i) { srs_tail: return (((p_i + ((int64_t)19)) > Str__len(p_s)) ? false : (Str__eq(Str__slice(p_s, p_i, (p_i + ((int64_t)19))), ((srs_str){(const uint8_t*)"thp_fault_fallback ", 19})) ? f_Srs__Pages__keep(p_g, f_Srs__Pages__num(p_s, (p_i + ((int64_t)19)), ((int64_t)0))) : ({ void* t0 = p_g; srs_str t1 = p_s; int64_t t2 = f_Srs__Pages__eol(p_s, p_i); p_g = t0; p_s = t1; p_i = t2; goto srs_tail; (bool){0}; }))); }
-static bool f_Srs__Pages__keep(void* p_g, int64_t p_n) { return ({ (void)(rt_ptr_set(p_g, f_Srs__Gate__seen(), p_n)); __auto_type res_ = true; res_; }); }
+static bool f_Srs__Pages__read(void* p_g, srs_str p_s) { return ((Str__len(p_s) < ((int64_t)0)) ? false : f_Srs__Pages__scan(p_g, p_s, ((int64_t)0), ((int64_t)0), ((int64_t)0))); }
+static bool f_Srs__Pages__scan(void* p_g, srs_str p_s, int64_t p_i, int64_t p_acc, int64_t p_found) { srs_tail: return (((p_found == ((int64_t)2)) || ((p_i + ((int64_t)19)) > Str__len(p_s))) ? f_Srs__Pages__keep(p_g, p_acc, p_found) : (Str__eq(Str__slice(p_s, p_i, (p_i + ((int64_t)19))), ((srs_str){(const uint8_t*)"thp_fault_fallback ", 19})) ? ({ void* t0 = p_g; srs_str t1 = p_s; int64_t t2 = f_Srs__Pages__eol(p_s, p_i); int64_t t3 = (p_acc + f_Srs__Pages__num(p_s, (p_i + ((int64_t)19)), ((int64_t)0))); int64_t t4 = (p_found + ((int64_t)1)); p_g = t0; p_s = t1; p_i = t2; p_acc = t3; p_found = t4; goto srs_tail; (bool){0}; }) : (Str__eq(Str__slice(p_s, p_i, (p_i + ((int64_t)14))), ((srs_str){(const uint8_t*)"compact_stall ", 14})) ? ({ void* t0 = p_g; srs_str t1 = p_s; int64_t t2 = f_Srs__Pages__eol(p_s, p_i); int64_t t3 = (p_acc + f_Srs__Pages__num(p_s, (p_i + ((int64_t)14)), ((int64_t)0))); int64_t t4 = (p_found + ((int64_t)1)); p_g = t0; p_s = t1; p_i = t2; p_acc = t3; p_found = t4; goto srs_tail; (bool){0}; }) : ({ void* t0 = p_g; srs_str t1 = p_s; int64_t t2 = f_Srs__Pages__eol(p_s, p_i); int64_t t3 = p_acc; int64_t t4 = p_found; p_g = t0; p_s = t1; p_i = t2; p_acc = t3; p_found = t4; goto srs_tail; (bool){0}; })))); }
+static bool f_Srs__Pages__keep(void* p_g, int64_t p_n, int64_t p_found) { return ((p_found == ((int64_t)2)) ? ({ (void)(rt_ptr_set(p_g, f_Srs__Gate__seen(), p_n)); __auto_type res_ = true; res_; }) : false); }
 static int64_t f_Srs__Pages__num(srs_str p_s, int64_t p_i, int64_t p_acc) { srs_tail: return ((((p_i < Str__len(p_s)) && (Str__at(p_s, p_i) >= ((int64_t)48))) && (Str__at(p_s, p_i) <= ((int64_t)57))) ? ({ srs_str t0 = p_s; int64_t t1 = (p_i + ((int64_t)1)); int64_t t2 = (((p_acc * ((int64_t)10)) + Str__at(p_s, p_i)) - ((int64_t)48)); p_s = t0; p_i = t1; p_acc = t2; goto srs_tail; (int64_t){0}; }) : p_acc); }
 static int64_t f_Srs__Pages__eol(srs_str p_s, int64_t p_i) { srs_tail: return ((p_i >= Str__len(p_s)) ? p_i : ((Str__at(p_s, p_i) == ((int64_t)10)) ? (p_i + ((int64_t)1)) : ({ srs_str t0 = p_s; int64_t t1 = (p_i + ((int64_t)1)); p_s = t0; p_i = t1; goto srs_tail; (int64_t){0}; }))); }
 static int64_t f_Srs__Arena__gCur(void) { return ((int64_t)1); }
