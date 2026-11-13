@@ -94,6 +94,8 @@ enum Flow.Clash:
   case Flow.NoSol(line: I64, cap: Sym.Sym)
   // a value used after its region ended (s1 "use of value after its region ended"); cap = the region
   case Flow.Dead(line: I64, cap: Sym.Sym)
+  // a Region ended (by an op into an end state) while a handle that allocates in it is still open; cap = the region
+  case Flow.RowEnd(line: I64, cap: Sym.Sym)
   // a block value that lives in a capability the block closes (s1 "value escapes the scope of its region")
   case Flow.Escape(line: I64, cap: Sym.Sym)
   // a value of a type with <at(c, S)> read where its capability is not in S (s1 "value needs c in state S"); name = the value
@@ -154,6 +156,9 @@ enum Flow.Rel:
   case Flow.REdge
   case Flow.RFin
   case Flow.RDead
+  // site(h, r): handle h allocates in Region r (its site); rowEnd(line, r): r reaches an end state while h is still open
+  case Flow.RSite
+  case Flow.RRowEnd
   case Flow.REscCap
   case Flow.REscVar
   case Flow.REscape
@@ -228,6 +233,8 @@ def Flow.relSym(x: Flow.Rel): Sym.Sym = x match
   case Flow.REdge => Sym.of("edge")
   case Flow.RFin => Sym.of("fin")
   case Flow.RDead => Sym.of("dead")
+  case Flow.RSite => Sym.of("site")
+  case Flow.RRowEnd => Sym.of("rowEnd")
   case Flow.REscCap => Sym.of("escCap")
   case Flow.REscVar => Sym.of("escVar")
   case Flow.REscape => Sym.of("escape")
@@ -257,12 +264,14 @@ enum Flow.Kind:
   case Flow.KExitBad
   case Flow.KNoSol
   case Flow.KDead
+  case Flow.KRowEnd
   case Flow.KEscape
   case Flow.KStale
   case Flow.KMsState
   case Flow.KBound
 
 def Flow.relOf(k: Flow.Kind): Flow.Rel = k match
+  case Flow.KRowEnd => Flow.RRowEnd
   case Flow.KStuck => Flow.RStuck
   case Flow.KSplit => Flow.RSplitAt
   case Flow.KUnended => Flow.RUnendedAt
@@ -302,6 +311,7 @@ def Flow.fCapOf(cap: I64, proto: Sym.Sym): D.Fact = Flow.fact2(Flow.RCapOf, Flow
 def Flow.fCapName(cap: I64, name: Sym.Sym): D.Fact = Flow.fact2(Flow.RCapName, Flow.i(cap), Flow.s(name))
 def Flow.fCapLine(cap: I64, line: I64): D.Fact = Flow.fact2(Flow.RCapLine, Flow.i(cap), Flow.i(line))
 def Flow.fHandle(p: I64, cap: I64): D.Fact = Flow.fact2(Flow.RHandle, Flow.i(p), Flow.i(cap))
+def Flow.fSite(h: I64, r: I64): D.Fact = Flow.fact2(Flow.RSite, Flow.i(h), Flow.i(r))
 def Flow.fTr(proto: Sym.Sym, op: Sym.Sym, a: Sym.Sym, b: Sym.Sym): D.Fact =
   Flow.fact4(Flow.RTr, Flow.s(proto), Flow.s(op), Flow.s(a), Flow.s(b))
 def Flow.fStart(proto: Sym.Sym, s: Sym.Sym): D.Fact = Flow.fact2(Flow.RStart, Flow.s(proto), Flow.s(s))
@@ -1756,20 +1766,27 @@ def Flow.stmt(cx: Flow.Cx, st: Flow.St, p: I64, s: Ast.Stmt): Flow.At = s match
         val Flow.At(st2, id) = Flow.fresh(st1)
         val Flow.St(n, fs, cs, env, lp) = st2
         val Flow.Cx(_, _, _, _, _, hrows, _) = cx
-        val st3 =
-          Flow.St(n, fs, Flow.withSite(hrows, h, x, line, cs, Coll.Cons(Flow.Cap(x, id, proto, line), cs)), env, lp)
+        val site = Flow.siteOf(hrows, h, cs)
+        val st3 = Flow.St(n, fs, Flow.withSite(site, x, line, Coll.Cons(Flow.Cap(x, id, proto, line), cs)), env, lp)
         val st4 = Flow.add(Flow.add(st3, Flow.fCapOf(id, proto)), Flow.fCapName(id, x))
-        Flow.At(Flow.add(Flow.add(st4, Flow.fCapLine(id, line)), Flow.fHandle(pa, id)), pa)
+        val st5 = site match
+          case Coll.None => st4
+          case Coll.Some(r) =>
+            val Flow.Cap(_, rid, _, _) = r
+            Flow.add(st4, Flow.fSite(id, rid))
+        Flow.At(Flow.add(Flow.add(st5, Flow.fCapLine(id, line)), Flow.fHandle(pa, id)), pa)
 
-// the capabilities after a handle of x by handler h: x, and when h's row has Region the pseudo capability site.x = the innermost Region
-// at the handle site (where the handler builds the data its ops return)
-def Flow.withSite(rows: Eff.Rows, h: Sym.Sym, x: Sym.Sym, line: I64, before: Coll.List[Flow.Cap], after: Coll.List[Flow.Cap]): Coll.List[Flow.Cap] =
-  if Eff.has(rows, h, Sym.of("Region")) then Flow.innermost(before, Sym.of("Region")) match
-    case Coll.None => after
-    case Coll.Some(r) =>
-      val Flow.Cap(_, rid, _, _) = r
-      Coll.Cons(Flow.Cap(Eff.dotted("site", x), rid, Sym.of("Site"), line), after)
-  else after
+// the site of a handle by handler h: when h's row has Region, the innermost Region in scope at the handle (where the
+// handler builds its state and the data its ops return)
+def Flow.siteOf(rows: Eff.Rows, h: Sym.Sym, before: Coll.List[Flow.Cap]): Coll.Option[Flow.Cap] =
+  if Eff.has(rows, h, Sym.of("Region")) then Flow.innermost(before, Sym.of("Region")) else Coll.None
+
+// the capabilities after a handle of x: x, and with a site the pseudo capability site.x = that Region
+def Flow.withSite(site: Coll.Option[Flow.Cap], x: Sym.Sym, line: I64, after: Coll.List[Flow.Cap]): Coll.List[Flow.Cap] = site match
+  case Coll.None => after
+  case Coll.Some(r) =>
+    val Flow.Cap(_, rid, _, _) = r
+    Coll.Cons(Flow.Cap(Eff.dotted("site", x), rid, Sym.of("Site"), line), after)
 
 // ── the protocols as facts: transitions, end states (an end state, or a state whose drop op reaches one), states ──
 def Flow.protoFacts(ps: Coll.List[Ast.Proto], fs: Coll.List[D.Fact]): Coll.List[D.Fact] = ps match
@@ -2023,7 +2040,7 @@ def Flow.clashLN(k: Flow.Kind, a: D.Val, b: D.Val): Coll.Option[Flow.Clash] = a 
 
 // every clash relation of a solved model, read
 def Flow.readAll(m: D.Model): Flow.Read =
-  Flow.clashes(m, Flow.KBound, Flow.clashes(m, Flow.KMsState, Flow.clashes(m, Flow.KStale, Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Flow.clashes(m, Flow.KDead, Flow.clashes(m, Flow.KEscape, Flow.Got(Coll.Nil))))))))))))
+  Flow.clashes(m, Flow.KBound, Flow.clashes(m, Flow.KMsState, Flow.clashes(m, Flow.KStale, Flow.clashes(m, Flow.KStuck, Flow.clashes(m, Flow.KSplit, Flow.clashes(m, Flow.KUnended, Flow.clashes(m, Flow.KAmbig, Flow.clashes(m, Flow.KExitBad, Flow.clashes(m, Flow.KNoSol, Flow.clashes(m, Flow.KDead, Flow.clashes(m, Flow.KRowEnd, Flow.clashes(m, Flow.KEscape, Flow.Got(Coll.Nil)))))))))))))
 
 def Flow.make(k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash = k match
   case Flow.KStuck => Flow.Stuck(line, name)
@@ -2033,6 +2050,7 @@ def Flow.make(k: Flow.Kind, line: I64, name: Sym.Sym): Flow.Clash = k match
   case Flow.KExitBad => Flow.ExitBad(line, name)
   case Flow.KNoSol => Flow.NoSol(line, name)
   case Flow.KDead => Flow.Dead(line, name)
+  case Flow.KRowEnd => Flow.RowEnd(line, name)
   case Flow.KEscape => Flow.Escape(line, name)
   case Flow.KStale => Flow.Stale(line, name)
   case Flow.KMsState => Flow.MsState(line, name)
@@ -2167,7 +2185,15 @@ def Flow.capsRules(): Coll.List[D.Rule] =
   // a read of x at p uses every region x holds there; a region in an end state is dead
   val dead =
     Flow.rule(Flow.RDead, Flow.l2(8, 9), Coll.Cons(Flow.pos(Flow.RReadAt, Flow.l4(0, 14, 8, 16)), Coll.Cons(Flow.pos(Flow.RHolds, Flow.l3(0, 14, 3)), Flow.l4(Flow.pos(Flow.RAt, Flow.l4(0, 2, 3, 4)), Flow.pos(Flow.RCapOf, Flow.l2(3, 7)), Flow.pos(Flow.RFin, Flow.l2(7, 4)), Flow.pos(Flow.RCapName, Flow.l2(3, 9))))))
-  Coll.Cons(e1, Coll.Cons(e2, Coll.Cons(e3, Coll.Cons(h1, Coll.Cons(h2, Coll.Cons(h3, Flow.l1(dead)))))))
+  // an op that takes a Region r to an end state (at q) while a handle h with site r is still open (h has a state at p,
+  // not an end state of its protocol: a shut handle is not used again and its drop does not run): h's state and the data
+  // its ops made would dangle (vic-de9x.18); line 8 = the op's, name 9 = r's, h 14, its state 15, its protocol 16
+  val rowEnd =
+    Flow.rule(Flow.RRowEnd, Flow.l2(8, 9), Coll.Cons(Flow.pos(Flow.RStep, Flow.l4(0, 1, 3, 6)), Coll.Cons(Flow.pos(Flow.RAt, Flow.l4(1, 2, 3, 5)), Coll.Cons(Flow.pos(Flow.RCapOf, Flow.l2(3, 7)), Coll.Cons(Flow.pos(Flow.RFin, Flow.l2(7, 5)), Coll.Cons(Flow.pos(Flow.RSite, Flow.l2(14, 3)), Coll.Cons(Flow.pos(Flow.RAt, Flow.l4(0, 2, 14, 15)), Coll.Cons(Flow.pos(Flow.RCapOf, Flow.l2(14, 16)), Coll.Cons(Flow.neg(Flow.RFin, Flow.l2(16, 15)), Coll.Cons(Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.l1(Flow.pos(Flow.RCapName, Flow.l2(3, 9)))))))))))))
+  // the same when h sits in its start state, an end state too for a protocol without states: still open, not shut
+  val rowEnd2 =
+    Flow.rule(Flow.RRowEnd, Flow.l2(8, 9), Coll.Cons(Flow.pos(Flow.RStep, Flow.l4(0, 1, 3, 6)), Coll.Cons(Flow.pos(Flow.RAt, Flow.l4(1, 2, 3, 5)), Coll.Cons(Flow.pos(Flow.RCapOf, Flow.l2(3, 7)), Coll.Cons(Flow.pos(Flow.RFin, Flow.l2(7, 5)), Coll.Cons(Flow.pos(Flow.RSite, Flow.l2(14, 3)), Coll.Cons(Flow.pos(Flow.RAt, Flow.l4(0, 2, 14, 15)), Coll.Cons(Flow.pos(Flow.RCapOf, Flow.l2(14, 16)), Coll.Cons(Flow.pos(Flow.RStart, Flow.l2(16, 15)), Coll.Cons(Flow.pos(Flow.RLine, Flow.l2(0, 8)), Flow.l1(Flow.pos(Flow.RCapName, Flow.l2(3, 9)))))))))))))
+  Coll.Cons(e1, Coll.Cons(e2, Coll.Cons(e3, Coll.Cons(h1, Coll.Cons(h2, Coll.Cons(h3, Coll.Cons(dead, Coll.Cons(rowEnd, Flow.l1(rowEnd2)))))))))
 
 // a block end e closes c: a block value in c escapes; every binding that holds c there (an outer val or var: a name
 // read after e is never one of the block's own bindings) holds a value whose region ended, from e on every path (also

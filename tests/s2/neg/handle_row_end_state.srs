@@ -1,0 +1,21 @@
+// format: off
+// expect: error[region-ended-under-handle]
+// the stateful handler Hs keeps its state in r; r is freed while h is still open, so the next op would read freed memory
+enum Sx:
+  case Sx(v: I64)
+capability Sp:
+  def get(): I64
+
+handler Hs for Sp:
+  def init(): Sx = Sx(41)
+  def get(self: Sx): I64 = self match
+    case Sx(v) => v + 1
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle h = Hs()
+  r.free()
+  Console.printI64(Sp.get())
+  0
+// expect: --> tests/s2/neg/handle_row_end_state.srs:18
