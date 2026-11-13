@@ -1863,14 +1863,31 @@ def Ty.sameTys(xs: Coll.List[Ast.Ty], ys: Coll.List[Ast.Ty]): Bool = xs match
 def Ty.opSig(ps: Coll.List[Ast.Proto], st: Ty.St, p: Sym.Sym, fs: Coll.List[Ast.Fn]): Ty.St = fs match
   case Coll.Nil => st
   case Coll.Cons(f, rest) =>
-    val Ast.Fn(_, line, n, fgs, _, _, _, _) = f
+    val Ast.Fn(_, line, n, fgs, fps, _, _, _) = f
     val st1: Ty.St = Ty.protoOp(ps, p, n) match
       case Coll.None => st
       case Coll.Some(o) =>
-        val Ast.Op(_, _, _, ogs, _, _, _) = o
-        if Ty.protoPrefix(Ty.evidence(ogs, Coll.Nil), Ty.evidence(fgs, Coll.Nil)) then st
+        val Ast.Op(_, _, _, ogs, ops, _, _) = o
+        if Ty.protoPrefix(Ty.evidence(ogs, Coll.Nil), Ty.evidence(fgs, Coll.Nil)) then
+          Ty.opParams(st, line, ops, Ty.afterSelf(fps))
         else Ty.clash(st, Ty.OpSig(line, n))
     Ty.opSig(ps, st1, p, rest)
+
+// a handler fn's params after its first, self (the parser gives a stateless handler's fns one too)
+def Ty.afterSelf(fps: Coll.List[Ast.Binder]): Coll.List[Ast.Binder] = fps match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(_, rest) => rest
+
+// a handler fn's value params after self have the op's types, pairwise (a Mismatch at the fn's line); the count is
+// Names' error[handler-arity]. Without this a handler body read its op's args under types of its own choosing
+def Ty.opParams(st: Ty.St, line: I64, ops: Coll.List[Ast.Binder], fps: Coll.List[Ast.Binder]): Ty.St = ops match
+  case Coll.Nil => st
+  case Coll.Cons(o, orest) => fps match
+    case Coll.Nil => st
+    case Coll.Cons(fp, frest) =>
+      val Ast.Binder(_, _, ot) = o
+      val Ast.Binder(_, _, ft) = fp
+      Ty.opParams(Ty.expect(st, line, Ty.term(ft, Coll.Nil), Ty.term(ot, Coll.Nil)), line, orest, frest)
 
 // the op's binders are a prefix of the fn's by protocol
 def Ty.protoPrefix(op: Coll.List[Ast.Binder], fn: Coll.List[Ast.Binder]): Bool = op match
