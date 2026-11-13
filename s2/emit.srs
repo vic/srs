@@ -1801,7 +1801,7 @@ def Emit.strInline(n: Sym.Sym): Bool =
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
-  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "Str.less") || Str.eq(s, "Str.has") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32") || Emit.ptrPrim(s) || Emit.f64Prim(s)
+  Str.eq(s, "U32.of") || Str.eq(s, "U32.ofU64") || Str.eq(s, "U64.of") || Str.eq(s, "U64.ofI64") || Str.eq(s, "I64.of") || Str.eq(s, "I64.ofU64") || Str.eq(s, "Str.u32le") || Str.eq(s, "Str.u64le") || Str.eq(s, "Str.less") || Str.eq(s, "Str.has") || Str.eq(s, "Str.find") || Str.eq(s, "Str.runWhile") || Str.eq(s, "U8.of") || Str.eq(s, "I64.ofU8") || Str.eq(s, "I32.of") || Str.eq(s, "I64.ofI32") || Emit.ptrPrim(s) || Emit.f64Prim(s)
 
 // C conversion to an unsigned type is mod 2^width (C11 6.3.1.3p2); uint64_t to int64_t above INT64_MAX and int64_t to int32_t out of range are
 // implementation-defined (6.3.1.3p3), two's complement on every target compiler (gcc, clang)
@@ -1810,6 +1810,12 @@ def Emit.wordInline(s: Str): Bool =
 // allocator (one file-static, zeroed; one thread, as the C arena it replaces)
 def Emit.ptrPrim(s: Str): Bool =
   Str.eq(s, "rt_ptr_get") || Str.eq(s, "rt_ptr_set") || Str.eq(s, "rt_ptr_add") || Str.eq(s, "rt_ptr_addr") || Str.eq(s, "rt_ptr_of") || Str.eq(s, "rt_globals")
+
+// Str.find and Str.runWhile (lib/prelude.srs), only in a program that calls them: i clamped into [0, n], one memchr or one
+// raw-byte loop whose bound is the loop guard
+def Emit.scanPrims(cs: Coll.ISet): Unit =
+  Emit.primIf(cs, "Str.find", "static inline int64_t Str__find(srs_str s, int64_t i, int64_t c) {\n  if (i < 0) i = 0;\n  if (i >= s.n || (uint64_t)c > 255) return s.n;\n  const uint8_t* q = memchr(s.p + i, (int)c, (size_t)(s.n - i));\n  return q ? (int64_t)(q - s.p) : s.n;\n}\n")
+  Emit.primIf(cs, "Str.runWhile", "static inline int64_t Str__runWhile(srs_str s, int64_t i, int64_t n, uint8_t* t) {\n  if (i < 0) i = 0;\n  const uint8_t* p = s.p;\n  int64_t e = s.n;\n  if (n >= 256) { while (i < e && t[p[i]]) i++; }\n  else { while (i < e && (int64_t)p[i] < n && t[p[i]]) i++; }\n  return i < e ? i : e;\n}\n")
 
 def Emit.ptrPrims(cs: Coll.ISet): Unit =
   Emit.primIf(cs, "rt_ptr_get", "static inline int64_t rt_ptr_get(void* p, int64_t i) { return ((int64_t*)p)[i]; }\n")
@@ -3138,6 +3144,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit 
   Emit.strPrims()
   Emit.wordPrims()
   Emit.ptrPrims(cs)
+  Emit.scanPrims(cs)
   // cur, end: the free bytes of an Arena capability's head chunk (Emit.allocFast); null until its first alloc, and
   // always null for other handlers
   Console.print("typedef struct srs_cap { void* self; void* const* vt; int64_t live; char* cur; char* end; } srs_cap;\n")

@@ -1,0 +1,60 @@
+// pass: Str.find and Str.runWhile agree with plain byte loops (Str.at) on 2000 pseudo-random strings and start indexes,
+// edge starts (-3, 0, len, len + 5) and bytes >= the table length; prints the number of disagreements (0) and a checksum
+def Sc.find(s: Str, i: I64, c: I64): I64 =
+  if i < 0 then Sc.find(s, 0, c)
+  else if i >= Str.len(s) then Str.len(s)
+  else if Str.at(s, i) == c then i
+  else Sc.find(s, i + 1, c)
+
+def Sc.isWs(b: I64): Bool = b == 32 || b == 9 || b == 10
+
+def Sc.run(s: Str, i: I64): I64 =
+  if i < 0 then Sc.run(s, 0)
+  else if i >= Str.len(s) then Str.len(s)
+  else if Sc.isWs(Str.at(s, i)) then Sc.run(s, i + 1)
+  else i
+
+def Sc.mark(n: I64, t: Array[U8](n), i: I64): Unit =
+  if 0 <= i && i < n then
+    Array.put(t, i, U8.of(if Sc.isWs(i) then 1 else 0))
+    Sc.mark(n, t, i + 1)
+  else ()
+
+def Sc.next(x: I64): I64 = (x * 1103515245 + 12345) % 2147483648
+
+def Sc.fill(n: I64, xs: Array[U8](n), i: I64, x: I64): I64 =
+  if 0 <= i && i < n then
+    val r = Sc.next(x)
+    val k = r % 6
+    Array.put(xs, i, U8.of(if k == 0 then 32 else if k == 1 then 9 else if k == 2 then 10 else if k == 3 then 97 else if k == 4 then 200 else 122))
+    Sc.fill(n, xs, i + 1, r)
+  else x
+
+def Sc.loop {r: Region} (k: I64, x: I64, tn: I64, t: Array[U8](tn), bad: I64, sum: I64): I64 =
+  if k <= 0 then
+    Console.printI64(bad)
+    Console.print(" ")
+    Console.printI64(sum)
+    Console.print("\n")
+    0
+  else
+    val n = x % 40
+    val xs = Array.fill(n, U8.of(0))
+    val x2 = Sc.fill(n, xs, 0, x)
+    val s = Str.ofBytes(n, xs)
+    val i = x2 % (n + 9) - 3
+    val c = if x2 % 3 == 0 then 97 else 122
+    val f1 = Str.find(s, i, c)
+    val w1 = Str.runWhile(s, i, tn, t)
+    val ok =
+      f1 == Sc.find(s, i, c) && w1 == Sc.run(s, i) && Str.find(s, n + 5, c) == n && Str.runWhile(s, n, tn, t) == n
+    Sc.loop(k - 1, Sc.next(x2), tn, t, if ok then bad else bad + 1, sum + f1 + w1)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  val tn = 128
+  val t = Array.fill(tn, U8.of(0))
+  Sc.mark(tn, t, 0)
+  Sc.loop(2000, 7, tn, t, 0, 0)
