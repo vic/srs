@@ -7598,6 +7598,7 @@ static void* f_Srs__Arena__map(int64_t p_len);
 static int32_t f_Srs__Arena__prot(void);
 static int32_t f_Srs__Arena__flags(void);
 static int64_t f_Srs__Arena__huge(void);
+static bool f_Srs__Gate__idle(void* p_g);
 static int64_t f_Srs__Pages__advise(void* p_g, void* p_a, int64_t p_len);
 static int64_t f_Srs__Pages__step(void* p_g, void* p_a, int64_t p_len, bool p_ok);
 static int64_t f_Srs__Gate__seen(void);
@@ -7632,7 +7633,6 @@ static int64_t f_Srs__Arena__free(void* p_self);
 static int64_t f_Srs__Arena__release(void* p_g, int64_t p_c);
 static void* f_Srs__Pages__arm(void);
 static int64_t f_Srs__Gate__arm(void* p_g);
-static bool f_Srs__Gate__idle(void* p_g);
 static int64_t f_Srs__Gate__on(void* p_g);
 static struct E_Srs__Gate* f_Srs__Gate__read(void* p_g);
 static struct E_Os__Kind* f_Os__kind(int64_t p_k);
@@ -12786,12 +12786,13 @@ static int64_t f_Srs__Arena__gFree(void) { return ((int64_t)3); }
 static int64_t f_Srs__Arena__gSmallEnd(void) { return ((int64_t)5); }
 static void* f_Srs__Arena__at(int64_t p_a) { return rt_ptr_of(U64__ofI64(p_a)); }
 static void* f_Srs__Arena__smallPage(void* p_g) { return ({ void* v_p_0 = f_Srs__Arena__pages(f_Srs__Arena__page()); (void)(rt_ptr_set(p_g, f_Srs__Arena__gSmallEnd(), (f_Srs__Arena__addr(v_p_0) + f_Srs__Arena__page()))); __auto_type res_ = v_p_0; res_; }); }
-static void* f_Srs__Arena__pages(int64_t p_size) { return ({ void* v_g_0 = rt_globals(); int64_t v_n_1 = f_Srs__Arena__up(p_size, f_Srs__Arena__page()); __auto_type res_ = (((rt_ptr_get(v_g_0, f_Srs__Arena__gEnd()) - rt_ptr_get(v_g_0, f_Srs__Arena__gCur())) >= v_n_1) ? f_Srs__Arena__take(v_g_0, v_n_1) : ({ int64_t v_want_2 = ((v_n_1 > f_Srs__Arena__reserve()) ? f_Srs__Arena__up(v_n_1, f_Srs__Arena__huge()) : f_Srs__Arena__reserve()); void* v_p_3 = f_Srs__Arena__map((v_want_2 + f_Srs__Arena__huge())); uint64_t v_mask_4 = U64__ofI64((f_Srs__Arena__huge() - ((int64_t)1))); void* v_a_5 = rt_ptr_of(((rt_ptr_addr(v_p_3) + v_mask_4) & (~v_mask_4))); int64_t v_adv_6 = f_Srs__Pages__advise(v_g_0, v_a_5, v_want_2); (void)(rt_ptr_set(v_g_0, f_Srs__Arena__gCur(), f_Srs__Arena__addr(v_a_5))); (void)(rt_ptr_set(v_g_0, f_Srs__Arena__gEnd(), (f_Srs__Arena__addr(v_a_5) + v_want_2))); __auto_type res_ = f_Srs__Arena__take(v_g_0, v_n_1); res_; })); res_; }); }
+static void* f_Srs__Arena__pages(int64_t p_size) { return ({ void* v_g_0 = rt_globals(); int64_t v_n_1 = f_Srs__Arena__up(p_size, f_Srs__Arena__page()); __auto_type res_ = (((rt_ptr_get(v_g_0, f_Srs__Arena__gEnd()) - rt_ptr_get(v_g_0, f_Srs__Arena__gCur())) >= v_n_1) ? f_Srs__Arena__take(v_g_0, v_n_1) : ({ int64_t v_want_2 = ((v_n_1 > f_Srs__Arena__reserve()) ? f_Srs__Arena__up(v_n_1, f_Srs__Arena__huge()) : f_Srs__Arena__reserve()); void* v_p_3 = f_Srs__Arena__map((v_want_2 + f_Srs__Arena__huge())); uint64_t v_mask_4 = U64__ofI64((f_Srs__Arena__huge() - ((int64_t)1))); void* v_a_5 = rt_ptr_of(((rt_ptr_addr(v_p_3) + v_mask_4) & (~v_mask_4))); void* v_armed_6 = (((rt_ptr_get(v_g_0, f_Srs__Arena__gEnd()) != ((int64_t)0)) && f_Srs__Gate__idle(v_g_0)) ? f_Srs__Pages__arm() : v_g_0); int64_t v_adv_7 = f_Srs__Pages__advise(v_g_0, v_a_5, v_want_2); (void)(rt_ptr_set(v_g_0, f_Srs__Arena__gCur(), f_Srs__Arena__addr(v_a_5))); (void)(rt_ptr_set(v_g_0, f_Srs__Arena__gEnd(), (f_Srs__Arena__addr(v_a_5) + v_want_2))); __auto_type res_ = f_Srs__Arena__take(v_g_0, v_n_1); res_; })); res_; }); }
 static int64_t f_Srs__Arena__reserve(void) { return ((int64_t)33554432); }
 static void* f_Srs__Arena__map(int64_t p_len) { return ({ void* v_p_0 = mmap(f_Srs__Arena__at(((int64_t)0)), U64__ofI64(p_len), f_Srs__Arena__prot(), f_Srs__Arena__flags(), I32__of((((int64_t)0) - ((int64_t)1))), ((int64_t)0)); __auto_type res_ = ((f_Srs__Arena__addr(v_p_0) == (((int64_t)0) - ((int64_t)1))) ? ({ (void)(rt_eprint(((srs_str){(const uint8_t*)"srs: out of memory\n", 19}))); (void)(rt_exit(((int64_t)70))); __auto_type res_ = v_p_0; res_; }) : v_p_0); res_; }); }
 static int32_t f_Srs__Arena__prot(void) { return I32__of(I64__ofU64((U64__ofI64(I64__ofI32(((int32_t)(PROT_READ)))) | U64__ofI64(I64__ofI32(((int32_t)(PROT_WRITE))))))); }
 static int32_t f_Srs__Arena__flags(void) { return I32__of(I64__ofU64(((U64__ofI64(I64__ofI32(((int32_t)(MAP_PRIVATE)))) | U64__ofI64(I64__ofI32(((int32_t)(MAP_ANONYMOUS))))) | U64__ofI64(I64__ofI32(((int32_t)(MAP_NORESERVE))))))); }
 static int64_t f_Srs__Arena__huge(void) { return ((int64_t)2097152); }
+static bool f_Srs__Gate__idle(void* p_g) { return ({ __auto_type s0 = f_Srs__Gate__read(p_g); s0->tag == 0 ? ({ true; }) : s0->tag == 1 ? ({ false; }) : ({ false; }); }); }
 static int64_t f_Srs__Pages__advise(void* p_g, void* p_a, int64_t p_len) { return ({ __auto_type s0 = f_Srs__Gate__read(p_g); s0->tag == 0 ? ({ ((int64_t)0); }) : s0->tag == 2 ? ({ ((int64_t)0); }) : ({ f_Srs__Pages__step(p_g, p_a, p_len, f_Srs__Pages__sample(p_g)); }); }); }
 static int64_t f_Srs__Pages__step(void* p_g, void* p_a, int64_t p_len, bool p_ok) { return ((p_ok && ((rt_ptr_get(p_g, f_Srs__Gate__seen()) - rt_ptr_get(p_g, f_Srs__Gate__base())) <= f_Srs__Pages__limit())) ? f_Srs__Pages__huge(p_a, p_len) : f_Srs__Gate__shut(p_g)); }
 static int64_t f_Srs__Gate__seen(void) { return ((int64_t)8); }
@@ -12826,7 +12827,6 @@ static int64_t f_Srs__Arena__free(void* p_self) { return ({ void* v_g_0 = rt_glo
 static int64_t f_Srs__Arena__release(void* p_g, int64_t p_c) { srs_tail: return ((p_c == ((int64_t)0)) ? ((int64_t)0) : ({ void* v_ch_0 = f_Srs__Arena__at(p_c); int64_t v_next_1 = rt_ptr_get(v_ch_0, f_Srs__Arena__hNext()); int64_t v_cap_2 = rt_ptr_get(v_ch_0, f_Srs__Arena__hCap()); (void)(((v_cap_2 == f_Srs__Arena__chunk()) ? ({ (void)(rt_ptr_set(v_ch_0, f_Srs__Arena__hNext(), rt_ptr_get(p_g, f_Srs__Arena__gSpare()))); __auto_type res_ = rt_ptr_set(p_g, f_Srs__Arena__gSpare(), p_c); res_; }) : ({ int32_t v_un_3 = munmap(v_ch_0, U64__ofI64(f_Srs__Arena__up((f_Srs__Arena__header() + v_cap_2), f_Srs__Arena__page()))); __auto_type res_ = ((int64_t)0); res_; }))); __auto_type res_ = ({ void* t0 = p_g; int64_t t1 = v_next_1; p_g = t0; p_c = t1; goto srs_tail; (int64_t){0}; }); res_; })); }
 static void* f_Srs__Pages__arm(void) { return ({ void* v_g_0 = rt_globals(); bool v_ok_1 = f_Srs__Pages__sample(v_g_0); int64_t v_r_2 = (v_ok_1 ? f_Srs__Gate__arm(v_g_0) : f_Srs__Gate__shut(v_g_0)); __auto_type res_ = v_g_0; res_; }); }
 static int64_t f_Srs__Gate__arm(void* p_g) { return (f_Srs__Gate__idle(p_g) ? f_Srs__Gate__on(p_g) : ((int64_t)0)); }
-static bool f_Srs__Gate__idle(void* p_g) { return ({ __auto_type s0 = f_Srs__Gate__read(p_g); s0->tag == 0 ? ({ true; }) : s0->tag == 1 ? ({ false; }) : ({ false; }); }); }
 static int64_t f_Srs__Gate__on(void* p_g) { return ({ (void)(rt_ptr_set(p_g, f_Srs__Gate__base(), rt_ptr_get(p_g, f_Srs__Gate__seen()))); __auto_type res_ = rt_ptr_set(p_g, f_Srs__Gate__tag(), ((int64_t)1)); res_; }); }
 static struct E_Srs__Gate* f_Srs__Gate__read(void* p_g) { return ({ int64_t v_t_0 = rt_ptr_get(p_g, f_Srs__Gate__tag()); __auto_type res_ = ((v_t_0 == ((int64_t)1)) ? P_Srs__GateOn : ((v_t_0 == ((int64_t)2)) ? P_Srs__GateShut : P_Srs__GateIdle)); res_; }); }
 static struct E_Os__Kind* f_Os__kind(int64_t p_k) { return ((p_k == ((int64_t)1)) ? P_Os__Regular : ((p_k == ((int64_t)2)) ? P_Os__Dir : ((p_k == ((int64_t)3)) ? P_Os__Link : ((p_k == ((int64_t)4)) ? P_Os__Special : P_Os__Absent)))); }

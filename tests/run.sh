@@ -142,10 +142,12 @@ ST=$(command -v strace || timeout 120 nix-shell -p strace --run 'command -v stra
 w=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -f -c -e trace=write "$B/s2c1_out_big" 2>&1 >/dev/null | awk '$NF == "write" {print $4}')
 if [ ! -x "${ST:-}" ]; then echo "FAIL prog/out_big: strace missing"; fail=1
 elif [ "${w:-0}" -gt 1 ]; then echo "ok prog/out_big writes $w"; else echo "FAIL prog/out_big writes ${w:-none}, want > 1"; fail=1; fi
-# Arena chunks are advised for huge pages only when main installs Srs.Pages: prog/alloc_chunks (no Pages) fills more than one 1 MiB chunk and gets
-# no advice, prog/pages_gate (Pages) fills three reservations and gets some while the gate is On
+# Arena chunks are advised for huge pages when main installs Srs.Pages, or from the Arena's second 32 MiB reservation on (it arms the
+# gate itself): prog/alloc_chunks (no Pages, under 32 MiB) gets no advice; prog/pages_off (no Pages, 60 MiB) gets some; prog/pages_gate (Pages) too
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_alloc_chunks" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
 if [ "${h:-0}" -eq 0 ]; then echo "ok prog/alloc_chunks no advice without Pages"; else echo "FAIL prog/alloc_chunks advised $h without Pages"; fail=1; fi
+h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_pages_off" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
+if [ "${h:-0}" -ge 1 ]; then echo "ok prog/pages_off advised at volume without Pages $h"; else echo "FAIL prog/pages_off no MADV_HUGEPAGE past 32 MiB"; fail=1; fi
 h=$( [ -x "${ST:-}" ] && timeout 10 "$ST" -e trace=madvise "$B/s2c1_pages_gate" 2>&1 >/dev/null | grep -c MADV_HUGEPAGE)
 if [ "${h:-0}" -ge 1 ]; then echo "ok prog/pages_gate huge-page advice $h"; else echo "FAIL prog/pages_gate no MADV_HUGEPAGE"; fail=1; fi
 # s2c's main installs Srs.Pages: compiling itself touches ~190 MB, 47k faults at 4 KiB pages, ~550 with huge pages
