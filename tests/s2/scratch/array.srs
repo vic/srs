@@ -1,0 +1,34 @@
+// pass: a def whose result reaches an Array runs without a scratch Arena (the copy-out cannot follow an Array, and a
+// box it copied is overwritten by its forward pointer, so a box the Array still names would read garbage). AR.make
+// runs once and makes many boxes; its result holds a list and an Array filled with the same list. Under the poison
+// prelude a read through the Array of a moved box prints garbage
+enum AR.L:
+  case AR.Nil
+  case AR.Cons(h: I64, t: AR.L)
+
+enum AR.Out:
+  case AR.Out(l: AR.L, n: I64, a: Array[AR.L](n))
+
+def AR.build(n: I64, acc: AR.L): AR.L = if n == 0 then acc else AR.build(n - 1, AR.Cons(n, acc))
+
+def AR.sum(l: AR.L, s: I64): I64 = l match
+  case AR.Nil => s
+  case AR.Cons(h, t) => AR.sum(t, s + h)
+
+def AR.make(k: I64): AR.Out =
+  val junk = AR.sum(AR.build(100000, AR.Nil), 0)
+  val l = AR.build(k, AR.Cons(junk, AR.Nil))
+  val n = 2
+  val a: Array[AR.L](n) = Array.fill(n, l)
+  AR.Out(l, n, a)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  val AR.Out(l, n, a) = AR.make(10)
+  val x: I64 = a.at(0) match
+    case Array.Ok(v) => AR.sum(v, 0)
+    case Array.Out(_) => 0 - 1
+  Console.printI64(AR.sum(l, 0) + x)
+  Console.print("\n")
+  0

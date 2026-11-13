@@ -2808,19 +2808,17 @@ def Mem.lastDot(s: Str, i: I64): I64 =
   else if Str.at(s, i) == 46 then i
   else Mem.lastDot(s, i - 1)
 
-// the defs whose calls run in a scratch Arena (M12a): the compact defs that run once
+// the defs whose calls may run in a scratch Arena (M12a): every compact def, once or many; each call site then keeps
+// its scratch only while it frees more than it copies (Emit.scratchCall)
 def Mem.scratchSet(r: Mem.Report): Coll.SMap[Bool] = r match
-  case Mem.Ok(_, _, _, _, _, cs, _, _) => Mem.onceDefs(cs, Coll.sEmpty())
+  case Mem.Ok(_, _, _, _, _, cs, _, _) => Mem.compactDefs(cs, Coll.sEmpty())
   case Mem.RulesBad(_) => Coll.sEmpty()
 
-def Mem.onceDefs(cs: Coll.List[Mem.Compact], m: Coll.SMap[Bool]): Coll.SMap[Bool] = cs match
+def Mem.compactDefs(cs: Coll.List[Mem.Compact], m: Coll.SMap[Bool]): Coll.SMap[Bool] = cs match
   case Coll.Nil => m
   case Coll.Cons(c, rest) =>
-    val Mem.Compact(_, f, runs) = c
-    val m2: Coll.SMap[Bool] = runs match
-      case Mem.RunsOnce => Coll.sInsert(m, f, true)
-      case Mem.RunsMany => m
-    Mem.onceDefs(rest, m2)
+    val Mem.Compact(_, f, _) = c
+    Mem.compactDefs(rest, Coll.sInsert(m, f, true))
 
 // ── field usage (layout by usage, the mem optimization): how often the program reads each field of each case: a match
 // arm or a val pattern on case c with a binder that is not `_` at field i reads field i of c. Emit lays a case's word

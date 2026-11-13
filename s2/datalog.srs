@@ -440,9 +440,13 @@ def D.firstRound(): I64 = D.inputRound() + 1
 
 // round rd reads rows of rounds < rd
 def D.rounds(rs: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rd: I64, k: I64, pass: D.Pass): D.Stage =
-  val fired = D.fireAll(rels, rs, rd, pass, rels)
-  val D.Next(rels2, news) = D.advance(fired, 0, k, fired, 0)
+  val D.Next(rels2, news) = D.round(rs, rels, rd, k, pass)
   if news == 0 then D.Stage(rels2, rd + 1) else D.rounds(rs, rels2, rd + 1, k, D.NextPass)
+
+// one round: its rows and the joins that made them; only the next relations outlive it
+def D.round(rs: Coll.List[D.CRule], rels: Coll.IMap[D.Rel], rd: I64, k: I64, pass: D.Pass): D.Next =
+  val fired = D.fireAll(rels, rs, rd, pass, rels)
+  D.advance(fired, 0, k, fired, 0)
 
 // ── strata: a head's stratum is at least each positive body relation's, above each negated one's ──
 def D.stOf(st: Coll.IMap[I64], id: I64): I64 = Coll.node(st, id) match

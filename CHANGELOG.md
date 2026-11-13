@@ -2,7 +2,11 @@
 
 Every change to srs that lands, newest first. A project that builds with srs (snx, tot) pins a jj bookmark; this file says what each landing changed, so you can see what moving the bookmark brings.
 
-## Unreleased (scratch generic def)
+## Unreleased (adaptive scratch)
+
+- Memory: every compact def (Mem) may run in a scratch Arena, and scratch calls nest. Each call site keeps its scratch only while the bytes the call made stay at least twice the bytes it copies out; after that it calls in place. The copy-out writes a forward pointer into each moved box (with a per-chunk bitmap), not a hash table. A def whose result reaches an Array, Cell or Ptr never runs in a scratch. D.rounds runs each round through a new def D.round. s2c self-compile: peak 967 MB -> 415 MB (-57%), user time 1.28 s -> 1.70 s (+30%). Output byte-identical (fixpoint, bench corpus). Tests: tests/s2/scratch/array.srs, deep.srs, generic.srs.
+
+## 2026-11-12 main@origin 8bee444c (PR #91, scratch generic def)
 
 - Fix: a generic def that Mem picks as a scratch def no longer gets a copy function for its open result type (the optimized C failed to compile: incomplete type). Test: tests/s2/scratch/generic.srs.
 
