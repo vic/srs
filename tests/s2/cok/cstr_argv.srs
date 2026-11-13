@@ -1,0 +1,11 @@
+// format: off
+// G2: CStr.argv makes the NULL-ended char *const* argv a libc param takes: execvp(const char*, char *const[]) of
+// <unistd.h> agrees with CArgv, so the C compile passes (a program that calls CStr.argv carries CStr__argv)
+extern "libc" def execvp(file: CStr, argv: CArgv): I32
+// format: on
+def main(): I64 =
+  handle r = Srs.Arena()
+  val n = 2
+  val xs = Array.fill(n, CStr.of("true"))
+  val a = CStr.argv(n, xs)
+  0

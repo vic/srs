@@ -258,6 +258,7 @@ def Emit.ctype(cx: Emit.Cx, t: K.Term): Unit = t match
     else if Str.eq(x, "I32") then Console.print("int32_t")
     else if Str.eq(x, "F64") then Console.print("double")
     else if Str.eq(x, "CStr") then Console.print("const char*")
+    else if Str.eq(x, "CArgv") then Console.print("char *const*")
     else if Str.len(x) > 8 && Str.eq(Str.slice(x, 0, 8), "CStruct.") then Emit.cstructPtr(Str.slice(x, 8, Str.len(x)))
     else if Str.eq(x, "U64") then Console.print("uint64_t")
     // A1: Array[A](n) is one pointer to its elements (no header); Cell[A] a pointer to its word
@@ -1640,6 +1641,12 @@ def Emit.cstrOf(cx: Emit.Cx): Unit =
   Emit.allocOpenC(cx)
   Console.print("s.n + 1); if (s.n > 0) memcpy(p, s.p, (size_t)s.n); p[s.n] = 0; return p; }\n")
 
+// CStr.argv (lib/prelude.srs): the n pointers of xs and a NULL in the region c, only in a program that calls it
+def Emit.cargv(cx: Emit.Cx): Unit =
+  Console.print("static inline char *const* CStr__argv(srs_cap* c, int64_t n, const char** xs) { const char** p = (const char**)")
+  Emit.allocOpenC(cx)
+  Console.print("(n + 1) * (int64_t)sizeof(char*)); if (n > 0) memcpy(p, xs, (size_t)n * sizeof(char*)); p[n] = 0; return (char *const*)p; }\n")
+
 // the allocator call open for the capability param c (as Emit.allocOpen for a local)
 def Emit.allocOpenC(cx: Emit.Cx): Unit =
   val Emit.Cx(_, _, _, _, _, _, al, _, _, sx) = cx
@@ -1751,7 +1758,7 @@ def Emit.anyLibc(fs: Coll.List[El.Fn], cs: Coll.ISet): Bool = fs match
 
 // the pure string primitives of lib/prelude.srs are static inline in every program (Emit.strPrims): no call per byte
 def Emit.strInline(n: Sym.Sym): Bool =
-  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("CStr.of")) || Sym.eq(n, Sym.of("rt_os_errno")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
+  Sym.eq(n, Sym.of("Str.ofBytes")) || Sym.eq(n, Sym.of("CStr.of")) || Sym.eq(n, Sym.of("CStr.argv")) || Sym.eq(n, Sym.of("rt_os_errno")) || Sym.eq(n, Sym.of("Str.len")) || Sym.eq(n, Sym.of("Str.at")) || Sym.eq(n, Sym.of("Str.slice")) || Sym.eq(n, Sym.of("Str.eq")) || Emit.wordInline(Sym.str(n))
 
 // the word conversions of lib/prelude.srs, static inline too (Emit.wordPrims)
 def Emit.wordInline(s: Str): Bool =
@@ -3110,6 +3117,7 @@ def Emit.program(ds: Coll.List[Ast.Decl], res0: Ty.Result, opt: Emit.Opt): Unit 
     case Coll.Nil => ()
   Emit.cnewFns(cx, ds, cs)
   if Coll.setHas(cs, Sym.hash(Sym.of("CStr.of"))) then Emit.cstrOf(cx) else ()
+  if Coll.setHas(cs, Sym.hash(Sym.of("CStr.argv"))) then Emit.cargv(cx) else ()
   Emit.bodies(cx, hs, is)
   Emit.handlers(cx, Emit.oneShot(hsu), Emit.Code)
   if Emit.hasMain(cx) then
