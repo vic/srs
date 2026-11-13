@@ -2,6 +2,15 @@
 
 Every change to srs that lands, newest first. A project that builds with srs (snx, tot) pins a jj bookmark; this file says what each landing changed, so you can see what moving the bookmark brings.
 
+## Unreleased
+
+- arena: a program past 32 MiB gets huge pages without handling `Srs.Pages`: the Arena arms the gate itself at its second reservation, so a small program pays nothing and a large one faults once per 2 MiB (snx on a NixOS system: 881k -> 356k page faults, system time 5.3 -> 3.0 s; a 64 MB list program: 15.7k -> 8.0k faults).
+
+## 2026-11-12 main@origin c1d40b41 (PR #93, from srs-toolchain)
+
+- prelude, emit: `CStr.of` copies a Str and a NUL into the innermost region, the `const char*` a libc param takes; the C of a program that never calls it is unchanged.
+- emit: a handler no handle site reaches leaves the C alone, so a Heap opened in an unused handler keeps Region static for the whole program.
+
 ## Unreleased (adaptive scratch)
 
 - Memory: every compact def (Mem) may run in a scratch Arena, and scratch calls nest. Each call site keeps its scratch only while the bytes the call made stay at least twice the bytes it copies out; after that it calls in place. The copy-out writes a forward pointer into each moved box (with a per-chunk bitmap), not a hash table. A def whose result reaches an Array, Cell or Ptr never runs in a scratch. D.rounds runs each round through a new def D.round. s2c self-compile: peak 967 MB -> 415 MB (-57%), user time 1.28 s -> 1.70 s (+30%). Output byte-identical (fixpoint, bench corpus). Tests: tests/s2/scratch/array.srs, deep.srs, generic.srs.

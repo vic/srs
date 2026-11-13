@@ -1,4 +1,6 @@
-// pass: the same fill with no Srs.Pages: the gate stays idle and nothing is advised (no MADV_HUGEPAGE under strace)
+// pass: the same fill with no Srs.Pages: the Arena arms the gate itself at its second reservation (a program past
+// 32 MiB), so the second reservation is advised (MADV_HUGEPAGE under strace) and the first is not; a program under
+// 32 MiB (prog/alloc_chunks) gets none
 def Pn.sum(n: I64, xs: Array[I64](n), i: I64, acc: I64): I64 =
   if 0 <= i && i < n then Pn.sum(n, xs, i + 1, acc + xs(i)) else acc
 

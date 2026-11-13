@@ -81,6 +81,7 @@ def Srs.Arena.pages(size: I64): Ptr =
     val p = Srs.Arena.map(want + Srs.Arena.huge())
     val mask = U64.ofI64(Srs.Arena.huge() - 1)
     val a = rt_ptr_of(rt_ptr_addr(p) + mask & ~mask)
+    val armed = if rt_ptr_get(g, Srs.Arena.gEnd()) != 0 && Srs.Gate.idle(g) then Srs.Pages.arm() else g
     val adv = Srs.Pages.advise(g, a, want)
     rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
     rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
@@ -170,8 +171,10 @@ handler Srs.Arena for Region:
   def free(self: Ptr): Unit = Srs.Arena.free(self)
 
 // ── Pages: the one authority to ask the kernel for huge pages. A program that never handles Srs.Pages (only main may,
-// Ty.worldHandler) gets no advice. The Arena advises each fresh reservation while the gate is On: main arms it with the
-// machine-wide count of failed huge-page faults (/proc/vmstat thp_fault_fallback), and it shuts for good once more than
+// Ty.worldHandler) gets no advice until its Arena makes a second 32 MiB reservation: the Arena arms the gate itself
+// (a program past 32 MiB pays the one /proc/vmstat read; a small one pays nothing). The Arena advises each fresh
+// reservation while the gate is On: main (or the Arena) arms it with the machine-wide count of failed huge-page faults
+// (/proc/vmstat thp_fault_fallback), and it shuts for good once more than
 // Srs.Pages.limit() failed since (each failure cost a compaction stall). The gate is the rt_globals words tag, base and
 // seen (the last count read); only Srs.Gate.arm and Srs.Gate.shut write tag, and nothing turns a Shut gate On again.
 // A constructor with a field allocates in a Region and the prelude fns have none, so the gate enum has no field: base is a word.
