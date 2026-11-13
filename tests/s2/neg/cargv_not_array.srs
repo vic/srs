@@ -1,0 +1,10 @@
+// format: off
+// expect: error[mismatch]
+// G2: an Array[CStr] is no CArgv: only CStr.argv makes one, with its NULL
+def CA.take(a: CArgv): I64 = 0
+def main(): I64 =
+  handle r = Srs.Arena()
+  val n = 1
+  val xs = Array.fill(n, CStr.of("true"))
+  CA.take(xs)
+// expect: --> tests/s2/neg/cargv_not_array.srs:9
