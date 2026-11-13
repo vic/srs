@@ -1,0 +1,51 @@
+// pass: a capture costs its bytes, not a page. 20000 short captures (Console.captureBegin, print, captureEnd) keep the
+// peak RSS (VmHWM of /proc/self/status, kB) under twice the peak after the first 100: before rt reused the capture
+// buffer, every capture kept its own fresh 4 KiB malloc block for the program's lifetime, and 20000 of them grew the
+// peak by ~80 MB (s2c self-compile: 7,468 captures in Mem.fresh were 86% of its page faults)
+def Cm.name(i: I64): Str =
+  Console.captureBegin()
+  Console.print("x#")
+  Console.printI64(i)
+  Console.captureEnd()
+
+// the total length of the names x#i for i in [i, n)
+def Cm.loop(i: I64, n: I64, acc: I64): I64 = if i >= n then acc else Cm.loop(i + 1, n, acc + Str.len(Cm.name(i)))
+
+// the number after "VmHWM:" in the text of /proc/self/status, or -1
+def Cm.hwm(s: Str): I64 =
+  var i = 0
+  var v = 0 - 1
+  val n = Str.len(s)
+  while v < 0 && i + 6 < n do
+    if Str.eq(Str.slice(s, i, i + 6), "VmHWM:") then
+      var j = i + 6
+      var x = 0
+      while j < n && (Str.at(s, j) == 32 || Str.at(s, j) == 9) do j = j + 1
+      while j < n && Str.at(s, j) >= 48 && Str.at(s, j) <= 57 do
+        x = x * 10 + Str.at(s, j) - 48
+        j = j + 1
+      v = x
+    else i = i + 1
+  v
+
+// the peak RSS so far (kB), or -1 when /proc is missing
+def Cm.peak(): I64 = Files.readAll("/proc/self/status") match
+  case Os.Ok(s) => Cm.hwm(s)
+  case Os.Fail(_) => 0 - 1
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle r = Srs.Arena()
+  handle m = Srs.Mut()
+  handle fs = Srs.Files()
+  val first = Cm.name(0)
+  val a = Cm.loop(1, 100, Str.len(first))
+  val early = Cm.peak()
+  val b = Cm.loop(100, 20000, a)
+  val late = Cm.peak()
+  Console.printI64(b)
+  Console.print("\n")
+  Console.print(if early > 0 && late < 2 * early then "flat\n" else "grew\n")
+  // the first text is its own copy: 19999 later captures did not write over it
+  Console.print(if Str.eq(first, "x#0") then "kept\n" else "lost\n")
+  0

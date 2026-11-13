@@ -4,6 +4,8 @@ Every change to srs that lands, newest first. A project that builds with srs (sn
 
 ## Unreleased
 
+- rt: a Console capture reuses the buffer of the last ended capture and returns its text as a tight copy; before, every capture kept its own fresh 4 KiB malloc block for the program's lifetime. s2c compiling itself (7,468 captures in `Mem.fresh`): page faults 8,617 -> 1,214 (-86%), peak RSS 417.5 -> 387.9 MB, same output. Test `tests/s2/prog/capture_many.srs`: 20,000 captures keep the peak flat (the old runtime grew it by 79 MB).
+
 - flow: a Region that ends (an op into an end state) while a handle that allocates in it is still open is an error (`error[region-ended-under-handle]`); before, the handle's next op wrote into or read freed memory. A handle already shut by an op does not count.
 
 - types: a handler fn takes its op's parameter types: each value param after `self` must have the op's declared type (`error[mismatch]` at the fn); before, only the count was checked, so a handler body read its op's arguments under types of its own choosing.
