@@ -76,6 +76,17 @@ def Ps.isExtern(k: Ps.Kind): Bool = k match
   case Ps.Extern => true
   case _ => false
 
+def Ps.isDef(k: Ps.Kind): Bool = k match
+  case Ps.Def => true
+  case _ => false
+
+// token j is the one-byte operator `=`
+def Ps.isEqAt(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64): Bool =
+  if Ps.isKind(tcap, tk, t, j, Lx.KOp) && 0 <= j && j < tcap then
+    val o = I64.of(to(j))
+    I64.of(tl(j)) == 1 && Str.at(src, o) == 61
+  else false
+
 def Ps.whyByte(w: Ps.Why): I64 = w match
   case Ps.UnknownDecl => 0
   case Ps.UnbalancedLayout => 1
@@ -258,7 +269,9 @@ def Ps.go(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap)
 // the decl whose head is token h: its kind, name, body range and diags, then on from where it ends
 def Ps.decl(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, h: I64, cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): Ps.Out =
   val k = Ps.kindOrOther(src, tcap, tk, to, tl, t, h)
-  val e = Ps.nextEnd(src, n, tcap, tk, to, t, h + 1)
+  val e1 = Ps.nextEnd(src, n, tcap, tk, to, t, h + 1)
+  // a def with clauses puts its `=` at column 0 (s2/parse.srs Parse.bodyOf): that `=` continues the def, not a new decl
+  val e = if Ps.isDef(k) && Ps.isEqAt(src, tcap, tk, to, tl, t, e1) then Ps.nextEnd(src, n, tcap, tk, to, t, e1 + 1) else e1
   val hi0 = Ps.trim(tcap, tk, t, e, h)
   val nl = Ps.firstNl(tcap, tk, t, h, hi0)
   val lo0 = if nl < hi0 then nl + 1 else hi0
