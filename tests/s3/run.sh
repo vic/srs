@@ -15,7 +15,7 @@ run() { # script [args]
     *) fail=$((fail+1)); echo "FAIL $1 (exit $code, no result line$([ $code = 124 ] && echo ', timeout 120'): $last)";;
   esac
 }
-for s in lex/oe lex/oab parse/pa parse/pb parse/pc parse/pd parse/neg parse/rt names/nbase names/nc names/nbp names/standing names/nt; do
+for s in lex/oe lex/oab parse/pa parse/pb parse/pc parse/pd parse/neg parse/rt names/nbase names/nc names/nbp names/standing names/nt types/ta types/tb; do
   run tests/s3/$s.sh "$BIN"
 done
 run tests/s3/gate/subset.sh
