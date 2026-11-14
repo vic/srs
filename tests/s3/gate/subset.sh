@@ -16,6 +16,17 @@ chk 'evidence call f{x}(' '[a-z][A-Za-z0-9_.]*\{[a-z][a-zA-Z0-9_, ]*\}\('
 chk 'type decl'           '^[[:space:]]*type '
 chk 'top-level val'       '^val '
 chk 'multi handler shots' '(^|[^A-Za-z0-9_])multi([^A-Za-z0-9_]|$)'
+# one-shot handlers only (1d): `resume` called more than once in one handler op body = multi-shot. An op body = an indented
+# `def` line plus the more-indented lines after it (a one-line op counts its own line). Counted per file; a prog's `// ` comments are skipped.
+n=$(for f in "$D"/*.srs; do awk '
+  function flush() { if (inop && cnt > 1) bad++ ; inop = 0 }
+  /^[[:space:]]*\/\// { next }
+  { match($0, /^[[:space:]]*/); ind = RLENGTH
+    if (inop && $0 !~ /^[[:space:]]*$/ && ind <= opind) flush()
+    if (!inop && $0 ~ /^[[:space:]]+def /) { inop = 1; opind = ind; cnt = 0 }
+    if (inop) { t = $0; while (match(t, /(^|[^A-Za-z0-9_])resume[[:space:]]/)) { cnt++; t = substr(t, RSTART + RLENGTH) } } }
+  END { flush(); print bad + 0 }' "$f"; done | awk '{s += $1} END {print s + 0}')
+if [ "$n" = 0 ]; then row 'resume >1 in one op body' "$n" ok; else row 'resume >1 in one op body' "$n" FAIL; fail=1; WHY="${WHY:+$WHY, }resume >1 in one op body"; fi
 # region caps are glued `)<g>` (no space); facts after params have a space: `) <...>`
 chk '<facts> after params' '^def [^=]*\)[[:space:]]+<'
 n=$(cat "$D"/*.srs | grep -E '^def ' | grep -c -v -E '\)[[:space:]]*:[[:space:]]*[A-Za-z]')
@@ -30,6 +41,18 @@ echo "$tab" | sed 's/^/  /'
 hout=$(echo "$tab" | awk -F' [|] ' '$2!="main.srs" && $2!="dlmain.srs" && $1!=""' | grep -c .)
 hdup=$(echo "$tab" | awk -F' [|] ' '$3+0>1' | grep -c .)
 if [ "$hout" = 0 ]; then row 'handle outside entry files' 0 ok; else row 'handle outside entry files' "$hout" FAIL; fail=1; WHY="${WHY:+$WHY, }handle outside entry files"; fi
+# the same law through `handler H for Cap` (a program's own handlers and lib/prelude.srs's Srs.*): two handlers of one NON-Region
+# capability in one file = two handles of that capability (dynamic dispatch, outside the subset). Region handles are scoped regions
+# (nested regions are core s3, L12) and are not counted. Per file: one violation per capability with > 1 handle site.
+hcap=0
+for f in "$D"/*.srs; do
+  c=$(cat lib/prelude.srs "$f" | awk '
+    /^handler [A-Za-z0-9_.]+ for / { h = $2; c = $4; sub(/[^A-Za-z0-9_.].*/, "", c); cap[h] = c; next }
+    /^[[:space:]]*handle [A-Za-z0-9_]+ = / { t = $0; sub(/^[[:space:]]*handle [A-Za-z0-9_]+ = /, "", t); sub(/\(.*/, "", t); k = (t in cap) ? cap[t] : t; if (k != "Region") cnt[k]++ }
+    END { for (k in cnt) if (cnt[k] > 1) n++; print n + 0 }')
+  hcap=$((hcap + c))
+done
+if [ "$hcap" = 0 ]; then row 'non-Region cap >1 handler (for)' 0 ok; else row 'non-Region cap >1 handler (for)' "$hcap" FAIL; fail=1; WHY="${WHY:+$WHY, }non-Region cap >1 handler (for)"; fi
 if [ "$hdup" = 0 ]; then row 'capability with >1 handle site' 0 ok; else row 'capability with >1 handle site' "$hdup" FAIL; fail=1; WHY="${WHY:+$WHY, }capability with >1 handle site"; fi
 if [ $fail = 0 ]; then echo "PASS subset"; exit 0; fi
 echo "FAIL subset ($WHY)"; exit 1

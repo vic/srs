@@ -308,6 +308,14 @@ def Tp.arg(s: Tp.S, t: I64, i: I64): I64 =
   // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
   else 0
 
+// the pool index of the args of type t (the base Tp.msub takes for the type's own args; EMIT-1 accessor)
+def Tp.argBase(s: Tp.S, t: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, _, _, _, ta, _) = tt
+  if 0 <= t && t < tcap then I64.of(ta(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
 // ── interning ──
 def Tp.argsEq(s: Tp.S, a: I64, m: I64, i: I64, n: I64): Bool =
   if i < n then Tp.poolAt(s, a + i) == Tp.stkAt(s, m + i) && Tp.argsEq(s, a, m, i + 1, n) else true
