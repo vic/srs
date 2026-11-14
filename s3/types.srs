@@ -1,0 +1,1344 @@
+// s3c TYPES-1: the typing core, in s2 (vic/c/s3-design.md 1d). Data shape new: types are interned ids (U32; 0 = none, hash-consed over
+// (kind, head, args)), a closed enum of kinds Tp.K; args of a type are a slice of one pool; a def's signature is stored by the symbol
+// of its name (result id, param ids slice, type-param count, evidence count). C text follows s2/emit.srs: Emit.ctype 249, Emit.mangle 185,
+// Emit.enumName 215, Emit.sig 1155 (a Y1 def has no capability param in C: the handlers are static).
+// STAGE 1: every def HEADER -> its C prototype (`--types-dump`: one `static R f_Name(T p_x, ...);` line per non-generic def).
+// STAGE 2: every def BODY (`--types`): bidirectional, first-order unification with per-def type vars; prints `bodies: checked= fullytyped=
+// mismatches= untypednodes=` and the first mismatches / untyped nodes as `mismatch|untyped path:line text`.
+// Not yet (TYPES-1b): mono instance set, C declarations per local, handler fn bodies, clauses, array length vals, match exhaustiveness.
+// Unsupported things are counted, never skipped silently: slot Tp.cUn + code, printed in the summary.
+
+// ── type kinds (closed) ──
+enum Tp.K:
+  case Tp.KBuiltin
+  case Tp.KArray
+  case Tp.KEnum
+  case Tp.KParam
+  case Tp.KCap
+  case Tp.KOther
+  case Tp.KVar
+
+def Tp.kByte(k: Tp.K): I64 = k match
+  case Tp.KVar => 6
+  case Tp.KBuiltin => 0
+  case Tp.KArray => 1
+  case Tp.KEnum => 2
+  case Tp.KParam => 3
+  case Tp.KCap => 4
+  case Tp.KOther => 5
+
+def Tp.kOf(b: I64): Coll.Option[Tp.K] =
+  if b == 0 then Coll.Some(Tp.KBuiltin)
+  else if b == 1 then Coll.Some(Tp.KArray)
+  else if b == 2 then Coll.Some(Tp.KEnum)
+  else if b == 3 then Coll.Some(Tp.KParam)
+  else if b == 4 then Coll.Some(Tp.KCap)
+  else if b == 5 then Coll.Some(Tp.KOther)
+  else if b == 6 then Coll.Some(Tp.KVar)
+  else Coll.None
+
+def Tp.bBuiltin(): I64 = Tp.kByte(Tp.KBuiltin)
+def Tp.bArray(): I64 = Tp.kByte(Tp.KArray)
+def Tp.bEnum(): I64 = Tp.kByte(Tp.KEnum)
+def Tp.bParam(): I64 = Tp.kByte(Tp.KParam)
+def Tp.bCap(): I64 = Tp.kByte(Tp.KCap)
+def Tp.bOther(): I64 = Tp.kByte(Tp.KOther)
+def Tp.bVar(): I64 = Tp.kByte(Tp.KVar)
+
+// counter slots (STAGE 2: 9.. the builtin type ids, 15 the current file, 24.. body counters, 32.. the first mismatches as (file, token),
+// 64 + node kind the untyped nodes per kind)
+def Tp.tI64(): I64 = 9
+def Tp.tBool(): I64 = 10
+def Tp.tUnit(): I64 = 11
+def Tp.tStr(): I64 = 12
+def Tp.tU32(): I64 = 13
+def Tp.tU64(): I64 = 14
+def Tp.cFile(): I64 = 15
+def Tp.cMis(): I64 = 24
+def Tp.cNVar(): I64 = 25
+def Tp.cFull(): I64 = 26
+def Tp.cBodies(): I64 = 27
+def Tp.cUnTot(): I64 = 28
+def Tp.cCases(): I64 = 29
+def Tp.cExtern(): I64 = 30
+def Tp.cMisAt(): I64 = 32
+def Tp.nMisShown(): I64 = 10
+def Tp.cUnNode(): I64 = 64
+def Tp.cUnAt(): I64 = 200
+def Tp.cTypes(): I64 = 0
+def Tp.cATop(): I64 = 1
+def Tp.cSp(): I64 = 2
+def Tp.cOver(): I64 = 3
+def Tp.cDefs(): I64 = 4
+def Tp.cGeneric(): I64 = 5
+def Tp.cEvid(): I64 = 6
+def Tp.cProtos(): I64 = 7
+def Tp.cDup(): I64 = 8
+// untyped counts: slot cUn + code
+def Tp.cUn(): I64 = 16
+def Tp.uTypeNode(): I64 = 0
+def Tp.uTypeUnres(): I64 = 1
+def Tp.uTypeOther(): I64 = 2
+def Tp.nUn(): I64 = 3
+
+// ── the store ──
+enum Tp.Tt:
+  case Tp.Tt(tcap: I64, tk: Array[U8](tcap), tc: Array[U8](tcap), th: Array[U32](tcap), ta: Array[U32](tcap), tn: Array[U32](tcap))
+
+enum Tp.Hh:
+  case Tp.Hh(hcap: I64, hs: Array[U32](hcap))
+
+enum Tp.Pl:
+  case Tp.Pl(acap: I64, ap: Array[U32](acap), scap: I64, stk: Array[U32](scap))
+
+enum Tp.Cn:
+  case Tp.Cn(cnn: I64, cn: Array[I64](cnn), ocap: I64, oo: Array[U32](ocap), op: Array[U32](ocap), os: Array[U32](ocap))
+
+// signatures by the symbol of the def name: result id, params slice (start, count), type-param count, evidence count
+enum Tp.Sg:
+  case Tp.Sg(gcap: I64, sr: Array[U32](gcap), ss: Array[U32](gcap), sn: Array[U32](gcap), st: Array[U32](gcap), se: Array[U32](gcap), sa: Array[U32](gcap), sl: Array[U32](gcap), sv: Array[U32](gcap))
+
+enum Tp.S:
+  case Tp.S(tt: Tp.Tt, hh: Tp.Hh, pl: Tp.Pl, cn: Tp.Cn, sg: Tp.Sg)
+
+def Tp.cget(s: Tp.S, i: I64): I64 =
+  val Tp.S(_, _, _, c, _) = s
+  val Tp.Cn(cnn, cn, _, _, _, _) = c
+  if 0 <= i && i < cnn then cn(i)
+  // shortcut: slots are the Tp.c* constants, always below cnn; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.cset(s: Tp.S, i: I64, v: I64): Unit =
+  val Tp.S(_, _, _, c, _) = s
+  val Tp.Cn(cnn, cn, _, _, _, _) = c
+  if 0 <= i && i < cnn then Array.put(cn, i, v) else ()
+
+// the ops table: (owner symbol, op name symbol) -> the symbol its signature is stored under; counter slot 31 = the count
+def Tp.opAdd(s: Tp.S, owner: I64, op: I64, sg: I64): Unit =
+  val Tp.S(_, _, _, c, _) = s
+  val Tp.Cn(_, _, ocap, oo, opp, os) = c
+  val n = Tp.cget(s, 31)
+  if 0 <= n && n < ocap then
+    Array.put(oo, n, U32.of(owner))
+    Array.put(opp, n, U32.of(op))
+    Array.put(os, n, U32.of(sg))
+    Tp.cset(s, 31, n + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Tp.cinc(s, Tp.cOver())
+
+def Tp.opFind(s: Tp.S, owner: I64, op: I64, i: I64): I64 =
+  val Tp.S(_, _, _, c, _) = s
+  val Tp.Cn(_, _, ocap, oo, opp, os) = c
+  if 0 <= i && i < ocap && i < Tp.cget(s, 31) then
+    if I64.of(oo(i)) == owner && I64.of(opp(i)) == op then I64.of(os(i)) else Tp.opFind(s, owner, op, i + 1)
+  else 0
+
+def Tp.cinc(s: Tp.S, i: I64): Unit = Tp.cset(s, i, Tp.cget(s, i) + 1)
+def Tp.over(s: Tp.S): Unit = Tp.cinc(s, Tp.cOver())
+def Tp.un(s: Tp.S, code: I64): Unit = Tp.cinc(s, Tp.cUn() + code)
+
+def Tp.store(ntok: I64): Tp.S =
+  val tcap = ntok + 1024
+  val hcap = 2 * tcap + 1
+  val acap = 2 * ntok + 1024
+  val scap = 4096
+  val gcap = ntok + 1024
+  val cnn = 256
+  val tk = Array.fill(tcap, U8.of(0))
+  val tc = Array.fill(tcap, U8.of(0))
+  val th = Array.fill(tcap, U32.of(0))
+  val ta = Array.fill(tcap, U32.of(0))
+  val tn = Array.fill(tcap, U32.of(0))
+  val hs = Array.fill(hcap, U32.of(0))
+  val ap = Array.fill(acap, U32.of(0))
+  val stk = Array.fill(scap, U32.of(0))
+  val cn = Array.fill(cnn, 0)
+  val sr = Array.fill(gcap, U32.of(0))
+  val ss = Array.fill(gcap, U32.of(0))
+  val sn = Array.fill(gcap, U32.of(0))
+  val st = Array.fill(gcap, U32.of(0))
+  val se = Array.fill(gcap, U32.of(0))
+  val ocap = 4096
+  val oo = Array.fill(ocap, U32.of(0))
+  val opp = Array.fill(ocap, U32.of(0))
+  val os = Array.fill(ocap, U32.of(0))
+  val sa = Array.fill(gcap, U32.of(0))
+  val sl =Array.fill(gcap, U32.of(0))
+  val sv = Array.fill(gcap, U32.of(0))
+  val s =Tp.S(Tp.Tt(tcap, tk, tc, th, ta, tn), Tp.Hh(hcap, hs), Tp.Pl(acap, ap, scap, stk), Tp.Cn(cnn, cn, ocap, oo, opp, os), Tp.Sg(gcap, sr, ss, sn, st, se, sa, sl, sv))
+  // type 0 is the absent type
+  Tp.cset(s, Tp.cTypes(), 1)
+  s
+
+// the scratch stack of type ids: args of the type being built
+def Tp.mark(s: Tp.S): I64 = Tp.cget(s, Tp.cSp())
+
+def Tp.push(s: Tp.S, v: I64): Unit =
+  val Tp.S(_, _, pl, _, _) = s
+  val Tp.Pl(_, _, scap, stk) = pl
+  val sp = Tp.cget(s, Tp.cSp())
+  if 0 <= sp && sp < scap then
+    Array.put(stk, sp, U32.of(v))
+    Tp.cset(s, Tp.cSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Tp.over(s)
+
+def Tp.stkAt(s: Tp.S, i: I64): I64 =
+  val Tp.S(_, _, pl, _, _) = s
+  val Tp.Pl(_, _, scap, stk) = pl
+  if 0 <= i && i < scap then I64.of(stk(i))
+  // shortcut: callers read below the stack height; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.poolAt(s: Tp.S, i: I64): I64 =
+  val Tp.S(_, _, pl, _, _) = s
+  val Tp.Pl(acap, ap, _, _) = pl
+  if 0 <= i && i < acap then I64.of(ap(i))
+  // shortcut: callers read slices the store wrote; s3 Vec will make it unrepresentable
+  else 0
+
+// columns of a type id
+def Tp.kind(s: Tp.S, t: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, tk, _, _, _, _) = tt
+  if 0 <= t && t < tcap then I64.ofU8(tk(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.cls(s: Tp.S, t: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, _, tc, _, _, _) = tt
+  if 0 <= t && t < tcap then I64.ofU8(tc(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.head(s: Tp.S, t: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, _, _, th, _, _) = tt
+  if 0 <= t && t < tcap then I64.of(th(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.nargs(s: Tp.S, t: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, _, _, _, _, tn) = tt
+  if 0 <= t && t < tcap then I64.of(tn(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.arg(s: Tp.S, t: I64, i: I64): I64 =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, _, _, _, ta, _) = tt
+  if 0 <= t && t < tcap then Tp.poolAt(s, I64.of(ta(t)) + i)
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+
+// ── interning ──
+def Tp.argsEq(s: Tp.S, a: I64, m: I64, i: I64, n: I64): Bool =
+  if i < n then Tp.poolAt(s, a + i) == Tp.stkAt(s, m + i) && Tp.argsEq(s, a, m, i + 1, n) else true
+
+def Tp.same(s: Tp.S, id: I64, kind: I64, head: I64, m: I64, n: I64): Bool =
+  val Tp.S(tt, _, _, _, _) = s
+  val Tp.Tt(tcap, tk, _, th, ta, tn) = tt
+  if 0 <= id && id < tcap then
+    I64.ofU8(tk(id)) == kind && I64.of(th(id)) == head && I64.of(tn(id)) == n && Tp.argsEq(s, I64.of(ta(id)), m, 0, n)
+  else false
+
+def Tp.hashArgs(s: Tp.S, m: I64, i: I64, n: I64, h: I64): I64 =
+  if i < n then Tp.hashArgs(s, m, i + 1, n, (h * 1000003 + Tp.stkAt(s, m + i)) % 4294967291) else h
+
+def Tp.cpArgs(s: Tp.S, m: I64, i: I64, n: I64, dst: I64): Unit =
+  val Tp.S(_, _, pl, _, _) = s
+  val Tp.Pl(acap, ap, _, _) = pl
+  val d = dst + i
+  if i < n && 0 <= d && d < acap then
+    Array.put(ap, d, U32.of(Tp.stkAt(s, m + i)))
+    Tp.cpArgs(s, m, i + 1, n, dst)
+  else ()
+
+def Tp.insert(s: Tp.S, kind: I64, cls: I64, head: I64, m: I64, n: I64, slot: I64): I64 =
+  val Tp.S(tt, hh, pl, _, _) = s
+  val Tp.Tt(tcap, tk, tc, th, ta, tn) = tt
+  val Tp.Hh(hcap, hs) = hh
+  val Tp.Pl(acap, _, _, _) = pl
+  val id = Tp.cget(s, Tp.cTypes())
+  val top = Tp.cget(s, Tp.cATop())
+  if 0 <= id && id < tcap && 0 <= slot && slot < hcap && top + n <= acap then
+    Array.put(tk, id, U8.of(kind))
+    Array.put(tc, id, U8.of(cls))
+    Array.put(th, id, U32.of(head))
+    Array.put(ta, id, U32.of(top))
+    Array.put(tn, id, U32.of(n))
+    Tp.cpArgs(s, m, 0, n, top)
+    Array.put(hs, slot, U32.of(id))
+    Tp.cset(s, Tp.cTypes(), id + 1)
+    Tp.cset(s, Tp.cATop(), top + n)
+    id
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Tp.over(s)
+    0
+
+def Tp.probe(s: Tp.S, kind: I64, cls: I64, head: I64, m: I64, n: I64, slot: I64, k: I64): I64 =
+  val Tp.S(_, hh, _, _, _) = s
+  val Tp.Hh(hcap, hs) = hh
+  if 0 <= slot && slot < hcap && k < hcap then
+    val id = I64.of(hs(slot))
+    if id == 0 then Tp.insert(s, kind, cls, head, m, n, slot)
+    else if Tp.same(s, id, kind, head, m, n) then id
+    else Tp.probe(s, kind, cls, head, m, n, (slot + 1) % hcap, k + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Tp.over(s)
+    0
+
+// intern the type (kind, head) whose args are the stack items above mark m; the stack goes back to m
+def Tp.mk(s: Tp.S, kind: I64, cls: I64, head: I64, m: I64): I64 =
+  val Tp.S(_, hh, _, _, _) = s
+  val Tp.Hh(hcap, _) = hh
+  val n = Tp.cget(s, Tp.cSp()) - m
+  val h = Tp.hashArgs(s, m, 0, n, (kind * 1000003 + head) % 4294967291)
+  val id = if hcap > 0 then Tp.probe(s, kind, cls, head, m, n, h % hcap, 0) else 0
+  Tp.cset(s, Tp.cSp(), m)
+  id
+
+// ── per-file context: the names pass results are kept (rk: kind per use token, rf: ref per use token) ──
+enum Tp.X:
+  case Tp.X(w: Nm.W, g: Na.G, s: Tp.S, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap))
+
+enum Tp.R:
+  case Tp.R(f: Nm.F, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap))
+
+// builtin class by name: C type, Array / Cell / ACell last (their class is 11 and up)
+def Tp.bclass(t: Str): Coll.Option[I64] =
+  if Str.eq(t, "I64") then Coll.Some(0)
+  else if Str.eq(t, "Unit") then Coll.Some(1)
+  else if Str.eq(t, "Bool") then Coll.Some(2)
+  else if Str.eq(t, "Str") then Coll.Some(3)
+  else if Str.eq(t, "Ptr") then Coll.Some(4)
+  else if Str.eq(t, "U32") then Coll.Some(5)
+  else if Str.eq(t, "U8") then Coll.Some(6)
+  else if Str.eq(t, "I32") then Coll.Some(7)
+  else if Str.eq(t, "F64") then Coll.Some(8)
+  else if Str.eq(t, "CStr") then Coll.Some(9)
+  else if Str.eq(t, "CArgv") then Coll.Some(10)
+  else if Str.eq(t, "U64") then Coll.Some(11)
+  else if Str.eq(t, "Array") || Str.eq(t, "Cell") || Str.eq(t, "ACell") then Coll.Some(12)
+  else Coll.None
+
+def Tp.bcty(c: I64): Str =
+  if c == 0 || c == 1 then "int64_t"
+  else if c == 2 then "bool"
+  else if c == 3 then "srs_str"
+  else if c == 4 then "void*"
+  else if c == 5 then "uint32_t"
+  else if c == 6 then "uint8_t"
+  else if c == 7 then "int32_t"
+  else if c == 8 then "double"
+  else if c == 9 then "const char*"
+  else if c == 10 then "char *const*"
+  else if c == 11 then "uint64_t"
+  else "?builtin"
+
+def Tp.symOf(x: Tp.X, j: I64): I64 =
+  val Tp.X(w, g, _, _, _, _) = x
+  Nm.sym(w, Nm.tokT(g, j), false)
+
+// the type nodes of list r from item i: converted, pushed on the stack
+def Tp.tyList(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.push(s, Tp.ty(x, Na.item(g, r, i)))
+    Tp.tyList(x, r, i + 1)
+  else ()
+
+// the interned type of type node t (T<caps> is T: the caps are regions, no part of the C type)
+def Tp.ty(x: Tp.X, t: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, t)
+  if k == Na.kTyCaps() then Tp.ty(x, Na.a(g, t))
+  else if k == Na.kTy() then Tp.tyUse(x, t)
+  else
+    Tp.un(s, Tp.uTypeNode())
+    0
+
+def Tp.tyUse(x: Tp.X, t: I64): I64 =
+  val Tp.X(_, g, s, rcap, rk, rf) = x
+  val j = Na.tok(g, t)
+  val tk = if 0 <= j && j < rcap then I64.ofU8(rk(j)) - Nm.tBase() else Nm.tUnres()
+  val m = Tp.mark(s)
+  Tp.tyList(x, Na.a(g, t), 0)
+  if tk == Nm.tBuiltin() then
+    Tp.bclass(Na.text(g, j)) match
+      case Coll.Some(c) => Tp.mk(s, if c == 12 then Tp.bArray() else Tp.bBuiltin(), c, Tp.symOf(x, j), m)
+      case Coll.None =>
+        Tp.un(s, Tp.uTypeOther())
+        Tp.mk(s, Tp.bOther(), 0, Tp.symOf(x, j), m)
+  else if tk == Nm.tEnum() then Tp.mk(s, Tp.bEnum(), 0, Tp.symOf(x, j), m)
+  else if tk == Nm.tParam() then Tp.mk(s, Tp.bParam(), 0, if 0 <= j && j < rcap then I64.of(rf(j)) else 0, m)
+  else if tk == Nm.tCap() || tk == Nm.tHandler() || tk == Nm.tTrait() then Tp.mk(s, Tp.bCap(), 0, Tp.symOf(x, j), m)
+  else if tk == Nm.tDecl() && Tp.aliasGet(s, Tp.symOf(x, j)) != 0 && Tp.cget(s, Tp.cSp()) == m then
+    Tp.aliasGet(s, Tp.symOf(x, j))
+  else if tk == Nm.tUnres() then
+    Tp.un(s, Tp.uTypeUnres())
+    Tp.cset(s, Tp.cSp(), m)
+    0
+  else
+    Tp.un(s, Tp.uTypeOther())
+    Tp.mk(s, Tp.bOther(), 0, Tp.symOf(x, j), m)
+
+// ── C text (s2/emit.srs) ──
+def Tp.idLoop(pcap: I64, pool: Array[U8](pcap), p: I64, i: I64, n: I64): Unit =
+  val q = p + i
+  if i < n && 0 <= q && q < pcap then
+    val c = I64.ofU8(pool(q))
+    if c == 46 then Console.print("__") else Console.printChar(c)
+    Tp.idLoop(pcap, pool, p, i + 1, n)
+  else ()
+
+// a symbol, each `.` as `__` (Emit.id)
+def Tp.id(w: Nm.W, sym: I64): Unit =
+  val Nm.W(sy, _, _, _) = w
+  val Nm.Sy(_, _, scap, so, sl, pcap, pool) = sy
+  if 0 <= sym && sym < scap then Tp.idLoop(pcap, pool, I64.of(so(sym)), 0, I64.of(sl(sym)))
+  else ()
+
+def Tp.idStr(t: Str, i: I64): Unit =
+  if i < Str.len(t) then
+    val c = Str.at(t, i)
+    if c == 46 then Console.print("__") else Console.printChar(c)
+    Tp.idStr(t, i + 1)
+  else ()
+
+// Emit.mangle: the name, and `_N` then `_arg` for each arg of a type with args
+def Tp.mangle(w: Nm.W, s: Tp.S, t: I64): Unit =
+  Tp.id(w, Tp.head(s, t))
+  val n = Tp.nargs(s, t)
+  if n > 0 then
+    Console.print("_")
+    Console.printI64(n)
+    Tp.mangleArgs(w, s, t, 0, n)
+  else ()
+
+def Tp.mangleArgs(w: Nm.W, s: Tp.S, t: I64, i: I64, n: I64): Unit =
+  if i < n then
+    Console.print("_")
+    Tp.mangle(w, s, Tp.arg(s, t, i))
+    Tp.mangleArgs(w, s, t, i + 1, n)
+  else ()
+
+// Emit.ctype
+def Tp.cty(w: Nm.W, s: Tp.S, t: I64): Unit =
+  val k = Tp.kind(s, t)
+  if k == Tp.bBuiltin() then Console.print(Tp.bcty(Tp.cls(s, t)))
+  else if k == Tp.bArray() then
+    if Tp.nargs(s, t) > 0 then
+      Tp.cty(w, s, Tp.arg(s, t, 0))
+      Console.print("*")
+    else Console.print("void*")
+  else if k == Tp.bEnum() then
+    Console.print("struct E_")
+    Tp.id(w, Tp.head(s, t))
+    val n = Tp.nargs(s, t)
+    if n > 0 then
+      Console.print("_")
+      Tp.mangleArgs(w, s, t, 0, n)
+    else ()
+    Console.print("*")
+  else if k == Tp.bCap() then Console.print("srs_cap*")
+  else if k == Tp.bParam() then Console.print("int64_t")
+  else Console.print("?other")
+
+// ── def headers ──
+// the first part of kind k among the parts list r, 0 when there is none
+def Tp.part(g: Na.G, r: I64, i: I64, k: I64): I64 =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == k then n else Tp.part(g, r, i + 1, k)
+  else 0
+
+// the binders of every group of kind k among the parts
+def Tp.groupN(g: Na.G, r: I64, i: I64, k: I64, acc: I64): I64 =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    Tp.groupN(g, r, i + 1, k, if Na.kd(g, n) == k then acc + Na.len(g, Na.a(g, n)) else acc)
+  else acc
+
+// the types of the binders (kBind: tok = name, a = type) of list r, pushed on the stack
+def Tp.binderTys(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val b = Na.item(g, r, i)
+    Tp.push(s, Tp.ty(x, Na.a(g, b)))
+    Tp.binderTys(x, r, i + 1)
+  else ()
+
+// store the signature of symbol sym: result type ret, params = the stack items above m
+// the stack above m holds np param type ids then tps type-param tokens (Tp.tpToks): both go to the pool
+def Tp.sigStore(s: Tp.S, sym: I64, ret: I64, np: I64, tps: I64, ev: I64, m: I64): Unit =
+  val Tp.S(_, _, pl, _, sg) = s
+  val Tp.Pl(acap, ap, _, _) = pl
+  val Tp.Sg(gcap, sr, ss, sn, st, se, _, _, _) = sg
+  val n = Tp.cget(s, Tp.cSp()) - m
+  val top = Tp.cget(s, Tp.cATop())
+  if 0 < sym && 0 <= sym && sym < gcap && top + n <= acap then
+    if I64.of(sr(sym)) != 0 then Tp.cinc(s, Tp.cDup())
+    else
+      Array.put(sr, sym, U32.of(ret))
+      Array.put(ss, sym, U32.of(top))
+      Array.put(sn, sym, U32.of(np))
+      Array.put(st, sym, U32.of(tps))
+      Array.put(se, sym, U32.of(ev))
+      Tp.cpArgs(s, m, 0, n, top)
+      Tp.cset(s, Tp.cATop(), top + n)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Tp.over(s)
+  Tp.cset(s, Tp.cSp(), m)
+
+def Tp.sigAt(s: Tp.S, sym: I64, col: I64): I64 =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, sr, ss, sn, st, se, _, _, _) = sg
+  if 0 <= sym && sym < gcap then
+    if col == 0 then I64.of(sr(sym))
+    else if col == 1 then I64.of(ss(sym))
+    else if col == 2 then I64.of(sn(sym))
+    else if col == 3 then I64.of(st(sym))
+    else I64.of(se(sym))
+  // shortcut: sym comes from the names table, always below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+// alias decls (`type X = T`): the body type, by the symbol of X
+def Tp.aliasGet(s: Tp.S, sym: I64): I64 =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, sa, _, _) = sg
+  if 0 <= sym && sym < gcap then I64.of(sa(sym))
+  // shortcut: sym comes from the names table, always below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.aliasSet(s: Tp.S, sym: I64, t: I64): Unit =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, sa, _, _) = sg
+  if 0 < sym && 0 <= sym && sym < gcap then Array.put(sa, sym, U32.of(t)) else Tp.over(s)
+
+def Tp.aliasRoot(x: Tp.X, root: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val al = Tp.part(g, Na.b(g, root), 0, Na.kAlias())
+  if al != 0 then Tp.aliasSet(s, Tp.symOf(x, Na.a(g, root)), Tp.ty(x, Na.a(g, al))) else ()
+
+def Tp.fileAliases(x: Tp.X, f: Nm.F, i: I64): Unit =
+  val Nm.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 6 && root != 0 then Tp.aliasRoot(x, root) else ()
+    Tp.fileAliases(x, f, i + 1)
+  else ()
+
+def Tp.pParams(x: Tp.X, r: I64, i: I64, start: I64, n: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  if i < n then
+    if i > 0 then Console.print(", ") else ()
+    Tp.cty(w, s, Tp.poolAt(s, start + i))
+    Console.print(" p_")
+    Tp.idStr(Na.text(g, Na.tok(g, Na.item(g, r, i))), 0)
+    Tp.pParams(x, r, i + 1, start, n)
+  else ()
+
+// `static R f_Name(T p_x, ...);` (Emit.sig); `void` for no params
+def Tp.proto(x: Tp.X, sym: I64, pr: I64): Unit =
+  val Tp.X(w, _, s, _, _, _) = x
+  val n = Tp.sigAt(s, sym, 2)
+  Console.print("static ")
+  Tp.cty(w, s, Tp.sigAt(s, sym, 0))
+  Console.print(" f_")
+  Tp.id(w, sym)
+  Console.print("(")
+  if n == 0 then Console.print("void") else Tp.pParams(x, pr, 0, Tp.sigAt(s, sym, 1), n)
+  Console.print(");\n")
+
+// the tokens of the binders of every group of kind k among the parts (the [] type params), pushed on the stack
+def Tp.tpToks(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kGTypes() then Tp.pushToks(x, Na.a(g, n), 0) else ()
+    Tp.tpToks(x, r, i + 1)
+  else ()
+
+def Tp.pushToks(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.push(s, Na.tok(g, Na.item(g, r, i)))
+    Tp.pushToks(x, r, i + 1)
+  else ()
+
+// the signature of the def-like node `root` (parts = Na.b) under the symbol sym
+def Tp.sigOf(x: Tp.X, root: I64, sym: I64, dump: Bool): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  val tps = Tp.groupN(g, parts, 0, Na.kGTypes(), 0)
+  val ev = Tp.groupN(g, parts, 0, Na.kGEv(), 0)
+  val pr = Na.a(g, Tp.part(g, parts, 0, Na.kParams()))
+  val m = Tp.mark(s)
+  Tp.binderTys(x, pr, 0)
+  val np = Tp.mark(s) - m
+  Tp.tpToks(x, parts, 0)
+  val rp = Tp.part(g, parts, 0, Na.kRet())
+  val rp2 = if rp != 0 then rp else Tp.part(g, parts, 0, Na.kOpRet())
+  val rp3 = if rp2 != 0 then rp2 else Tp.part(g, parts, 0, Na.kOpRetC())
+  val ret = Tp.ty(x, Na.a(g, rp3))
+  Tp.sigStore(s, sym, ret, np, tps, ev, m)
+  Tp.cinc(s, Tp.cDefs())
+  if tps > 0 then Tp.cinc(s, Tp.cGeneric()) else ()
+  if ev > 0 then Tp.cinc(s, Tp.cEvid()) else ()
+  if tps == 0 && ev == 0 then
+    Tp.cinc(s, Tp.cProtos())
+    if dump then Tp.proto(x, sym, pr) else ()
+  else ()
+
+// an enum: the self type E[P1..Pn] (Param types of its [] binders), and for every case its sig: result = self, params = the field types
+def Tp.enumHeader(x: Tp.X, root: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  val m0 = Tp.mark(s)
+  Tp.selfArgs(x, parts, 0)
+  val self = Tp.mk(s, Tp.bEnum(), 0, Tp.symOf(x, Na.a(g, root)), m0)
+  Tp.cases(x, parts, 0, self, Tp.groupN(g, parts, 0, Na.kGTypes(), 0))
+
+// the Param type of every [] binder of the groups among the parts, pushed
+def Tp.selfArgs(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kGTypes() then Tp.selfBinders(x, Na.a(g, n), 0) else ()
+    Tp.selfArgs(x, r, i + 1)
+  else ()
+
+def Tp.selfBinders(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val m = Tp.mark(s)
+    Tp.push(s, Tp.mk(s, Tp.bParam(), 0, Na.tok(g, Na.item(g, r, i)), m))
+    Tp.selfBinders(x, r, i + 1)
+  else ()
+
+def Tp.cases(x: Tp.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, parts) then
+    val n = Na.item(g, parts, i)
+    val k = Na.kd(g, n)
+    if k == Na.kCase() || k == Na.kCaseNP() then
+      val m = Tp.mark(s)
+      Tp.binderTys(x, if k == Na.kCase() then Na.a(g, n) else 0, 0)
+      val np = Tp.mark(s) - m
+      Tp.tpToks(x, parts, 0)
+      Tp.sigStore(s, Tp.symOf(x, Na.tok(g, n)), self, np, tps, 0, m)
+      Tp.cinc(s, Tp.cCases())
+    else ()
+    Tp.cases(x, parts, i + 1, self, tps)
+  else ()
+
+// the ops of a capability are requests Cap.op: signatures under the symbol of `Cap.op`
+def Tp.capOps(x: Tp.X, root: I64, i: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  if i < Na.len(g, parts) then
+    val n = Na.item(g, parts, i)
+    if Na.kd(g, n) == Na.kCapDef() then
+      val p = Na.a(g, root)
+      val o = Na.a(g, n)
+      val sigSym = Nm.sym(w, Nm.T(Nm.srcOf(g), Na.toff(g, p), Na.tlen(g, p), Nm.srcOf(g), Na.toff(g, o), Na.tlen(g, o)), false)
+      Tp.sigOf(x, n, sigSym, false)
+      Tp.opAdd(s, Tp.symOf(x, p), Tp.symIns(x, o), sigSym)
+    else ()
+    Tp.capOps(x, root, i + 1)
+  else ()
+
+def Tp.symIns(x: Tp.X, j: I64): I64 =
+  val Tp.X(w, g, _, _, _, _) = x
+  Nm.sym(w, Nm.tokT(g, j), true)
+
+// a trait: its [] binders are the signature of the trait symbol (ntp, tokens), its methods are signatures `Trait.method` found by (trait, method)
+def Tp.traitRoot(x: Tp.X, root: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  val ts = Tp.symOf(x, Na.a(g, root))
+  val m = Tp.mark(s)
+  Tp.tpToks(x, parts, 0)
+  Tp.sigStore(s, ts, Tp.mk(s, Tp.bCap(), 0, ts, Tp.mark(s)), 0, Tp.groupN(g, parts, 0, Na.kGTypes(), 0), 0, m)
+  Tp.traitMethods(x, root, ts, 0)
+
+def Tp.traitMethods(x: Tp.X, root: I64, ts: I64, i: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  if i < Na.len(g, parts) then
+    val n = Na.item(g, parts, i)
+    if Na.kd(g, n) == Na.kDef() then
+      val p = Na.a(g, root)
+      val o = Na.a(g, n)
+      val sigSym = Nm.sym(w, Nm.T(Nm.srcOf(g), Na.toff(g, p), Na.tlen(g, p), Nm.srcOf(g), Na.toff(g, o), Na.tlen(g, o)), true)
+      Tp.sigOf(x, n, sigSym, false)
+      Tp.opAdd(s, ts, Tp.symIns(x, o), sigSym)
+    else ()
+    Tp.traitMethods(x, root, ts, i + 1)
+  else ()
+
+// a handler: its type is the capability it is `for`; its `init` signature is stored under the handler symbol
+def Tp.handlerRoot(x: Tp.X, root: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  if i < Na.len(g, parts) then
+    val n = Na.item(g, parts, i)
+    val k = Na.kd(g, n)
+    if k == Na.kHFor() then Tp.aliasSet(s, Tp.symOf(x, Na.a(g, root)), Tp.mk(s, Tp.bCap(), 0, Tp.symOf(x, Na.a(g, n)), Tp.mark(s)))
+    else if k == Na.kDef() && Str.eq(Na.text(g, Na.a(g, n)), "init") then Tp.sigOf(x, n, Tp.symOf(x, Na.a(g, root)), false)
+    else ()
+    Tp.handlerRoot(x, root, i + 1)
+  else ()
+
+// a value (top-level, or an extern libc val): its type is the result of a signature without params
+def Tp.valSig(x: Tp.X, nameTok: I64, tyNode: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  val m = Tp.mark(s)
+  Tp.sigStore(s, Tp.symOf(x, nameTok), Tp.ty(x, tyNode), 0, 0, 0, m)
+
+def Tp.fileDefs(x: Tp.X, f: Nm.F, i: I64, dump: Bool): Unit =
+  val Nm.F(_, g, _, _, rc, rk, rr, _) = f
+  val Tp.X(_, _, s, _, _, _) = x
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    val kb = I64.ofU8(rk(i))
+    if root == 0 then ()
+    else if kb == 0 then Tp.sigOf(x, root, Tp.symOf(x, Na.a(g, root)), dump)
+    else if kb == 1 then Tp.enumHeader(x, root)
+    else if kb == 2 then
+      val inner = Na.b(g, root)
+      if Na.kd(g, inner) == Na.kDef() then
+        Tp.cinc(s, Tp.cExtern())
+        Tp.sigOf(x, inner, Tp.symOf(x, Na.a(g, inner)), false)
+      else if Na.kd(g, inner) == Na.kCVal() then Tp.valSig(x, Na.tok(g, inner), Na.a(g, inner))
+      else ()
+    else if kb == 4 then Tp.capOps(x, root, 0)
+    else if kb == 5 then Tp.traitRoot(x, root)
+    else if kb == 3 then Tp.handlerRoot(x, root, 0)
+    else if kb == 7 then Tp.valSig(x, Na.tok(g, root), Na.a(g, root))
+    else ()
+    Tp.fileDefs(x, f, i + 1, dump)
+  else ()
+
+// ═══ STAGE 2: bodies. per def: the local types by binder token (Sg.sl), type vars by index (Sg.sv, reset per def: a flat union-find
+// of bindings), first-order unification; check mode = `want` (0 = none) is passed down to literals, if/match arms, args and the tail ═══
+def Tp.clsTok(g: Na.G, j: I64): I64 =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(_, tcap, cls, _, _, t) = tk
+  if 0 <= j && j < t && j < tcap then I64.ofU8(cls(j)) else Kc.eof()
+
+def Tp.initTy(w: Nm.W, s: Tp.S, name: Str, cls: I64, slot: I64): Unit =
+  Tp.cset(s, slot, Tp.mk(s, Tp.bBuiltin(), cls, Nm.sym(w, Nm.lit(name), false), Tp.mark(s)))
+
+def Tp.initTys(w: Nm.W, s: Tp.S): Unit =
+  Tp.initTy(w, s, "I64", 0, Tp.tI64())
+  Tp.initTy(w, s, "Bool", 2, Tp.tBool())
+  Tp.initTy(w, s, "Unit", 1, Tp.tUnit())
+  Tp.initTy(w, s, "Str", 3, Tp.tStr())
+  Tp.initTy(w, s, "U32", 5, Tp.tU32())
+  Tp.initTy(w, s, "U64", 11, Tp.tU64())
+
+// locals (by binder token) and type vars (by index)
+def Tp.ltGet(s: Tp.S, j: I64): I64 =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, _, sl, _) = sg
+  if 0 <= j && j < gcap then I64.of(sl(j))
+  // shortcut: a binder token is below the token count, below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.ltSet(s: Tp.S, j: I64, t: I64): Unit =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, _, sl, _) = sg
+  if 0 <= j && j < gcap then Array.put(sl, j, U32.of(t)) else Tp.over(s)
+
+def Tp.varB(s: Tp.S, i: I64): I64 =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, _, _, sv) = sg
+  if 0 <= i && i < gcap then I64.of(sv(i))
+  // shortcut: a var index is below the var count, below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+def Tp.varSet(s: Tp.S, i: I64, t: I64): Unit =
+  val Tp.S(_, _, _, _, sg) = s
+  val Tp.Sg(gcap, _, _, _, _, _, _, _, sv) = sg
+  if 0 <= i && i < gcap then Array.put(sv, i, U32.of(t)) else Tp.over(s)
+
+def Tp.varT(s: Tp.S, i: I64): I64 = Tp.mk(s, Tp.bVar(), 0, i, Tp.mark(s))
+
+def Tp.fresh(s: Tp.S): I64 =
+  val n = Tp.cget(s, Tp.cNVar())
+  Tp.cset(s, Tp.cNVar(), n + 1)
+  Tp.varT(s, n)
+
+def Tp.resetVars(s: Tp.S, i: I64, n: I64): Unit =
+  if i < n then
+    Tp.varSet(s, i, 0)
+    Tp.resetVars(s, i + 1, n)
+  else ()
+
+def Tp.walk(s: Tp.S, t: I64): I64 =
+  if Tp.kind(s, t) == Tp.bVar() then
+    val b = Tp.varB(s, Tp.head(s, t))
+    if b != 0 then Tp.walk(s, b) else t
+  else t
+
+def Tp.occursArgs(s: Tp.S, v: I64, t: I64, i: I64, n: I64): Bool =
+  if i < n then Tp.occurs(s, v, Tp.arg(s, t, i)) || Tp.occursArgs(s, v, t, i + 1, n) else false
+
+def Tp.occurs(s: Tp.S, v: I64, t: I64): Bool =
+  val w = Tp.walk(s, t)
+  if w == v then true else Tp.occursArgs(s, v, w, 0, Tp.nargs(s, w))
+
+def Tp.bindVar(s: Tp.S, v: I64, t: I64): Bool =
+  if Tp.occurs(s, v, t) then false
+  else
+    Tp.varSet(s, Tp.head(s, v), t)
+    true
+
+def Tp.unifyArgs(s: Tp.S, a: I64, b: I64, i: I64, n: I64): Bool =
+  if i < n then Tp.unify(s, Tp.arg(s, a, i), Tp.arg(s, b, i)) && Tp.unifyArgs(s, a, b, i + 1, n) else true
+
+// first-order unification; an absent type (0, an untyped node) unifies with anything
+def Tp.unify(s: Tp.S, a: I64, b: I64): Bool =
+  if a == 0 || b == 0 then true
+  else
+    val wa = Tp.walk(s, a)
+    val wb = Tp.walk(s, b)
+    if wa == wb then true
+    else if Tp.kind(s, wa) == Tp.bVar() then Tp.bindVar(s, wa, wb)
+    else if Tp.kind(s, wb) == Tp.bVar() then Tp.bindVar(s, wb, wa)
+    else if Tp.kind(s, wa) == Tp.kind(s, wb) && Tp.head(s, wa) == Tp.head(s, wb) && Tp.nargs(s, wa) == Tp.nargs(s, wb) then Tp.unifyArgs(s, wa, wb, 0, Tp.nargs(s, wa))
+    else false
+
+// a mismatch: counted, the first few kept as (file, token)
+def Tp.mis(s: Tp.S, tok: I64): Unit =
+  val n = Tp.cget(s, Tp.cMis())
+  Tp.cset(s, Tp.cMis(), n + 1)
+  if n < Tp.nMisShown() then
+    Tp.cset(s, Tp.cMisAt() + 2 * n, Tp.cget(s, Tp.cFile()))
+    Tp.cset(s, Tp.cMisAt() + 2 * n + 1, tok)
+  else ()
+
+def Tp.expect(x: Tp.X, tok: I64, got: I64, want: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  if Tp.unify(s, got, want) then () else Tp.mis(s, tok)
+
+// substitute the type params whose tokens are the pool slice [tp0, tp0 + ntp) by the vars v0 + i
+def Tp.tpIndex(s: Tp.S, tp0: I64, ntp: I64, i: I64, tok: I64): I64 =
+  if i < ntp then
+    if Tp.poolAt(s, tp0 + i) == tok then i else Tp.tpIndex(s, tp0, ntp, i + 1, tok)
+  else ntp
+
+def Tp.instArgs(s: Tp.S, t: I64, tp0: I64, ntp: I64, v0: I64, i: I64, n: I64): Unit =
+  if i < n then
+    Tp.push(s, Tp.inst(s, Tp.arg(s, t, i), tp0, ntp, v0))
+    Tp.instArgs(s, t, tp0, ntp, v0, i + 1, n)
+  else ()
+
+def Tp.inst(s: Tp.S, t: I64, tp0: I64, ntp: I64, v0: I64): I64 =
+  val k = Tp.kind(s, t)
+  if k == Tp.bParam() then
+    val i = Tp.tpIndex(s, tp0, ntp, 0, Tp.head(s, t))
+    if i < ntp then Tp.varT(s, v0 + i) else t
+  else if Tp.nargs(s, t) == 0 then t
+  else
+    val m = Tp.mark(s)
+    Tp.instArgs(s, t, tp0, ntp, v0, 0, Tp.nargs(s, t))
+    Tp.mk(s, k, Tp.cls(s, t), Tp.head(s, t), m)
+
+def Tp.freshN(s: Tp.S, n: I64): Unit =
+  if n > 0 then
+    Tp.fresh(s)
+    Tp.freshN(s, n - 1)
+  else ()
+
+// the symbol of declaration d
+def Tp.declSym(x: Tp.X, d: I64): I64 =
+  val Tp.X(w, _, _, _, _, _) = x
+  val Nm.W(_, gt, _, _) = w
+  val Nm.Gt(gcap, _, _, _, gs, _, _, _, _, _) = gt
+  if 0 <= d && d < gcap then I64.of(gs(d)) else 0
+
+// an untyped node: counted by kind (codes >= 90: other reasons), its type is a fresh var
+def Tp.untyped(x: Tp.X, tok: I64, code: I64): I64 =
+  val Tp.X(_, _, s, _, _, _) = x
+  val n = Tp.cget(s, Tp.cUnTot())
+  Tp.cinc(s, Tp.cUnNode() + code)
+  Tp.cinc(s, Tp.cUnTot())
+  if n < Tp.nMisShown() then
+    Tp.cset(s, Tp.cUnAt() + 2 * n, Tp.cget(s, Tp.cFile()))
+    Tp.cset(s, Tp.cUnAt() + 2 * n + 1, tok)
+  else ()
+  Tp.fresh(s)
+
+def Tp.intLit(s: Tp.S, want: I64): I64 =
+  val w = Tp.walk(s, want)
+  if Tp.kind(s, w) == Tp.bBuiltin() && (Tp.cls(s, w) == 5 || Tp.cls(s, w) == 11) then w else Tp.cget(s, Tp.tI64())
+
+// the use kind (0 Global 1 Local 2 Case 3 Builtin 4 Cap 5 Unresolved) and ref of use token j
+def Tp.useKind(x: Tp.X, j: I64): I64 =
+  val Tp.X(_, _, _, rcap, rk, _) = x
+  if 0 <= j && j < rcap then I64.ofU8(rk(j)) else Nm.kUnres()
+
+def Tp.useRef(x: Tp.X, j: I64): I64 =
+  val Tp.X(_, _, _, rcap, _, rf) = x
+  if 0 <= j && j < rcap then I64.of(rf(j)) else 0
+
+def Tp.args(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.expr(x, Na.item(g, r, i), 0)
+    Tp.args(x, r, i + 1)
+  else ()
+
+// explicit [T, ...] groups of a call: the i-th type arg is the var v0 + i
+def Tp.targs(x: Tp.X, r: I64, i: I64, v0: I64, k: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kCGTys() then
+      Tp.targList(x, Na.a(g, n), 0, v0, k)
+      Tp.targs(x, r, i + 1, v0, k + Na.len(g, Na.a(g, n)))
+    else Tp.targs(x, r, i + 1, v0, k)
+  else ()
+
+def Tp.targList(x: Tp.X, r: I64, i: I64, v0: I64, k: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.expect(x, Na.tok(g, Na.item(g, r, i)), Tp.ty(x, Na.item(g, r, i)), Tp.varT(s, v0 + k + i))
+    Tp.targList(x, r, i + 1, v0, k)
+  else ()
+
+def Tp.callArgs(x: Tp.X, r: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val a = Na.item(g, r, i)
+    val pt = if i < np then Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0) else 0
+    Tp.expect(x, Na.tok(g, a), Tp.expr(x, a, pt), pt)
+    Tp.callArgs(x, r, i + 1, np, start, tp0, ntp, v0)
+  else ()
+
+// a call of a signature (def, ctor, request): fresh vars for its type params, args checked left to right against the instantiated params
+def Tp.callSig(x: Tp.X, n: I64, sym: I64, groups: I64, args: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val np = Tp.sigAt(s, sym, 2)
+  val ntp = Tp.sigAt(s, sym, 3)
+  val start = Tp.sigAt(s, sym, 1)
+  val v0 = Tp.cget(s, Tp.cNVar())
+  Tp.freshN(s, ntp)
+  Tp.targs(x, groups, 0, v0, 0)
+  val ret = Tp.inst(s, Tp.sigAt(s, sym, 0), start + np, ntp, v0)
+  if ntp > 0 && want != 0 then Tp.unify(s, ret, want) else true
+  if Na.len(g, args) != np then Tp.mis(s, Na.tok(g, n)) else ()
+  Tp.callArgs(x, args, 0, np, start, start + np, ntp, v0)
+  ret
+
+def Tp.call(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val j = Na.tok(g, n)
+  val kind = Tp.useKind(x, j)
+  if kind == Nm.kGlobal() || kind == Nm.kCase() || kind == Nm.kCap() then
+    val sym = Tp.declSym(x, Tp.useRef(x, j))
+    if Tp.sigAt(s, sym, 0) != 0 then Tp.callSig(x, n, sym, Na.a(g, n), Na.b(g, n), want)
+    else
+      Tp.args(x, Na.b(g, n), 0)
+      Tp.untyped(x, j, 92)
+  else if kind == Nm.kLocal() then
+    Tp.args(x, Na.b(g, n), 0)
+    val t = Tp.walk(s, Tp.ltGet(s, Tp.useRef(x, j)))
+    if Tp.kind(s, t) == Tp.bArray() && Tp.nargs(s, t) > 0 then Tp.arg(s, t, 0) else Tp.untyped(x, j, 94)
+  else
+    Tp.args(x, Na.b(g, n), 0)
+    Tp.untyped(x, j, if kind == Nm.kBuiltin() then 90 else 93)
+
+def Tp.bindTraitArgs(x: Tp.X, rt: I64, v0: I64, i: I64, n: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  if i < n then
+    Tp.expect(x, 0, Tp.varT(s, v0 + i), Tp.arg(s, rt, i))
+    Tp.bindTraitArgs(x, rt, v0, i + 1, n)
+  else ()
+
+// recv.op(args): recv is a local of a capability type (a handle) or a trait type (evidence); the op's signature is found by (owner, op)
+def Tp.method(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val j = Na.tok(g, n)
+  val rt = if Tp.useKind(x, j) == Nm.kLocal() then Tp.walk(s, Tp.ltGet(s, Tp.useRef(x, j))) else 0
+  val sg = if rt != 0 && Tp.kind(s, rt) == Tp.bCap() then Tp.opFind(s, Tp.head(s, rt), Tp.symIns(x, Na.a(g, n)), 0) else 0
+  if sg == 0 then
+    Tp.args(x, Na.b(g, n), 0)
+    Tp.untyped(x, j, 91)
+  else
+    val ts = Tp.head(s, rt)
+    val ntp = Tp.sigAt(s, ts, 3)
+    val tp0 = Tp.sigAt(s, ts, 1) + Tp.sigAt(s, ts, 2)
+    val np = Tp.sigAt(s, sg, 2)
+    val v0 = Tp.cget(s, Tp.cNVar())
+    Tp.freshN(s, ntp)
+    Tp.bindTraitArgs(x, rt, v0, 0, ntp)
+    if Na.len(g, Na.b(g, n)) != np then Tp.mis(s, j) else ()
+    Tp.callArgs(x, Na.b(g, n), 0, np, Tp.sigAt(s, sg, 1), tp0, ntp, v0)
+    Tp.inst(s, Tp.sigAt(s, sg, 0), tp0, ntp, v0)
+
+def Tp.name(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val j = Na.tok(g, n)
+  val kind = Tp.useKind(x, j)
+  if kind == Nm.kLocal() then
+    val t = Tp.ltGet(s, Tp.useRef(x, j))
+    if t != 0 then t else Tp.untyped(x, j, 94)
+  else if kind == Nm.kCase() then
+    val sym = Tp.declSym(x, Tp.useRef(x, j))
+    if Tp.sigAt(s, sym, 0) != 0 then Tp.callSig(x, n, sym, 0, 0, want) else Tp.untyped(x, j, 92)
+  else if kind == Nm.kGlobal() && Tp.sigAt(s, Tp.declSym(x, Tp.useRef(x, j)), 0) != 0 then Tp.sigAt(s, Tp.declSym(x, Tp.useRef(x, j)), 0)
+  else if kind == Nm.kBuiltin() && (Str.eq(Na.text(g, j), "true") || Str.eq(Na.text(g, j), "false")) then Tp.cget(s, Tp.tBool())
+  else Tp.untyped(x, j, 95)
+
+// the operator class decides: comparison (Bool), logic (Bool), shift (word, I64 count), else both operands one int type
+def Tp.bin(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val c = Tp.clsTok(g, Na.tok(g, n))
+  val l = Na.a(g, n)
+  val r = Na.b(g, n)
+  val tb = Tp.cget(s, Tp.tBool())
+  if c == Kc.andand() || c == Kc.oror() then
+    Tp.expect(x, Na.tok(g, l), Tp.expr(x, l, tb), tb)
+    Tp.expect(x, Na.tok(g, r), Tp.expr(x, r, tb), tb)
+    tb
+  else if c == Kc.eqeq() || c == Kc.ne() then
+    val tl = Tp.expr(x, l, 0)
+    Tp.expect(x, Na.tok(g, r), Tp.expr(x, r, tl), tl)
+    tb
+  else if c == Kc.shl() || c == Kc.shr() then
+    val tl = Tp.expr(x, l, want)
+    Tp.expect(x, Na.tok(g, r), Tp.expr(x, r, Tp.cget(s, Tp.tI64())), Tp.cget(s, Tp.tI64()))
+    if Tp.walk(s, tl) == Tp.cget(s, Tp.tI64()) then Tp.mis(s, Na.tok(g, n)) else ()
+    tl
+  else
+    val cmp = c == Kc.lt() || c == Kc.ltg() || c == Kc.le() || c == Kc.gt() || c == Kc.ge()
+    // one operand decides the type: the left, or the right when the left is a literal
+    val lit = Na.kd(g, l) == Na.kInt()
+    val d = if lit then r else l
+    val o = if lit then l else r
+    val t0 = Tp.expr(x, d, if cmp then 0 else want)
+    val w0 = Tp.walk(s, t0)
+    val t = if Tp.kind(s, w0) == Tp.bBuiltin() && (Tp.cls(s, w0) == 5 || Tp.cls(s, w0) == 11) then w0 else Tp.cget(s, Tp.tI64())
+    Tp.expect(x, Na.tok(g, d), t0, t)
+    Tp.expect(x, Na.tok(g, o), Tp.expr(x, o, t), t)
+    // s2 Ty.ints: & | ^ are on words (U32, U64) only, / and % on I64 only
+    val isWord = t != Tp.cget(s, Tp.tI64())
+    if (c == Kc.caret() || c == Kc.amp() || c == Kc.bar()) && !isWord then Tp.mis(s, Na.tok(g, n))
+    else if (c == Kc.slash() || c == Kc.pct()) && isWord then Tp.mis(s, Na.tok(g, n))
+    else ()
+    if cmp then tb else t
+
+def Tp.unx(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val c = Tp.clsTok(g, Na.tok(g, n))
+  val a = Na.a(g, n)
+  val t = if c == Kc.bang() then Tp.cget(s, Tp.tBool()) else if c == Kc.minus() then Tp.cget(s, Tp.tI64()) else Tp.intLit(s, want)
+  Tp.expect(x, Na.tok(g, a), Tp.expr(x, a, t), t)
+  t
+
+// the result type of an if/match: want, else a fresh var that the branches unify
+def Tp.resultOf(s: Tp.S, want: I64): I64 = if want != 0 then want else Tp.fresh(s)
+
+def Tp.ifx(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val tb = Tp.cget(s, Tp.tBool())
+  val c = Na.a(g, n)
+  val pair = Na.b(g, n)
+  val r = Tp.resultOf(s, want)
+  Tp.expect(x, Na.tok(g, c), Tp.expr(x, c, tb), tb)
+  Tp.expect(x, Na.tok(g, Na.a(g, pair)), Tp.expr(x, Na.a(g, pair), r), r)
+  Tp.expect(x, Na.tok(g, Na.b(g, pair)), Tp.expr(x, Na.b(g, pair), r), r)
+  r
+
+// bind the pattern names (tokens, list a) to the instantiated field types of case sym
+def Tp.bindFields(x: Tp.X, a: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, a) then
+    Tp.ltSet(s, Na.item(g, a, i), if i < np then Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0) else 0)
+    Tp.bindFields(x, a, i + 1, np, start, tp0, ntp, v0)
+  else ()
+
+// pattern: case token pj with names a, against the scrutinee type ts
+def Tp.pattern(x: Tp.X, pj: I64, a: I64, ts: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if Tp.useKind(x, pj) == Nm.kCase() then
+    val sym = Tp.declSym(x, Tp.useRef(x, pj))
+    val np = Tp.sigAt(s, sym, 2)
+    val ntp = Tp.sigAt(s, sym, 3)
+    val start = Tp.sigAt(s, sym, 1)
+    val v0 = Tp.cget(s, Tp.cNVar())
+    Tp.freshN(s, ntp)
+    Tp.expect(x, pj, Tp.inst(s, Tp.sigAt(s, sym, 0), start + np, ntp, v0), ts)
+    if Na.len(g, a) != np then Tp.mis(s, pj) else ()
+    Tp.bindFields(x, a, 0, np, start, start + np, ntp, v0)
+  else
+    Tp.cinc(s, Tp.cUnNode() + 96)
+    Tp.cinc(s, Tp.cUnTot())
+
+def Tp.arms(x: Tp.X, r: I64, i: I64, ts: I64, res: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val arm = Na.item(g, r, i)
+    val p = Na.a(g, arm)
+    val pk = Na.kd(g, p)
+    if pk == Na.kPCase() then Tp.pattern(x, Na.tok(g, p), Na.a(g, p), ts)
+    else if pk == Na.kPCaseNP() then Tp.pattern(x, Na.tok(g, p), 0, ts)
+    else ()
+    Tp.expect(x, Na.tok(g, arm), Tp.expr(x, Na.b(g, arm), res), res)
+    Tp.arms(x, r, i + 1, ts, res)
+  else ()
+
+def Tp.matchx(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val ts = Tp.expr(x, Na.a(g, n), 0)
+  val res = Tp.resultOf(s, want)
+  Tp.arms(x, Na.b(g, n), 0, ts, res)
+  res
+
+// one statement; a binder statement is Unit
+def Tp.stmt(x: Tp.X, st: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, st)
+  if k == Na.kVal() || k == Na.kVar() then
+    val ann = Na.a(g, st)
+    val rhs = Na.b(g, st)
+    if ann != 0 then
+      val ta = Tp.ty(x, ann)
+      Tp.expect(x, Na.tok(g, st), Tp.expr(x, rhs, ta), ta)
+      Tp.ltSet(s, Na.tok(g, st), ta)
+    else Tp.ltSet(s, Na.tok(g, st), Tp.expr(x, rhs, 0))
+    Tp.cget(s, Tp.tUnit())
+  else if k == Na.kPatVal() then
+    Tp.pattern(x, Na.tok(g, st), Na.a(g, st), Tp.expr(x, Na.b(g, st), 0))
+    Tp.cget(s, Tp.tUnit())
+  else if k == Na.kDo() then Tp.expr(x, Na.a(g, st), want)
+  else if k == Na.kHandle() then
+    // handle x = H(args): the args against H's init, x is a value of the capability H is for
+    val hs = Tp.symOf(x, Na.a(g, st))
+    val ct = Tp.aliasGet(s, hs)
+    // a handler without an `init` takes no args
+    if Tp.sigAt(s, hs, 0) != 0 then Tp.callSig(x, st, hs, 0, Na.b(g, st), 0)
+    else
+      if Na.len(g, Na.b(g, st)) != 0 then Tp.mis(s, Na.tok(g, st)) else ()
+      Tp.cget(s, Tp.tUnit())
+    Tp.ltSet(s, Na.tok(g, st), if ct != 0 then ct else Tp.untyped(x, Na.tok(g, st), 98))
+    Tp.cget(s, Tp.tUnit())
+  else
+    // invariant, decreases: counted; the expression is typed for the nodes inside
+    if k == Na.kCheck() then Tp.expr(x, Na.a(g, st), 0) else 0
+    Tp.untyped(x, Na.tok(g, st), k)
+    Tp.cget(s, Tp.tUnit())
+
+def Tp.stmts(x: Tp.X, r: I64, i: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val last = i + 1 == Na.len(g, r)
+    val t = Tp.stmt(x, Na.item(g, r, i), if last then want else 0)
+    if last then t else Tp.stmts(x, r, i + 1, want)
+  else Tp.cget(s, Tp.tUnit())
+
+def Tp.expr(x: Tp.X, n: I64, want: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, n)
+  if k == Na.kInt() || k == Na.kChar() then Tp.intLit(s, want)
+  else if k == Na.kStr() then Tp.cget(s, Tp.tStr())
+  else if k == Na.kUnit() then Tp.cget(s, Tp.tUnit())
+  else if k == Na.kParen() then Tp.expr(x, Na.a(g, n), want)
+  else if k == Na.kName() then Tp.name(x, n, want)
+  else if k == Na.kCall() then Tp.call(x, n, want)
+  else if k == Na.kMethod() then Tp.method(x, n, want)
+  else if k == Na.kBin() then Tp.bin(x, n, want)
+  else if k == Na.kUn() then Tp.unx(x, n, want)
+  else if k == Na.kIf() || k == Na.kIfNl() then Tp.ifx(x, n, want)
+  else if k == Na.kMatch() then Tp.matchx(x, n, want)
+  else if k == Na.kBlock() then Tp.stmts(x, Na.a(g, n), 0, want)
+  else if k == Na.kWhile() then
+    val tb = Tp.cget(s, Tp.tBool())
+    Tp.expect(x, Na.tok(g, Na.a(g, n)), Tp.expr(x, Na.a(g, n), tb), tb)
+    Tp.expr(x, Na.b(g, n), 0)
+    Tp.cget(s, Tp.tUnit())
+  else if k == Na.kAssign() then
+    val j = Na.tok(g, n)
+    val tv = if Tp.useKind(x, j) == Nm.kLocal() then Tp.ltGet(s, Tp.useRef(x, j)) else 0
+    Tp.expect(x, j, Tp.expr(x, Na.a(g, n), tv), tv)
+    Tp.cget(s, Tp.tUnit())
+  else
+    // resume, quantifier: counted; the value is typed for the nodes inside
+    if k == Na.kResume() then Tp.expr(x, Na.b(g, n), 0) else 0
+    Tp.untyped(x, Na.tok(g, n), k)
+
+// ── a def: params and {} binders are locals, the body is checked against the declared result ──
+def Tp.bindParams(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val b = Na.item(g, r, i)
+    if Na.kd(g, b) == Na.kBind() then Tp.ltSet(s, Na.tok(g, b), Tp.ty(x, Na.a(g, b))) else ()
+    Tp.bindParams(x, r, i + 1)
+  else ()
+
+def Tp.bindGroups(x: Tp.X, parts: I64, i: I64): Unit =
+  val Tp.X(_, g, _, _, _, _) = x
+  if i < Na.len(g, parts) then
+    val p = Na.item(g, parts, i)
+    if Na.kd(g, p) == Na.kGEv() || Na.kd(g, p) == Na.kParams() then Tp.bindParams(x, Na.a(g, p), 0) else ()
+    Tp.bindGroups(x, parts, i + 1)
+  else ()
+
+def Tp.checkDef(x: Tp.X, root: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val parts = Na.b(g, root)
+  val body = Tp.part(g, parts, 0, Na.kBody())
+  if body == 0 then ()
+  else
+    val un0 = Tp.cget(s, Tp.cUnTot())
+    val mis0 = Tp.cget(s, Tp.cMis())
+    Tp.bindGroups(x, parts, 0)
+    val ret = Tp.ty(x, Na.a(g, Tp.part(g, parts, 0, Na.kRet())))
+    Tp.expect(x, Na.tok(g, body), Tp.expr(x, Na.a(g, body), ret), ret)
+    Tp.cinc(s, Tp.cBodies())
+    if Tp.cget(s, Tp.cUnTot()) == un0 then Tp.cinc(s, Tp.cFull()) else ()
+    Tp.resetVars(s, 0, Tp.cget(s, Tp.cNVar()))
+    Tp.cset(s, Tp.cNVar(), 0)
+
+def Tp.fileBodies(x: Tp.X, f: Nm.F, i: I64): Unit =
+  val Nm.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 0 && root != 0 then Tp.checkDef(x, root) else ()
+    Tp.fileBodies(x, f, i + 1)
+  else ()
+
+// ── driver ──
+// resolve every file with the names pass, keeping the per-token results
+def Tp.resolve(w: Nm.W, fs: Coll.List[Nm.F], fi: I64): Coll.List[Tp.R] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Nm.F(path, g, lcap, ln, rc, rk, rr, _) = f
+    val rcap = Nm.tcapOf(g)
+    val ks = Array.fill(rcap, U8.of(0))
+    val rf = Array.fill(rcap, U32.of(0))
+    Nm.rootsOf(Nm.X(w, g, fi, path, false, lcap, ln, rcap, ks, rf), rc, rk, rr, 0)
+    Coll.Cons(Tp.R(f, rcap, ks, rf), Tp.resolve(w, rest, fi + 1))
+
+def Tp.aliases(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R]): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Tp.R(f, rcap, rk, rf) = r
+    val Nm.F(_, g, _, _, _, _, _, _) = f
+    Tp.fileAliases(Tp.X(w, g, s, rcap, rk, rf), f, 0)
+    Tp.aliases(w, s, rest)
+
+def Tp.headers(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R], dump: Bool): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Tp.R(f, rcap, rk, rf) = r
+    val Nm.F(_, g, _, _, _, _, _, _) = f
+    Tp.fileDefs(Tp.X(w, g, s, rcap, rk, rf), f, 0, dump)
+    Tp.headers(w, s, rest, dump)
+
+def Tp.bodies(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R], fi: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Tp.R(f, rcap, rk, rf) = r
+    val Nm.F(_, g, _, _, _, _, _, _) = f
+    Tp.cset(s, Tp.cFile(), fi)
+    Tp.fileBodies(Tp.X(w, g, s, rcap, rk, rf), f, 0)
+    Tp.bodies(w, s, rest, fi + 1)
+
+// the first n mismatches: path:line text
+def Tp.showAt(s: Tp.S, fs: Coll.List[Nm.F], at: I64, tag: Str, i: I64): Unit =
+  Nm.nth(fs, Tp.cget(s, at + 2 * i)) match
+    case Coll.Some(f) =>
+      val Nm.F(path, g, lcap, ln, _, _, _, _) = f
+      val j = Tp.cget(s, at + 2 * i + 1)
+      Console.print(tag)
+      Console.print(" ")
+      Console.print(path)
+      Console.print(":")
+      Console.printI64(Nm.lineAt(lcap, ln, j))
+      Console.print(" ")
+      Console.print(Na.text(g, j))
+      Console.print("\n")
+    case Coll.None => Console.print("badfile\n")
+
+def Tp.showMis(s: Tp.S, fs: Coll.List[Nm.F], i: I64): Unit =
+  if i < Tp.nMisShown() && i < Tp.cget(s, Tp.cMis()) then
+    Tp.showAt(s, fs, Tp.cMisAt(), "mismatch", i)
+    Tp.showMis(s, fs, i + 1)
+  else ()
+
+def Tp.showUn(s: Tp.S, fs: Coll.List[Nm.F], i: I64): Unit =
+  if i < Tp.nMisShown() && i < Tp.cget(s, Tp.cUnTot()) then
+    Tp.showAt(s, fs, Tp.cUnAt(), "untyped", i)
+    Tp.showUn(s, fs, i + 1)
+  else ()
+
+// the untyped table: node kind (or reason code >= 90) = count, for the non-zero slots
+def Tp.unTable(s: Tp.S, i: I64): Unit =
+  if i < 100 then
+    val c = Tp.cget(s, Tp.cUnNode() + i)
+    if c > 0 then
+      Tp.num(" k", i)
+      Tp.num("=", c)
+    else ()
+    Tp.unTable(s, i + 1)
+  else ()
+
+def Tp.num(k: Str, v: I64): Unit =
+  Console.print(k)
+  Console.printI64(v)
+
+def Tp.unTypeTable(s: Tp.S, i: I64): Unit =
+  if i < Tp.nUn() then
+    Tp.num(" ", i)
+    Tp.num("=", Tp.cget(s, Tp.cUn() + i))
+    Tp.unTypeTable(s, i + 1)
+  else ()
+
+def Tp.summary(s: Tp.S): Unit =
+  Tp.num("types: defs=", Tp.cget(s, Tp.cDefs()))
+  Tp.num(" generic=", Tp.cget(s, Tp.cGeneric()))
+  Tp.num(" evidence=", Tp.cget(s, Tp.cEvid()))
+  Tp.num(" protos=", Tp.cget(s, Tp.cProtos()))
+  Tp.num(" dupdefs=", Tp.cget(s, Tp.cDup()))
+  Tp.num(" typeids=", Tp.cget(s, Tp.cTypes()) - 1)
+  Tp.num(" argpool=", Tp.cget(s, Tp.cATop()))
+  Tp.num(" overflow=", Tp.cget(s, Tp.cOver()))
+  Console.print(" untyped[typenode typeunres typeother]")
+  Tp.unTypeTable(s, 0)
+  Console.print("\n")
+  Tp.num("bodies: checked=", Tp.cget(s, Tp.cBodies()))
+  Tp.num(" fullytyped=", Tp.cget(s, Tp.cFull()))
+  Tp.num(" mismatches=", Tp.cget(s, Tp.cMis()))
+  Tp.num(" untypednodes=", Tp.cget(s, Tp.cUnTot()))
+  Console.print(" by-kind:")
+  Tp.unTable(s, 0)
+  Console.print(" (k90 builtin call, k92 call w/o sig, k93 cap/other call, k94 local w/o type or non-array call, k95 name, k96 pattern)\n")
+
+// s3c --types F... prints the summary; --types-dump F... prints the C prototype of every non-generic def, then the summary
+def Tp.run(dump: Bool): I64 =
+  val fs = Nm.load(2)
+  val ntok = Nm.sumTok(fs, 0)
+  val w = Nm.world(ntok, Nm.sumBytes(fs, 0))
+  Nm.builtins(w)
+  Nm.btypes(w)
+  Nm.declFiles(w, fs, 0)
+  val s = Tp.store(ntok)
+  val rs = Tp.resolve(w, fs, 0)
+  Tp.aliases(w, s, rs)
+  Tp.initTys(w, s)
+  Tp.headers(w, s, rs, dump)
+  if dump then () else
+    Tp.bodies(w, s, rs, 0)
+    Tp.summary(s)
+    Tp.showMis(s, fs, 0)
+    Tp.showUn(s, fs, 0)
+  if Coll.length(fs) < Args.count() - 2 then 1 else 0
