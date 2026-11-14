@@ -17,8 +17,10 @@ enum Tp.K:
   case Tp.KCap
   case Tp.KOther
   case Tp.KVar
+  case Tp.KLen
 
 def Tp.kByte(k: Tp.K): I64 = k match
+  case Tp.KLen => 7
   case Tp.KVar => 6
   case Tp.KBuiltin => 0
   case Tp.KArray => 1
@@ -35,6 +37,7 @@ def Tp.kOf(b: I64): Coll.Option[Tp.K] =
   else if b == 4 then Coll.Some(Tp.KCap)
   else if b == 5 then Coll.Some(Tp.KOther)
   else if b == 6 then Coll.Some(Tp.KVar)
+  else if b == 7 then Coll.Some(Tp.KLen)
   else Coll.None
 
 def Tp.bBuiltin(): I64 = Tp.kByte(Tp.KBuiltin)
@@ -44,6 +47,27 @@ def Tp.bParam(): I64 = Tp.kByte(Tp.KParam)
 def Tp.bCap(): I64 = Tp.kByte(Tp.KCap)
 def Tp.bOther(): I64 = Tp.kByte(Tp.KOther)
 def Tp.bVar(): I64 = Tp.kByte(Tp.KVar)
+def Tp.bLen(): I64 = Tp.kByte(Tp.KLen)
+
+// S1a-3 (design 1): the length index of Array[A](n) is the last arg of the interned Array type id: a Len type, kind 7. Its key is EXACT: the
+// head is the tag, the raw words of the key are its args (Tp.nargs hides them): tag 0 literal (hi, lo of the value, <= 18 digits),
+// 1 binder (file, token), 2 fresh rigid (a counter: equal only to itself), 3 erased (a mono key: no length), 4 hidden binder of a signature
+// (a counter; a call replaces it: a param by a length var, a result by a fresh rigid). There is no Any: two lengths are equal iff one id.
+def Tp.cLenNN(): I64 = 340
+def Tp.cNoLen(): I64 = 341
+def Tp.cNoSub(): I64 = 342
+def Tp.dLenNN(): I64 = 4
+def Tp.cNoPat(): I64 = 343
+def Tp.cFresh(): I64 = 344
+def Tp.cCtx(): I64 = 345
+def Tp.cJoin(): I64 = 347
+def Tp.tLit(): I64 = 0
+def Tp.tBind(): I64 = 1
+def Tp.tFresh(): I64 = 2
+def Tp.tErased(): I64 = 3
+def Tp.tHidden(): I64 = 4
+// the error length: made only for a length that already got a lengthNotName Diag; it unifies with every length so that Diag is the only line (no cascade). Not an escape hatch: the Diag makes the run fail.
+def Tp.tErr(): I64 = 5
 
 // counter slots (STAGE 2: 9.. the builtin type ids, 15 the current file, 24.. body counters, 32.. the first mismatches as (file, token),
 // 64 + node kind the untyped nodes per kind)
@@ -310,7 +334,7 @@ def Tp.store(ntok: I64, nnode: I64, maxn: I64, nfile: I64): Tp.S =
   val msc = ntok + 1024
   val mic = 16384
   val mhc = 2 * mic + 1
-  val mcap = 6 * msc + 2 * gcap + 4 * mic + mhc + Tp.lcap() + 2 * Tp.wcap() + 3 * nnode + maxn + nfile + 1 + gcap
+  val mcap = 6 * msc + 2 * gcap + 4 * mic + mhc + Tp.lcap() + 2 * Tp.wcap() + 3 * nnode + maxn + nfile + 1 + gcap + gcap
   val mx = Array.fill(mcap, U32.of(0))
   val obc = Tp.obcap()
   val ob = Array.fill(obc, U8.of(0))
@@ -377,8 +401,9 @@ def Tp.head(s: Tp.S, t: I64): I64 =
 
 def Tp.nargs(s: Tp.S, t: I64): I64 =
   val Tp.S(tt, _, _, _, _) = s
-  val Tp.Tt(tcap, _, _, _, _, tn) = tt
-  if 0 <= t && t < tcap then I64.of(tn(t))
+  val Tp.Tt(tcap, tk, _, _, _, tn) = tt
+  // the raw key words of a Len type are no type args: every walk over the args skips them
+  if 0 <= t && t < tcap then (if I64.ofU8(tk(t)) == 7 then 0 else I64.of(tn(t)))
   // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
   else 0
 
@@ -521,22 +546,192 @@ def Tp.ty(x: Tp.X, t: I64): I64 =
   val Tp.X(_, g, s, _, _, _) = x
   val k = Na.kd(g, t)
   if k == Na.kTyCaps() then Tp.ty(x, Na.a(g, t))
-  else if k == Na.kTy() then
-    Tp.tyLens(x, Na.b(g, t), 0)
-    Tp.tyUse(x, t)
+  else if k == Na.kTy() then Tp.tyUse(x, t, Tp.tyLens(x, Na.b(g, t), 0))
   else
     Tp.un(s, Tp.uTypeNode())
     0
 
-// the length indexes of a type `Array[A](n)` are I64 expressions of the type: typed at once, no part of the s3 type id
-def Tp.tyLens(x: Tp.X, r: I64, i: I64): Unit =
+// ── S1a-0: the length index is a part of the Array type id (arg 1, a Len type) ──
+// the visible args of a type: the length slot is no part of a name
+def Tp.vn(s: Tp.S, t: I64): I64 =
+  val n = Tp.nargs(s, t)
+  if n > 0 && Tp.kind(s, Tp.arg(s, t, n - 1)) == Tp.bLen() then n - 1 else n
+
+// a Len type of tag `tag` whose raw key words are w1 (and w2 when two = true)
+def Tp.lenK(s: Tp.S, tag: I64, w1: I64, w2: I64, two: Bool): I64 =
+  val m = Tp.mark(s)
+  Tp.push(s, w1)
+  if two then Tp.push(s, w2) else ()
+  Tp.mk(s, Tp.bLen(), 0, tag, m)
+
+// a literal: exact (Tp.litOk: at most 18 digits, so below 2^60)
+def Tp.lenLit(s: Tp.S, v: I64): I64 = Tp.lenK(s, Tp.tLit(), v / 4294967296, v % 4294967296, true)
+
+def Tp.lenBind(s: Tp.S, tok: I64): I64 = Tp.lenK(s, Tp.tBind(), Tp.cget(s, Tp.cFile()), tok, true)
+
+// a length equal only to itself
+def Tp.lenFresh(s: Tp.S): I64 =
+  val n = Tp.cget(s, Tp.cFresh()) + 1
+  Tp.cset(s, Tp.cFresh(), n)
+  Tp.lenK(s, Tp.tFresh(), n, 0, false)
+
+def Tp.lenHidden(s: Tp.S): I64 =
+  val n = Tp.cget(s, Tp.cFresh()) + 1
+  Tp.cset(s, Tp.cFresh(), n)
+  Tp.lenK(s, Tp.tHidden(), n, 0, false)
+
+// the length of the key of a mono instance: none
+def Tp.lenErased(s: Tp.S): I64 = Tp.lenK(s, Tp.tErased(), 0, 0, false)
+
+// a length var (a var of class 1: an unsolved one is a fresh rigid at the zonk)
+def Tp.freshL(s: Tp.S): I64 =
+  val n = Tp.cget(s, Tp.cNVar())
+  Tp.cset(s, Tp.cNVar(), n + 1)
+  Tp.mk(s, Tp.bVar(), 1, n, Tp.mark(s))
+
+// the length of an Array[A] type that has no `(n)`: in a signature a hidden binder, a def's params a rigid, else a length var
+def Tp.lenNone(s: Tp.S): I64 =
+  val c = Tp.cget(s, Tp.cCtx())
+  if c == 0 then Tp.lenHidden(s) else if c == 1 then Tp.lenFresh(s) else Tp.freshL(s)
+
+// the binder token of a `var` or an assignment target: stamped with file + 1 (a stale stamp of another file is no mark)
+def Tp.moMu(s: Tp.S, j: I64): I64 = Tp.moTg(s, Tp.cget(s, Tp.cMoG())) + j
+
+def Tp.muSet(s: Tp.S, j: I64): Unit = Tp.mxSet(s, Tp.moMu(s, j), Tp.cget(s, Tp.cFile()) + 1)
+
+def Tp.isMut(s: Tp.S, j: I64): Bool = Tp.mxGet(s, Tp.moMu(s, j)) == Tp.cget(s, Tp.cFile()) + 1
+
+// R3: the mutability pre-pass of one file (cFile set): every `var` binder and every assignment target is marked, before any length is read
+def Tp.mutPass(x: Tp.X, n: I64, nn: I64): Unit =
   val Tp.X(_, g, s, _, _, _) = x
-  if i < Na.len(g, r) then
-    Tp.tyPut(s, Na.item(g, r, i), Tp.cget(s, Tp.tI64()))
-    Tp.tyLens(x, r, i + 1)
+  if n < nn then
+    val k = Na.kd(g, n)
+    if k == Na.kVar() then Tp.muSet(s, Na.tok(g, n))
+    else if k == Na.kAssign() && Tp.useKind(x, Na.tok(g, n)) == Nm.kLocal() then Tp.muSet(s, Tp.useRef(x, Na.tok(g, n)))
+    else ()
+    Tp.mutPass(x, n + 1, nn)
   else ()
 
-def Tp.tyUse(x: Tp.X, t: I64): I64 =
+// the decimal text of a literal: exact, at most 18 digits (below 2^60); anything else (hex, a longer one) is no length
+def Tp.litOk(t: Str, i: I64): Bool =
+  if i < Str.len(t) then Str.at(t, i) >= 48 && Str.at(t, i) <= 57 && Tp.litOk(t, i + 1) else Str.len(t) > 0 && Str.len(t) <= 18
+
+def Tp.dec(t: Str, i: I64, acc: I64): I64 =
+  if i < Str.len(t) then Tp.dec(t, i + 1, acc * 10 + Str.at(t, i) - 48) else acc
+
+// a length that is no literal and no plain local: the Diag lengthNotName, its length is the error length (equal to every length, no follow-on mismatch)
+def Tp.lenNN(x: Tp.X, e: I64, report: Bool): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  if report && Tp.cget(s, Tp.cNoLen()) == 0 then Tp.diag(s, Tp.dLenNN(), Na.tok(g, e)) else ()
+  Tp.lenK(s, Tp.tErr(), 0, 0, false)
+
+// the length of length expression e (an annotation `(e)`): a literal, or the binder of a plain local (not a var, not assigned), else lengthNotName
+def Tp.lenOf(x: Tp.X, e: I64, report: Bool): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, e)
+  if k == Na.kParen() then Tp.lenOf(x, Na.a(g, e), report)
+  else if k == Na.kInt() && Tp.litOk(Na.text(g, Na.tok(g, e)), 0) then Tp.lenLit(s, Tp.dec(Na.text(g, Na.tok(g, e)), 0, 0))
+  else if k == Na.kName() && Tp.useKind(x, Na.tok(g, e)) == Nm.kLocal() && !Tp.isMut(s, Tp.useRef(x, Na.tok(g, e))) then Tp.lenBind(s, Tp.useRef(x, Na.tok(g, e)))
+  else Tp.lenNN(x, e, report)
+
+// the length an arg expression e is as a value: a literal or a plain local by name, any other expression a fresh rigid (no Diag: there is no annotation)
+def Tp.lenVal(x: Tp.X, e: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, e)
+  if k == Na.kParen() then Tp.lenVal(x, Na.a(g, e))
+  else if k == Na.kInt() && Tp.litOk(Na.text(g, Na.tok(g, e)), 0) then Tp.lenLit(s, Tp.dec(Na.text(g, Na.tok(g, e)), 0, 0))
+  else if k == Na.kName() && Tp.useKind(x, Na.tok(g, e)) == Nm.kLocal() && !Tp.isMut(s, Tp.useRef(x, Na.tok(g, e))) then Tp.lenBind(s, Tp.useRef(x, Na.tok(g, e)))
+  else Tp.lenFresh(s)
+
+// arg j of list r as a length (the substitute of a callee binder, or the length of Array.fill / tabulate). In a pattern (cPat = 1) the item is a binder token
+def Tp.lenOfArg(x: Tp.X, r: I64, j: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  if j < Na.len(g, r) then
+    if Tp.cget(s, Tp.cPat()) == 1 then Tp.lenBind(s, Na.item(g, r, j)) else Tp.lenVal(x, Na.item(g, r, j))
+  else Tp.lenFresh(s)
+
+def Tp.cPat(): I64 = 348
+
+// a Len binder or hidden type in a callee sig
+def Tp.hasLBArgs(s: Tp.S, t: I64, i: I64, n: I64): Bool =
+  if i < n then Tp.hasLB(s, Tp.arg(s, t, i)) || Tp.hasLBArgs(s, t, i + 1, n) else false
+
+def Tp.hasLB(s: Tp.S, t: I64): Bool =
+  if Tp.kind(s, t) == Tp.bLen() then Tp.head(s, t) == Tp.tBind() || Tp.head(s, t) == Tp.tHidden() else Tp.hasLBArgs(s, t, 0, Tp.nargs(s, t))
+
+// the callee binder len t: the length of the argument of the param whose binder it is (pool slice base..base+np), else t
+def Tp.lsubFind(x: Tp.X, t: I64, r: I64, base: I64, np: I64, j: I64): I64 =
+  val Tp.X(_, _, s, _, _, _) = x
+  if j < np then
+    if Tp.poolAt(s, base + j) == t then Tp.lenOfArg(x, r, j) else Tp.lsubFind(x, t, r, base, np, j + 1)
+  else t
+
+def Tp.lsubArgs(x: Tp.X, t: I64, r: I64, base: I64, np: I64, up: Bool, i: I64, n: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  if i < n then
+    Tp.push(s, Tp.lsub(x, Tp.arg(s, t, i), r, base, np, up))
+    Tp.lsubArgs(x, t, r, base, np, up, i + 1, n)
+  else ()
+
+// up = the type is a param of the call: its hidden binder is a length var (any length is accepted); else (a result, a pattern field) a fresh rigid
+def Tp.lsub(x: Tp.X, t: I64, r: I64, base: I64, np: I64, up: Bool): I64 =
+  val Tp.X(_, _, s, _, _, _) = x
+  val k = Tp.kind(s, t)
+  if k == Tp.bLen() then
+    if Tp.head(s, t) == Tp.tBind() then (if Tp.cget(s, Tp.cNoSub()) == 1 then t else Tp.lsubFind(x, t, r, base, np, 0))
+    else if Tp.head(s, t) == Tp.tHidden() then (if up then Tp.freshL(s) else Tp.lenFresh(s))
+    else t
+  else if Tp.nargs(s, t) == 0 then t
+  else
+    val m = Tp.mark(s)
+    Tp.lsubArgs(x, t, r, base, np, up, 0, Tp.nargs(s, t))
+    Tp.mk(s, k, Tp.cls(s, t), Tp.head(s, t), m)
+
+// the callee sig type t at a call with arg list r: its binder lengths become the lengths of the args, its hidden ones a var / a fresh rigid
+def Tp.lsubTop(x: Tp.X, t: I64, r: I64, base: I64, np: I64, up: Bool): I64 =
+  val Tp.X(_, _, s, _, _, _) = x
+  if Tp.cget(s, Tp.cNoLen()) == 0 && Tp.hasLB(s, t) then Tp.lsub(x, t, r, base, np, up) else t
+
+// the length indexes of a type `Array[A](n)` are I64 expressions of the type: typed at once; the length of the first one is the result
+// (Any when there is none). A length node is reported once: its ty entry is empty before this first visit
+def Tp.tyLensArgs(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.tySub(x, Na.item(g, r, i))
+    Tp.tyLensArgs(x, r, i + 1)
+  else ()
+
+// the subnodes of a rejected length expression are typed I64 and not reported (one Diag lengthNotName for the whole expression)
+def Tp.tySub(x: Tp.X, e: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val k = Na.kd(g, e)
+  Tp.tyPut(s, e, Tp.cget(s, Tp.tI64()))
+  if k == Na.kBin() then
+    Tp.tySub(x, Na.a(g, e))
+    Tp.tySub(x, Na.b(g, e))
+  else if k == Na.kUn() || k == Na.kParen() then Tp.tySub(x, Na.a(g, e))
+  else if k == Na.kCall() || k == Na.kMethod() then Tp.tyLensArgs(x, Na.b(g, e), 0)
+  else ()
+
+def Tp.tyLens(x: Tp.X, r: I64, i: I64): I64 =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val e = Na.item(g, r, i)
+    val lt = Tp.lenOf(x, e, Tp.tyAt(s, Tp.cget(s, Tp.cTyBase()), e) == 0)
+    Tp.tySub(x, e)
+    Tp.tyLens(x, r, i + 1)
+    lt
+  else 0
+
+// the length binder types of the params (kBind: tok = name) of list r, pushed: the callee binders of a call
+def Tp.binderLens(x: Tp.X, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    Tp.push(s, Tp.lenBind(s, Na.tok(g, Na.item(g, r, i))))
+    Tp.binderLens(x, r, i + 1)
+  else ()
+
+def Tp.tyUse(x: Tp.X, t: I64, ln: I64): I64 =
   val Tp.X(_, g, s, rcap, rk, rf) = x
   val j = Na.tok(g, t)
   val tk = if 0 <= j && j < rcap then I64.ofU8(rk(j)) - Nm.tBase() else Nm.tUnres()
@@ -544,7 +739,9 @@ def Tp.tyUse(x: Tp.X, t: I64): I64 =
   Tp.tyList(x, Na.a(g, t), 0)
   if tk == Nm.tBuiltin() then
     Tp.bclass(Na.text(g, j)) match
-      case Coll.Some(c) => Tp.mk(s, if c == 12 then Tp.bArray() else Tp.bBuiltin(), c, Tp.symOf(x, j), m)
+      case Coll.Some(c) =>
+        if c == 12 && Str.eq(Na.text(g, j), "Array") then Tp.push(s, if ln != 0 then ln else Tp.lenNone(s)) else ()
+        Tp.mk(s, if c == 12 then Tp.bArray() else Tp.bBuiltin(), c, Tp.symOf(x, j), m)
       case Coll.None =>
         Tp.un(s, Tp.uTypeOther())
         Tp.mk(s, Tp.bOther(), 0, Tp.symOf(x, j), m)
@@ -598,7 +795,7 @@ def Tp.idStrRun(s: Tp.S, t: Str, i: I64, b: I64): Unit =
 // Emit.mangle: the name, and `_N` then `_arg` for each arg of a type with args
 def Tp.mangle(w: Nm.W, s: Tp.S, t: I64): Unit =
   Tp.id(s, w, Tp.head(s, t))
-  val n = Tp.nargs(s, t)
+  val n = Tp.vn(s, t)
   if n > 0 then
     Tp.po(s, "_")
     Tp.pi(s, n)
@@ -616,7 +813,7 @@ def Tp.mangleArgs(w: Nm.W, s: Tp.S, t: I64, i: I64, n: I64): Unit =
 def Tp.enumTag(w: Nm.W, s: Tp.S, t: I64): Unit =
   Tp.po(s, "struct E_")
   Tp.id(s, w, Tp.head(s, t))
-  val n = Tp.nargs(s, t)
+  val n = Tp.vn(s, t)
   if n > 0 then
     Tp.po(s, "_")
     Tp.mangleArgs(w, s, t, 0, n)
@@ -792,6 +989,7 @@ def Tp.sigOf(x: Tp.X, root: I64, sym: I64, dump: Bool): Unit =
   Tp.binderTys(x, pr, 0)
   val np = Tp.mark(s) - m
   Tp.tpToks(x, parts, 0)
+  Tp.binderLens(x, pr, 0)
   val rp = Tp.part(g, parts, 0, Na.kRet())
   val rp2 = if rp != 0 then rp else Tp.part(g, parts, 0, Na.kOpRet())
   val rp3 = if rp2 != 0 then rp2 else Tp.part(g, parts, 0, Na.kOpRetC())
@@ -855,6 +1053,7 @@ def Tp.cases(x: Tp.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
       Tp.binderTys(x, if k == Na.kCase() then Na.a(g, n) else 0, 0)
       val np = Tp.mark(s) - m
       Tp.tpToks(x, parts, 0)
+      Tp.binderLens(x, if k == Na.kCase() then Na.a(g, n) else 0, 0)
       // the evidence column of a case sig holds the case count of its enum (a case has no evidence): exhaustiveness reads it
       Tp.sigStore(s, Tp.symOf(x, Na.tok(g, n)), self, np, tps, Tp.caseCount(g, parts, 0, 0), m)
       // the tag of the case (its position among the cases of its enum) + 1, by the case symbol
@@ -1039,8 +1238,17 @@ def Tp.unify(s: Tp.S, a: I64, b: I64): Bool =
     if wa == wb then true
     else if Tp.kind(s, wa) == Tp.bVar() then Tp.bindVar(s, wa, wb)
     else if Tp.kind(s, wb) == Tp.bVar() then Tp.bindVar(s, wb, wa)
+    // a length index: two different ids are two different lengths (exact keys, no Any); only --types-nolen and the join of the arms of an if / match relax it
+    else if Tp.kind(s, wa) == Tp.bLen() && Tp.kind(s, wb) == Tp.bLen() then Tp.cget(s, Tp.cNoLen()) == 1 || Tp.cget(s, Tp.cJoin()) == 1 || Tp.head(s, wa) == Tp.tErr() || Tp.head(s, wb) == Tp.tErr()
     else if Tp.kind(s, wa) == Tp.kind(s, wb) && Tp.head(s, wa) == Tp.head(s, wb) && Tp.nargs(s, wa) == Tp.nargs(s, wb) then Tp.unifyArgs(s, wa, wb, 0, Tp.nargs(s, wa))
     else false
+
+// unify for the arms of an if / match that has no want: the lengths of the arms may differ (the result length is then a fresh rigid)
+def Tp.unifyJ(s: Tp.S, a: I64, b: I64): Bool =
+  Tp.cset(s, Tp.cJoin(), 1)
+  val ok = Tp.unify(s, a, b)
+  Tp.cset(s, Tp.cJoin(), 0)
+  ok
 
 // a mismatch: counted, the first few kept as (file, token)
 def Tp.misSlot(s: Tp.S): I64 =
@@ -1063,7 +1271,7 @@ def Tp.mis(s: Tp.S, tok: I64): Unit =
 // a named Diag (annotate, nonexhaustive): counted, the first few kept as (kind, file, token)
 def Tp.diag(s: Tp.S, kind: I64, tok: I64): Unit =
   val n = Tp.cget(s, Tp.cDg())
-  Tp.cinc(s, if kind == Tp.dAnnotate() then Tp.cAnn() else if kind == Tp.dMissing() then Tp.cMissE() else Tp.cNonEx())
+  Tp.cinc(s, if kind == Tp.dAnnotate() then Tp.cAnn() else if kind == Tp.dMissing() then Tp.cMissE() else if kind == Tp.dLenNN() then Tp.cLenNN() else Tp.cNonEx())
   if n < Tp.nMisShown() then
     Tp.cset(s, Tp.cDg() + 1 + 3 * n, kind)
     Tp.cset(s, Tp.cDg() + 2 + 3 * n, Tp.cget(s, Tp.cFile()))
@@ -1167,15 +1375,15 @@ def Tp.targList(x: Tp.X, r: I64, i: I64, v0: I64, k: I64): Unit =
     Tp.targList(x, r, i + 1, v0, k)
   else ()
 
-def Tp.callArgs(x: Tp.X, r: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64): Unit =
+def Tp.callArgs(x: Tp.X, r: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64, lb: I64): Unit =
   val Tp.X(_, g, s, _, _, _) = x
   if i < Na.len(g, r) then
     val a = Na.item(g, r, i)
-    val pt = if i < np then Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0) else 0
+    val pt = if i < np then Tp.lsubTop(x, Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0), r, lb, np, true) else 0
     Tp.expect(x, Na.tok(g, a), Tp.expr(x, a, pt), pt)
     // a local passed as an arg is a witness: the C of this arg is `T_param w = local;`, which only compiles when the local's C type fits
     if pt != 0 && Na.kd(g, a) == Na.kName() && Tp.useKind(x, Na.tok(g, a)) == Nm.kLocal() then Tp.witRec(s, Tp.useRef(x, Na.tok(g, a)), pt) else ()
-    Tp.callArgs(x, r, i + 1, np, start, tp0, ntp, v0)
+    Tp.callArgs(x, r, i + 1, np, start, tp0, ntp, v0, lb)
   else ()
 
 // a call of a signature (def, ctor, request): fresh vars for its type params, args checked left to right against the instantiated params
@@ -1188,10 +1396,10 @@ def Tp.callSig(x: Tp.X, n: I64, sym: I64, groups: I64, args: I64, want: I64): I6
   Tp.freshN(s, ntp)
   Tp.siteMark(s, v0, 0, ntp, Na.tok(g, n))
   Tp.targs(x, groups, 0, v0, 0)
-  val ret = Tp.inst(s, Tp.sigAt(s, sym, 0), start + np, ntp, v0)
+  val ret = Tp.lsubTop(x, Tp.inst(s, Tp.sigAt(s, sym, 0), start + np, ntp, v0), args, start + np + ntp, np, false)
   if ntp > 0 && want != 0 then Tp.unify(s, ret, want) else true
   if Na.len(g, args) != np then Tp.mis(s, Na.tok(g, n)) else ()
-  Tp.callArgs(x, args, 0, np, start, start + np, ntp, v0)
+  Tp.callArgs(x, args, 0, np, start, start + np, ntp, v0, start + np + ntp)
   ret
 
 def Tp.call(x: Tp.X, n: I64, want: I64): I64 =
@@ -1224,10 +1432,11 @@ def Tp.call(x: Tp.X, n: I64, want: I64): I64 =
 // The length index of Array[A](n) is no part of an s3 type (the facts pass owns it), so Array.fill(n, x) is Array[typeof x]. Not checked here
 // (flow, not typing): the index proofs, the word type of an atomic op (Ty.isWord, s2/types.srs 694), the Mut / Atomic request. ──
 // the type Name[a] (Array, Cell, ACell: one class 12, kind array)
-def Tp.wrapT(x: Tp.X, name: Str, a: I64): I64 =
+def Tp.wrapT(x: Tp.X, name: Str, a: I64, ln: I64): I64 =
   val Tp.X(w, _, s, _, _, _) = x
   val m = Tp.mark(s)
   Tp.push(s, a)
+  if Str.eq(name, "Array") then Tp.push(s, ln) else ()
   Tp.mk(s, Tp.bArray(), 12, Nm.sym(w, Nm.lit(name), false), m)
 
 def Tp.u8T(x: Tp.X): I64 =
@@ -1253,7 +1462,7 @@ def Tp.argT(x: Tp.X, r: I64, i: I64, want: I64): I64 =
 def Tp.recvT(x: Tp.X, r: I64, name: Str): I64 =
   val Tp.X(_, _, s, _, _, _) = x
   val a = Tp.fresh(s)
-  Tp.argT(x, r, 0, Tp.wrapT(x, name, a))
+  Tp.argT(x, r, 0, Tp.wrapT(x, name, a, if Str.eq(name, "Array") then Tp.freshL(s) else 0))
   a
 
 def Tp.builtin(x: Tp.X, n: I64, want: I64): I64 =
@@ -1271,7 +1480,7 @@ def Tp.builtin(x: Tp.X, n: I64, want: I64): I64 =
     if Na.len(g, r) != ar then Tp.mis(s, j) else ()
     if Str.eq(nm, "Array.fill") then
       Tp.argT(x, r, 0, ti)
-      Tp.wrapT(x, "Array", Tp.argT(x, r, 1, Tp.elemOf(s, want)))
+      Tp.wrapT(x, "Array", Tp.argT(x, r, 1, Tp.elemOf(s, want)), Tp.lenOfArg(x, r, 0))
     else if Str.eq(nm, "Array.tabulate") then
       Tp.argT(x, r, 0, ti)
       val we = Tp.elemOf(s, want)
@@ -1279,12 +1488,12 @@ def Tp.builtin(x: Tp.X, n: I64, want: I64): I64 =
       val v0 = Tp.cget(s, Tp.cNVar())
       val a = if we != 0 then we else Tp.fresh(s)
       Tp.siteMark(s, v0, 0, Tp.cget(s, Tp.cNVar()) - v0, j)
-      Tp.wrapT(x, "Array", a)
+      Tp.wrapT(x, "Array", a, Tp.lenOfArg(x, r, 0))
     else if Str.eq(nm, "Array.slice") then
       val a = Tp.recvT(x, r, "Array")
       Tp.argT(x, r, 1, ti)
       Tp.argT(x, r, 2, ti)
-      Tp.wrapT(x, "Array", a)
+      Tp.wrapT(x, "Array", a, Tp.lenFresh(s))
     else if Str.eq(nm, "Array.put") then
       val a = Tp.recvT(x, r, "Array")
       Tp.argT(x, r, 1, ti)
@@ -1317,8 +1526,8 @@ def Tp.builtin(x: Tp.X, n: I64, want: I64): I64 =
       Tp.argT(x, r, 1, ti)
       Tp.argT(x, r, 2, a)
       a
-    else if Str.eq(nm, "Cell.new") then Tp.wrapT(x, "Cell", Tp.argT(x, r, 0, Tp.elemOf(s, want)))
-    else if Str.eq(nm, "ACell.new") then Tp.wrapT(x, "ACell", Tp.argT(x, r, 0, Tp.elemOf(s, want)))
+    else if Str.eq(nm, "Cell.new") then Tp.wrapT(x, "Cell", Tp.argT(x, r, 0, Tp.elemOf(s, want)), 0)
+    else if Str.eq(nm, "ACell.new") then Tp.wrapT(x, "ACell", Tp.argT(x, r, 0, Tp.elemOf(s, want)), 0)
     else if Str.eq(nm, "Cell.get") then Tp.recvT(x, r, "Cell")
     else if Str.eq(nm, "Cell.put") then
       val a = Tp.recvT(x, r, "Cell")
@@ -1374,8 +1583,8 @@ def Tp.method(x: Tp.X, n: I64, want: I64): I64 =
     Tp.freshN(s, ntp)
     Tp.bindTraitArgs(x, rt, v0, 0, ntp)
     if Na.len(g, Na.b(g, n)) != np then Tp.mis(s, j) else ()
-    Tp.callArgs(x, Na.b(g, n), 0, np, Tp.sigAt(s, sg, 1), tp0, ntp, v0)
-    Tp.inst(s, Tp.sigAt(s, sg, 0), tp0, ntp, v0)
+    Tp.callArgs(x, Na.b(g, n), 0, np, Tp.sigAt(s, sg, 1), tp0, ntp, v0, Tp.sigAt(s, sg, 1) + np + Tp.sigAt(s, sg, 3))
+    Tp.lsubTop(x, Tp.inst(s, Tp.sigAt(s, sg, 0), tp0, ntp, v0), Na.b(g, n), Tp.sigAt(s, sg, 1) + np + Tp.sigAt(s, sg, 3), np, false)
 
 def Tp.name(x: Tp.X, n: I64, want: I64): I64 =
   val Tp.X(_, g, s, _, _, _) = x
@@ -1490,6 +1699,43 @@ def Tp.unx(x: Tp.X, n: I64, want: I64): I64 =
 // the result type of an if/match: want, else a fresh var that the branches unify
 def Tp.resultOf(s: Tp.S, want: I64): I64 = if want != 0 then want else Tp.fresh(s)
 
+// the type has a length index
+def Tp.hasLenArgs(s: Tp.S, t: I64, i: I64, n: I64): Bool =
+  if i < n then Tp.hasLen(s, Tp.arg(s, t, i)) || Tp.hasLenArgs(s, t, i + 1, n) else false
+
+def Tp.hasLen(s: Tp.S, t: I64): Bool =
+  val w = Tp.walk(s, t)
+  Tp.kind(s, w) == Tp.bLen() || Tp.hasLenArgs(s, w, 0, Tp.nargs(s, w))
+
+// every length of the (zonked) type is a fresh rigid
+def Tp.relaxArgs(s: Tp.S, t: I64, i: I64, n: I64): Unit =
+  if i < n then
+    Tp.push(s, Tp.relax(s, Tp.arg(s, t, i)))
+    Tp.relaxArgs(s, t, i + 1, n)
+  else ()
+
+def Tp.relax(s: Tp.S, t: I64): I64 =
+  val n = Tp.nargs(s, t)
+  if Tp.kind(s, t) == Tp.bLen() then Tp.lenFresh(s)
+  else if n == 0 then t
+  else
+    val m = Tp.mark(s)
+    Tp.relaxArgs(s, t, 0, n)
+    Tp.mk(s, Tp.kind(s, t), Tp.cls(s, t), Tp.head(s, t), m)
+
+// an arm of an if / match against the result r. Without a want (join) the arm lengths may differ: the result is then a fresh rigid length.
+// Returns 1 when the arm type differs from r in a length, else 0
+def Tp.expectArm(x: Tp.X, tok: I64, got: I64, r: I64, join: Bool): I64 =
+  val Tp.X(_, _, s, _, _, _) = x
+  if join then
+    if Tp.unifyJ(s, got, r) then () else Tp.mis(s, tok)
+    if Tp.hasLen(s, got) && Tp.zonk(s, got) != Tp.zonk(s, r) then 1 else 0
+  else
+    Tp.expect(x, tok, got, r)
+    0
+
+def Tp.joined(s: Tp.S, r: I64, dis: Bool): I64 = if dis then Tp.relax(s, Tp.zonk(s, r)) else r
+
 def Tp.ifx(x: Tp.X, n: I64, want: I64): I64 =
   val Tp.X(_, g, s, _, _, _) = x
   val tb = Tp.cget(s, Tp.tBool())
@@ -1498,15 +1744,20 @@ def Tp.ifx(x: Tp.X, n: I64, want: I64): I64 =
   val r = Tp.resultOf(s, want)
   Tp.tyRec(s, pair, r)
   Tp.expect(x, Na.tok(g, c), Tp.expr(x, c, tb), tb)
-  Tp.expect(x, Na.tok(g, Na.a(g, pair)), Tp.expr(x, Na.a(g, pair), r), r)
-  Tp.expect(x, Na.tok(g, Na.b(g, pair)), Tp.expr(x, Na.b(g, pair), r), r)
-  r
+  val d1 = Tp.expectArm(x, Na.tok(g, Na.a(g, pair)), Tp.expr(x, Na.a(g, pair), r), r, want == 0)
+  val d2 = Tp.expectArm(x, Na.tok(g, Na.b(g, pair)), Tp.expr(x, Na.b(g, pair), r), r, want == 0)
+  Tp.joined(s, r, d1 + d2 > 0)
 
 // bind the pattern names (tokens, list a) to the instantiated field types of case sym
 def Tp.bindFields(x: Tp.X, a: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64): Unit =
   val Tp.X(_, g, s, _, _, _) = x
   if i < Na.len(g, a) then
-    Tp.ltLoc(s, Na.item(g, a, i), if i < np then Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0) else 0)
+    val pt = if i < np then Tp.inst(s, Tp.poolAt(s, start + i), tp0, ntp, v0) else 0
+    // R1: the case binder lengths of a field type become the pattern binders of the fields (--types-nopatsub, mode 9: the mutant, they stay)
+    Tp.cset(s, Tp.cPat(), 1)
+    val pt2 = if pt != 0 && Tp.cget(s, Tp.cNoPat()) == 0 then Tp.lsubTop(x, pt, a, tp0 + ntp, np, false) else pt
+    Tp.cset(s, Tp.cPat(), 0)
+    Tp.ltLoc(s, Na.item(g, a, i), pt2)
     Tp.bindFields(x, a, i + 1, np, start, tp0, ntp, v0)
   else ()
 
@@ -1529,7 +1780,8 @@ def Tp.pattern(x: Tp.X, nd: I64, pj: I64, a: I64, ts: I64): Unit =
   else
     Tp.unCount(s, 96)
 
-def Tp.arms(x: Tp.X, r: I64, i: I64, ts: I64, res: I64): Unit =
+// the arms; the result: the number of arms whose length differs from the result (join: without a want)
+def Tp.arms(x: Tp.X, r: I64, i: I64, ts: I64, res: I64, join: Bool): I64 =
   val Tp.X(_, g, s, _, _, _) = x
   if i < Na.len(g, r) then
     val arm = Na.item(g, r, i)
@@ -1539,9 +1791,9 @@ def Tp.arms(x: Tp.X, r: I64, i: I64, ts: I64, res: I64): Unit =
     else if pk == Na.kPCaseNP() then Tp.pattern(x, p, Na.tok(g, p), 0, ts)
     else Tp.tyRec(s, p, ts)
     Tp.tyRec(s, arm, res)
-    Tp.expect(x, Na.tok(g, arm), Tp.expr(x, Na.b(g, arm), res), res)
-    Tp.arms(x, r, i + 1, ts, res)
-  else ()
+    val d = Tp.expectArm(x, Na.tok(g, arm), Tp.expr(x, Na.b(g, arm), res), res, join)
+    d + Tp.arms(x, r, i + 1, ts, res, join)
+  else 0
 
 // the case symbol an arm matches, 0 for `_`
 def Tp.armSym(x: Tp.X, arm: I64): I64 =
@@ -1581,9 +1833,9 @@ def Tp.matchx(x: Tp.X, n: I64, want: I64): I64 =
   val Tp.X(_, g, s, _, _, _) = x
   val ts = Tp.expr(x, Na.a(g, n), 0)
   val res = Tp.resultOf(s, want)
-  Tp.arms(x, Na.b(g, n), 0, ts, res)
+  val d = Tp.arms(x, Na.b(g, n), 0, ts, res, want == 0)
   Tp.exhaustive(x, n, Na.b(g, n))
-  res
+  Tp.joined(s, res, d > 0)
 
 // `val C(a, b) = e` takes only the one case of a single-case enum
 def Tp.patVal(x: Tp.X, st: I64): Unit =
@@ -1750,7 +2002,10 @@ def Tp.checkDef(x: Tp.X, root: I64, scope: I64): Unit =
     Tp.cset(s, Tp.cSite0(), Tp.cget(s, Tp.cNSite()))
     Tp.cset(s, Tp.cNLoc(), 0)
     Tp.cset(s, Tp.cNWit(), 0)
+    // the params of a def body: a length that is not annotated is a rigid; the result and the locals: a length var
+    Tp.cset(s, Tp.cCtx(), 1)
     Tp.bindGroups(x, parts, 0)
+    Tp.cset(s, Tp.cCtx(), 2)
     val ret = Tp.ty(x, Na.a(g, Tp.part(g, parts, 0, Na.kRet())))
     Tp.cset(s, Tp.cScope(), 2)
     Tp.clauses(x, parts, 0, ret)
@@ -1766,6 +2021,7 @@ def Tp.checkDef(x: Tp.X, root: I64, scope: I64): Unit =
     if scope == 0 && Tp.cget(s, Tp.unSlot(s)) == un0 then Tp.cinc(s, Tp.cFull()) else ()
     Tp.resetVars(s, 0, Tp.cget(s, Tp.cNVar()))
     Tp.cset(s, Tp.cNVar(), 0)
+    Tp.cset(s, Tp.cCtx(), 0)
 
 // the fn bodies of a handler: they are emitted code (scope 1)
 def Tp.handlerBodies(x: Tp.X, root: I64, i: I64): Unit =
@@ -1838,18 +2094,36 @@ def Tp.zonkArgs(s: Tp.S, t: I64, i: I64, n: I64): Unit =
     Tp.zonkArgs(s, t, i + 1, n)
   else ()
 
+// an unsolved length var (class 1) is a fresh rigid length
 def Tp.zonk(s: Tp.S, t: I64): I64 =
   val w = Tp.walk(s, t)
   val n = Tp.nargs(s, w)
-  if n == 0 then w
+  if Tp.kind(s, w) == Tp.bVar() && Tp.cls(s, w) == 1 then Tp.lenFresh(s)
+  else if n == 0 then w
   else
     val m = Tp.mark(s)
     Tp.zonkArgs(s, w, 0, n)
     Tp.mk(s, Tp.kind(s, w), Tp.cls(s, w), Tp.head(s, w), m)
 
+// R5: the mono / instance key has no length (the layout class only): every Len of the type is the erased one
+def Tp.eraseArgs(s: Tp.S, t: I64, i: I64, n: I64): Unit =
+  if i < n then
+    Tp.push(s, Tp.erase(s, Tp.arg(s, t, i)))
+    Tp.eraseArgs(s, t, i + 1, n)
+  else ()
+
+def Tp.erase(s: Tp.S, t: I64): I64 =
+  val n = Tp.nargs(s, t)
+  if Tp.kind(s, t) == Tp.bLen() then Tp.lenErased(s)
+  else if n == 0 then t
+  else
+    val m = Tp.mark(s)
+    Tp.eraseArgs(s, t, 0, n)
+    Tp.mk(s, Tp.kind(s, t), Tp.cls(s, t), Tp.head(s, t), m)
+
 def Tp.zonkVars(s: Tp.S, v0: I64, i: I64, n: I64): Unit =
   if i < n then
-    Tp.push(s, Tp.zonk(s, Tp.varT(s, v0 + i)))
+    Tp.push(s, Tp.erase(s, Tp.zonk(s, Tp.varT(s, v0 + i))))
     Tp.zonkVars(s, v0, i + 1, n)
   else ()
 
@@ -2322,9 +2596,9 @@ def Tp.tyText(w: Nm.W, s: Tp.S, t: I64): Unit =
   else if k == Tp.bParam() then Tp.num(s,"P", Tp.head(s, t))
   else
     Tp.id(s, w, Tp.head(s, t))
-    if Tp.nargs(s, t) > 0 then
+    if Tp.vn(s, t) > 0 then
       Tp.po(s,"[")
-      Tp.tyTextArgs(w, s, t, 0, Tp.nargs(s, t))
+      Tp.tyTextArgs(w, s, t, 0, Tp.vn(s, t))
       Tp.po(s,"]")
     else ()
 
@@ -2442,7 +2716,9 @@ def Tp.aliases(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R], fi: I64): Unit = rs match
   case Coll.Cons(r, rest) =>
     val Tp.R(f, rcap, rk, rf) = r
     val Nm.F(_, g, _, _, _, _, _, _) = f
+    Tp.cset(s, Tp.cFile(), fi)
     Tp.cset(s, Tp.cTyBase(), Tp.mxGet(s, Tp.moFb(s, fi)))
+    Tp.mutPass(Tp.X(w, g, s, rcap, rk, rf), 1, Na.cget(g, Na.sNodes()))
     Tp.fileAliases(Tp.X(w, g, s, rcap, rk, rf), f, 0)
     Tp.aliases(w, s, rest, fi + 1)
 
@@ -2451,7 +2727,9 @@ def Tp.headers(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R], dump: Bool, fi: I64): Unit
   case Coll.Cons(r, rest) =>
     val Tp.R(f, rcap, rk, rf) = r
     val Nm.F(_, g, _, _, _, _, _, _) = f
+    Tp.cset(s, Tp.cFile(), fi)
     Tp.cset(s, Tp.cTyBase(), Tp.mxGet(s, Tp.moFb(s, fi)))
+    Tp.mutPass(Tp.X(w, g, s, rcap, rk, rf), 1, Na.cget(g, Na.sNodes()))
     Tp.fileDefs(Tp.X(w, g, s, rcap, rk, rf), f, 0, dump)
     Tp.headers(w, s, rest, dump, fi + 1)
 
@@ -2462,6 +2740,7 @@ def Tp.bodies(w: Nm.W, s: Tp.S, rs: Coll.List[Tp.R], fi: I64): Unit = rs match
     val Nm.F(_, g, _, _, _, _, _, _) = f
     Tp.cset(s, Tp.cFile(), fi)
     Tp.cset(s, Tp.cTyBase(), Tp.mxGet(s, Tp.moFb(s, fi)))
+    Tp.mutPass(Tp.X(w, g, s, rcap, rk, rf), 1, Na.cget(g, Na.sNodes()))
     Tp.fileBodies(Tp.X(w, g, s, rcap, rk, rf), f, 0)
     Tp.bodies(w, s, rest, fi + 1)
 
@@ -2491,7 +2770,7 @@ def Tp.showMis(s: Tp.S, fs: Coll.List[Nm.F], i: I64): Unit =
 def Tp.showDg(s: Tp.S, fs: Coll.List[Nm.F], i: I64): Unit =
   if i < Tp.nMisShown() && i < Tp.cget(s, Tp.cDg()) then
     val dk = Tp.cget(s, Tp.cDg() + 1 + 3 * i)
-    Tp.showAt(s, fs, Tp.cDg() + 2 + 3 * i, if dk == Tp.dAnnotate() then "annotate" else if dk == Tp.dMissing() then "missingEntry" else "nonexhaustive", 0)
+    Tp.showAt(s, fs, Tp.cDg() + 2 + 3 * i, if dk == Tp.dAnnotate() then "annotate" else if dk == Tp.dMissing() then "missingEntry" else if dk == Tp.dLenNN() then "lengthNotName" else "nonexhaustive", 0)
     Tp.showDg(s, fs, i + 1)
   else ()
 
@@ -2570,6 +2849,8 @@ def Tp.summary(s: Tp.S): Unit =
   Tp.num(s," literal=", Tp.cget(s, Tp.cMissLit()))
   Tp.num(s," unrecorded=", Tp.cget(s, Tp.cTyExMiss()))
   Tp.po(s,")\n")
+  Tp.num(s,"lengths: lengthNotName=", Tp.cget(s, Tp.cLenNN()))
+  Tp.po(s,"\n")
 
 // s3c --types F... prints the summary; --types-dump F... prints the C prototype of every non-generic def, then the summary
 def Tp.run(mode: I64): I64 =
@@ -2585,6 +2866,10 @@ def Tp.run(mode: I64): I64 =
   Tp.aliases(w, s, rs, 0)
   Tp.initTys(w, s)
   Tp.cset(s, Tp.cMode(), mode)
+  // mode 6 = --types-nolen (the length slot is ignored), mode 7 = --types-nosubst (no binder substitution at calls), mode 9 = --types-nopatsub
+  Tp.cset(s, Tp.cNoLen(), if mode == 6 then 1 else 0)
+  Tp.cset(s, Tp.cNoSub(), if mode == 7 then 1 else 0)
+  Tp.cset(s, Tp.cNoPat(), if mode == 9 then 1 else 0)
   Tp.headers(w, s, rs, mode == 1, 0)
   if mode == 3 then Tp.cPrelude(s) else ()
   Tp.bodies(w, s, rs, 0)
@@ -2605,4 +2890,6 @@ def Tp.run(mode: I64): I64 =
     Tp.showUn(s, fs, 0)
     Tp.showDg(s, fs, 0)
   Tp.pflush(s)
-  if Coll.length(fs) < Args.count() - 2 || Tp.cget(s, Tp.cMissE()) > 0 then 1 else 0
+  // exit 1 when any diag line was counted (mismatch of any scope, untyped, annotate, nonexhaustive, lengthNotName, missingEntry) or a file did not load
+  val nd = Tp.cget(s, Tp.cMis()) + Tp.cget(s, Tp.cHMis()) + Tp.cget(s, Tp.cCMis()) + Tp.cget(s, Tp.cUnTot()) + Tp.cget(s, Tp.cHUn()) + Tp.cget(s, Tp.cCUn()) + Tp.cget(s, Tp.cAnn()) + Tp.cget(s, Tp.cNonEx()) + Tp.cget(s, Tp.cLenNN()) + Tp.cget(s, Tp.cMissE())
+  if Coll.length(fs) < Args.count() - 2 || nd > 0 then 1 else 0
