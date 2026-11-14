@@ -57,10 +57,13 @@ def Pr.binders(g: Na.G, r: I64, i: I64): Unit =
   if i < Na.len(g, r) then
     if i > 0 then Pr.s(", ") else ()
     val b = Na.item(g, r, i)
-    if Na.kd(g, b) == Na.kBind() then
+    val bk = Na.kd(g, b)
+    if bk == Na.kBind() then
       Pr.tok(g, Na.tok(g, b))
       Pr.s(": ")
       Pr.ty(g, Na.a(g, b))
+    else if bk == Na.kBare() then Pr.tok(g, Na.tok(g, b))
+    else if bk == Na.kDots() then Pr.s("...")
     else Pr.ty(g, Na.a(g, b))
     Pr.binders(g, r, i + 1)
   else ()
@@ -116,13 +119,94 @@ def Pr.part(g: Na.G, n: I64, ind: I64): Unit =
   else if k == Na.kBody() then
     Pr.s(" = ")
     Pr.rhs(g, Na.a(g, n), ind)
+  else if k == Na.kClause() then
+    Pr.line(ind + 2)
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" ")
+    Pr.expr(g, Na.a(g, n), ind + 2)
+  else if k == Na.kProofUs() then
+    Pr.line(ind + 2)
+    Pr.s("proof using ")
+    Pr.toks(g, Na.a(g, n), 0)
+  else if k == Na.kProofInd() then
+    Pr.line(ind + 2)
+    Pr.s("proof by induction ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kProofLean() then
+    Pr.line(ind + 2)
+    Pr.s("proof lean ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kEntry() then
+    Pr.s(" <")
+    Pr.toksSp(g, Na.a(g, n), 0)
+    Pr.s(">")
+  else if k == Na.kOpRet() || k == Na.kOpRetC() then
+    Pr.s(": ")
+    Pr.ty(g, Na.a(g, n))
+    if k == Na.kOpRetC() then
+      Pr.s("{")
+      Pr.toks(g, Na.b(g, n), 0)
+      Pr.s("}")
+    else ()
+  else if k == Na.kExitSt() then
+    Pr.s(" <")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s(">")
+  else if k == Na.kHAns() then
+    Pr.s(" [")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s(": Type]")
+  else if k == Na.kHFor() then
+    Pr.s(" for ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kAlias() then
+    Pr.s(" = ")
+    Pr.ty(g, Na.a(g, n))
+  else if k == Na.kTyMatch() then
+    Pr.s(" = ")
+    Pr.ty(g, Na.a(g, n))
+    Pr.s(" match")
+    Pr.tarms(g, Na.b(g, n), 0, ind)
+  else if k == Na.kValMatch() then
+    Pr.s(" = ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" match")
+    Pr.tarms(g, Na.b(g, n), 0, ind)
   else ()
 
+// token ids of the list r, separated by a space
+def Pr.toksSp(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(" ") else ()
+    Pr.tok(g, Na.item(g, r, i))
+    Pr.toksSp(g, r, i + 1)
+  else ()
+
+// case ty => ty and case value => ty arms
+def Pr.tarms(g: Na.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    Pr.line(ind + 2)
+    Pr.s("case ")
+    if Na.kd(g, n) == Na.kTArm() then Pr.ty(g, Na.a(g, n)) else Pr.tok(g, Na.a(g, n))
+    Pr.s(" => ")
+    Pr.ty(g, Na.b(g, n))
+    Pr.tarms(g, r, i + 1, ind)
+  else ()
+
+// the parts of a def at indent ind; the `=` after clauses goes on a line of its own
 def Pr.parts(g: Na.G, r: I64, i: I64, ind: I64): Unit =
   if i < Na.len(g, r) then
-    Pr.part(g, Na.item(g, r, i), ind)
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kBody() && i > 0 && Pr.isClause(Na.kd(g, Na.item(g, r, i - 1))) then
+      Pr.line(ind)
+      Pr.s("= ")
+      Pr.rhs(g, Na.a(g, n), ind)
+    else Pr.part(g, n, ind)
     Pr.parts(g, r, i + 1, ind)
   else ()
+
+def Pr.isClause(k: I64): Bool = k == Na.kClause() || k == Na.kProofUs() || k == Na.kProofInd() || k == Na.kProofLean()
 
 // ── expressions ──
 def Pr.exprs(g: Na.G, r: I64, i: I64, ind: I64): Unit =
@@ -282,13 +366,24 @@ def Pr.expr(g: Na.G, n: I64, ind: I64): Unit =
   else if k == Na.kWhile() then
     Pr.s("while ")
     Pr.expr(g, Na.a(g, n), ind)
-    Pr.s(" do ")
+    if Pr.endsDed(g, Na.a(g, n)) then
+      Pr.line(ind)
+      Pr.s("do ")
+    else Pr.s(" do ")
     Pr.rhs(g, Na.b(g, n), ind)
   else if k == Na.kAssign() then
     Pr.tok(g, Na.tok(g, n))
     Pr.s(" = ")
     Pr.rhs(g, Na.a(g, n), ind)
   else if k == Na.kBlock() then Pr.rhs(g, n, ind)
+  else if k == Na.kQuant() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" ")
+    Pr.tok(g, Na.tok(g, Na.a(g, n)))
+    Pr.s(": ")
+    Pr.ty(g, Na.a(g, Na.a(g, n)))
+    Pr.s(" => ")
+    Pr.expr(g, Na.b(g, n), ind)
   else ()
 
 // ── decls ──
@@ -311,19 +406,150 @@ def Pr.cases(g: Na.G, r: I64, i: I64): Unit =
     Pr.cases(g, r, i + 1)
   else ()
 
-// the root of a def or enum decl (at indent 0)
+// a def at indent ind
+def Pr.defN(g: Na.G, n: I64, ind: I64): Unit =
+  Pr.s("def ")
+  Pr.tok(g, Na.a(g, n))
+  Pr.parts(g, Na.b(g, n), 0, ind)
+
+// the header items of the list r (all but the defs), inline
+def Pr.inl(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kDef() then () else Pr.part(g, n, 0)
+    Pr.inl(g, r, i + 1)
+  else ()
+
+// the defs of the list r, one per line at indent 2
+def Pr.members(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kDef() then
+      Pr.line(2)
+      Pr.defN(g, n, 2)
+    else ()
+    Pr.members(g, r, i + 1)
+  else ()
+
+// A -> B, C -> D from the flat token list
+def Pr.pairs(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    Pr.tok(g, Na.item(g, r, i))
+    Pr.s(" -> ")
+    Pr.tok(g, Na.item(g, r, i + 1))
+    Pr.pairs(g, r, i + 2)
+  else ()
+
+def Pr.capItem(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  Pr.line(2)
+  if k == Na.kStateL() then
+    Pr.s("state ")
+    Pr.toks(g, Na.a(g, n), 0)
+  else if k == Na.kStart() then
+    Pr.s("start ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kStop() then
+    Pr.s("stop ")
+    Pr.toks(g, Na.a(g, n), 0)
+  else if k == Na.kDrop() then
+    Pr.s("drop ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kTrans() then
+    Pr.s("transition ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s(" ")
+    Pr.pairs(g, Na.b(g, n), 0)
+  else if k == Na.kRule() then
+    val p = Na.b(g, n)
+    Pr.s("rule def ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s("(")
+    Pr.toks(g, Na.a(g, p), 0)
+    Pr.s(") = ")
+    Pr.atoms(g, Na.b(g, p), 0)
+  else if k == Na.kCapDef() then Pr.defN(g, n, 2)
+  else ()
+
+def Pr.capItems(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    Pr.capItem(g, Na.item(g, r, i))
+    Pr.capItems(g, r, i + 1)
+  else ()
+
+// the field lines of an extern struct
+def Pr.fields(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val f = Na.item(g, r, i)
+    Pr.line(2)
+    Pr.tok(g, Na.tok(g, f))
+    Pr.s(": ")
+    Pr.ty(g, Na.a(g, f))
+    Pr.fields(g, r, i + 1)
+  else ()
+
+def Pr.extern(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kDef() then Pr.defN(g, n, 0)
+  else if k == Na.kCStruct() then
+    Pr.s("struct ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(":")
+    Pr.fields(g, Na.b(g, n), 0)
+  else if k == Na.kCVal() then
+    Pr.s("val ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(": ")
+    Pr.ty(g, Na.a(g, n))
+  else ()
+
+// the root of a decl (at indent 0)
 def Pr.decl(g: Na.G, n: I64): Unit =
   val k = Na.kd(g, n)
-  if k == Na.kDef() then
-    Pr.s("def ")
-    Pr.tok(g, Na.a(g, n))
-    Pr.parts(g, Na.b(g, n), 0, 0)
+  if k == Na.kDef() then Pr.defN(g, n, 0)
   else if k == Na.kEnum() then
     Pr.s("enum ")
     Pr.tok(g, Na.a(g, n))
     Pr.enumGroups(g, Na.b(g, n), 0)
     Pr.s(":")
     Pr.cases(g, Na.b(g, n), 0)
+  else if k == Na.kExtern() then
+    Pr.s("extern ")
+    if Na.a(g, n) != 0 then
+      Pr.tok(g, Na.a(g, n))
+      Pr.s(" ")
+    else ()
+    Pr.extern(g, Na.b(g, n))
+  else if k == Na.kHandler() then
+    Pr.s("handler ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.inl(g, Na.b(g, n), 0)
+    Pr.s(":")
+    Pr.members(g, Na.b(g, n), 0)
+  else if k == Na.kProto() then
+    Pr.s("capability ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s(":")
+    Pr.capItems(g, Na.b(g, n), 0)
+  else if k == Na.kTrait() then
+    Pr.s("trait ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.inl(g, Na.b(g, n), 0)
+    Pr.s(":")
+    Pr.members(g, Na.b(g, n), 0)
+  else if k == Na.kGiven() then
+    Pr.s("given")
+    Pr.inl(g, Na.b(g, n), 0)
+    Pr.s(" ")
+    Pr.ty(g, Na.a(g, n))
+    Pr.s(":")
+    Pr.members(g, Na.b(g, n), 0)
+  else if k == Na.kType() then
+    Pr.s("type ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.inl(g, Na.b(g, n), 0)
+  else if k == Na.kVal() then Pr.stmt(g, n, 0)
   else ()
 
 // the groups before the cases of an enum

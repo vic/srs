@@ -218,7 +218,7 @@ def M.tokText(src: Str, cap: I64, os: Array[U32](cap), ls: Array[U32](cap), t: I
     Str.slice(src, o, o + I64.of(ls(j)))
   else "<end>"
 
-// stat slots: total, pass, parse errors (decl kind 0 = def at +0, 1 = enum at +1); 6 failures shown; 7 nodes; 8 overflow; 9 notYet
+// stat slots: total at b, pass at 16 + b, parse errors at 32 + b (b = the skeleton's decl kind byte); 48 failures shown (max 40); 49 nodes; 50 overflow
 enum M.St:
   case M.St(n: I64, a: Array[I64](n))
 
@@ -232,9 +232,14 @@ def M.sadd(st: M.St, s: I64, v: I64): Unit =
 
 def M.bump(st: M.St, s: I64): Unit = M.sadd(st, s, 1)
 
+def M.kindStr(kb: I64): Str =
+  Ps.byteKind(kb) match
+    case Coll.Some(k) => Ps.kindName(k)
+    case Coll.None => "badkind"
+
 def M.showFail(p: Str, src: Str, kb: I64, name: Str, off: I64, what: Str, idx: I64, a: Str, b: Str): Unit =
   Console.print("FAIL ")
-  Console.print(if kb == 0 then "def" else "enum")
+  Console.print(M.kindStr(kb))
   Console.print(" ")
   Console.print(name)
   Console.print(" ")
@@ -254,16 +259,15 @@ def M.showFail(p: Str, src: Str, kb: I64, name: Str, off: I64, what: Str, idx: I
 def M.rtDecl(p: Str, src: Str, lx: Lx.Out, g: Na.G, head: I64, hi: I64, kb: I64, rt: Bool, st: M.St): Unit =
   val Lx.Out(tcap, _, os, ls, _, _, _, _, _) = lx
   M.bump(st, kb)
-  val root = Pz.decl(g, head, hi)
+  val root = Pz.decl(g, head, hi, kb)
   val nm = M.tokText(src, tcap, os, ls, hi, head + 1)
   val hoff = if 0 <= head && head < tcap then I64.of(os(head)) else 0
   if !Pz.ok(g) then
-    M.bump(st, 4 + kb)
+    M.bump(st, 32 + kb)
     val et = Na.cget(g, Na.sErrTok())
     val eoff = if 0 <= et && et < tcap then I64.of(os(et)) else 0
-    if Na.cget(g, Na.sDiag()) > 0 && Na.dwhy(g, 0) == 1 then M.bump(st, 9) else ()
-    if M.sget(st, 6) < 5 then
-      M.bump(st, 6)
+    if M.sget(st, 48) < 40 then
+      M.bump(st, 48)
       M.showFail(p, src, kb, nm, eoff, "parse-error", et - head, M.tokText(src, tcap, os, ls, hi, et), "-")
     else ()
   else if rt then
@@ -275,17 +279,17 @@ def M.rtDecl(p: Str, src: Str, lx: Lx.Out, g: Na.G, head: I64, hi: I64, kb: I64,
     val n2 = M.trimEnd(tcap2, ks2, t2)
     val n1 = hi - head
     val k = M.cmpLoop(src, lx, head, n1, txt, lx2, n2, 0)
-    if k == n1 && k == n2 then M.bump(st, 2 + kb)
-    else if M.sget(st, 6) < 5 then
-      M.bump(st, 6)
+    if k == n1 && k == n2 then M.bump(st, 16 + kb)
+    else if M.sget(st, 48) < 40 then
+      M.bump(st, 48)
       M.showFail(p, src, kb, nm, hoff, "diff", k, M.tokText(src, tcap, os, ls, hi, head + k), M.tokText(txt, tcap2, os2, ls2, n2, k))
     else ()
-  else M.bump(st, 2 + kb)
+  else M.bump(st, 16 + kb)
 
 def M.rtDecls(p: Str, src: Str, lx: Lx.Out, g: Na.G, cap: I64, kd: Array[U8](cap), hd: Array[U32](cap), hi: Array[U32](cap), c: I64, rt: Bool, st: M.St, i: I64): Unit =
   if 0 <= i && i < c && i < cap then
     val b = I64.ofU8(kd(i))
-    if b == Ps.kindByte(Ps.Def) || b == Ps.kindByte(Ps.Enum) then M.rtDecl(p, src, lx, g, I64.of(hd(i)), I64.of(hi(i)), b, rt, st) else ()
+    if b <= Ps.kindByte(Ps.Given) then M.rtDecl(p, src, lx, g, I64.of(hd(i)), I64.of(hi(i)), b, rt, st) else ()
     M.rtDecls(p, src, lx, g, cap, kd, hd, hi, c, rt, st, i + 1)
   else ()
 
@@ -312,29 +316,34 @@ def M.rtFile(p: Str, src: Str, rt: Bool, st: M.St): Unit =
   M.skelDiags(p, src, tcap0, os0, dcap, dw, dt, d, 0)
   val g = Pz.build(src, lx)
   M.rtDecls(p, src, lx, g, cap, kd, hd, hi, c, rt, st, 0)
-  M.sadd(st, 7, Na.cget(g, Na.sNodes()) - 1)
-  M.sadd(st, 8, Na.cget(g, Na.sOver()))
+  M.sadd(st, 49, Na.cget(g, Na.sNodes()) - 1)
+  M.sadd(st, 50, Na.cget(g, Na.sOver()))
+
+// " kind pass/total" for the kinds b.. of the skeleton (def .. given), and the sums of pass, total, parse errors
+def M.kindSum(st: M.St, b: I64, p: I64, t: I64, e: I64): Unit =
+  if b <= Ps.kindByte(Ps.Given) then
+    Console.print(M.kindStr(b))
+    Console.print(" ")
+    Console.printI64(M.sget(st, 16 + b))
+    Console.print("/")
+    Console.printI64(M.sget(st, b))
+    Console.print(" ")
+    M.kindSum(st, b + 1, p + M.sget(st, 16 + b), t + M.sget(st, b), e + M.sget(st, 32 + b))
+  else
+    Console.print("ALL ")
+    Console.printI64(p)
+    Console.print("/")
+    Console.printI64(t)
+    Console.print(" parseErr=")
+    Console.printI64(e)
 
 def M.rfiles(rt: Bool, i: I64, bad: I64, st: M.St): I64 =
   if i >= Args.count() then
-    Console.print("def ")
-    Console.printI64(M.sget(st, 2))
-    Console.print("/")
-    Console.printI64(M.sget(st, 0))
-    Console.print(" enum ")
-    Console.printI64(M.sget(st, 3))
-    Console.print("/")
-    Console.printI64(M.sget(st, 1))
-    Console.print(" parseErr def=")
-    Console.printI64(M.sget(st, 4))
-    Console.print(" enum=")
-    Console.printI64(M.sget(st, 5))
+    M.kindSum(st, 0, 0, 0, 0)
     Console.print(" nodes=")
-    Console.printI64(M.sget(st, 7))
+    Console.printI64(M.sget(st, 49))
     Console.print(" overflow=")
-    Console.printI64(M.sget(st, 8))
-    Console.print(" notYet=")
-    Console.printI64(M.sget(st, 9))
+    Console.printI64(M.sget(st, 50))
     M.nl()
     bad
   else
@@ -349,7 +358,7 @@ def M.rfiles(rt: Bool, i: I64, bad: I64, st: M.St): I64 =
         M.rfiles(rt, i + 1, 1, st)
 
 def M.rmain(rt: Bool): I64 =
-  val sn = 16
+  val sn = 64
   M.rfiles(rt, 2, 0, M.St(sn, Array.fill(sn, 0)))
 
 def main(): I64 =
