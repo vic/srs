@@ -259,17 +259,26 @@ def Dl.emit(st: Dl.St, hv: I64): Unit =
   Dl.fillHb(st, hv + 1, 0, ha)
   Dl.add(st, hr, ha)
 
+// a comparison atom is a filter: tag 2 Lt, 3 Le, 4 Ne, then two operands (tag 0 const, 1 bound slot; a tag and a value each);
+// no relation, binds nothing. Columns are all U32, so every comparison is between numbers of one type.
+def Dl.opnd(st: Dl.St, sp: I64): I64 = if Dl.p(st, sp) == 0 then Dl.p(st, sp + 1) else Dl.env(st, Dl.p(st, sp + 1))
+
+def Dl.cmp(st: Dl.St, tag: I64, l: I64, r: I64): Bool = if tag == 2 then l < r else if tag == 3 then l <= r else l != r
+
 def Dl.join(st: Dl.St, hv: I64, a: I64, k: I64): Unit =
   if k == 0 then Dl.emit(st, hv)
   else
     val neg = Dl.p(st, a)
-    val rel = Dl.p(st, a + 1)
-    val x = Dl.p(st, a + 2)
-    val ar = Dl.p(st, rel)
-    val nxt = a + 3 + 2 * ar
-    if neg == 1 then
-      if Dl.exists(st, a + 3, rel, ar) then () else Dl.join(st, hv, nxt, k - 1)
-    else Dl.probe(st, hv, a + 3, nxt, k, rel, x, ar)
+    if neg >= 2 then
+      if Dl.cmp(st, neg, Dl.opnd(st, a + 1), Dl.opnd(st, a + 3)) then Dl.join(st, hv, a + 5, k - 1) else ()
+    else
+      val rel = Dl.p(st, a + 1)
+      val x = Dl.p(st, a + 2)
+      val ar = Dl.p(st, rel)
+      val nxt = a + 3 + 2 * ar
+      if neg == 1 then
+        if Dl.exists(st, a + 3, rel, ar) then () else Dl.join(st, hv, nxt, k - 1)
+      else Dl.probe(st, hv, a + 3, nxt, k, rel, x, ar)
 
 def Dl.probe(st: Dl.St, hv: I64, sp: I64, nxt: I64, k: I64, rel: I64, x: I64, ar: I64): Unit =
   val h = Dl.hkey(st, sp, 0, ar, Dl.h0())
@@ -290,9 +299,11 @@ def Dl.drive(st: Dl.St, hv: I64, sp: I64, nxt: I64, k: I64, ar: I64, rn: I64, xs
 
 // ── variants and rounds ──
 // a variant: kind (0 once, from every row; 1 per round, from the delta), head relation, head specs, natoms, atoms
-// (neg, relation, index, specs); every spec is a tag and a value
+// (tag 0 positive | 1 negative, relation, index, specs; or tag 2 Lt | 3 Le | 4 Ne and two operands); every spec is a tag and a value
+def Dl.atomLen(st: Dl.St, a: I64): I64 = if Dl.p(st, a) >= 2 then 5 else 3 + 2 * Dl.p(st, Dl.p(st, a + 1))
+
 def Dl.atomsEnd(st: Dl.St, a: I64, k: I64): I64 =
-  if k <= 0 then a else Dl.atomsEnd(st, a + 3 + 2 * Dl.p(st, Dl.p(st, a + 1)), k - 1)
+  if k <= 0 then a else Dl.atomsEnd(st, a + Dl.atomLen(st, a), k - 1)
 
 def Dl.varEnd(st: Dl.St, off: I64): I64 =
   val ha = Dl.p(st, Dl.p(st, off + 1))
@@ -386,6 +397,106 @@ def Dl.loadFacts(st: Dl.St, s: Str, i: I64, r: I64): I64 =
 def Dl.init(pn: I64, nr: I64, ni: I64): Dl.St =
   val ml = pn + 4 * nr + 41 + ni
   Dl.St.Mk(pn, ml, Array.fill(ml, 0), nr, ni, Array.fill(nr, Dl.dummyRel()), Array.fill(ni, Dl.dummyIx()))
+
+// ── clear: empty every relation for the next run of the same plan, keeping the stores (cost ~ rows held, never the capacity) ──
+def Dl.unlinkIx(st: Dl.St, r: I64, x: I64, a: I64, row: I64): Unit =
+  val mask = Dl.p(st, Dl.nr(st) + 2 * x + 1)
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.ixOf(st, x) match
+      case Dl.Ix.Mk(hc, hs, _, _) => Dl.w(hc, hs, Dl.fin(Dl.hrow(rn, xs, a, row, mask, 0, 1, Dl.h0()), hc), 0)
+
+def Dl.unlinkAll(st: Dl.St, r: I64, a: I64, row: I64, j: I64, j1: I64): Unit =
+  if j >= j1 then () else
+    Dl.unlinkIx(st, r, Dl.rl(st, j), a, row)
+    Dl.unlinkAll(st, r, a, row, j + 1, j1)
+
+def Dl.clearRows(st: Dl.St, r: I64, a: I64, i: I64, n: I64): Unit =
+  if i >= n then () else
+    Dl.unlinkAll(st, r, a, i, Dl.rst(st, r), Dl.rst(st, r + 1))
+    Dl.clearRows(st, r, a, i + 1, n)
+
+def Dl.clear(st: Dl.St, r: I64): Unit =
+  if r >= Dl.nr(st) then () else
+    Dl.clearRows(st, r, Dl.p(st, r), 0, Dl.cnt(st, r))
+    Dl.setCnt(st, r, 0)
+    Dl.clear(st, r + 1)
+
+// ── plan check: the defects of a plan (0 = well formed), found before it runs ──
+// a slot is bound (env 1) by an earlier atom of the rule; a positive atom binds its tag 2 columns (env 2 while the atom is
+// read: a tag 1 column needs a slot bound by an EARLIER atom, a tag 5 column one bound by this atom). A comparison atom, a
+// negative atom and the head read only bound slots; the first atom is positive; an atom's index is over its own relation
+// and exactly its tag 0/1 columns.
+def Dl.zeroEnv(st: Dl.St, i: I64): Unit =
+  if i >= 32 then () else
+    Dl.setEnv(st, i, 0)
+    Dl.zeroEnv(st, i + 1)
+
+def Dl.promote(st: Dl.St, i: I64): Unit =
+  if i >= 32 then () else
+    if Dl.env(st, i) == 2 then Dl.setEnv(st, i, 1) else ()
+    Dl.promote(st, i + 1)
+
+def Dl.slotIs(st: Dl.St, v: I64, want: I64): I64 = if 0 <= v && v < 32 && Dl.env(st, v) == want then 0 else 1
+
+// the defects of one spec (tag, value) of an atom of tag t
+def Dl.chkSpec(st: Dl.St, t: I64, tag: I64, v: I64): I64 =
+  if tag == 0 then 0
+  else if tag == 1 then Dl.slotIs(st, v, 1)
+  else if tag == 5 && t == 0 then Dl.slotIs(st, v, 2)
+  else if tag == 2 && t == 0 && 0 <= v && v < 32 then
+    Dl.setEnv(st, v, 2)
+    0
+  else 1
+
+def Dl.chkCols(st: Dl.St, t: I64, sp: I64, c: I64, a: I64): I64 =
+  if c >= a then 0 else Dl.chkSpec(st, t, Dl.p(st, sp + 2 * c), Dl.p(st, sp + 2 * c + 1)) + Dl.chkCols(st, t, sp, c + 1, a)
+
+// the mask of the columns bound (tag 0 or 1) in an atom's specs
+def Dl.atomMask(st: Dl.St, sp: I64, c: I64, a: I64, pw: I64): I64 =
+  if c >= a then 0
+  else
+    val tag = Dl.p(st, sp + 2 * c)
+    (if tag == 0 || tag == 1 then pw else 0) + Dl.atomMask(st, sp, c + 1, a, pw * 2)
+
+def Dl.chkAtom(st: Dl.St, a: I64, i: I64): I64 =
+  val t = Dl.p(st, a)
+  if t >= 2 && t <= 4 then
+    (if i == 0 then 1 else 0) + Dl.chkSpec(st, 1, Dl.p(st, a + 1), Dl.p(st, a + 2)) + Dl.chkSpec(st, 1, Dl.p(st, a + 3), Dl.p(st, a + 4))
+  else if (t == 0 || t == 1) && 0 <= Dl.p(st, a + 1) && Dl.p(st, a + 1) < Dl.nr(st) then
+    val rel = Dl.p(st, a + 1)
+    val ar = Dl.p(st, rel)
+    val ixd = if i == 0 && t == 0 then 0 else (if 0 <= Dl.p(st, a + 2) && Dl.p(st, a + 2) < Dl.ni(st) && Dl.p(st, Dl.nr(st) + 2 * Dl.p(st, a + 2)) == rel && Dl.p(st, Dl.nr(st) + 2 * Dl.p(st, a + 2) + 1) == Dl.atomMask(st, a + 3, 0, ar, 1) then 0 else 1)
+    (if i == 0 && t != 0 then 1 else 0) + ixd + Dl.chkCols(st, t, a + 3, 0, ar)
+  else 1
+
+def Dl.chkAtoms(st: Dl.St, a: I64, k: I64, i: I64): I64 =
+  if k <= 0 then 0 else
+    val d = Dl.chkAtom(st, a, i)
+    Dl.promote(st, 0)
+    d + Dl.chkAtoms(st, a + Dl.atomLen(st, a), k - 1, i + 1)
+
+def Dl.chkHead(st: Dl.St, hv: I64, c: I64, a: I64): I64 =
+  if c >= a then 0 else
+    val tag = Dl.p(st, hv + 1 + 2 * c)
+    val v = Dl.p(st, hv + 2 + 2 * c)
+    (if tag == 0 then 0 else if tag == 1 then Dl.slotIs(st, v, 1) else 1) + Dl.chkHead(st, hv, c + 1, a)
+
+def Dl.chkVar(st: Dl.St, off: I64): I64 =
+  val hv = off + 1
+  val hr = Dl.p(st, hv)
+  if hr < 0 || hr >= Dl.nr(st) then 1 else
+    val ha = Dl.p(st, hr)
+    Dl.zeroEnv(st, 0)
+    val d = Dl.chkAtoms(st, off + 3 + 2 * ha, Dl.p(st, off + 2 + 2 * ha), 0)
+    d + Dl.chkHead(st, hv, 0, ha) + (if Dl.p(st, off) == 0 || Dl.p(st, off) == 1 then 0 else 1)
+
+def Dl.chkVars(st: Dl.St, off: I64, nv: I64): I64 =
+  if nv <= 0 then 0 else Dl.chkVar(st, off) + Dl.chkVars(st, Dl.varEnd(st, off), nv - 1)
+
+def Dl.chkStrata(st: Dl.St, s: I64, ns: I64, off: I64): I64 =
+  if s >= ns then 0 else
+    val nv = Dl.p(st, off)
+    Dl.chkVars(st, off + 1, nv) + Dl.chkStrata(st, s + 1, ns, Dl.skipVars(st, off + 1, nv))
 
 // ── output: "@r" then one row per line, tab separated ──
 def Dl.printCols(rn: I64, xs: Array[U32](rn), base: I64, c: I64, a: I64): Unit =

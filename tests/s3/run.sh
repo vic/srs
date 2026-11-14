@@ -23,10 +23,10 @@ for s in emit/ea emit/eb emit/ec emit/ed emit/empty emit/fixpoint; do
 done
 run tests/s3/gate/subset.sh
 run tests/s3/gate/armall.sh
-# the Datalog engine oracle runs the engine binary ($2 or $S3_DL_ENGINE: s3/dl.srs + s3/dlmain.srs built as a program) on the Y1 Mem dump;
+# the Datalog engine oracle runs the engine binary ($2 or $S3_DL_ENGINE: lib/prelude.srs + s3/dl.srs + s3/bounds.srs + s3/dlmain.srs built as a program) on the Y1 Mem dump;
 # it needs the data in ${S3_DL_DATA:-$HOME/.cache/srs3/dl} (tests/s3/dl/README.txt): a missing engine or data is a FAIL, never a skip
 DLBIN=${2:-${S3_DL_ENGINE:-}}
-if [ -n "$DLBIN" ] && [ -x "$DLBIN" ]; then run tests/s3/dl/dl-run.sh "$DLBIN"
-else fail=$((fail+1)); echo "FAIL dl-engine (no engine binary: pass it as \$2 or set S3_DL_ENGINE; build s3/dl.srs + s3/dlmain.srs)"; fi
+if [ -n "$DLBIN" ] && [ -x "$DLBIN" ]; then run tests/s3/dl/dl-run.sh "$DLBIN"; run tests/s3/bounds/run.sh "$DLBIN"
+else fail=$((fail+1)); echo "FAIL dl-engine (no engine binary: pass it as \$2 or set S3_DL_ENGINE; build s3/dl.srs + s3/bounds.srs + s3/dlmain.srs)"; fi
 echo "TOTAL pass=$pass fail=$fail"
 [ $fail = 0 ]
