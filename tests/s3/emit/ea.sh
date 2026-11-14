@@ -1,8 +1,8 @@
 #!/bin/bash
-# E-a (EMIT-1): bash tests/s3/emit/ea.sh <s3c> (from the repo root). For each of the 81 progs of tests/s3/emit/progs.txt:
+# E-a (EMIT-1): bash tests/s3/emit/ea.sh <s3c> (from the repo root). For each of the 78 progs of tests/s3/emit/progs.txt:
 #  s3c --emit $S2LIBS tests/s2/prog/NAME.srs > p.c (exit 0), then tcc -c and `zig cc -std=c11 -Werror -c` with 0 diagnostics.
 # (zig cc -fsyntax-only cannot run here: it fails to rename its .o; -c has the same frontend diagnostics.)
-# `emit-a N/81`; a failing prog is listed with its first diagnostic. bar: 81/81. EA_ONLY=name runs one prog.
+# `emit-a N/78`; a failing prog is listed with its first diagnostic. bar: 78/78. EA_ONLY=name runs one prog.
 . tests/s3/lib.sh
 init E-a "$1"
 TCC=${TCC:-/nix/store/kz7m0d6n0n050gh6k9vq1rh8jdmdfj25-tcc-0.9.27-unstable-2026-09-22/bin/tcc}
@@ -26,6 +26,6 @@ while read -r n; do
 done < tests/s3/emit/progs.txt
 echo "emit-a $ok/$tot"
 printf '%s' "$fails" | head -${EA_SHOW:-12}
-[ -n "${EA_ONLY:-}" ] || [ "$tot" = 81 ] || bad "progs.txt has $tot entries (want 81)"
-[ "$ok" = "$tot" ] || bad "emit-a $ok/$tot (bar 81/81)"
+[ -n "${EA_ONLY:-}" ] || [ "$tot" = 78 ] || bad "progs.txt has $tot entries (want 78)"
+[ "$ok" = "$tot" ] || bad "emit-a $ok/$tot (bar 78/78)"
 finish

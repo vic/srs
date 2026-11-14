@@ -18,7 +18,7 @@ run() { # script [args]
 for s in lex/oe lex/oab parse/pa parse/pb parse/pc parse/pd parse/neg parse/rt names/nbase names/nc names/nbp names/standing names/nt types/ta types/tb types/tm types/tx types/tc types/ty; do
   run tests/s3/$s.sh "$BIN"
 done
-for s in emit/ea emit/eb emit/ec emit/ed; do
+for s in emit/ea emit/eb emit/ec emit/ed emit/empty emit/fixpoint; do
   RUN_T=900 run tests/s3/$s.sh "$BIN"
 done
 run tests/s3/gate/subset.sh

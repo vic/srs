@@ -1,7 +1,11 @@
-tests/s3/emit: the 81 in-subset tests/s2/prog programs for the s3 emit oracles.
+tests/s3/emit: the 78 in-subset tests/s2/prog programs for the s3 emit oracles.
 
-Named reasons for a program outside the 82 of PROG-0 (not in progs.txt):
+Named reasons for a program outside the 78 of progs.txt:
   multi-shot: resume called twice in an op body   (ms_state_trip: `resume k(true) + resume k(false)`; ruled out of the s3 subset by the lead)
+  two handles of one non-Region capability   (cap_nested, eff_shadow, eff_stateless; ruled out of the s3 subset by the lead; Region handles are nested scoped regions and stay in)
+The subset law is a regex stopgap in tests/s3/gate/subset.sh. Bead srs3-v2m (srs3 tracker, ~/hk/srs3/vic/.beads) replaces it with a Datalog check with a named Diag; these 4 programs then become negative tests.
+Today s3c does not reject all of them: cap_nested emits C that crashes (bead srs3-1ny), eff_stateless emits C that prints 33 instead of 310 (bead srs3-4kj), eff_shadow emits C with the right output, ms_state_trip is rejected with unsupportedResume=2. s2c is the acceptance gate.
+One program stays in the list although s3c does not type it yet: cstruct_new (extern struct field calls untyped, bead srs3-0gc, TYPES-1d). E-a and E-b fail on it by name.
 One-shot resume (EMIT-1 rule, lead): a handler op body with exactly one `resume k(v)` in TAIL position emits `return v` in the static handler fn
 (the continuation param k is no C param). A resume in non-tail position is the named emit Diag `unsupportedResume`, counted in the emit
 summary line (the emit exits 1): never guessed C.
@@ -29,4 +33,4 @@ E-a zig check is `zig cc -std=c11 -Werror -Wno-unused-command-line-argument -c -
 with -o /dev/null) fails with "failed to rename 'tmp/..-p.o' into '.../p.o': FileNotFound", and `zig clang` finds no stdint.h. -c runs the
 same clang frontend, so the diagnostics are the same. Both scripts take longer than 120 s: run.sh gives them 900 s.
 
-Typed oracle (tests/s3/types/ty.sh): 82 progs typed with this command; a prog that does not type is listed with its first diag.
+Typed oracle (tests/s3/types/ty.sh): 78 progs typed with this command; a prog that does not type is listed with its first diag.

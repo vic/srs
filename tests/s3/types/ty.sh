@@ -7,7 +7,7 @@
 #     with an absent type or a type var), logover=0, missingEntry=0 (ty / callee / tag-site / literal kind).
 #  2. `s3c --types-kinds Y1`: per node kind nodes vs ty entries; every REQUIRED kind (expression, pattern, call, ctor, literal, binder) has
 #     records == nodes: required-gaps=0. The kinds that need no entry (types, decls, layout, clauses) are listed, with required=NO.
-#  3. the 82 in-subset progs (tests/s3/emit/progs.txt), each typed with the S2LIBS set + the prog (tests/s3/emit/README.txt): `progs typed N/82`
+#  3. the 78 in-subset progs (tests/s3/emit/progs.txt), each typed with the S2LIBS set + the prog (tests/s3/emit/README.txt): `progs typed N/78`
 #     (exit 0, untypednodes=0, mismatches=0, missingEntry=0, required-gaps=0), the others listed with their first diag. bar: >= 70.
 #  4. spot oracle: `s3c --types-dump-nodes Y1` (path:line #id kind type [rhs=#id]): every val / var binding of Y1 whose source line has an explicit
 #     annotation (`val x: T =`) has the type of its rhs node equal to its binder type (the annotation); 30 random ones are shown.
@@ -50,9 +50,9 @@ while read -r n; do
 done < tests/s3/emit/progs.txt
 echo "progs typed $ok/$tot"
 printf '%s' "$fails"
-[ "$tot" = 82 ] || bad "progs.txt has $tot entries (want 82)"
+[ "$tot" = 78 ] || bad "progs.txt has $tot entries (want 78)"
 [ "$k90n" = 0 ] || bad "$k90n progs have an untyped builtin call (k90)"
-[ "$ok" -ge 70 ] || bad "progs typed $ok/82 (bar 70)"
+[ "$ok" -ge 70 ] || bad "progs typed $ok/78 (bar 70)"
 
 # 4. spot oracle: annotated val / var bindings
 timeout 60 "$BIN" --types-dump-nodes $Y1 | grep -v '^missing' | grep -E '^[^ ]+:[0-9]+ #[0-9]+ [0-9]+ ' > "$T/dn.txt"
