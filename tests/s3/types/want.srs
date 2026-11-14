@@ -1,0 +1,22 @@
+// T-a want input: the `want` that if / match / a val annotation pass down is the ONLY source of the kind of an int literal arm
+// (U32 here; a literal with no want is an I64), and it fixes the nullary generic cases below at once. `s3c --types lib/prelude.srs`
+// must report mismatches=0 annotate=0 untypednodes=0 for it. Without the want push the literal arms of W.d, W.e are I64: mismatches=2
+// (lines 18, 19; the mutant that drops the push in Tp.resultOf). annotate does not change: a var left by a nullary case is solved by the def's result type.
+enum Opt [A: Type]:
+  case None
+  case Some(v: A)
+enum Col:
+  case Red
+  case Blue
+def W.a(b: Bool): Opt[I64] = if b then None else None
+def W.b(c: Col): Opt[Str] = c match
+  case Red => None
+  case Blue => None
+def W.c(b: Bool): Opt[I64] =
+  val x: Opt[I64] = None
+  x
+def W.d(b: Bool): U32 = if b then 1 else 2
+def W.e(c: Col): U32 = c match
+  case Red => 1
+  case Blue => 2
+def main(): I64 = 0
