@@ -69,17 +69,17 @@ def Em.preamble2(s: Tp.S): Unit =
 // hc slots: 0 handles, 1 overflow, 2 unsupported nodes, 3 defs emitted, 4 instances emitted, 5 handler fns, 6 main seen, 7 defs skipped (no body),
 // 8 closure passes, 9 interned late; 16 + 2i = (capability symbol, handler symbol) of handle i; 64 + node kind = unsupported nodes of that kind
 enum Em.K:
-  case Em.K(kn: I64, kc: Array[U8](kn), hn: I64, hc: Array[I64](hn))
+  case Em.K(kn: I64, kc: Array[U8](kn), hn: I64, hc: Array[I64](hn), xo: Array[U32](kn), xn: I64, xi: Array[U32](xn))
 
 def Em.bump(hn: I64, hc: Array[I64](hn), i: I64): Unit =
   if 0 <= i && i < hn then Array.put(hc, i, hc(i) + 1) else ()
 
 def Em.over(k: Em.K): Unit =
-  val Em.K(_, _, hn, hc) = k
+  val Em.K(_, _, hn, hc, _, _, _) = k
   Em.bump(hn, hc, 1)
 
 def Em.kget(k: Em.K, sym: I64): I64 =
-  val Em.K(kn, kc, _, _) = k
+  val Em.K(kn, kc, _, _, _, _, _) = k
   if 0 <= sym && sym < kn then I64.ofU8(kc(sym))
   // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
   else
@@ -87,13 +87,13 @@ def Em.kget(k: Em.K, sym: I64): I64 =
     0
 
 def Em.kset(k: Em.K, sym: I64, v: I64): Unit =
-  val Em.K(kn, kc, _, _) = k
+  val Em.K(kn, kc, _, _, _, _, _) = k
   if 0 <= sym && sym < kn then Array.put(kc, sym, U8.of(v))
   // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
   else Em.over(k)
 
 def Em.hget(k: Em.K, i: I64): I64 =
-  val Em.K(_, _, hn, hc) = k
+  val Em.K(_, _, hn, hc, _, _, _) = k
   if 0 <= i && i < hn then hc(i)
   // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
   else
@@ -101,7 +101,7 @@ def Em.hget(k: Em.K, i: I64): I64 =
     0
 
 def Em.hset(k: Em.K, i: I64, v: I64): Unit =
-  val Em.K(_, _, hn, hc) = k
+  val Em.K(_, _, hn, hc, _, _, _) = k
   if 0 <= i && i < hn then Array.put(hc, i, v)
   // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
   else Em.over(k)
@@ -1197,9 +1197,99 @@ def Em.enumType(e: Em.E, root: I64, t: I64, pr: Bool): Unit =
   Em.cases(e, Na.b(g, root), 0, t, pr)
   if pr then Em.po(e," uint8_t none_; } u; }; };\n") else ()
 
+// ── the enum index (PERF-3): the ids of kind enum below hc slot 130 (the type count at the last build), by head symbol, ascending, by a counting sort
+// in two flat arrays: xi holds the ids, list h is xi[xo(h), xo(h+1)) for h <= hc slot 131 (the largest enum head). Types interned after the build
+// (the closure passes) are found by the scan of [build count, count). A head with h + 2 >= kn is not indexed: its scan is the full one.
+def Em.xg(n: I64, xs: Array[U32](n), i: I64): I64 = if 0 <= i && i < n then I64.of(xs(i)) else 0
+
+def Em.xp(n: I64, xs: Array[U32](n), i: I64, v: I64): Unit = if 0 <= i && i < n then Array.put(xs, i, U32.of(v)) else ()
+
+def Em.ixCount(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), i: I64, n: I64, mx: I64): I64 =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Tp.bEnum() && 0 <= h && h + 2 < kn then
+      Em.xp(kn, xo, h + 2, Em.xg(kn, xo, h + 2) + 1)
+      Em.ixCount(tcap, tk, th, kn, xo, i + 1, n, if h > mx then h else mx)
+    else Em.ixCount(tcap, tk, th, kn, xo, i + 1, n, mx)
+  else mx
+
+def Em.ixPre(kn: I64, xo: Array[U32](kn), i: I64, n: I64): Unit =
+  if i <= n && 0 < i && i < kn then
+    Em.xp(kn, xo, i, Em.xg(kn, xo, i) + Em.xg(kn, xo, i - 1))
+    Em.ixPre(kn, xo, i + 1, n)
+  else ()
+
+def Em.ixFill(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), xn: I64, xi: Array[U32](xn), i: I64, n: I64): Unit =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Tp.bEnum() && 0 <= h && h + 2 < kn then
+      val p = Em.xg(kn, xo, h + 1)
+      Em.xp(xn, xi, p, i)
+      Em.xp(kn, xo, h + 1, p + 1)
+    else ()
+    Em.ixFill(tcap, tk, th, kn, xo, xn, xi, i + 1, n)
+  else ()
+
+def Em.ixClear(kn: I64, xo: Array[U32](kn), i: I64, n: I64): Unit =
+  if i <= n && 0 <= i && i < kn then
+    Em.xp(kn, xo, i, 0)
+    Em.ixClear(kn, xo, i + 1, n)
+  else ()
+
+def Em.ixBuild(s: Tp.S, k: Em.K): Unit =
+  val n = Tp.cget(s, Tp.cTypes())
+  if n == Em.hget(k, 130) then ()
+  else
+    val Tp.S(tt, _, _, _, _) = s
+    val Tp.Tt(tcap, tk, _, th, _, _) = tt
+    val Em.K(kn, _, _, _, xo, xn, xi) = k
+    Em.hinc(k, 136)
+    Em.ixClear(kn, xo, 0, Em.hget(k, 132))
+    val mx = Em.ixCount(tcap, tk, th, kn, xo, 1, n, 0)
+    Em.ixPre(kn, xo, 1, mx + 2)
+    Em.hset(k, 132, mx + 2)
+    // xi is an eighth of the type table: more enum ids than room = no index (the full scan answers), never a wrong list
+    if Em.xg(kn, xo, mx + 2) <= xn then
+      Em.ixFill(tcap, tk, th, kn, xo, xn, xi, 1, n)
+      Em.hset(k, 131, mx)
+      Em.hset(k, 130, n)
+    else
+      Em.hinc(k, 134)
+      Em.hset(k, 131, 0 - 1)
+      Em.hset(k, 130, 0)
+
+// the first position in xi[lo, hi) whose id is >= t, else hi
+def Em.ixLb(xn: I64, xi: Array[U32](xn), lo: I64, hi: I64, t: I64): I64 =
+  if lo < hi && 0 <= lo && hi <= xn then
+    val mid = (lo + hi) / 2
+    if Em.xg(xn, xi, mid) < t then Em.ixLb(xn, xi, mid + 1, hi, t) else Em.ixLb(xn, xi, lo, mid, t)
+  else lo
+
+// = Tp.nextEnum(s, esym, t), through the index
+def Em.nextEnum(s: Tp.S, k: Em.K, esym: I64, t: I64): I64 =
+  val Em.K(kn, _, _, _, xo, xn, xi) = k
+  val built = Em.hget(k, 130)
+  if 0 <= esym && esym + 2 < kn then
+    val tail = if t > built then t else built
+    if esym <= Em.hget(k, 131) then
+      val hi = Em.xg(kn, xo, esym + 1)
+      val p = Em.ixLb(xn, xi, Em.xg(kn, xo, esym), hi, t)
+      if p < hi && 0 <= p && p < xn then Em.xg(xn, xi, p) else Em.tailScan(s, k, esym, tail)
+    else Em.tailScan(s, k, esym, tail)
+  else
+    Em.hinc(k, 133)
+    Em.tailScan(s, k, esym, t)
+
+// the unindexed scan from `from` to the type count; counts the range it may walk (hc 135 = sum over all calls of the range size)
+def Em.tailScan(s: Tp.S, k: Em.K, esym: I64, from: I64): I64 =
+  val n = Tp.cget(s, Tp.cTypes())
+  if from < n then Em.hset(k, 135, Em.hget(k, 135) + (n - from)) else ()
+  Tp.nextEnum(s, esym, from)
+
 def Em.enumTypes(e: Em.E, root: I64, esym: I64, t: I64, pr: Bool): Unit =
   val s = Em.sOf(e)
-  val u = Tp.nextEnum(s, esym, t)
+  val Em.E(_, k, _, _, _, _, _, _) = e
+  val u = Em.nextEnum(s, k, esym, t)
   if u < Tp.cget(s, Tp.cTypes()) then
     if Tp.closedT(s, u) then
       if pr then Em.enumType(e, root, u, true)
@@ -1338,6 +1428,7 @@ def Em.files(w: Nm.W, s: Tp.S, k: Em.K, rs: Coll.List[Tp.R], fi: I64, ph: I64): 
 // the closure to a fixpoint: structs of the new types intern their field types, which may be new types
 def Em.close(w: Nm.W, s: Tp.S, k: Em.K, rs: Coll.List[Tp.R], pass: I64): Unit =
   val before = Tp.cget(s, Tp.cTypes())
+  Em.ixBuild(s, k)
   Em.files(w, s, k, rs, 0, 4)
   Em.hinc(k, 8)
   if Tp.cget(s, Tp.cTypes()) != before && pass < 16 then Em.close(w, s, k, rs, pass + 1) else ()
@@ -1403,12 +1494,16 @@ def Em.run(): I64 =
   else
     val kn = Nm.cget(w, Nm.sSyms()) + 16
     val hn = 160
-    val k = Em.K(kn, Array.fill(kn, U8.of(0)), hn, Array.fill(hn, 0))
+    val Tp.S(tt, _, _, _, _) = s
+    val Tp.Tt(tcap, _, _, _, _, _) = tt
+    val xcap = tcap / 8 + 16
+    val k = Em.K(kn, Array.fill(kn, U8.of(0)), hn, Array.fill(hn, 0), Array.fill(kn, U32.of(0)), xcap, Array.fill(xcap, U32.of(0)))
     Em.files(w, s, k, rs, 0, 0)
     Em.close(w, s, k, rs, 0)
     val tclosed = Tp.cget(s, Tp.cTypes())
     Em.preamble(s)
     Tp.fwds(w, s, 1)
+    Em.ixBuild(s, k)
     Em.files(w, s, k, rs, 0, 1)
     Tp.po(s, "static const uint64_t srs_nul[")
     Tp.pi(s, Em.hget(k, 10) + 1)
@@ -1432,6 +1527,10 @@ def Em.run(): I64 =
     Em.num(" unsupportedResume=", Em.hget(k, 13))
     Em.num(" unsupported=", Em.hget(k, 2))
     Em.num(" overflow=", Em.hget(k, 1))
+    Em.num(" ixUnindexed=", Em.hget(k, 133))
+    Em.num(" ixOverflow=", Em.hget(k, 134))
+    Em.num(" ixTailRange=", Em.hget(k, 135))
+    Em.num(" ixBuilds=", Em.hget(k, 136))
     Em.kindRows(k, 0)
     Console.eprint("\n")
     if Em.hget(k, 2) > 0 || Em.hget(k, 13) > 0 || Em.hget(k, 1) > 0 || Tp.cget(s, Tp.cTypes()) != tclosed || Em.hget(k, 6) == 0 then 1 else 0
