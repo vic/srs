@@ -56,13 +56,116 @@ def M.files(dump: Bool, nt: Lx.Notes, i: I64, bad: I64): I64 =
         Console.print(" unreadable\n")
         M.files(dump, nt, i + 1, 1)
 
+// PARSE-1a: s3c --decls[-keep] F... prints "path decls=N diags=D" per file, then the totals per kind;
+// s3c --decls-dump[-keep] F prints "kind name head lo hi" per decl, then "diag code tok" per diag.
+def M.declLines(src: Str, tcap: I64, to: Array[U32](tcap), tl: Array[U32](tcap), cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, i: I64): Unit =
+  if 0 <= i && i < c && i < cap then
+    Ps.byteKind(I64.ofU8(kd(i))) match
+      case Coll.Some(k) => Console.print(Ps.kindName(k))
+      case Coll.None => Console.print("badkind")
+    M.sp()
+    val q = I64.of(nm(i))
+    if 0 <= q && q < tcap then
+      val o = I64.of(to(q))
+      Console.print(Str.slice(src, o, o + I64.of(tl(q))))
+    else Console.print("badname")
+    M.sp()
+    Console.printI64(I64.of(hd(i)))
+    M.sp()
+    Console.printI64(I64.of(lo(i)))
+    M.sp()
+    Console.printI64(I64.of(hi(i)))
+    M.nl()
+    M.declLines(src, tcap, to, tl, cap, kd, nm, hd, lo, hi, c, i + 1)
+  else ()
+
+def M.pdiagLines(dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64, j: I64): Unit =
+  if 0 <= j && j < d && j < dcap then
+    Console.print("diag ")
+    Ps.byteWhy(I64.ofU8(dw(j))) match
+      case Coll.Some(w) => Console.print(Ps.whyName(w))
+      case Coll.None => Console.print("badwhy")
+    M.sp()
+    Console.printI64(I64.of(dt(j)))
+    M.nl()
+    M.pdiagLines(dcap, dw, dt, d, j + 1)
+  else ()
+
+// tot(b) += 1 per decl of kind byte b
+def M.tally(cap: I64, kd: Array[U8](cap), c: I64, i: I64, tn: I64, tot: Array[I64](tn)): Unit =
+  if 0 <= i && i < c && i < cap then
+    val b = I64.ofU8(kd(i))
+    if 0 <= b && b < tn then
+      Array.put(tot, b, tot(b) + 1)
+    else Console.print("tally: bad kind byte\n")
+    M.tally(cap, kd, c, i + 1, tn, tot)
+  else ()
+
+def M.totals(tn: I64, tot: Array[I64](tn), b: I64): Unit =
+  if 0 <= b && b < tn then
+    Ps.byteKind(b) match
+      case Coll.Some(k) => Console.print(Ps.kindName(k))
+      case Coll.None => Console.print("badkind")
+    M.sp()
+    Console.printI64(tot(b))
+    M.nl()
+    M.totals(tn, tot, b + 1)
+  else ()
+
+// dump = true: one line per decl and diag; false: the counts line, and the per-kind tally into tot. returns the diag count
+def M.dfile(dump: Bool, nt: Lx.Notes, p: Str, src: Str, tn: I64, tot: Array[I64](tn)): I64 =
+  val lx = Lx.lex(nt, src)
+  val Lx.Out(tcap, _, to, tl, _, _, _, _, _) = lx
+  val Ps.Out(cap, kd, nm, hd, lo, hi, c, dcap, dw, dt, d) = Ps.parse(src, lx)
+  if dump then
+    M.declLines(src, tcap, to, tl, cap, kd, nm, hd, lo, hi, c, 0)
+    M.pdiagLines(dcap, dw, dt, d, 0)
+  else
+    M.tally(cap, kd, c, 0, tn, tot)
+    Console.print(p)
+    Console.print(" decls=")
+    Console.printI64(c)
+    Console.print(" diags=")
+    Console.printI64(d)
+    M.nl()
+  d
+
+def M.dfiles(dump: Bool, nt: Lx.Notes, i: I64, bad: I64, dsum: I64, tn: I64, tot: Array[I64](tn)): I64 =
+  if i >= Args.count() then
+    if !dump then
+      M.totals(tn, tot, 0)
+      Console.print("total diags=")
+      Console.printI64(dsum)
+      M.nl()
+    else ()
+    bad
+  else
+    val p = Args.at(i)
+    Files.bytes(p) match
+      case Os.Ok(src) =>
+        val dn = M.dfile(dump, nt, p, src, tn, tot)
+        M.dfiles(dump, nt, i + 1, bad, dsum + dn, tn, tot)
+      case Os.Fail(_) =>
+        Console.print(p)
+        Console.print(" unreadable\n")
+        M.dfiles(dump, nt, i + 1, 1, dsum, tn, tot)
+
+def M.decls(dump: Bool, nt: Lx.Notes): I64 =
+  val tn = 11
+  val tot = Array.fill(tn, 0)
+  M.dfiles(dump, nt, 2, 0, 0, tn, tot)
+
 def main(): I64 =
   handle io = Srs.Console()
   handle a = Srs.Args()
   handle m = Srs.Mut()
   handle r = Srs.Arena()
   handle fs = Srs.Files()
-  if Args.count() > 1 && Str.eq(Args.at(1), "--lex") then M.files(false, Lx.Skip, 2, 0)
+  if Args.count() > 1 && Str.eq(Args.at(1), "--decls") then M.decls(false, Lx.Skip)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--decls-keep") then M.decls(false, Lx.Keep)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--decls-dump") then M.decls(true, Lx.Skip)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--decls-dump-keep") then M.decls(true, Lx.Keep)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--lex") then M.files(false, Lx.Skip, 2, 0)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-keep") then M.files(false, Lx.Keep, 2, 0)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-dump") then M.files(true, Lx.Skip, 2, 0)
   else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-dump-keep") then M.files(true, Lx.Keep, 2, 0)
