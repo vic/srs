@@ -31,10 +31,10 @@ build() { # name copy-of-emit.srs
 }
 c0=$(fails "$BIN"); echo "control (unmutated): $c0 failing of $N"
 [ "$c0" = 0 ] || bad "control fails $c0 of $N progs: the mutant counts mean nothing"
-# m1: the tag a constructor writes (Em.ctor: `Console.printI64(Em.ax(e, n) - 1)` after `.t_ = `)
-awk '{ if ($0 ~ /^    Console.print\("\.t_ = "\)$/) { print; getline; if ($0 ~ /Console.printI64\(Em.ax\(e, n\) - 1\)/) { print "    Console.printI64(if Em.ax(e, n) == 1 then 1 else if Em.ax(e, n) == 2 then 0 else Em.ax(e, n) - 1)"; next } } print }' s3/emit.srs > "$W/m1.srs"
-# m2: field i of a constructor is written f(i+1): the line `Console.printI64(i)` right after `.f` in Em.fields
-awk '{ print; if ($0 ~ /^    Console.print\("\.f"\)$/ && !done) { getline; if ($0 ~ /Console.printI64\(i\)/) { print "    Console.printI64(i + 1)"; done = 1; next } else print } }' s3/emit.srs > "$W/m2.srs"
+# m1: the tag a constructor writes (Em.ctor: `Em.pi(e, Em.ax(e, n) - 1)` after `.t_ = `)
+awk '{ if ($0 ~ /^    Em.po\(e, ?"\.t_ = "\)$/) { print; getline; if ($0 ~ /Em.pi\(e, ?Em.ax\(e, n\) - 1\)/) { print "    Em.pi(e, if Em.ax(e, n) == 1 then 1 else if Em.ax(e, n) == 2 then 0 else Em.ax(e, n) - 1)"; next } } print }' s3/emit.srs > "$W/m1.srs"
+# m2: field i of a constructor is written f(i+1): the line `Em.pi(e, i)` right after `.f` in Em.fields
+awk '{ print; if ($0 ~ /^    Em.po\(e, ?"\.f"\)$/ && !done) { getline; if ($0 ~ /Em.pi\(e, ?i\)/) { print "    Em.pi(e, i + 1)"; done = 1; next } else print } }' s3/emit.srs > "$W/m2.srs"
 for m in m1 m2; do
   if cmp -s s3/emit.srs "$W/$m.srs"; then bad "$m: the mutation matched nothing"; continue; fi
   if build $m "$W/$m.srs"; then

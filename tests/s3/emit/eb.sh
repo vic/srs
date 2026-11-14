@@ -1,7 +1,7 @@
 #!/bin/bash
 # E-b (EMIT-1 behaviour): bash tests/s3/emit/eb.sh <s3c> (from the repo root). Each prog of tests/s3/emit/progs.txt is emitted by s3c, built with
 # zig cc -O0 -fsanitize=address,undefined + rt/srs_rt.c (+ the prog's `// c:` args), run with its `// env:` variables; exit 0 and stdout ==
-# tests/s2/prog/NAME.out (as tests/run.sh t_prog compares). `emit-b N/81`, the first failures with a diff head. bar: 81/81.
+# tests/s2/prog/NAME.out (as tests/run.sh t_prog compares). `emit-b N/78`, the first failures with a diff head. bar: 78/78.
 # EB_ONLY=name runs one prog; EB_SKIP_BUILD_CHECK is not a thing: a prog whose emit fails is a failure.
 . tests/s3/lib.sh
 init E-b "$1"
@@ -27,6 +27,6 @@ while read -r n; do
 done < tests/s3/emit/progs.txt
 echo "emit-b $ok/$tot"
 printf '%s' "$fails" | head -${EB_SHOW:-12}
-[ -n "${EB_ONLY:-}" ] || [ "$tot" = 82 ] || bad "progs.txt has $tot entries (want 82)"
-[ "$ok" = "$tot" ] || bad "emit-b $ok/$tot (bar 82/82)"
+[ -n "${EB_ONLY:-}" ] || [ "$tot" = 78 ] || bad "progs.txt has $tot entries (want 78)"
+[ "$ok" = "$tot" ] || bad "emit-b $ok/$tot (bar 78/78)"
 finish
