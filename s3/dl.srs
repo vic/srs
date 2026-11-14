@@ -1,0 +1,409 @@
+// s3 Datalog substrate (DL-1): the executor of a planned, stratified program (mkplan.awk makes the plan; this file runs it).
+// a relation is an append-only row store of U32 columns (row-major) plus hash indexes over bound column sets: head slots
+// and a per-row next link, both U32 (a row id + 1; 0 ends a chain). the full-column index of a relation is its dedup set and
+// the test of a negated atom. semi-naive: a round drives every recursive variant from the rows added in the last round
+// (ds..de), the other atoms probe the full relation. a stratum runs to fixpoint before the next (negation reads only lower
+// strata). a walk keeps the store snapshot it started with, so a store that grows under it never moves a chain.
+
+// ── numbers ──
+enum Dl.N:
+  case Dl.N(v: I64, i: I64)
+
+def Dl.isNum(c: I64): Bool = if c >= 48 then c <= 57 else c == 45
+
+def Dl.skip(s: Str, n: I64, i: I64): I64 = if i < n then (if Dl.isNum(Str.at(s, i)) then i else Dl.skip(s, n, i + 1)) else i
+
+def Dl.digs(s: Str, n: I64, i: I64, acc: I64, neg: Bool): Dl.N =
+  if i < n then
+    val c = Str.at(s, i)
+    if c >= 48 && c <= 57 then Dl.digs(s, n, i + 1, acc * 10 + c - 48, neg)
+    else Dl.N(if neg then 0 - acc else acc, i)
+  else Dl.N(if neg then 0 - acc else acc, i)
+
+def Dl.num(s: Str, i0: I64): Dl.N =
+  val n = Str.len(s)
+  val i = Dl.skip(s, n, i0)
+  if i < n && Str.at(s, i) == 45 then Dl.digs(s, n, i + 1, 0, true) else Dl.digs(s, n, i, 0, false)
+
+// ── guarded array access (an index is proved in range; out of range reads 0 and writes nothing, never reached) ──
+def Dl.u(n: I64, xs: Array[U32](n), i: I64): I64 = if 0 <= i && i < n then I64.of(xs(i)) else 0
+def Dl.w(n: I64, xs: Array[U32](n), i: I64, v: I64): Unit = if 0 <= i && i < n then Array.put(xs, i, U32.of(v)) else ()
+def Dl.g(n: I64, xs: Array[I64](n), i: I64): I64 = if 0 <= i && i < n then xs(i) else 0
+def Dl.s(n: I64, xs: Array[I64](n), i: I64, v: I64): Unit = if 0 <= i && i < n then Array.put(xs, i, v) else ()
+
+// ── state ──
+// rn = cap * arity words; hc = head slots (a power of two); nc = cap next links
+enum Dl.Rel:
+  case Dl.Rel.Mk(cap: I64, rn: I64, xs: Array[U32](rn))
+
+enum Dl.Ix:
+  case Dl.Ix.Mk(hc: I64, hs: Array[U32](hc), nc: I64, nx: Array[U32](nc))
+
+// m: one I64 array in sections: the plan (pn words), cnt (nr), ds (nr), de (nr), env (32), hb (8), rst (nr + 1), rl (ni)
+enum Dl.St:
+  case Dl.St.Mk(pn: I64, ml: I64, m: Array[I64](ml), nr: I64, ni: I64, rels: Array[Dl.Rel](nr), ixs: Array[Dl.Ix](ni))
+
+def Dl.nr(st: Dl.St): I64 = st match
+  case Dl.St.Mk(_, _, _, nr, _, _, _) => nr
+
+def Dl.ni(st: Dl.St): I64 = st match
+  case Dl.St.Mk(_, _, _, _, ni, _, _) => ni
+
+def Dl.mg(st: Dl.St, off: I64, i: I64): I64 = st match
+  case Dl.St.Mk(_, ml, m, _, _, _, _) => Dl.g(ml, m, off + i)
+
+def Dl.ms(st: Dl.St, off: I64, i: I64, v: I64): Unit = st match
+  case Dl.St.Mk(_, ml, m, _, _, _, _) => Dl.s(ml, m, off + i, v)
+
+def Dl.bCnt(st: Dl.St): I64 = st match
+  case Dl.St.Mk(pn, _, _, _, _, _, _) => pn
+
+def Dl.bDs(st: Dl.St): I64 = st match
+  case Dl.St.Mk(pn, _, _, nr, _, _, _) => pn + nr
+
+def Dl.bDe(st: Dl.St): I64 = st match
+  case Dl.St.Mk(pn, _, _, nr, _, _, _) => pn + 2 * nr
+
+def Dl.bEnv(st: Dl.St): I64 = st match
+  case Dl.St.Mk(pn, _, _, nr, _, _, _) => pn + 3 * nr
+
+def Dl.bHb(st: Dl.St): I64 = Dl.bEnv(st) + 32
+
+def Dl.bRst(st: Dl.St): I64 = Dl.bHb(st) + 8
+
+def Dl.bRl(st: Dl.St): I64 = st match
+  case Dl.St.Mk(pn, _, _, nr, _, _, _) => pn + 4 * nr + 41
+
+def Dl.p(st: Dl.St, i: I64): I64 = Dl.mg(st, 0, i)
+def Dl.cnt(st: Dl.St, r: I64): I64 = Dl.mg(st, Dl.bCnt(st), r)
+def Dl.setCnt(st: Dl.St, r: I64, v: I64): Unit = Dl.ms(st, Dl.bCnt(st), r, v)
+def Dl.ds(st: Dl.St, r: I64): I64 = Dl.mg(st, Dl.bDs(st), r)
+def Dl.de(st: Dl.St, r: I64): I64 = Dl.mg(st, Dl.bDe(st), r)
+def Dl.env(st: Dl.St, i: I64): I64 = Dl.mg(st, Dl.bEnv(st), i)
+def Dl.setEnv(st: Dl.St, i: I64, v: I64): Unit = Dl.ms(st, Dl.bEnv(st), i, v)
+def Dl.hb(st: Dl.St, i: I64): I64 = Dl.mg(st, Dl.bHb(st), i)
+def Dl.setHb(st: Dl.St, i: I64, v: I64): Unit = Dl.ms(st, Dl.bHb(st), i, v)
+def Dl.rst(st: Dl.St, r: I64): I64 = Dl.mg(st, Dl.bRst(st), r)
+def Dl.rl(st: Dl.St, j: I64): I64 = Dl.mg(st, Dl.bRl(st), j)
+
+def Dl.relOf(st: Dl.St, r: I64): Dl.Rel = st match
+  case Dl.St.Mk(_, _, _, nr, _, rels, _) => if 0 <= r && r < nr then rels(r) else Dl.dummyRel()
+
+def Dl.ixOf(st: Dl.St, x: I64): Dl.Ix = st match
+  case Dl.St.Mk(_, _, _, _, ni, _, ixs) => if 0 <= x && x < ni then ixs(x) else Dl.dummyIx()
+
+// data goes into an array only through a param that states its region (s2c put-data)
+def Dl.putRel2 {g: Region} (nr: I64, rels: Array[Dl.Rel](nr)<g>, r: I64, v: Dl.Rel<g>): Unit =
+  if 0 <= r && r < nr then Array.put(rels, r, v) else ()
+
+def Dl.putRel {g: Region} (st: Dl.St, r: I64, v: Dl.Rel<g>): Unit = st match
+  case Dl.St.Mk(_, _, _, nr, _, rels, _) => Dl.putRel2(nr, rels, r, v)
+
+def Dl.putIx2 {g: Region} (ni: I64, ixs: Array[Dl.Ix](ni)<g>, x: I64, v: Dl.Ix<g>): Unit =
+  if 0 <= x && x < ni then Array.put(ixs, x, v) else ()
+
+def Dl.putIx {g: Region} (st: Dl.St, x: I64, v: Dl.Ix<g>): Unit = st match
+  case Dl.St.Mk(_, _, _, _, ni, _, ixs) => Dl.putIx2(ni, ixs, x, v)
+
+// an empty store: never written (the first add resizes it), shared by every relation until then
+def Dl.dummyRel(): Dl.Rel =
+  val z = 0
+  Dl.Rel.Mk(0, z, Array.fill(z, U32.of(0)))
+
+def Dl.dummyIx(): Dl.Ix =
+  val one = 1
+  val z = 0
+  Dl.Ix.Mk(one, Array.fill(one, U32.of(0)), z, Array.fill(z, U32.of(0)))
+
+// ── hashing ──
+def Dl.h0(): U32 = 2166136261
+def Dl.mix(h: U32, v: I64): U32 = (h ^ U32.of(v)) * 16777619
+def Dl.fin(h: U32, hc: I64): I64 = I64.of((h ^ (h >> 15)) & U32.of(hc - 1))
+
+def Dl.pow2ge(x: I64, p: I64): I64 = if p >= x then p else Dl.pow2ge(x, p * 2)
+def Dl.hcOf(cap: I64): I64 = Dl.pow2ge(cap / 2 + 1, 1)
+
+// the hash of a stored row over the columns of mask
+def Dl.hrow(rn: I64, xs: Array[U32](rn), a: I64, row: I64, mask: I64, c: I64, pw: I64, h: U32): U32 =
+  if c >= a then h
+  else if mask / pw % 2 == 1 then Dl.hrow(rn, xs, a, row, mask, c + 1, pw * 2, Dl.mix(h, Dl.u(rn, xs, row * a + c)))
+  else Dl.hrow(rn, xs, a, row, mask, c + 1, pw * 2, h)
+
+// the hash of an atom's bound columns (tag 0 const, tag 1 env slot) at spec offset sp
+def Dl.hkey(st: Dl.St, sp: I64, c: I64, a: I64, h: U32): U32 =
+  if c >= a then h
+  else
+    val tag = Dl.p(st, sp + 2 * c)
+    val v = Dl.p(st, sp + 2 * c + 1)
+    if tag == 0 then Dl.hkey(st, sp, c + 1, a, Dl.mix(h, v))
+    else if tag == 1 then Dl.hkey(st, sp, c + 1, a, Dl.mix(h, Dl.env(st, v)))
+    else Dl.hkey(st, sp, c + 1, a, h)
+
+def Dl.hhb(st: Dl.St, a: I64, c: I64, h: U32): U32 =
+  if c >= a then h else Dl.hhb(st, a, c + 1, Dl.mix(h, Dl.hb(st, c)))
+
+// ── resize: a new store of cap2 rows, every index of the relation rebuilt over it ──
+def Dl.copy(n: I64, xs: Array[U32](n), n2: I64, ys: Array[U32](n2), i: I64, k: I64): Unit =
+  if i >= k then () else
+    Dl.w(n2, ys, i, Dl.u(n, xs, i))
+    Dl.copy(n, xs, n2, ys, i + 1, k)
+
+def Dl.link(st: Dl.St, r: I64, x: I64, a: I64, row: I64): Unit =
+  val mask = Dl.p(st, Dl.nr(st) + 2 * x + 1)
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.ixOf(st, x) match
+      case Dl.Ix.Mk(hc, hs, nc, nx) =>
+        val slot = Dl.fin(Dl.hrow(rn, xs, a, row, mask, 0, 1, Dl.h0()), hc)
+        Dl.w(nc, nx, row, Dl.u(hc, hs, slot))
+        Dl.w(hc, hs, slot, row + 1)
+
+def Dl.relink(st: Dl.St, r: I64, x: I64, a: I64, i: I64, n: I64): Unit =
+  if i >= n then () else
+    Dl.link(st, r, x, a, i)
+    Dl.relink(st, r, x, a, i + 1, n)
+
+def Dl.reix {g: Region} (st: Dl.St, r: I64, cap2: I64, a: I64, n: I64, j: I64, j1: I64): Unit =
+  if j >= j1 then () else
+    val x = Dl.rl(st, j)
+    val hc2 = Dl.hcOf(cap2)
+    val hs2 = Array.fill(hc2, U32.of(0))
+    val nx2 = Array.fill(cap2, U32.of(0))
+    Dl.putIx(st, x, Dl.Ix.Mk(hc2, hs2, cap2, nx2))
+    Dl.relink(st, r, x, a, 0, n)
+    Dl.reix(st, r, cap2, a, n, j + 1, j1)
+
+def Dl.resize {g: Region} (st: Dl.St, r: I64, cap2: I64): Unit =
+  val a = Dl.p(st, r)
+  val n = Dl.cnt(st, r)
+  val rn2 = cap2 * a
+  val xs2 = Array.fill(rn2, U32.of(0))
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.copy(rn, xs, rn2, xs2, 0, n * a)
+  Dl.putRel(st, r, Dl.Rel.Mk(cap2, rn2, xs2))
+  Dl.reix(st, r, cap2, a, n, Dl.rst(st, r), Dl.rst(st, r + 1))
+
+// ── add: the row in hb joins relation r unless its full index has it ──
+def Dl.rowEq(st: Dl.St, rn: I64, xs: Array[U32](rn), base: I64, c: I64, a: I64): Bool =
+  if c >= a then true
+  else if Dl.u(rn, xs, base + c) == Dl.hb(st, c) then Dl.rowEq(st, rn, xs, base, c + 1, a)
+  else false
+
+def Dl.hbFound(st: Dl.St, a: I64, rn: I64, xs: Array[U32](rn), nc: I64, nx: Array[U32](nc), node: I64): Bool =
+  if node == 0 then false
+  else if Dl.rowEq(st, rn, xs, (node - 1) * a, 0, a) then true
+  else Dl.hbFound(st, a, rn, xs, nc, nx, Dl.u(nc, nx, node - 1))
+
+def Dl.putRow(st: Dl.St, rn: I64, xs: Array[U32](rn), base: I64, c: I64, a: I64): Unit =
+  if c >= a then () else
+    Dl.w(rn, xs, base + c, Dl.hb(st, c))
+    Dl.putRow(st, rn, xs, base, c + 1, a)
+
+def Dl.linkAll(st: Dl.St, r: I64, a: I64, row: I64, j: I64, j1: I64): Unit =
+  if j >= j1 then () else
+    Dl.link(st, r, Dl.rl(st, j), a, row)
+    Dl.linkAll(st, r, a, row, j + 1, j1)
+
+def Dl.append(st: Dl.St, r: I64, a: I64): Unit =
+  val n = Dl.cnt(st, r)
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(cap, _, _) => if n >= cap then Dl.resize(st, r, if cap < 8 then 16 else cap * 2) else ()
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) =>
+      Dl.putRow(st, rn, xs, n * a, 0, a)
+      Dl.setCnt(st, r, n + 1)
+      Dl.linkAll(st, r, a, n, Dl.rst(st, r), Dl.rst(st, r + 1))
+
+def Dl.add(st: Dl.St, r: I64, a: I64): Unit =
+  val h = Dl.hhb(st, a, 0, Dl.h0())
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.ixOf(st, r) match
+      case Dl.Ix.Mk(hc, hs, nc, nx) =>
+        if Dl.hbFound(st, a, rn, xs, nc, nx, Dl.u(hc, hs, Dl.fin(h, hc))) then () else Dl.append(st, r, a)
+
+// ── join ──
+// the columns of a row against an atom's specs: tag 0 const, 1 bound slot, 2 binds a slot, 5 equals a slot bound in this atom
+def Dl.matchCols(st: Dl.St, rn: I64, xs: Array[U32](rn), rb: I64, sp: I64, c: I64, a: I64): Bool =
+  if c >= a then true
+  else
+    val tag = Dl.p(st, sp + 2 * c)
+    val v = Dl.p(st, sp + 2 * c + 1)
+    val x = Dl.u(rn, xs, rb + c)
+    if tag == 2 then
+      Dl.setEnv(st, v, x)
+      Dl.matchCols(st, rn, xs, rb, sp, c + 1, a)
+    else if x == (if tag == 0 then v else Dl.env(st, v)) then Dl.matchCols(st, rn, xs, rb, sp, c + 1, a)
+    else false
+
+def Dl.existsWalk(st: Dl.St, sp: I64, a: I64, rn: I64, xs: Array[U32](rn), nc: I64, nx: Array[U32](nc), node: I64): Bool =
+  if node == 0 then false
+  else if Dl.matchCols(st, rn, xs, (node - 1) * a, sp, 0, a) then true
+  else Dl.existsWalk(st, sp, a, rn, xs, nc, nx, Dl.u(nc, nx, node - 1))
+
+def Dl.exists(st: Dl.St, sp: I64, r: I64, a: I64): Bool =
+  val h = Dl.hkey(st, sp, 0, a, Dl.h0())
+  Dl.relOf(st, r) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.ixOf(st, r) match
+      case Dl.Ix.Mk(hc, hs, nc, nx) => Dl.existsWalk(st, sp, a, rn, xs, nc, nx, Dl.u(hc, hs, Dl.fin(h, hc)))
+
+def Dl.fillHb(st: Dl.St, sp: I64, c: I64, a: I64): Unit =
+  if c >= a then () else
+    val tag = Dl.p(st, sp + 2 * c)
+    val v = Dl.p(st, sp + 2 * c + 1)
+    Dl.setHb(st, c, if tag == 0 then v else Dl.env(st, v))
+    Dl.fillHb(st, sp, c + 1, a)
+
+// hv = the offset of the head relation in the variant; its specs follow
+def Dl.emit(st: Dl.St, hv: I64): Unit =
+  val hr = Dl.p(st, hv)
+  val ha = Dl.p(st, hr)
+  Dl.fillHb(st, hv + 1, 0, ha)
+  Dl.add(st, hr, ha)
+
+def Dl.join(st: Dl.St, hv: I64, a: I64, k: I64): Unit =
+  if k == 0 then Dl.emit(st, hv)
+  else
+    val neg = Dl.p(st, a)
+    val rel = Dl.p(st, a + 1)
+    val x = Dl.p(st, a + 2)
+    val ar = Dl.p(st, rel)
+    val nxt = a + 3 + 2 * ar
+    if neg == 1 then
+      if Dl.exists(st, a + 3, rel, ar) then () else Dl.join(st, hv, nxt, k - 1)
+    else Dl.probe(st, hv, a + 3, nxt, k, rel, x, ar)
+
+def Dl.probe(st: Dl.St, hv: I64, sp: I64, nxt: I64, k: I64, rel: I64, x: I64, ar: I64): Unit =
+  val h = Dl.hkey(st, sp, 0, ar, Dl.h0())
+  Dl.relOf(st, rel) match
+    case Dl.Rel.Mk(_, rn, xs) => Dl.ixOf(st, x) match
+      case Dl.Ix.Mk(hc, hs, nc, nx) => Dl.walk(st, hv, sp, nxt, k, ar, rn, xs, nc, nx, Dl.u(hc, hs, Dl.fin(h, hc)))
+
+def Dl.walk(st: Dl.St, hv: I64, sp: I64, nxt: I64, k: I64, ar: I64, rn: I64, xs: Array[U32](rn), nc: I64, nx: Array[U32](nc), node: I64): Unit =
+  if node == 0 then () else
+    val row = node - 1
+    if Dl.matchCols(st, rn, xs, row * ar, sp, 0, ar) then Dl.join(st, hv, nxt, k - 1) else ()
+    Dl.walk(st, hv, sp, nxt, k, ar, rn, xs, nc, nx, Dl.u(nc, nx, row))
+
+def Dl.drive(st: Dl.St, hv: I64, sp: I64, nxt: I64, k: I64, ar: I64, rn: I64, xs: Array[U32](rn), i: I64, e: I64): Unit =
+  if i >= e then () else
+    if Dl.matchCols(st, rn, xs, i * ar, sp, 0, ar) then Dl.join(st, hv, nxt, k - 1) else ()
+    Dl.drive(st, hv, sp, nxt, k, ar, rn, xs, i + 1, e)
+
+// ── variants and rounds ──
+// a variant: kind (0 once, from every row; 1 per round, from the delta), head relation, head specs, natoms, atoms
+// (neg, relation, index, specs); every spec is a tag and a value
+def Dl.atomsEnd(st: Dl.St, a: I64, k: I64): I64 =
+  if k <= 0 then a else Dl.atomsEnd(st, a + 3 + 2 * Dl.p(st, Dl.p(st, a + 1)), k - 1)
+
+def Dl.varEnd(st: Dl.St, off: I64): I64 =
+  val ha = Dl.p(st, Dl.p(st, off + 1))
+  Dl.atomsEnd(st, off + 3 + 2 * ha, Dl.p(st, off + 2 + 2 * ha))
+
+def Dl.runVar(st: Dl.St, off: I64): Unit =
+  val kind = Dl.p(st, off)
+  val hv = off + 1
+  val ha = Dl.p(st, Dl.p(st, hv))
+  val na = Dl.p(st, off + 2 + 2 * ha)
+  val a0 = off + 3 + 2 * ha
+  val r0 = Dl.p(st, a0 + 1)
+  val ar0 = Dl.p(st, r0)
+  val lo = if kind == 0 then 0 else Dl.ds(st, r0)
+  val hi = if kind == 0 then Dl.cnt(st, r0) else Dl.de(st, r0)
+  if lo < hi then
+    Dl.relOf(st, r0) match
+      case Dl.Rel.Mk(_, rn, xs) => Dl.drive(st, hv, a0 + 3, a0 + 3 + 2 * ar0, na, ar0, rn, xs, lo, hi)
+  else ()
+
+def Dl.vars(st: Dl.St, k: I64, off: I64, nv: I64): Unit =
+  if nv <= 0 then () else
+    if k == 0 || Dl.p(st, off) == 1 then Dl.runVar(st, off) else ()
+    Dl.vars(st, k, Dl.varEnd(st, off), nv - 1)
+
+// ds := de, de := cnt for every relation; true when any relation has new rows
+def Dl.advance(st: Dl.St, r: I64, any: Bool): Bool =
+  if r >= Dl.nr(st) then any
+  else
+    val d = Dl.de(st, r)
+    val c = Dl.cnt(st, r)
+    Dl.ms(st, Dl.bDs(st), r, d)
+    Dl.ms(st, Dl.bDe(st), r, c)
+    Dl.advance(st, r + 1, if c > d then true else any)
+
+def Dl.allDelta(st: Dl.St, r: I64): Unit =
+  if r >= Dl.nr(st) then () else
+    Dl.ms(st, Dl.bDs(st), r, 0)
+    Dl.ms(st, Dl.bDe(st), r, Dl.cnt(st, r))
+    Dl.allDelta(st, r + 1)
+
+def Dl.round(st: Dl.St, k: I64, voff: I64, nv: I64): Unit =
+  Dl.vars(st, k, voff, nv)
+  if Dl.advance(st, 0, false) then Dl.round(st, k + 1, voff, nv) else ()
+
+def Dl.skipVars(st: Dl.St, off: I64, nv: I64): I64 = if nv <= 0 then off else Dl.skipVars(st, Dl.varEnd(st, off), nv - 1)
+
+def Dl.run(st: Dl.St, s: I64, ns: I64, off: I64): Unit =
+  if s >= ns then () else
+    val nv = Dl.p(st, off)
+    Dl.allDelta(st, 0)
+    Dl.round(st, 0, off + 1, nv)
+    Dl.run(st, s + 1, ns, Dl.skipVars(st, off + 1, nv))
+
+// ── load ──
+def Dl.fillP(st: Dl.St, s: Str, i: I64, k: I64, pn: I64): I64 =
+  if k >= pn then i else
+    val Dl.N(v, j) = Dl.num(s, i)
+    Dl.ms(st, 0, k, v)
+    Dl.fillP(st, s, j, k + 1, pn)
+
+def Dl.bl(st: Dl.St, r: I64, x: I64, pos: I64): I64 =
+  if x >= Dl.ni(st) then pos
+  else if Dl.p(st, Dl.nr(st) + 2 * x) == r then
+    Dl.ms(st, Dl.bRl(st), pos, x)
+    Dl.bl(st, r, x + 1, pos + 1)
+  else Dl.bl(st, r, x + 1, pos)
+
+def Dl.br(st: Dl.St, r: I64, pos: I64): Unit =
+  Dl.ms(st, Dl.bRst(st), r, pos)
+  if r >= Dl.nr(st) then () else Dl.br(st, r + 1, Dl.bl(st, r, 0, pos))
+
+def Dl.readRow(st: Dl.St, s: Str, i: I64, c: I64, a: I64): I64 =
+  if c >= a then i else
+    val Dl.N(v, j) = Dl.num(s, i)
+    Dl.setHb(st, c, v)
+    Dl.readRow(st, s, j, c + 1, a)
+
+def Dl.loadRows(st: Dl.St, s: Str, i: I64, r: I64, left: I64, a: I64): I64 =
+  if left <= 0 then i else
+    val j = Dl.readRow(st, s, i, 0, a)
+    Dl.add(st, r, a)
+    Dl.loadRows(st, s, j, r, left - 1, a)
+
+def Dl.loadFacts(st: Dl.St, s: Str, i: I64, r: I64): I64 =
+  if r >= Dl.nr(st) then i else
+    val Dl.N(n, i1) = Dl.num(s, i)
+    if n > 0 then Dl.resize(st, r, n) else ()
+    Dl.loadFacts(st, s, Dl.loadRows(st, s, i1, r, n, Dl.p(st, r)), r + 1)
+
+def Dl.init(pn: I64, nr: I64, ni: I64): Dl.St =
+  val ml = pn + 4 * nr + 41 + ni
+  Dl.St.Mk(pn, ml, Array.fill(ml, 0), nr, ni, Array.fill(nr, Dl.dummyRel()), Array.fill(ni, Dl.dummyIx()))
+
+// ── output: "@r" then one row per line, tab separated ──
+def Dl.printCols(rn: I64, xs: Array[U32](rn), base: I64, c: I64, a: I64): Unit =
+  if c >= a then Console.print("\n") else
+    if c > 0 then Console.print("\t") else ()
+    Console.printI64(Dl.u(rn, xs, base + c))
+    Dl.printCols(rn, xs, base, c + 1, a)
+
+def Dl.printRows(rn: I64, xs: Array[U32](rn), a: I64, i: I64, n: I64): Unit =
+  if i >= n then () else
+    Dl.printCols(rn, xs, i * a, 0, a)
+    Dl.printRows(rn, xs, a, i + 1, n)
+
+def Dl.printAll(st: Dl.St, r: I64): Unit =
+  if r >= Dl.nr(st) then () else
+    Console.print("@")
+    Console.printI64(r)
+    Console.print("\n")
+    Dl.relOf(st, r) match
+      case Dl.Rel.Mk(_, rn, xs) => Dl.printRows(rn, xs, Dl.p(st, r), 0, Dl.cnt(st, r))
+    Dl.printAll(st, r + 1)
