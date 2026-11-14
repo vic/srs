@@ -1,4 +1,5 @@
 tests/s3/dl: oracle for the s3 Datalog engine (s3/dl.srs, s3/dlmain.srs).
+The engine binary is a program built from lib/prelude.srs s3/dl.srs s3/bounds.srs s3/dlmain.srs (dlmain.srs is the only entry file: it also runs the index-proof rules of s3/bounds.srs, see tests/s3/bounds/run.sh): timeout 300 $HOME/.cache/srs3/seed/srs lib/prelude.srs s3/dl.srs s3/bounds.srs s3/dlmain.srs > engine.c; zig cc -std=gnu11 -O1 -w -static -target x86_64-linux-musl -o engine engine.c rt/srs_rt.c
 
 What is here
   mem2.dl            the Mem analysis rules (65 relations, 66 rules) of s2c on its own Y1 self-compile, in Souffle syntax.

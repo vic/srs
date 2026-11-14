@@ -1,11 +1,8 @@
-// dl driver: `dl in.txt` reads the plan and the EDB facts (mkplan.awk), runs every stratum, prints every relation.
-def main(): I64 =
-  handle io = Srs.Console()
-  handle m = Srs.Mut()
-  handle r = Srs.Arena()
-  handle a = Srs.Args()
-  handle f = Srs.Files()
-  val s = Files.read(Args.at(1))
+// dl driver. `dl in.txt` reads the plan and the EDB facts (mkplan.awk), runs every stratum, prints every relation.
+// `dl --prf FACTS` / `dl --prf-dump FACTS` runs the index-proof rules (s3/bounds.srs) over an `s3c --idx-facts` dump, one solve per def:
+// the counts, and with --prf-dump one verdict line per unproved site.
+def Dl.plain(path: Str): I64 =
+  val s = Files.read(path)
   val Dl.N(pn, i1) = Dl.num(s, 0)
   val Dl.N(nr, i2) = Dl.num(s, i1)
   val Dl.N(ni, i3) = Dl.num(s, i2)
@@ -18,3 +15,13 @@ def main(): I64 =
   Dl.run(st, 0, ns, nr + 2 * ni)
   Dl.printAll(st, 0)
   0
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  handle a = Srs.Args()
+  handle f = Srs.Files()
+  if Args.count() >= 3 && Str.eq(Args.at(1), "--prf") then Bd.run(Files.read(Args.at(2)), false)
+  else if Args.count() >= 3 && Str.eq(Args.at(1), "--prf-dump") then Bd.run(Files.read(Args.at(2)), true)
+  else Dl.plain(Args.at(1))
