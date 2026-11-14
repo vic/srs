@@ -1,0 +1,325 @@
+// s3c PARSE-1b: the AST store, in s2 (vic/c/s3c-front.md F4). Node = struct of arrays: kind U8, tok U32 (first token; the name
+// token of a node that has one), a U32, b U32 (child node ids, list refs into xs, or token ids). A list is [count, items...] in xs;
+// a list ref is the index of its count, and ref 0 is the shared empty list. Absence is a node kind (Na.kNone, node 0), never -1.
+// Lists are collected on a scratch stack and copied to xs when closed, so every list is contiguous.
+// Every column is sized from the token count once (Na.make): no doubling. Counters live in one named-length I64 array.
+// The parser walks one cursor (counter slot sCur); an error sets the flag sErr and every loop of the parser stops on it.
+
+// token classes: a byte per token, computed once from the lexer's kind and the token text
+def Kc.ident(): I64 = 0
+def Kc.int(): I64 = 2
+def Kc.str(): I64 = 3
+def Kc.char(): I64 = 4
+def Kc.ltg(): I64 = 5
+def Kc.nl(): I64 = 6
+def Kc.indent(): I64 = 7
+def Kc.dedent(): I64 = 8
+def Kc.doc(): I64 = 9
+// keywords are 10..25: all of them are also names where a name is read (s2 reads every TIdent as a name)
+def Kc.kdef(): I64 = 10
+def Kc.kenum(): I64 = 11
+def Kc.kcase(): I64 = 12
+def Kc.kif(): I64 = 13
+def Kc.kthen(): I64 = 14
+def Kc.kelse(): I64 = 15
+def Kc.kwhile(): I64 = 16
+def Kc.kdo(): I64 = 17
+def Kc.kmatch(): I64 = 18
+def Kc.kval(): I64 = 19
+def Kc.kvar(): I64 = 20
+def Kc.khandle(): I64 = 21
+def Kc.kresume(): I64 = 22
+def Kc.kinvariant(): I64 = 23
+def Kc.kdecreases(): I64 = 24
+def Kc.under(): I64 = 25
+def Kc.lp(): I64 = 30
+def Kc.rp(): I64 = 31
+def Kc.lb(): I64 = 32
+def Kc.rb(): I64 = 33
+def Kc.lc(): I64 = 34
+def Kc.rc(): I64 = 35
+def Kc.comma(): I64 = 36
+def Kc.colon(): I64 = 37
+def Kc.eq(): I64 = 38
+def Kc.arrow(): I64 = 39
+def Kc.dot(): I64 = 40
+def Kc.lt(): I64 = 41
+def Kc.gt(): I64 = 42
+def Kc.oror(): I64 = 43
+def Kc.bar(): I64 = 44
+def Kc.caret(): I64 = 45
+def Kc.andand(): I64 = 46
+def Kc.amp(): I64 = 47
+def Kc.eqeq(): I64 = 48
+def Kc.ne(): I64 = 49
+def Kc.le(): I64 = 50
+def Kc.ge(): I64 = 51
+def Kc.shl(): I64 = 52
+def Kc.shr(): I64 = 53
+def Kc.plus(): I64 = 54
+def Kc.minus(): I64 = 55
+def Kc.star(): I64 = 56
+def Kc.slash(): I64 = 57
+def Kc.pct(): I64 = 58
+def Kc.bang(): I64 = 59
+def Kc.tilde(): I64 = 60
+def Kc.other(): I64 = 61
+def Kc.eof(): I64 = 255
+
+// a token that reads as a name
+def Kc.isName(c: I64): Bool = c == Kc.ident() || c >= Kc.kdef() && c <= Kc.under()
+
+// node kinds
+def Na.kNone(): I64 = 0
+def Na.kInt(): I64 = 1
+def Na.kStr(): I64 = 2
+def Na.kChar(): I64 = 3
+def Na.kName(): I64 = 4
+def Na.kUnit(): I64 = 5
+def Na.kParen(): I64 = 6
+def Na.kCall(): I64 = 7
+def Na.kMethod(): I64 = 8
+def Na.kResume(): I64 = 9
+def Na.kBin(): I64 = 10
+def Na.kUn(): I64 = 11
+def Na.kIf(): I64 = 12
+def Na.kIfNl(): I64 = 13
+def Na.kPair(): I64 = 14
+def Na.kMatch(): I64 = 15
+def Na.kArm(): I64 = 16
+def Na.kPAny(): I64 = 17
+def Na.kPCase(): I64 = 18
+def Na.kPCaseNP(): I64 = 19
+def Na.kBlock(): I64 = 20
+def Na.kWhile(): I64 = 21
+def Na.kAssign(): I64 = 22
+def Na.kVal(): I64 = 23
+def Na.kVar(): I64 = 24
+def Na.kHandle(): I64 = 25
+def Na.kDo(): I64 = 26
+def Na.kCheck(): I64 = 27
+def Na.kPatVal(): I64 = 28
+def Na.kTy(): I64 = 29
+def Na.kTyCaps(): I64 = 30
+def Na.kCGTys(): I64 = 31
+def Na.kCGEv(): I64 = 32
+def Na.kGTypes(): I64 = 33
+def Na.kGEv(): I64 = 34
+def Na.kGFacts(): I64 = 35
+def Na.kBind(): I64 = 36
+def Na.kBindAnon(): I64 = 37
+def Na.kParams(): I64 = 38
+def Na.kRet(): I64 = 39
+def Na.kExit(): I64 = 40
+def Na.kAtomCall(): I64 = 41
+def Na.kAtomAt(): I64 = 42
+def Na.kAtomInf(): I64 = 43
+def Na.kAtomUn(): I64 = 44
+def Na.kBody(): I64 = 45
+def Na.kDef(): I64 = 46
+def Na.kEnum(): I64 = 47
+def Na.kCase(): I64 = 48
+def Na.kCaseNP(): I64 = 49
+
+// counter slots
+def Na.sNodes(): I64 = 0
+def Na.sXs(): I64 = 1
+def Na.sSp(): I64 = 2
+def Na.sOver(): I64 = 3
+def Na.sCur(): I64 = 4
+def Na.sErr(): I64 = 5
+def Na.sErrTok(): I64 = 6
+def Na.sDiag(): I64 = 7
+def Na.sHi(): I64 = 8
+
+// the store: tokens (src, classes, offsets, lengths, count), node columns, list array + scratch stack, counters + diags.
+enum Na.Tk:
+  case Na.Tk(src: Str, tcap: I64, cls: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64)
+
+enum Na.Nd:
+  case Na.Nd(ncap: I64, nk: Array[U8](ncap), nt: Array[U32](ncap), na: Array[U32](ncap), nb: Array[U32](ncap))
+
+enum Na.Ls:
+  case Na.Ls(xcap: I64, xs: Array[U32](xcap), scap: I64, stk: Array[U32](scap))
+
+// diag: why byte (0 expected, 1 notYet, 2 trailing) and the token
+enum Na.Cn:
+  case Na.Cn(cnn: I64, cn: Array[I64](cnn), dcap: I64, dk: Array[U8](dcap), dt: Array[U32](dcap))
+
+enum Na.G:
+  case Na.G(tk: Na.Tk, nd: Na.Nd, ls: Na.Ls, cn: Na.Cn)
+
+def Na.cget(g: Na.G, s: I64): I64 =
+  val Na.G(_, _, _, c) = g
+  val Na.Cn(cnn, cn, _, _, _) = c
+  if 0 <= s && s < cnn then cn(s)
+  // shortcut: slots are the Na.s* constants, always below cnn; s3 Vec will make it unrepresentable
+  else 0
+
+def Na.cset(g: Na.G, s: I64, v: I64): Unit =
+  val Na.G(_, _, _, c) = g
+  val Na.Cn(cnn, cn, _, _, _) = c
+  if 0 <= s && s < cnn then Array.put(cn, s, v)
+  else ()
+
+def Na.cinc(g: Na.G, s: I64): Unit = Na.cset(g, s, Na.cget(g, s) + 1)
+
+// the store for a file whose tokens are (tcap, cls, to, tl, t): every column is sized from t once
+def Na.make(src: Str, tcap: I64, cls: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64): Na.G =
+  val ncap = 2 * tcap + 64
+  val xcap = 3 * tcap + 64
+  val scap = tcap + 64
+  val cnn = 16
+  val dcap = tcap + 16
+  val nk = Array.fill(ncap, U8.of(0))
+  val nt = Array.fill(ncap, U32.of(0))
+  val na = Array.fill(ncap, U32.of(0))
+  val nb = Array.fill(ncap, U32.of(0))
+  val xs = Array.fill(xcap, U32.of(0))
+  val stk = Array.fill(scap, U32.of(0))
+  val cn = Array.fill(cnn, 0)
+  val dk = Array.fill(dcap, U8.of(0))
+  val dt = Array.fill(dcap, U32.of(0))
+  val g = Na.G(Na.Tk(src, tcap, cls, to, tl, t), Na.Nd(ncap, nk, nt, na, nb), Na.Ls(xcap, xs, scap, stk), Na.Cn(cnn, cn, dcap, dk, dt))
+  // node 0 is the absent node, list 0 is the empty list
+  Na.cset(g, Na.sNodes(), 1)
+  Na.cset(g, Na.sXs(), 1)
+  g
+
+// tokens. the class of token j is Kc.eof outside [0, hi) (hi = the end of the decl being parsed)
+def Na.cls(g: Na.G, j: I64): I64 =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(_, tcap, cls, _, _, t) = tk
+  if 0 <= j && j < t && j < tcap && j < Na.cget(g, Na.sHi()) then I64.ofU8(cls(j)) else Kc.eof()
+
+def Na.toff(g: Na.G, j: I64): I64 =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(_, tcap, _, to, _, t) = tk
+  if 0 <= j && j < t && j < tcap then I64.of(to(j)) else 0
+
+def Na.tlen(g: Na.G, j: I64): I64 =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(_, tcap, _, _, tl, t) = tk
+  if 0 <= j && j < t && j < tcap then I64.of(tl(j)) else 0
+
+def Na.text(g: Na.G, j: I64): Str =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(src, _, _, _, _, _) = tk
+  val o = Na.toff(g, j)
+  Str.slice(src, o, o + Na.tlen(g, j))
+
+// the first byte of token j is an upper case letter
+def Na.upperAt(g: Na.G, j: I64): Bool =
+  val Na.G(tk, _, _, _) = g
+  val Na.Tk(src, _, _, _, _, _) = tk
+  if Na.tlen(g, j) > 0 then
+    val c = Str.at(src, Na.toff(g, j))
+    c >= 65 && c <= 90
+  else false
+
+// node columns, guarded; an id outside the nodes reads as the absent node
+def Na.kd(g: Na.G, n: I64): I64 =
+  val Na.G(_, nd, _, _) = g
+  val Na.Nd(ncap, nk, _, _, _) = nd
+  if 0 <= n && n < ncap then I64.ofU8(nk(n))
+  // shortcut: ids come from Na.mk, always below ncap; s3 Vec will make it unrepresentable
+  else 0
+
+def Na.tok(g: Na.G, n: I64): I64 =
+  val Na.G(_, nd, _, _) = g
+  val Na.Nd(ncap, _, nt, _, _) = nd
+  if 0 <= n && n < ncap then I64.of(nt(n)) else 0
+
+def Na.a(g: Na.G, n: I64): I64 =
+  val Na.G(_, nd, _, _) = g
+  val Na.Nd(ncap, _, _, na, _) = nd
+  if 0 <= n && n < ncap then I64.of(na(n)) else 0
+
+def Na.b(g: Na.G, n: I64): I64 =
+  val Na.G(_, nd, _, _) = g
+  val Na.Nd(ncap, _, _, _, nb) = nd
+  if 0 <= n && n < ncap then I64.of(nb(n)) else 0
+
+// append a node; returns its id (0, the absent node, with an overflow counted, when the room was not there)
+def Na.mk(g: Na.G, kind: I64, tok: I64, a: I64, b: I64): I64 =
+  val Na.G(_, nd, _, _) = g
+  val Na.Nd(ncap, nk, nt, na, nb) = nd
+  val n = Na.cget(g, Na.sNodes())
+  if 0 <= n && n < ncap then
+    Array.put(nk, n, U8.of(kind))
+    Array.put(nt, n, U32.of(tok))
+    Array.put(na, n, U32.of(a))
+    Array.put(nb, n, U32.of(b))
+    Na.cset(g, Na.sNodes(), n + 1)
+    n
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Na.cinc(g, Na.sOver())
+    0
+
+// the list array
+def Na.x(g: Na.G, i: I64): I64 =
+  val Na.G(_, _, ls, _) = g
+  val Na.Ls(xcap, xs, _, _) = ls
+  if 0 <= i && i < xcap then I64.of(xs(i)) else 0
+
+def Na.len(g: Na.G, r: I64): I64 = Na.x(g, r)
+def Na.item(g: Na.G, r: I64, i: I64): I64 = Na.x(g, r + 1 + i)
+
+// the scratch stack: push, mark (the height), close (the items above a mark become a list in xs; returns its ref)
+def Na.push(g: Na.G, v: I64): Unit =
+  val Na.G(_, _, ls, _) = g
+  val Na.Ls(_, _, scap, stk) = ls
+  val sp = Na.cget(g, Na.sSp())
+  if 0 <= sp && sp < scap then
+    Array.put(stk, sp, U32.of(v))
+    Na.cset(g, Na.sSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Na.cinc(g, Na.sOver())
+
+def Na.mark(g: Na.G): I64 = Na.cget(g, Na.sSp())
+
+def Na.cpList(g: Na.G, from: I64, i: I64, n: I64, dst: I64): Unit =
+  val Na.G(_, _, ls, _) = g
+  val Na.Ls(xcap, xs, scap, stk) = ls
+  val s = from + i
+  val d = dst + i
+  if i < n && 0 <= s && s < scap && 0 <= d && d < xcap then
+    Array.put(xs, d, stk(s))
+    Na.cpList(g, from, i + 1, n, dst)
+  else ()
+
+def Na.close(g: Na.G, mark: I64): I64 =
+  val Na.G(_, _, ls, _) = g
+  val Na.Ls(xcap, xs, _, _) = ls
+  val n = Na.cget(g, Na.sSp()) - mark
+  Na.cset(g, Na.sSp(), mark)
+  if n <= 0 then 0
+  else
+    val x = Na.cget(g, Na.sXs())
+    if 0 <= x && x < xcap && x + n + 1 <= xcap then
+      Array.put(xs, x, U32.of(n))
+      Na.cpList(g, mark, 0, n, x + 1)
+      Na.cset(g, Na.sXs(), x + n + 1)
+      x
+    // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+    else
+      Na.cinc(g, Na.sOver())
+      0
+
+def Na.dwhy(g: Na.G, i: I64): I64 =
+  val Na.G(_, _, _, c) = g
+  val Na.Cn(_, _, dcap, dk, _) = c
+  if 0 <= i && i < dcap then I64.ofU8(dk(i)) else 0
+
+// a parse diag at token tok
+def Na.diag(g: Na.G, why: I64, tok: I64): Unit =
+  val Na.G(_, _, _, c) = g
+  val Na.Cn(_, _, dcap, dk, dt) = c
+  val d = Na.cget(g, Na.sDiag())
+  if 0 <= d && d < dcap then
+    Array.put(dk, d, U8.of(why))
+    Array.put(dt, d, U32.of(tok))
+    Na.cset(g, Na.sDiag(), d + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Na.cinc(g, Na.sOver())

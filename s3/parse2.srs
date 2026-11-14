@@ -1,0 +1,582 @@
+// s3c PARSE-1b: the AST parser for def and enum decls, in s2. Grammar learned from s2/parse.srs (Parse.fn 453, Parse.groups 530,
+// Parse.ty 617, Parse.enumDecl 664, Parse.rhs 1025, Parse.stmt 1082, Parse.expr 1125, Parse.binOf 1228, Parse.primary 1298);
+// the data shape is new (s3/ast.srs: nodes in SoA, lists in xs, absence = Na.kNone). Skip-mode tokens only: a Doc token is a parse error.
+// Differences from the s2 AST, all to stay lossless for the oracle (relex(print) == tokens): a parenthesized expression is kParen,
+// a block is never collapsed to its one statement, `val C(a, b) = e` is one flat statement (its rest of the block stays in the list),
+// an else on its own line is kIfNl, a call keeps the written order of its [T] and {a} groups.
+// A decl ends where the skeleton parser (s3/parse.srs) cut it: trailing Nl and Dedent are not in the range, so the end of the range
+// closes every open block. Clauses (requires, ensures, ...) are not parsed: a Diag notYet.
+
+// one token's class from the lexer's kind byte and its text
+def Pz.kwClass(s: Str, l: I64): I64 =
+  if l == 1 then
+    if Str.eq(s, "_") then Kc.under() else Kc.ident()
+  else if l == 2 then
+    if Str.eq(s, "if") then Kc.kif()
+    else if Str.eq(s, "do") then Kc.kdo()
+    else Kc.ident()
+  else if l == 3 then
+    if Str.eq(s, "def") then Kc.kdef()
+    else if Str.eq(s, "val") then Kc.kval()
+    else if Str.eq(s, "var") then Kc.kvar()
+    else Kc.ident()
+  else if l == 4 then
+    if Str.eq(s, "enum") then Kc.kenum()
+    else if Str.eq(s, "case") then Kc.kcase()
+    else if Str.eq(s, "then") then Kc.kthen()
+    else if Str.eq(s, "else") then Kc.kelse()
+    else Kc.ident()
+  else if l == 5 then
+    if Str.eq(s, "while") then Kc.kwhile()
+    else if Str.eq(s, "match") then Kc.kmatch()
+    else Kc.ident()
+  else if l == 6 then
+    if Str.eq(s, "handle") then Kc.khandle()
+    else if Str.eq(s, "resume") then Kc.kresume()
+    else Kc.ident()
+  else if l == 9 then
+    if Str.eq(s, "invariant") then Kc.kinvariant()
+    else if Str.eq(s, "decreases") then Kc.kdecreases()
+    else Kc.ident()
+  else Kc.ident()
+
+def Pz.opClass(src: Str, n: I64, o: I64, l: I64): I64 =
+  val c = Str.at(src, o)
+  if l == 1 then
+    if c == 40 then Kc.lp()
+    else if c == 41 then Kc.rp()
+    else if c == 91 then Kc.lb()
+    else if c == 93 then Kc.rb()
+    else if c == 123 then Kc.lc()
+    else if c == 125 then Kc.rc()
+    else if c == 44 then Kc.comma()
+    else if c == 58 then Kc.colon()
+    else if c == 61 then Kc.eq()
+    else if c == 46 then Kc.dot()
+    else if c == 60 then Kc.lt()
+    else if c == 62 then Kc.gt()
+    else if c == 124 then Kc.bar()
+    else if c == 94 then Kc.caret()
+    else if c == 38 then Kc.amp()
+    else if c == 43 then Kc.plus()
+    else if c == 45 then Kc.minus()
+    else if c == 42 then Kc.star()
+    else if c == 47 then Kc.slash()
+    else if c == 37 then Kc.pct()
+    else if c == 33 then Kc.bang()
+    else if c == 126 then Kc.tilde()
+    else Kc.other()
+  else if l == 2 then
+    if c == 61 && Lx.is(src, n, o + 1, 62) then Kc.arrow()
+    else if c == 61 && Lx.is(src, n, o + 1, 61) then Kc.eqeq()
+    else if c == 33 && Lx.is(src, n, o + 1, 61) then Kc.ne()
+    else if c == 60 && Lx.is(src, n, o + 1, 61) then Kc.le()
+    else if c == 62 && Lx.is(src, n, o + 1, 61) then Kc.ge()
+    else if c == 38 && Lx.is(src, n, o + 1, 38) then Kc.andand()
+    else if c == 124 && Lx.is(src, n, o + 1, 124) then Kc.oror()
+    else if c == 60 && Lx.is(src, n, o + 1, 60) then Kc.shl()
+    else if c == 62 && Lx.is(src, n, o + 1, 62) then Kc.shr()
+    else Kc.other()
+  else if l == 3 then Kc.shr()
+  else Kc.other()
+
+def Pz.classOf(src: Str, n: I64, kb: I64, o: I64, l: I64): I64 =
+  if kb == Lx.kindByte(Lx.KIdent) then Pz.kwClass(Str.slice(src, o, o + l), l)
+  else if kb == Lx.kindByte(Lx.KInt) then Kc.int()
+  else if kb == Lx.kindByte(Lx.KStr) then Kc.str()
+  else if kb == Lx.kindByte(Lx.KChar) then Kc.char()
+  else if kb == Lx.kindByte(Lx.KOp) then Pz.opClass(src, n, o, l)
+  else if kb == Lx.kindByte(Lx.KLtGlued) then Kc.ltg()
+  else if kb == Lx.kindByte(Lx.KNl) then Kc.nl()
+  else if kb == Lx.kindByte(Lx.KIndent) then Kc.indent()
+  else if kb == Lx.kindByte(Lx.KDedent) then Kc.dedent()
+  else Kc.doc()
+
+def Pz.fillCls(src: Str, n: I64, tcap: I64, ks: Array[U8](tcap), os: Array[U32](tcap), ls: Array[U32](tcap), t: I64, cls: Array[U8](tcap), j: I64): Unit =
+  if 0 <= j && j < t && j < tcap then
+    Array.put(cls, j, U8.of(Pz.classOf(src, n, I64.ofU8(ks(j)), I64.of(os(j)), I64.of(ls(j)))))
+    Pz.fillCls(src, n, tcap, ks, os, ls, t, cls, j + 1)
+  else ()
+
+// the store of one file from its lexer output (Skip mode)
+def Pz.build(src: Str, lx: Lx.Out): Na.G =
+  val Lx.Out(tcap, ks, os, ls, t, _, _, _, _) = lx
+  val cls = Array.fill(tcap, U8.of(0))
+  Pz.fillCls(src, Str.len(src), tcap, ks, os, ls, t, cls, 0)
+  Na.make(src, tcap, cls, os, ls, t)
+
+// ── cursor ──
+def Pz.cur(g: Na.G): I64 = Na.cget(g, Na.sCur())
+def Pz.cl(g: Na.G): I64 = Na.cls(g, Pz.cur(g))
+def Pz.cl1(g: Na.G): I64 = Na.cls(g, Pz.cur(g) + 1)
+def Pz.cl2(g: Na.G): I64 = Na.cls(g, Pz.cur(g) + 2)
+def Pz.adv(g: Na.G): Unit = Na.cset(g, Na.sCur(), Pz.cur(g) + 1)
+def Pz.ok(g: Na.G): Bool = Na.cget(g, Na.sErr()) == 0
+def Pz.is(g: Na.G, c: I64): Bool = Pz.cl(g) == c
+
+// the first error stops the parse: the flag, and a diag (expected) at the token
+def Pz.fail(g: Na.G): I64 =
+  if Pz.ok(g) then
+    Na.cset(g, Na.sErr(), 1)
+    Na.cset(g, Na.sErrTok(), Pz.cur(g))
+    Na.diag(g, 0, Pz.cur(g))
+    0
+  else 0
+
+// consume a token of class c, returning its token id
+def Pz.eat(g: Na.G, c: I64): I64 =
+  if Pz.ok(g) && Pz.is(g, c) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    j
+  else Pz.fail(g)
+
+// consume a token that reads as a name
+def Pz.ident(g: Na.G): I64 =
+  if Pz.ok(g) && Kc.isName(Pz.cl(g)) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    j
+  else Pz.fail(g)
+
+// an optional comma
+def Pz.comma(g: Na.G): Unit = if Pz.is(g, Kc.comma()) then Pz.adv(g) else ()
+
+// the layout that ends a list of lines: a Dedent (consumed), or the end of the decl's range
+def Pz.atEnd(g: Na.G): Bool = Pz.is(g, Kc.dedent()) || Pz.is(g, Kc.eof())
+
+def Pz.endBlock(g: Na.G): Unit = if Pz.is(g, Kc.dedent()) then Pz.adv(g) else ()
+
+// ── names, terms ──
+def Pz.names(g: Na.G, m: I64, close: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, close) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else
+    Na.push(g, Pz.ident(g))
+    Pz.comma(g)
+    Pz.names(g, m, close)
+
+def Pz.terms(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.rp()) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else if Kc.isName(Pz.cl(g)) || Pz.is(g, Kc.int()) then
+    Na.push(g, Pz.cur(g))
+    Pz.adv(g)
+    Pz.comma(g)
+    Pz.terms(g, m)
+  else
+    Pz.fail(g)
+    Na.close(g, m)
+
+// ── types: name [ [ty, ...] ] [ (expr, ...) ] [<names>] ──
+def Pz.ty(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.ident(g)
+  val ta = if Pz.is(g, Kc.lb()) then Pz.tyArgs(g) else 0
+  val va = if Pz.is(g, Kc.lp()) then Pz.args(g) else 0
+  val t = Na.mk(g, Na.kTy(), j, ta, va)
+  if Pz.ok(g) && Pz.is(g, Kc.ltg()) then
+    Pz.adv(g)
+    val cs = Pz.names(g, Na.mark(g), Kc.gt())
+    Na.mk(g, Na.kTyCaps(), j, t, cs)
+  else t
+
+def Pz.tyArgs(g: Na.G): I64 =
+  Pz.adv(g)
+  Pz.tyList(g, Na.mark(g))
+
+def Pz.tyList(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.rb()) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else
+    Na.push(g, Pz.ty(g))
+    Pz.comma(g)
+    Pz.tyList(g, m)
+
+// ── binder groups, params, facts ──
+def Pz.binders(g: Na.G, m: I64, close: I64, ev: Bool): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, close) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else
+    val j = Pz.cur(g)
+    // in {} a binder without a name is `_ : T` (s2 Parse.binders 554)
+    if ev && Pz.cl1(g) != Kc.colon() then
+      val t = Pz.ty(g)
+      Na.push(g, Na.mk(g, Na.kBindAnon(), j, t, 0))
+    else
+      Pz.ident(g)
+      Pz.eat(g, Kc.colon())
+      val t = Pz.ty(g)
+      Na.push(g, Na.mk(g, Na.kBind(), j, t, 0))
+    Pz.comma(g)
+    Pz.binders(g, m, close, ev)
+
+// (binders)
+def Pz.params(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.eat(g, Kc.lp())
+  val bl = Pz.binders(g, Na.mark(g), Kc.rp(), false)
+  Na.mk(g, Na.kParams(), j, bl, 0)
+
+// rel(terms) | x: T | a r b | a r
+def Pz.atom(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.ident(g)
+  if Pz.is(g, Kc.lp()) then
+    Pz.adv(g)
+    Na.mk(g, Na.kAtomCall(), j, Pz.terms(g, Na.mark(g)), 0)
+  else if Pz.is(g, Kc.colon()) then
+    Pz.adv(g)
+    Na.mk(g, Na.kAtomAt(), j, Pz.ident(g), 0)
+  else
+    val r = Pz.ident(g)
+    if Kc.isName(Pz.cl(g)) then
+      val b = Pz.cur(g)
+      Pz.adv(g)
+      Na.mk(g, Na.kAtomInf(), j, r, b)
+    else Na.mk(g, Na.kAtomUn(), j, r, 0)
+
+def Pz.atoms(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.gt()) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else
+    Na.push(g, Pz.atom(g))
+    Pz.comma(g)
+    Pz.atoms(g, m)
+
+// <atoms>, at the <
+def Pz.facts(g: Na.G, kind: I64): I64 =
+  val j = Pz.cur(g)
+  Pz.adv(g)
+  Na.mk(g, kind, j, Pz.atoms(g, Na.mark(g)), 0)
+
+// the binder groups [] {} <> in written order, pushed on the open list
+def Pz.groups(g: Na.G): Unit =
+  if !Pz.ok(g) then ()
+  else if Pz.is(g, Kc.lb()) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    Na.push(g, Na.mk(g, Na.kGTypes(), j, Pz.binders(g, Na.mark(g), Kc.rb(), false), 0))
+    Pz.groups(g)
+  else if Pz.is(g, Kc.lc()) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    Na.push(g, Na.mk(g, Na.kGEv(), j, Pz.binders(g, Na.mark(g), Kc.rc(), true), 0))
+    Pz.groups(g)
+  else if Pz.is(g, Kc.lt()) then
+    Na.push(g, Pz.facts(g, Na.kGFacts()))
+    Pz.groups(g)
+  else ()
+
+// ── expressions ──
+// the binary level of a class, 0 = none (lowest first: || | / ^ / && & / == != / < <= > >= << >> / + - / * / %)
+def Pz.level(c: I64): I64 =
+  if c == Kc.oror() || c == Kc.bar() then 1
+  else if c == Kc.caret() then 2
+  else if c == Kc.andand() || c == Kc.amp() then 3
+  else if c == Kc.eqeq() || c == Kc.ne() then 4
+  else if c == Kc.lt() || c == Kc.ltg() || c == Kc.le() || c == Kc.gt() || c == Kc.ge() || c == Kc.shl() || c == Kc.shr() then 5
+  else if c == Kc.plus() || c == Kc.minus() then 6
+  else if c == Kc.star() || c == Kc.slash() || c == Kc.pct() then 7
+  else 0
+
+def Pz.expr(g: Na.G): I64 =
+  if !Pz.ok(g) then 0
+  else if Pz.is(g, Kc.kif()) then Pz.ifExpr(g)
+  else if Pz.is(g, Kc.kwhile()) then Pz.whileExpr(g)
+  else if Kc.isName(Pz.cl(g)) && Pz.cl1(g) == Kc.eq() then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    Pz.adv(g)
+    Na.mk(g, Na.kAssign(), j, Pz.rhs(g), 0)
+  else Pz.matchOf(g, Pz.binary(g, 1))
+
+// e match NL IND (case pat => rhs)* DED: match is postfix on a whole binary expression
+def Pz.matchOf(g: Na.G, e: I64): I64 =
+  if Pz.ok(g) && Pz.is(g, Kc.kmatch()) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    if Pz.is(g, Kc.nl()) && Pz.cl1(g) == Kc.indent() then
+      Pz.adv(g)
+      Pz.adv(g)
+      Na.mk(g, Na.kMatch(), j, e, Pz.arms(g, Na.mark(g)))
+    else Pz.fail(g)
+  else e
+
+def Pz.arms(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.atEnd(g) then
+    Pz.endBlock(g)
+    Na.close(g, m)
+  else
+    val j = Pz.eat(g, Kc.kcase())
+    val p = Pz.pat(g)
+    Pz.eat(g, Kc.arrow())
+    val b = Pz.rhs(g)
+    Na.push(g, Na.mk(g, Na.kArm(), j, p, b))
+    if Pz.is(g, Kc.nl()) then Pz.adv(g) else ()
+    Pz.arms(g, m)
+
+// _ | Name [(names)]
+def Pz.pat(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  if Pz.ok(g) && Pz.is(g, Kc.under()) then
+    Pz.adv(g)
+    Na.mk(g, Na.kPAny(), j, 0, 0)
+  else
+    Pz.ident(g)
+    if Pz.is(g, Kc.lp()) then
+      Pz.adv(g)
+      Na.mk(g, Na.kPCase(), j, Pz.names(g, Na.mark(g), Kc.rp()), 0)
+    else Na.mk(g, Na.kPCaseNP(), j, 0, 0)
+
+// if c then rhs [NL] else rhs
+def Pz.ifExpr(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.adv(g)
+  val c = Pz.expr(g)
+  Pz.eat(g, Kc.kthen())
+  val t = Pz.rhs(g)
+  val nlf = Pz.is(g, Kc.nl()) && Pz.cl1(g) == Kc.kelse()
+  if nlf then Pz.adv(g) else ()
+  Pz.eat(g, Kc.kelse())
+  val e = Pz.rhs(g)
+  Na.mk(g, if nlf then Na.kIfNl() else Na.kIf(), j, c, Na.mk(g, Na.kPair(), j, t, e))
+
+def Pz.whileExpr(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.adv(g)
+  val c = Pz.expr(g)
+  Pz.eat(g, Kc.kdo())
+  Na.mk(g, Na.kWhile(), j, c, Pz.rhs(g))
+
+// rhs := NL IND block | expr
+def Pz.rhs(g: Na.G): I64 =
+  if Pz.ok(g) && Pz.is(g, Kc.nl()) && Pz.cl1(g) == Kc.indent() then
+    Pz.adv(g)
+    Pz.adv(g)
+    val j = Pz.cur(g)
+    Na.mk(g, Na.kBlock(), j, Pz.stmts(g, Na.mark(g)), 0)
+  else Pz.expr(g)
+
+// statements until a Dedent or the end of the range; an Nl between them is optional
+def Pz.stmts(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.nl()) then
+    Pz.adv(g)
+    Pz.stmts(g, m)
+  else if Pz.atEnd(g) then
+    Pz.endBlock(g)
+    Na.close(g, m)
+  else
+    Na.push(g, Pz.stmt(g))
+    Pz.stmts(g, m)
+
+def Pz.stmt(g: Na.G): I64 =
+  val c = Pz.cl(g)
+  val j = Pz.cur(g)
+  if c == Kc.kval() && Na.upperAt(g, j + 1) && Pz.cl2(g) == Kc.lp() then
+    // val Ctor(a, b) = rhs
+    Pz.adv(g)
+    val ct = Pz.ident(g)
+    Pz.adv(g)
+    val bs = Pz.names(g, Na.mark(g), Kc.rp())
+    Pz.eat(g, Kc.eq())
+    Na.mk(g, Na.kPatVal(), ct, bs, Pz.rhs(g))
+  else if c == Kc.kval() || c == Kc.kvar() then
+    Pz.adv(g)
+    val x = Pz.ident(g)
+    val ann = if Pz.is(g, Kc.colon()) then Pz.annTy(g) else 0
+    Pz.eat(g, Kc.eq())
+    Na.mk(g, if c == Kc.kval() then Na.kVal() else Na.kVar(), x, ann, Pz.rhs(g))
+  else if c == Kc.khandle() then
+    Pz.adv(g)
+    val x = Pz.ident(g)
+    Pz.eat(g, Kc.eq())
+    val h = Pz.ident(g)
+    Na.mk(g, Na.kHandle(), x, h, Pz.args(g))
+  else if c == Kc.kinvariant() || c == Kc.kdecreases() then
+    Pz.adv(g)
+    Na.mk(g, Na.kCheck(), j, Pz.expr(g), 0)
+  else Na.mk(g, Na.kDo(), j, Pz.expr(g), 0)
+
+def Pz.annTy(g: Na.G): I64 =
+  Pz.adv(g)
+  Pz.ty(g)
+
+def Pz.binary(g: Na.G, lvl: I64): I64 =
+  val lhs = Pz.unary(g)
+  Pz.binLoop(g, lhs, lvl)
+
+// operators of level >= lvl, left associative
+def Pz.binLoop(g: Na.G, lhs: I64, lvl: I64): I64 =
+  val l = Pz.level(Pz.cl(g))
+  if !Pz.ok(g) || l == 0 || l < lvl then lhs
+  else
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    val rhs = Pz.binary(g, l + 1)
+    Pz.binLoop(g, Na.mk(g, Na.kBin(), j, lhs, rhs), lvl)
+
+def Pz.unary(g: Na.G): I64 =
+  val c = Pz.cl(g)
+  val j = Pz.cur(g)
+  if Pz.ok(g) && (c == Kc.minus() || c == Kc.bang() || c == Kc.tilde()) then
+    Pz.adv(g)
+    Na.mk(g, Na.kUn(), j, Pz.unary(g), 0)
+  else Pz.primary(g)
+
+def Pz.primary(g: Na.G): I64 =
+  val c = Pz.cl(g)
+  val j = Pz.cur(g)
+  if !Pz.ok(g) then 0
+  else if c == Kc.int() then
+    Pz.adv(g)
+    Na.mk(g, Na.kInt(), j, 0, 0)
+  else if c == Kc.str() then
+    Pz.adv(g)
+    Na.mk(g, Na.kStr(), j, 0, 0)
+  else if c == Kc.char() then
+    Pz.adv(g)
+    Na.mk(g, Na.kChar(), j, 0, 0)
+  else if Kc.isName(c) then Pz.nameExpr(g, c, j, Pz.cl1(g))
+  else if c == Kc.lp() then
+    Pz.adv(g)
+    if Pz.is(g, Kc.rp()) then
+      Pz.adv(g)
+      Na.mk(g, Na.kUnit(), j, 0, 0)
+    else
+      val e = Pz.expr(g)
+      Pz.eat(g, Kc.rp())
+      Na.mk(g, Na.kParen(), j, e, 0)
+  else Pz.fail(g)
+
+// a name at j, c = its class, c1 = the class after it
+def Pz.nameExpr(g: Na.G, c: I64, j: I64, c1: I64): I64 =
+  if c == Kc.kresume() && c1 != Kc.lp() then
+    // resume k(v): exactly one value
+    Pz.adv(g)
+    val k = Pz.ident(g)
+    val xs = Pz.args(g)
+    if Na.len(g, xs) == 1 then Na.mk(g, Na.kResume(), j, k, Na.item(g, xs, 0))
+    else Pz.fail(g)
+  else if c1 == Kc.lp() then
+    Pz.adv(g)
+    Na.mk(g, Na.kCall(), j, 0, Pz.args(g))
+  else if c1 == Kc.lb() || c1 == Kc.lc() then
+    Pz.adv(g)
+    val m = Na.mark(g)
+    val gs = Pz.callGroups(g, m)
+    Na.mk(g, Na.kCall(), j, gs, Pz.args(g))
+  else if c1 == Kc.dot() then
+    Pz.adv(g)
+    Pz.adv(g)
+    val op = Pz.ident(g)
+    Na.mk(g, Na.kMethod(), j, op, Pz.args(g))
+  else
+    Pz.adv(g)
+    Na.mk(g, Na.kName(), j, 0, 0)
+
+// f[T, ...]{a, ...}(args): the groups in written order, each one node in a list
+def Pz.callGroups(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.lb()) then
+    val j = Pz.cur(g)
+    Na.push(g, Na.mk(g, Na.kCGTys(), j, Pz.tyArgs(g), 0))
+    Pz.callGroups(g, m)
+  else if Pz.is(g, Kc.lc()) then
+    val j = Pz.cur(g)
+    Pz.adv(g)
+    Na.push(g, Na.mk(g, Na.kCGEv(), j, Pz.names(g, Na.mark(g), Kc.rc()), 0))
+    Pz.callGroups(g, m)
+  else Na.close(g, m)
+
+// (expr, ...)
+def Pz.args(g: Na.G): I64 =
+  Pz.eat(g, Kc.lp())
+  Pz.exprs(g, Na.mark(g))
+
+def Pz.exprs(g: Na.G, m: I64): I64 =
+  if !Pz.ok(g) then Na.close(g, m)
+  else if Pz.is(g, Kc.rp()) then
+    Pz.adv(g)
+    Na.close(g, m)
+  else
+    Na.push(g, Pz.expr(g))
+    Pz.comma(g)
+    Pz.exprs(g, m)
+
+// ── decls ──
+// def name groups (params) groups : ty [<atoms>] = rhs. the header parts and the body are one list
+def Pz.defDecl(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.adv(g)
+  val nm = Pz.ident(g)
+  val m = Na.mark(g)
+  Pz.groups(g)
+  Na.push(g, Pz.params(g))
+  Pz.groups(g)
+  Pz.eat(g, Kc.colon())
+  val rj = Pz.cur(g)
+  Na.push(g, Na.mk(g, Na.kRet(), rj, Pz.ty(g), 0))
+  if Pz.ok(g) && Pz.is(g, Kc.lt()) then Na.push(g, Pz.facts(g, Na.kExit())) else ()
+  if Pz.ok(g) && Pz.is(g, Kc.nl()) && Pz.cl1(g) == Kc.indent() then
+    Na.diag(g, 1, Pz.cur(g))
+    Pz.fail(g)
+    ()
+  else ()
+  val bj = Pz.cur(g)
+  Pz.eat(g, Kc.eq())
+  Na.push(g, Na.mk(g, Na.kBody(), bj, Pz.rhs(g), 0))
+  Na.mk(g, Na.kDef(), j, nm, Na.close(g, m))
+
+// enum name groups: NL IND (case Name [(fields)])* DED
+def Pz.enumDecl(g: Na.G): I64 =
+  val j = Pz.cur(g)
+  Pz.adv(g)
+  val nm = Pz.ident(g)
+  val m = Na.mark(g)
+  Pz.groups(g)
+  Pz.eat(g, Kc.colon())
+  Pz.eat(g, Kc.nl())
+  Pz.eat(g, Kc.indent())
+  Pz.cases(g, m)
+  Na.mk(g, Na.kEnum(), j, nm, Na.close(g, m))
+
+def Pz.cases(g: Na.G, m: I64): Unit =
+  if !Pz.ok(g) then ()
+  else if Pz.is(g, Kc.nl()) then
+    Pz.adv(g)
+    Pz.cases(g, m)
+  else if Pz.atEnd(g) then Pz.endBlock(g)
+  else
+    Pz.eat(g, Kc.kcase())
+    val nm = Pz.ident(g)
+    if Pz.is(g, Kc.lp()) then
+      Pz.adv(g)
+      Na.push(g, Na.mk(g, Na.kCase(), nm, Pz.binders(g, Na.mark(g), Kc.rp(), false), 0))
+    else Na.push(g, Na.mk(g, Na.kCaseNP(), nm, 0, 0))
+    Pz.cases(g, m)
+
+// the decl on tokens [head, hi): its root node, 0 with the error flag set when it does not parse
+def Pz.decl(g: Na.G, head: I64, hi: I64): I64 =
+  Na.cset(g, Na.sCur(), head)
+  Na.cset(g, Na.sHi(), hi)
+  Na.cset(g, Na.sSp(), 0)
+  Na.cset(g, Na.sErr(), 0)
+  val c = Pz.cl(g)
+  val r = if c == Kc.kdef() then Pz.defDecl(g) else if c == Kc.kenum() then Pz.enumDecl(g) else Pz.fail(g)
+  if Pz.ok(g) && Pz.cur(g) != hi then
+    Na.diag(g, 2, Pz.cur(g))
+    Pz.fail(g)
+  else r
