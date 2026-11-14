@@ -56,11 +56,75 @@ def Nm.kBuiltin(): I64 = Nm.rkByte(Nm.RBuiltin)
 def Nm.kCap(): I64 = Nm.rkByte(Nm.RCap)
 def Nm.kUnres(): I64 = Nm.rkByte(Nm.RUnres)
 
+// ── type ref kinds (NAMES-1b): the type namespace is separate from the value namespace (s2/names.srs Names.Ns 97: an enum and its
+// case may share a name). Rules, as s2: a type name is a builtin (Names.builtins7 173, Array/Cell 163, ACell 170), an enum (192),
+// a capability (proto 400), a handler (431), a trait (198), a type decl (201) or an extern struct (209, a TypeDecl body); a use is
+// a [] binder in scope (Names.tparams 233: enum, trait, type, given, def groups) or else a declared type name (Names.tyIn 255).
+// Not in s2, added here: Trait and Handler are kinds of their own (s2 only knows "a type"). ──
+enum Nm.TK:
+  case Nm.TEnum
+  case Nm.TDecl
+  case Nm.TCap
+  case Nm.TBuiltin
+  case Nm.TParam
+  case Nm.TTrait
+  case Nm.THandler
+  case Nm.TUnres
+
+def Nm.tkByte(k: Nm.TK): I64 = k match
+  case Nm.TEnum => 0
+  case Nm.TDecl => 1
+  case Nm.TCap => 2
+  case Nm.TBuiltin => 3
+  case Nm.TParam => 4
+  case Nm.TTrait => 5
+  case Nm.THandler => 6
+  case Nm.TUnres => 7
+
+def Nm.tkOf(b: I64): Coll.Option[Nm.TK] =
+  if b == 0 then Coll.Some(Nm.TEnum)
+  else if b == 1 then Coll.Some(Nm.TDecl)
+  else if b == 2 then Coll.Some(Nm.TCap)
+  else if b == 3 then Coll.Some(Nm.TBuiltin)
+  else if b == 4 then Coll.Some(Nm.TParam)
+  else if b == 5 then Coll.Some(Nm.TTrait)
+  else if b == 6 then Coll.Some(Nm.THandler)
+  else if b == 7 then Coll.Some(Nm.TUnres)
+  else Coll.None
+
+def Nm.tkName(k: Nm.TK): Str = k match
+  case Nm.TEnum => "TypeEnum"
+  case Nm.TDecl => "TypeDecl"
+  case Nm.TCap => "TypeCap"
+  case Nm.TBuiltin => "TypeBuiltin"
+  case Nm.TParam => "TypeTyParam"
+  case Nm.TTrait => "TypeTrait"
+  case Nm.THandler => "TypeHandler"
+  case Nm.TUnres => "TypeUnresolved"
+
+def Nm.tkindStr(b: I64): Str =
+  Nm.tkOf(b) match
+    case Coll.Some(k) => Nm.tkName(k)
+    case Coll.None => "badtkind"
+
+def Nm.tEnum(): I64 = Nm.tkByte(Nm.TEnum)
+def Nm.tDecl(): I64 = Nm.tkByte(Nm.TDecl)
+def Nm.tCap(): I64 = Nm.tkByte(Nm.TCap)
+def Nm.tBuiltin(): I64 = Nm.tkByte(Nm.TBuiltin)
+def Nm.tParam(): I64 = Nm.tkByte(Nm.TParam)
+def Nm.tTrait(): I64 = Nm.tkByte(Nm.TTrait)
+def Nm.tHandler(): I64 = Nm.tkByte(Nm.THandler)
+def Nm.tUnres(): I64 = Nm.tkByte(Nm.TUnres)
+// a type use is stored in the per-file kind column as tBase + its kind byte (the value kinds are below it)
+def Nm.tBase(): I64 = 8
+
 // scope entry kinds: a binder token, or an implicit binder (`result`) with no token of its own
 def Nm.bBinder(): I64 = 0
 def Nm.bImplicit(): I64 = 1
 // the continuation k of a handler fn: resumed, never read
 def Nm.bCont(): I64 = 2
+// a [] type binder: found only by a type use, skipped by a value use
+def Nm.bTParam(): I64 = 3
 
 // counter slots
 def Nm.sSyms(): I64 = 0
@@ -85,14 +149,26 @@ def Nm.sPerr(): I64 = 17
 def Nm.sUFile(): I64 = 20
 def Nm.sUTok(): I64 = 30
 def Nm.maxShown(): I64 = 10
+// type refs: count per kind at sTK + kind byte (8 slots), unresolved count, shown count, the shown ones (file at sTUFile + i, token at sTUTok + i), dups, total
+def Nm.sTK(): I64 = 64
+def Nm.sTUnres(): I64 = 72
+def Nm.sTShown(): I64 = 73
+def Nm.sTUFile(): I64 = 74
+def Nm.sTUTok(): I64 = 84
+def Nm.sTDup(): I64 = 94
+def Nm.sTypes(): I64 = 95
+// 1 while the signatures of a capability's ops are walked: they are checked for their TYPES only (s2 checks neither the params nor
+// the region names `Ptr<self>` of an op signature), so their binders are not counted as locals and their <names> are not value uses
+def Nm.sCapSig(): I64 = 55
 
 // ── the world ──
 enum Nm.Sy:
   case Nm.Sy(hcap: I64, hs: Array[U32](hcap), scap: I64, so: Array[U32](scap), sl: Array[U32](scap), pcap: I64, pool: Array[U8](pcap))
 
 // decl id -> kind byte, file, line, name symbol; tab: symbol id -> decl id (0 = none). decl 0 and symbol 0 are the absent ones.
+// the type namespace is indexed by symbol: tyk = kind byte + 1 (0 = no such type), tyf = file, tyl = line
 enum Nm.Gt:
-  case Nm.Gt(gcap: I64, gk: Array[U8](gcap), gf: Array[U32](gcap), gl: Array[U32](gcap), gs: Array[U32](gcap), tcap: I64, tab: Array[U32](tcap))
+  case Nm.Gt(gcap: I64, gk: Array[U8](gcap), gf: Array[U32](gcap), gl: Array[U32](gcap), gs: Array[U32](gcap), tcap: I64, tab: Array[U32](tcap), tyk: Array[U8](tcap), tyf: Array[U32](tcap), tyl: Array[U32](tcap))
 
 enum Nm.Sc:
   case Nm.Sc(cap: I64, ss: Array[U32](cap), st: Array[U32](cap), sk: Array[U8](cap))
@@ -126,7 +202,7 @@ def Nm.world(ntok: I64, nbytes: I64): Nm.W =
   val pcap = nbytes + 8192
   val gcap = ntok + 1024
   val ccap = ntok + 1024
-  val cnn = 64
+  val cnn = 96
   val hs = Array.fill(hcap, U32.of(0))
   val so = Array.fill(scap, U32.of(0))
   val sl = Array.fill(scap, U32.of(0))
@@ -136,11 +212,14 @@ def Nm.world(ntok: I64, nbytes: I64): Nm.W =
   val gl = Array.fill(gcap, U32.of(0))
   val gs = Array.fill(gcap, U32.of(0))
   val tab = Array.fill(scap, U32.of(0))
+  val tyk = Array.fill(scap, U8.of(0))
+  val tyf = Array.fill(scap, U32.of(0))
+  val tyl = Array.fill(scap, U32.of(0))
   val ss = Array.fill(ccap, U32.of(0))
   val st = Array.fill(ccap, U32.of(0))
   val sk = Array.fill(ccap, U8.of(0))
   val cn = Array.fill(cnn, 0)
-  val w = Nm.W(Nm.Sy(hcap, hs, scap, so, sl, pcap, pool), Nm.Gt(gcap, gk, gf, gl, gs, scap, tab), Nm.Sc(ccap, ss, st, sk), Nm.Cn(cnn, cn))
+  val w = Nm.W(Nm.Sy(hcap, hs, scap, so, sl, pcap, pool), Nm.Gt(gcap, gk, gf, gl, gs, scap, tab, tyk, tyf, tyl), Nm.Sc(ccap, ss, st, sk), Nm.Cn(cnn, cn))
   // symbol 0 and decl 0 are the absent ones
   Nm.cset(w, Nm.sSyms(), 1)
   Nm.cset(w, Nm.sDecl(), 1)
@@ -337,7 +416,7 @@ def Nm.nth(fs: Coll.List[Nm.F], i: I64): Coll.Option[Nm.F] = fs match
 // a global of kind kb named by symbol sym, declared in file fi at line; the first declaration of a symbol wins, later ones are counted
 def Nm.declare(w: Nm.W, kb: I64, fi: I64, line: I64, sym: I64): Unit =
   val Nm.W(_, gt, _, _) = w
-  val Nm.Gt(gcap, gk, gf, gl, gs, tcap, tab) = gt
+  val Nm.Gt(gcap, gk, gf, gl, gs, tcap, tab, _, _, _) = gt
   val d = Nm.cget(w, Nm.sDecl())
   if 0 < sym && 0 <= sym && sym < tcap && 0 <= d && d < gcap then
     if I64.of(tab(sym)) != 0 then Nm.cinc(w, Nm.sDup())
@@ -352,6 +431,39 @@ def Nm.declare(w: Nm.W, kb: I64, fi: I64, line: I64, sym: I64): Unit =
   else Nm.over(w)
 
 def Nm.bi(w: Nm.W, s: Str): Unit = Nm.declare(w, Nm.kBuiltin(), 0, 0, Nm.sym(w, Nm.lit(s), true))
+
+// a type of kind kb named by symbol sym, declared in file fi at line; the first declaration of a name wins, later ones are counted
+def Nm.declareTy(w: Nm.W, kb: I64, fi: I64, line: I64, sym: I64): Unit =
+  val Nm.W(_, gt, _, _) = w
+  val Nm.Gt(_, _, _, _, _, tcap, _, tyk, tyf, tyl) = gt
+  if 0 < sym && 0 <= sym && sym < tcap then
+    if I64.ofU8(tyk(sym)) != 0 then Nm.cinc(w, Nm.sTDup())
+    else
+      Array.put(tyk, sym, U8.of(kb + 1))
+      Array.put(tyf, sym, U32.of(fi))
+      Array.put(tyl, sym, U32.of(line))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Nm.over(w)
+
+def Nm.bty(w: Nm.W, s: Str): Unit = Nm.declareTy(w, Nm.tBuiltin(), 0, 0, Nm.sym(w, Nm.lit(s), true))
+
+// the builtin types of s2/names.srs Names.builtins 163 (Array, Cell), Names.atoms2 170 (ACell) and Names.builtins7 173
+def Nm.btypes(w: Nm.W): Unit =
+  Nm.bty(w, "Array")
+  Nm.bty(w, "Cell")
+  Nm.bty(w, "ACell")
+  Nm.bty(w, "I64")
+  Nm.bty(w, "Bool")
+  Nm.bty(w, "Unit")
+  Nm.bty(w, "Str")
+  Nm.bty(w, "Ptr")
+  Nm.bty(w, "U32")
+  Nm.bty(w, "U64")
+  Nm.bty(w, "U8")
+  Nm.bty(w, "I32")
+  Nm.bty(w, "CStr")
+  Nm.bty(w, "CArgv")
+  Nm.bty(w, "F64")
 
 // the builtin calls of s2/names.srs Names.builtins (163) and Names.atoms (167, 170), and the two literals the parser reads as names
 def Nm.builtins(w: Nm.W): Unit =
@@ -377,6 +489,9 @@ def Nm.builtins(w: Nm.W): Unit =
 
 def Nm.declTok(w: Nm.W, g: Na.G, lcap: I64, ln: Array[U32](lcap), fi: I64, kb: I64, tok: I64): Unit =
   Nm.declare(w, kb, fi, Nm.lineAt(lcap, ln, tok), Nm.sym(w, Nm.tokT(g, tok), true))
+
+def Nm.declTyTok(w: Nm.W, g: Na.G, lcap: I64, ln: Array[U32](lcap), fi: I64, kb: I64, tok: I64): Unit =
+  Nm.declareTy(w, kb, fi, Nm.lineAt(lcap, ln, tok), Nm.sym(w, Nm.tokT(g, tok), true))
 
 // the cases of an enum are the items of kind kCase / kCaseNP of its part list
 def Nm.declCases(w: Nm.W, g: Na.G, lcap: I64, ln: Array[U32](lcap), fi: I64, r: I64, i: I64): Unit =
@@ -408,14 +523,22 @@ def Nm.declExtern(w: Nm.W, g: Na.G, lcap: I64, ln: Array[U32](lcap), fi: I64, in
     val s = Nm.srcOf(g)
     val t = Nm.T(s, Na.toff(g, Na.tok(g, inner)), Na.tlen(g, Na.tok(g, inner)), "new", 0, 3)
     Nm.declare(w, Nm.kGlobal(), fi, Nm.lineAt(lcap, ln, Na.tok(g, inner)), Nm.sym(w, t, true))
+    Nm.declTyTok(w, g, lcap, ln, fi, Nm.tDecl(), Na.tok(g, inner))
   else ()
 
 // kb = the skeleton's decl kind byte: 0 def, 1 enum, 2 extern, 3 handler, 4 capability, 5 trait, 6 type, 7 val, 8 given
 def Nm.declRoot(w: Nm.W, g: Na.G, lcap: I64, ln: Array[U32](lcap), fi: I64, kb: I64, root: I64): Unit =
   if kb == 0 then Nm.declTok(w, g, lcap, ln, fi, Nm.kGlobal(), Na.a(g, root))
-  else if kb == 1 then Nm.declCases(w, g, lcap, ln, fi, Na.b(g, root), 0)
+  else if kb == 1 then
+    Nm.declTyTok(w, g, lcap, ln, fi, Nm.tEnum(), Na.a(g, root))
+    Nm.declCases(w, g, lcap, ln, fi, Na.b(g, root), 0)
   else if kb == 2 then Nm.declExtern(w, g, lcap, ln, fi, Na.b(g, root))
-  else if kb == 4 then Nm.declOps(w, g, lcap, ln, fi, Na.a(g, root), Na.b(g, root), 0)
+  else if kb == 3 then Nm.declTyTok(w, g, lcap, ln, fi, Nm.tHandler(), Na.a(g, root))
+  else if kb == 4 then
+    Nm.declTyTok(w, g, lcap, ln, fi, Nm.tCap(), Na.a(g, root))
+    Nm.declOps(w, g, lcap, ln, fi, Na.a(g, root), Na.b(g, root), 0)
+  else if kb == 5 then Nm.declTyTok(w, g, lcap, ln, fi, Nm.tTrait(), Na.a(g, root))
+  else if kb == 6 then Nm.declTyTok(w, g, lcap, ln, fi, Nm.tDecl(), Na.a(g, root))
   else if kb == 7 then Nm.declTok(w, g, lcap, ln, fi, Nm.kGlobal(), Na.tok(g, root))
   else ()
 
@@ -441,6 +564,14 @@ def Nm.sp(x: Nm.X): I64 =
   val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
   Nm.cget(w, Nm.sSp())
 
+def Nm.capSig(x: Nm.X): Bool =
+  val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
+  Nm.cget(w, Nm.sCapSig()) != 0
+
+def Nm.setCapSig(x: Nm.X, v: I64): Unit =
+  val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
+  Nm.cset(w, Nm.sCapSig(), v)
+
 def Nm.setSp(x: Nm.X, v: I64): Unit =
   val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
   Nm.cset(w, Nm.sSp(), v)
@@ -457,7 +588,7 @@ def Nm.push(x: Nm.X, t: Nm.T, tok: I64, kb: I64): Unit =
     Array.put(st, sp, U32.of(tok))
     Array.put(sk, sp, U8.of(kb))
     Nm.cset(w, Nm.sSp(), sp + 1)
-    Nm.cinc(w, Nm.sLocals())
+    if Nm.cget(w, Nm.sCapSig()) == 0 then Nm.cinc(w, Nm.sLocals()) else ()
     if sp + 1 > Nm.cget(w, Nm.sMaxSp()) then Nm.cset(w, Nm.sMaxSp(), sp + 1) else ()
     if sp + 1 > Nm.cget(w, Nm.sRootMax()) then Nm.cset(w, Nm.sRootMax(), sp + 1) else ()
   // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
@@ -470,12 +601,32 @@ def Nm.bind(x: Nm.X, j: I64): Unit =
 
 def Nm.bindResult(x: Nm.X, j: I64): Unit = Nm.push(x, Nm.lit("result"), j, Nm.bImplicit())
 
-def Nm.look(w: Nm.W, sym: I64, i: I64): Coll.Option[I64] =
+// a [] type binder (ty) is found only by a type use, any other binder only by a value use
+def Nm.look(w: Nm.W, sym: I64, i: I64, ty: Bool): Coll.Option[I64] =
   val Nm.W(_, _, sc, _) = w
-  val Nm.Sc(cap, ss, _, _) = sc
+  val Nm.Sc(cap, ss, _, sk) = sc
   if 0 <= i && i < cap then
-    if I64.of(ss(i)) == sym then Coll.Some(i) else Nm.look(w, sym, i - 1)
+    if I64.of(ss(i)) == sym && (I64.ofU8(sk(i)) == Nm.bTParam()) == ty then Coll.Some(i) else Nm.look(w, sym, i - 1, ty)
   else Coll.None
+
+// push a [] type binder: not a value local, so not counted in sLocals
+def Nm.pushT(x: Nm.X, t: Nm.T, tok: I64): Unit =
+  val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Nm.W(_, _, sc, _) = w
+  val Nm.Sc(cap, ss, st, sk) = sc
+  val sym = Nm.sym(w, t, true)
+  val sp = Nm.cget(w, Nm.sSp())
+  if 0 < sym && 0 <= sp && sp < cap then
+    Array.put(ss, sp, U32.of(sym))
+    Array.put(st, sp, U32.of(tok))
+    Array.put(sk, sp, U8.of(Nm.bTParam()))
+    Nm.cset(w, Nm.sSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Nm.over(w)
+
+def Nm.bindT(x: Nm.X, j: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if Nm.isUnder(g, j) then () else Nm.pushT(x, Nm.tokT(g, j), j)
 
 def Nm.lineOfTok(x: Nm.X, j: I64): I64 =
   val Nm.X(_, _, _, _, _, lcap, ln, _, _, _) = x
@@ -497,7 +648,7 @@ def Nm.printSym(w: Nm.W, id: I64): Unit =
 def Nm.dumpLine(x: Nm.X, j: I64, kb: I64, ref: I64): Unit =
   val Nm.X(w, g, _, path, _, lcap, ln, _, _, _) = x
   val Nm.W(_, gt, _, _) = w
-  val Nm.Gt(gcap, _, gf, gl, gs, _, _) = gt
+  val Nm.Gt(gcap, _, gf, gl, gs, _, _, _, _, _) = gt
   Console.print(path)
   Console.print(":")
   Console.printI64(Nm.lineAt(lcap, ln, j))
@@ -548,7 +699,7 @@ def Nm.set(x: Nm.X, j: I64, kb: I64, ref: I64): Unit =
 def Nm.use(x: Nm.X, j: I64): Unit =
   val Nm.X(w, g, _, _, _, _, _, _, _, _) = x
   val sym = Nm.sym(w, Nm.tokT(g, j), false)
-  Nm.look(w, sym, Nm.cget(w, Nm.sSp()) - 1) match
+  Nm.look(w, sym, Nm.cget(w, Nm.sSp()) - 1, false) match
     case Coll.Some(i) => Nm.useLocal(x, j, i, sym)
     case Coll.None => Nm.useGlobal(x, j, sym)
 
@@ -556,7 +707,7 @@ def Nm.use(x: Nm.X, j: I64): Unit =
 def Nm.useK(x: Nm.X, j: I64): Unit =
   val Nm.X(w, g, _, _, _, _, _, _, _, _) = x
   val sym = Nm.sym(w, Nm.tokT(g, j), false)
-  Nm.look(w, sym, Nm.cget(w, Nm.sSp()) - 1) match
+  Nm.look(w, sym, Nm.cget(w, Nm.sSp()) - 1, false) match
     case Coll.Some(i) => Nm.useKAt(x, j, i)
     case Coll.None => Nm.set(x, j, Nm.kUnres(), 0)
 
@@ -585,10 +736,90 @@ def Nm.useLocal(x: Nm.X, j: I64, i: I64, sym: I64): Unit =
 def Nm.useGlobal(x: Nm.X, j: I64, sym: I64): Unit =
   val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
   val Nm.W(_, gt, _, _) = w
-  val Nm.Gt(gcap, gk, _, _, _, tcap, tab) = gt
+  val Nm.Gt(gcap, gk, _, _, _, tcap, tab, _, _, _) = gt
   val d = if 0 <= sym && sym < tcap then I64.of(tab(sym)) else 0
   if 0 < d && 0 <= d && d < gcap then Nm.set(x, j, I64.ofU8(gk(d)), d)
   else Nm.set(x, j, Nm.kUnres(), 0)
+
+// ── type uses ──
+// a type use dump line: path:line text Type<kind> target; a TyParam target = bindline:text ut= tt=, a declared type = file:line:name
+def Nm.tdumpLine(x: Nm.X, j: I64, tk: I64, ref: I64): Unit =
+  val Nm.X(w, g, _, path, _, lcap, ln, _, _, _) = x
+  val Nm.W(_, gt, _, _) = w
+  val Nm.Gt(_, _, _, _, _, tcap, _, _, tyf, tyl) = gt
+  Console.print(path)
+  Console.print(":")
+  Console.printI64(Nm.lineAt(lcap, ln, j))
+  Console.print(" ")
+  Console.print(Na.text(g, j))
+  Console.print(" ")
+  Console.print(Nm.tkindStr(tk))
+  Console.print(" ")
+  if tk == Nm.tParam() then
+    Console.printI64(Nm.lineAt(lcap, ln, ref))
+    Console.print(":")
+    Console.print(Na.text(g, ref))
+    Console.print(" ut=")
+    Console.printI64(j)
+    Console.print(" tt=")
+    Console.printI64(ref)
+  else if tk == Nm.tUnres() || tk == Nm.tBuiltin() then Console.print("-")
+  else if 0 < ref && 0 <= ref && ref < tcap then
+    Console.printI64(I64.of(tyf(ref)))
+    Console.print(":")
+    Console.printI64(I64.of(tyl(ref)))
+    Console.print(":")
+    Nm.printSym(w, ref)
+  else Console.print("badref")
+  Console.print("\n")
+
+// record the resolution of type use token j: ref = the binder token (TyParam) or the symbol (declared types)
+def Nm.tset(x: Nm.X, j: I64, tk: I64, ref: I64): Unit =
+  val Nm.X(w, _, fi, _, dump, _, _, rcap, rk, rf) = x
+  if 0 <= j && j < rcap then
+    Array.put(rk, j, U8.of(Nm.tBase() + tk))
+    Array.put(rf, j, U32.of(ref))
+  // shortcut: a use token is a token of its file, always below rcap; s3 Vec will make it unrepresentable
+  else Nm.over(w)
+  Nm.cinc(w, Nm.sTK() + tk)
+  Nm.cinc(w, Nm.sTypes())
+  if tk == Nm.tUnres() then
+    Nm.cinc(w, Nm.sTUnres())
+    val sh = Nm.cget(w, Nm.sTShown())
+    if sh < Nm.maxShown() then
+      Nm.cset(w, Nm.sTUFile() + sh, fi)
+      Nm.cset(w, Nm.sTUTok() + sh, j)
+      Nm.cset(w, Nm.sTShown(), sh + 1)
+    else ()
+  else ()
+  if dump then Nm.tdumpLine(x, j, tk, ref) else ()
+
+def Nm.tparamAt(x: Nm.X, j: I64, i: I64): Unit =
+  val Nm.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Nm.W(_, _, sc, _) = w
+  val Nm.Sc(cap, _, st, _) = sc
+  if 0 <= i && i < cap then Nm.tset(x, j, Nm.tParam(), I64.of(st(i)))
+  // shortcut: Nm.look answers an index below cap; s3 Vec will make it unrepresentable
+  else Nm.over(w)
+
+// a type name: the innermost [] binder, else a declared type; else Unresolved
+def Nm.tuse(x: Nm.X, j: I64): Unit =
+  val Nm.X(w, g, _, _, _, _, _, _, _, _) = x
+  val Nm.W(_, gt, _, _) = w
+  val Nm.Gt(_, _, _, _, _, tcap, _, tyk, _, _) = gt
+  val sym = Nm.sym(w, Nm.tokT(g, j), false)
+  Nm.look(w, sym, Nm.cget(w, Nm.sSp()) - 1, true) match
+    case Coll.Some(i) => Nm.tparamAt(x, j, i)
+    case Coll.None =>
+      val k = if 0 < sym && 0 <= sym && sym < tcap then I64.ofU8(tyk(sym)) else 0
+      if k > 0 then Nm.tset(x, j, k - 1, sym) else Nm.tset(x, j, Nm.tUnres(), 0)
+
+def Nm.tuseList(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    Nm.tuse(x, Na.item(g, r, i))
+    Nm.tuseList(x, r, i + 1)
+  else ()
 
 def Nm.useList(x: Nm.X, r: I64, i: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
@@ -602,11 +833,12 @@ def Nm.ty(x: Nm.X, t: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
   val k = Na.kd(g, t)
   if k == Na.kTy() then
+    Nm.tuse(x, Na.tok(g, t))
     Nm.tys(x, Na.a(g, t), 0)
     Nm.exprs(x, Na.b(g, t), 0)
   else if k == Na.kTyCaps() then
     Nm.ty(x, Na.a(g, t))
-    Nm.useList(x, Na.b(g, t), 0)
+    if Nm.capSig(x) then () else Nm.useList(x, Na.b(g, t), 0)
   else ()
 
 def Nm.tys(x: Nm.X, r: I64, i: I64): Unit =
@@ -707,6 +939,7 @@ def Nm.stmts(x: Nm.X, r: I64, i: I64): Unit =
       Nm.expr(x, Na.b(g, s))
       Nm.bind(x, Na.tok(g, s))
     else if k == Na.kHandle() then
+      Nm.tuse(x, Na.a(g, s))
       Nm.exprs(x, Na.b(g, s), 0)
       Nm.bind(x, Na.tok(g, s))
     else if k == Na.kPatVal() then
@@ -757,14 +990,17 @@ def Nm.binderTys(x: Nm.X, r: I64, i: I64): Unit =
     Nm.binderTys(x, r, i + 1)
   else ()
 
-// the types, clauses and body of a def, in written order
+// the types, clauses and body of a def, in written order (kRet / kOpRet: the result type of a def / of a capability op)
 def Nm.parts(x: Nm.X, parts: I64, i: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
   if i < Na.len(g, parts) then
     val p = Na.item(g, parts, i)
     val k = Na.kd(g, p)
     if k == Na.kGEv() || k == Na.kParams() then Nm.binderTys(x, Na.a(g, p), 0)
-    else if k == Na.kRet() then Nm.ty(x, Na.a(g, p))
+    else if k == Na.kRet() || k == Na.kOpRet() then Nm.ty(x, Na.a(g, p))
+    else if k == Na.kOpRetC() then
+      Nm.ty(x, Na.a(g, p))
+      Nm.tuseList(x, Na.b(g, p), 0)
     else if k == Na.kClause() then
       val sp = Nm.sp(x)
       Nm.bindResult(x, Na.tok(g, p))
@@ -776,10 +1012,29 @@ def Nm.parts(x: Nm.X, parts: I64, i: I64): Unit =
     Nm.parts(x, parts, i + 1)
   else ()
 
+// the [] type binders of the groups among the parts (types in scope of every type, clause and body below)
+def Nm.bindTps(x: Nm.X, parts: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, parts) then
+    val p = Na.item(g, parts, i)
+    if Na.kd(g, p) == Na.kGTypes() then Nm.bindTpList(x, Na.a(g, p), 0) else ()
+    Nm.bindTps(x, parts, i + 1)
+  else ()
+
+def Nm.bindTpList(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    val b = Na.item(g, r, i)
+    if Na.kd(g, b) == Na.kBind() then Nm.bindT(x, Na.tok(g, b)) else ()
+    Nm.bindTpList(x, r, i + 1)
+  else ()
+
+// a def or a capability def (same parts)
 def Nm.defN(x: Nm.X, d: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
   val sp = Nm.sp(x)
   val parts = Na.b(g, d)
+  Nm.bindTps(x, parts, 0)
   Nm.bindEv(x, parts, 0)
   Nm.bindPar(x, parts, 0)
   Nm.parts(x, parts, 0)
@@ -790,8 +1045,61 @@ def Nm.defsOf(x: Nm.X, r: I64, i: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
   if i < Na.len(g, r) then
     val n = Na.item(g, r, i)
-    if Na.kd(g, n) == Na.kDef() then Nm.defN(x, n) else ()
+    if Na.kd(g, n) == Na.kDef() || Na.kd(g, n) == Na.kCapDef() then Nm.defN(x, n) else ()
     Nm.defsOf(x, r, i + 1)
+  else ()
+
+// a handler's parts: its [A: Type] binder is a type in its defs, its `for` names a capability, then its defs
+def Nm.handlerParts(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    val k = Na.kd(g, n)
+    if k == Na.kHAns() then Nm.bindT(x, Na.a(g, n))
+    else if k == Na.kHFor() then Nm.tuse(x, Na.a(g, n))
+    else if k == Na.kDef() then Nm.defN(x, n)
+    else ()
+    Nm.handlerParts(x, r, i + 1)
+  else ()
+
+// the types of a type decl's parts: its groups and value binders, then its body (alias, type match, value match)
+def Nm.typeParts(x: Nm.X, parts: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, parts) then
+    val p = Na.item(g, parts, i)
+    val k = Na.kd(g, p)
+    if k == Na.kGEv() || k == Na.kParams() then Nm.binderTys(x, Na.a(g, p), 0)
+    else if k == Na.kAlias() then Nm.ty(x, Na.a(g, p))
+    else if k == Na.kTyMatch() then
+      Nm.ty(x, Na.a(g, p))
+      Nm.tarms(x, Na.b(g, p), 0)
+    else if k == Na.kValMatch() then Nm.varms(x, Na.b(g, p), 0)
+    else ()
+    Nm.typeParts(x, parts, i + 1)
+  else ()
+
+def Nm.tarms(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    val a = Na.item(g, r, i)
+    Nm.ty(x, Na.a(g, a))
+    Nm.ty(x, Na.b(g, a))
+    Nm.tarms(x, r, i + 1)
+  else ()
+
+def Nm.varms(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    Nm.ty(x, Na.b(g, Na.item(g, r, i)))
+    Nm.varms(x, r, i + 1)
+  else ()
+
+// the types of an extern struct's fields
+def Nm.fieldTys(x: Nm.X, r: I64, i: I64): Unit =
+  val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Na.len(g, r) then
+    Nm.ty(x, Na.a(g, Na.item(g, r, i)))
+    Nm.fieldTys(x, r, i + 1)
   else ()
 
 // the field types of a case name the other fields of the case
@@ -834,10 +1142,38 @@ def Nm.root0(x: Nm.X, kb: I64, root: I64): Unit =
   val Nm.X(_, g, _, _, _, _, _, _, _, _) = x
   Nm.setSp(x, 0)
   if kb == 0 then Nm.defN(x, root)
-  else if kb == 1 then Nm.cases(x, Na.b(g, root), 0)
+  else if kb == 1 then
+    Nm.bindTps(x, Na.b(g, root), 0)
+    Nm.cases(x, Na.b(g, root), 0)
+    Nm.setSp(x, 0)
   else if kb == 2 then
-    if Na.kd(g, Na.b(g, root)) == Na.kDef() then Nm.defN(x, Na.b(g, root)) else ()
-  else if kb == 3 || kb == 5 || kb == 8 then Nm.defsOf(x, Na.b(g, root), 0)
+    val inner = Na.b(g, root)
+    val ik = Na.kd(g, inner)
+    if ik == Na.kDef() then Nm.defN(x, inner)
+    else if ik == Na.kCVal() then Nm.ty(x, Na.a(g, inner))
+    else if ik == Na.kCStruct() then Nm.fieldTys(x, Na.b(g, inner), 0)
+    else ()
+  else if kb == 3 then
+    Nm.handlerParts(x, Na.b(g, root), 0)
+    Nm.setSp(x, 0)
+  else if kb == 4 then
+    Nm.setCapSig(x, 1)
+    Nm.defsOf(x, Na.b(g, root), 0)
+    Nm.setCapSig(x, 0)
+  else if kb == 5 then
+    Nm.bindTps(x, Na.b(g, root), 0)
+    Nm.defsOf(x, Na.b(g, root), 0)
+    Nm.setSp(x, 0)
+  else if kb == 6 then
+    Nm.bindTps(x, Na.b(g, root), 0)
+    Nm.bindPar(x, Na.b(g, root), 0)
+    Nm.typeParts(x, Na.b(g, root), 0)
+    Nm.setSp(x, 0)
+  else if kb == 8 then
+    Nm.bindTps(x, Na.b(g, root), 0)
+    Nm.ty(x, Na.a(g, root))
+    Nm.defsOf(x, Na.b(g, root), 0)
+    Nm.setSp(x, 0)
   else if kb == 7 then
     Nm.ty(x, Na.a(g, root))
     Nm.expr(x, Na.b(g, root))
@@ -864,12 +1200,14 @@ def Nm.resolveFiles(w: Nm.W, fs: Coll.List[Nm.F], fi: I64, dump: Bool): Unit = f
     Nm.resolveFiles(w, rest, fi + 1, dump)
 
 // ── report ──
-def Nm.showUnres(w: Nm.W, fs: Coll.List[Nm.F], i: I64): Unit =
-  if i < Nm.cget(w, Nm.sShown()) then
-    Nm.nth(fs, Nm.cget(w, Nm.sUFile() + i)) match
+// the shown unresolved uses: n of them, files at slot fb + i, tokens at slot tb + i; pre starts each line
+def Nm.showUnres(w: Nm.W, fs: Coll.List[Nm.F], i: I64, n: I64, fb: I64, tb: I64, pre: Str): Unit =
+  if i < n then
+    Nm.nth(fs, Nm.cget(w, fb + i)) match
       case Coll.Some(f) =>
         val Nm.F(path, g, lcap, ln, _, _, _, _) = f
-        val j = Nm.cget(w, Nm.sUTok() + i)
+        val j = Nm.cget(w, tb + i)
+        Console.print(pre)
         Console.print(path)
         Console.print(":")
         Console.printI64(Nm.lineAt(lcap, ln, j))
@@ -877,7 +1215,16 @@ def Nm.showUnres(w: Nm.W, fs: Coll.List[Nm.F], i: I64): Unit =
         Console.print(Na.text(g, j))
         Console.print("\n")
       case Coll.None => Console.print("badfile\n")
-    Nm.showUnres(w, fs, i + 1)
+    Nm.showUnres(w, fs, i + 1, n, fb, tb, pre)
+  else ()
+
+def Nm.tkinds(w: Nm.W, b: I64): Unit =
+  if b <= Nm.tUnres() then
+    Console.print(" ")
+    Console.print(Nm.tkindStr(b))
+    Console.print("=")
+    Console.printI64(Nm.cget(w, Nm.sTK() + b))
+    Nm.tkinds(w, b + 1)
   else ()
 
 def Nm.kinds(w: Nm.W, b: I64): Unit =
@@ -898,8 +1245,12 @@ def Nm.summary(w: Nm.W, fs: Coll.List[Nm.F]): Unit =
   Nm.num(" locals=", Nm.cget(w, Nm.sLocals()))
   Nm.num(" resolved=", Nm.cget(w, Nm.sRes()))
   Nm.num(" unresolved=", Nm.cget(w, Nm.sUnres()))
+  Nm.num(" types=", Nm.cget(w, Nm.sTypes()))
+  Nm.num(" tresolved=", Nm.cget(w, Nm.sTypes()) - Nm.cget(w, Nm.sTUnres()))
+  Nm.num(" tunresolved=", Nm.cget(w, Nm.sTUnres()))
   Console.print("\n")
-  Nm.showUnres(w, fs, 0)
+  Nm.showUnres(w, fs, 0, Nm.cget(w, Nm.sShown()), Nm.sUFile(), Nm.sUTok(), "")
+  Nm.showUnres(w, fs, 0, Nm.cget(w, Nm.sTShown()), Nm.sTUFile(), Nm.sTUTok(), "type ")
   Console.print("kinds")
   Nm.kinds(w, 0)
   Nm.num(" syms=", Nm.cget(w, Nm.sSyms()) - 1)
@@ -908,6 +1259,9 @@ def Nm.summary(w: Nm.W, fs: Coll.List[Nm.F]): Unit =
   Nm.num(" parseErr=", Nm.sumPerr(fs, 0))
   Nm.num(" overflow=", Nm.cget(w, Nm.sOver()))
   Nm.num(" leaks=", Nm.cget(w, Nm.sLeak()))
+  Console.print("\ntkinds")
+  Nm.tkinds(w, 0)
+  Nm.num(" tdups=", Nm.cget(w, Nm.sTDup()))
   Console.print("\n")
   Nm.showTop(w, fs, 0)
 
@@ -931,6 +1285,7 @@ def Nm.run(dump: Bool): I64 =
   val fs = Nm.load(2)
   val w = Nm.world(Nm.sumTok(fs, 0), Nm.sumBytes(fs, 0))
   Nm.builtins(w)
+  Nm.btypes(w)
   Nm.declFiles(w, fs, 0)
   Nm.resolveFiles(w, fs, 0, dump)
   if !dump then Nm.summary(w, fs) else ()
