@@ -1,0 +1,1536 @@
+// s3c EMIT-1: the C emitter, in s2 (vic/c/s3-design.md 1e). Two phases. Phase A is the typing pipeline of Tp.run: every def is typed into the
+// total side tables (ty / ce / ax columns, the type store, the signatures, the mono instances). Phase B (this file) reads ONLY those tables and
+// the AST: no unification, no name lookup beyond the names pass results that the typer kept (use kind and binder token per use token).
+// Output is streamed with Console.print, one piece at a time: the preamble, the struct decls, the prototypes, then one chunk per def.
+// Symbols come from declared names (f_Mod__name, v_<name>_<binder token>, h_<Handler>_<op>, hs_<Handler>); no counter names a symbol.
+// Regions: a def whose result allocates has a hidden region param in the design; fixpoint 1 binds every one to the run arena, which is a
+// file-static (the first Region handle of main): srs_alloc(n) calls that handler's alloc directly. Handlers are static: a capability op is a
+// direct call h_<Handler>_<op>(hs_<Handler>, args). A self tail call is a goto srs_tail.
+// Counters (Em.K.hc) are named: nothing is skipped silently; `s3c --emit` prints them on stderr.
+
+// ── the C preamble: the prims the externs of the prelude stand for (static inline, the C of Emit.strPrims, wordPrims, f64Prims, ptrPrims) ──
+def Em.preamble(s: Tp.S): Unit =
+  Tp.po(s, "#define _GNU_SOURCE\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n#include <errno.h>\n")
+  Tp.po(s, "#include <sys/mman.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <math.h>\n#include <stdatomic.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n")
+  Tp.po(s, "#include <termios.h>\n#include <time.h>\n#include <poll.h>\n#include <sys/wait.h>\n#include <spawn.h>\n")
+  Tp.po(s, "static inline int32_t rt_os_errno(void) { return errno; }\n")
+  Tp.po(s, "typedef struct { const uint8_t* p; int64_t n; } srs_str;\n")
+  Tp.po(s, "static inline int64_t Str__len(srs_str s) { return s.n; }\n")
+  Tp.po(s, "static inline int64_t Str__at(srs_str s, int64_t i) { return (uint64_t)i < (uint64_t)s.n ? s.p[i] : -1; }\n")
+  Tp.po(s, "static inline srs_str Str__slice(srs_str s, int64_t b, int64_t e) {\n  if (b < 0) b = 0;\n  if (e > s.n) e = s.n;\n  if (e < b) e = b;\n  return (srs_str){s.p + b, e - b};\n}\n")
+  Tp.po(s, "static inline bool Str__eq(srs_str a, srs_str b) { return a.n == b.n && memcmp(a.p, b.p, (size_t)a.n) == 0; }\n")
+  Tp.po(s, "static inline bool Str__less(srs_str a, srs_str b) {\n  int64_t m = a.n < b.n ? a.n : b.n;\n  int c = m > 0 ? memcmp(a.p, b.p, (size_t)m) : 0;\n  return c ? c < 0 : a.n < b.n;\n}\n")
+  Tp.po(s, "static inline bool Str__has(srs_str s, int64_t c, int64_t i, int64_t e) {\n  if (i < 0) i = 0;\n  if (e > s.n) e = s.n;\n  return (uint64_t)c < 256 && i < e && memchr(s.p + i, (int)c, (size_t)(e - i)) != NULL;\n}\n")
+  Tp.po(s, "static inline srs_str Str__ofBytes(int64_t n, uint8_t* xs) { return (srs_str){xs, n}; }\n")
+  Tp.po(s, "static inline void Array__blit(uint8_t* d, srs_str s, int64_t m) { int64_t k = m < s.n ? m : s.n; if (k > 0) memcpy(d, s.p, (size_t)k); }\n")
+  Tp.po(s, "static inline uint32_t U32__of(int64_t x) { return (uint32_t)x; }\n")
+  Tp.po(s, "static inline uint32_t U32__ofU64(uint64_t x) { return (uint32_t)x; }\n")
+  Tp.po(s, "static inline uint64_t U64__of(uint32_t x) { return x; }\n")
+  Tp.po(s, "static inline uint64_t U64__ofI64(int64_t x) { return (uint64_t)x; }\n")
+  Tp.po(s, "static inline int64_t I64__of(uint32_t x) { return x; }\n")
+  Tp.po(s, "static inline int64_t I64__ofU64(uint64_t x) { return (int64_t)x; }\n")
+  Tp.po(s, "static inline uint8_t U8__of(int64_t x) { return (uint8_t)x; }\n")
+  Tp.po(s, "static inline int64_t I64__ofU8(uint8_t x) { return x; }\n")
+  Tp.po(s, "static inline int32_t I32__of(int64_t x) { return (int32_t)x; }\n")
+  Tp.po(s, "static inline int64_t I64__ofI32(int32_t x) { return x; }\n")
+  Tp.po(s, "static inline double F64__ofBits(int64_t b) { double x; memcpy(&x, &b, 8); return x; }\n")
+  Tp.po(s, "static inline int64_t F64__bits(double x) { int64_t b; memcpy(&b, &x, 8); return b; }\n")
+  Tp.po(s, "static inline double F64__ofI64(int64_t i) { return (double)i; }\n")
+  Tp.po(s, "static inline int64_t F64__truncI64(double x) { return x >= -9223372036854775808.0 && x < 9223372036854775808.0 ? (int64_t)x : 0; }\n")
+  Tp.po(s, "static inline double F64__add(double a, double b) { return a + b; }\n")
+  Tp.po(s, "static inline double F64__sub(double a, double b) { return a - b; }\n")
+  Tp.po(s, "static inline double F64__mul(double a, double b) { return a * b; }\n")
+  Tp.po(s, "static inline double F64__div(double a, double b) { return a / b; }\n")
+  Tp.po(s, "static inline bool F64__lt(double a, double b) { return a < b; }\n")
+  Tp.po(s, "static inline bool F64__eq(double a, double b) { return a == b; }\n")
+  Tp.po(s, "static inline double F64__ceil(double x) { return ceil(x); }\n")
+  Tp.po(s, "static inline double F64__floor(double x) { return floor(x); }\n")
+  Tp.po(s, "static inline int64_t F64__fmt(int64_t n, uint8_t* buf, int64_t how, int64_t prec, double x) { if (n <= 0) return 0; int k = how == 0 ? snprintf((char*)buf, (size_t)n, \"%g\", x) : how == 1 ? snprintf((char*)buf, (size_t)n, \"%f\", x) : snprintf((char*)buf, (size_t)n, \"%.*e\", (int)prec, x); return k < 0 ? 0 : k < n ? k : n - 1; }\n")
+  Tp.po(s, "static inline double F64__parse(srs_str s) { char b[512]; int64_t n = s.n < 511 ? s.n : 511; if (n > 0) memcpy(b, s.p, (size_t)n); b[n] = 0; return strtod(b, 0); }\n")
+  Tp.po(s, "static inline uint32_t Str__u32le(srs_str s, int64_t i) {\n  uint32_t v = 0;\n  if (i >= s.n) return 0;\n  for (int64_t k = 0; k < 4; k++) if (i + k >= 0 && i + k < s.n) v |= (uint32_t)s.p[i + k] << (8 * k);\n  return v;\n}\n")
+  Tp.po(s, "static inline uint64_t Str__u64le(srs_str s, int64_t i) {\n  uint64_t v = 0;\n  if (i >= s.n) return 0;\n  for (int64_t k = 0; k < 8; k++) if (i + k >= 0 && i + k < s.n) v |= (uint64_t)s.p[i + k] << (8 * k);\n  return v;\n}\n")
+  Tp.po(s, "static inline int64_t rt_ptr_get(void* p, int64_t i) { return ((int64_t*)p)[i]; }\n")
+  Tp.po(s, "static inline int64_t rt_ptr_set(void* p, int64_t i, int64_t v) { ((int64_t*)p)[i] = v; return 0; }\n")
+  Tp.po(s, "static inline void* rt_ptr_add(void* p, int64_t n) { return (char*)p + n; }\n")
+  Tp.po(s, "static inline uint64_t rt_ptr_addr(void* p) { return (uint64_t)(uintptr_t)p; }\n")
+  Tp.po(s, "static inline void* rt_ptr_of(uint64_t a) { return (void*)(uintptr_t)a; }\n")
+  Tp.po(s, "static int64_t srs_globals[16];\n")
+  Tp.po(s, "static inline void* rt_globals(void) { return srs_globals; }\n")
+  Tp.po(s, "typedef struct srs_cap srs_cap;\n")
+  Tp.po(s, "void rt_init(int argc, char** argv);\n")
+
+// the prims that need the run arena (after srs_alloc)
+def Em.preamble2(s: Tp.S): Unit =
+  Tp.po(s, "static inline const char* CStr__of(srs_str s) { int64_t n = 0; while (n < s.n && s.p[n] != 0) n++; char* c = (char*)srs_alloc(n + 1); if (n > 0) memcpy(c, s.p, (size_t)n); c[n] = 0; return c; }\n")
+  Tp.po(s, "static inline char *const* CStr__argv(int64_t n, const char** xs) { const char** a = (const char**)srs_alloc((n + 1) * (int64_t)sizeof(char*)); for (int64_t i = 0; i < n; i++) a[i] = xs[i]; a[n] = 0; return (char *const*)a; }\n")
+
+// ── the tables of the emitter: the class of every extern symbol, the handles of main, the named counters ──
+// class (kc): 0 def, 1 extern of the runtime (prototype), 2 extern libc def, 3 extern prim (inline in the preamble), 4 extern libc val
+// hc slots: 0 handles, 1 overflow, 2 unsupported nodes, 3 defs emitted, 4 instances emitted, 5 handler fns, 6 main seen, 7 defs skipped (no body),
+// 8 closure passes, 9 interned late; 16 + 2i = (capability symbol, handler symbol) of handle i; 64 + node kind = unsupported nodes of that kind
+enum Em.K:
+  case Em.K(kn: I64, kc: Array[U8](kn), hn: I64, hc: Array[I64](hn), xo: Array[U32](kn), xn: I64, xi: Array[U32](xn))
+
+def Em.bump(hn: I64, hc: Array[I64](hn), i: I64): Unit =
+  if 0 <= i && i < hn then Array.put(hc, i, hc(i) + 1) else ()
+
+def Em.over(k: Em.K): Unit =
+  val Em.K(_, _, hn, hc, _, _, _) = k
+  Em.bump(hn, hc, 1)
+
+def Em.kget(k: Em.K, sym: I64): I64 =
+  val Em.K(kn, kc, _, _, _, _, _) = k
+  if 0 <= sym && sym < kn then I64.ofU8(kc(sym))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Em.over(k)
+    0
+
+def Em.kset(k: Em.K, sym: I64, v: I64): Unit =
+  val Em.K(kn, kc, _, _, _, _, _) = k
+  if 0 <= sym && sym < kn then Array.put(kc, sym, U8.of(v))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Em.over(k)
+
+def Em.hget(k: Em.K, i: I64): I64 =
+  val Em.K(_, _, hn, hc, _, _, _) = k
+  if 0 <= i && i < hn then hc(i)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Em.over(k)
+    0
+
+def Em.hset(k: Em.K, i: I64, v: I64): Unit =
+  val Em.K(_, _, hn, hc, _, _, _) = k
+  if 0 <= i && i < hn then Array.put(hc, i, v)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Em.over(k)
+
+def Em.hinc(k: Em.K, i: I64): Unit = Em.hset(k, i, Em.hget(k, i) + 1)
+
+// the env of one def body: the file context, the tables, the substitution of an instance (params at pool tp0, ntp of them, replaced by the
+// ground types at pool pb; ntp = 0 for a def that is not generic), the symbol of the def (for self tail calls), its params list, the file base
+enum Em.E:
+  case Em.E(x: Tp.X, k: Em.K, tp0: I64, ntp: I64, pb: I64, own: I64, pr: I64, base: I64)
+
+def Em.gOf(e: Em.E): Na.G =
+  val Em.E(x, _, _, _, _, _, _, _) = e
+  val Tp.X(_, g, _, _, _, _) = x
+  g
+
+def Em.sOf(e: Em.E): Tp.S =
+  val Em.E(x, _, _, _, _, _, _, _) = e
+  val Tp.X(_, _, s, _, _, _) = x
+  s
+
+def Em.wOf(e: Em.E): Nm.W =
+  val Em.E(x, _, _, _, _, _, _, _) = e
+  val Tp.X(w, _, _, _, _, _) = x
+  w
+
+// the output of the emitter: the appends of Tp.po / Tp.pc / Tp.pi (the one chunk of the store), in call order
+def Em.po(e: Em.E, t: Str): Unit = Tp.po(Em.sOf(e), t)
+def Em.pc(e: Em.E, c: I64): Unit = Tp.pc(Em.sOf(e), c)
+def Em.pi(e: Em.E, v: I64): Unit = Tp.pi(Em.sOf(e), v)
+def Em.id(e: Em.E, sym: I64): Unit = Tp.id(Em.sOf(e), Em.wOf(e), sym)
+
+def Em.kOf(e: Em.E): Em.K =
+  val Em.E(_, k, _, _, _, _, _, _) = e
+  k
+
+def Em.xOf(e: Em.E): Tp.X =
+  val Em.E(x, _, _, _, _, _, _, _) = e
+  x
+
+def Em.sub(e: Em.E, t: I64): I64 =
+  val Em.E(x, _, tp0, ntp, pb, _, _, _) = e
+  val Tp.X(_, _, s, _, _, _) = x
+  Tp.msub(s, t, tp0, ntp, pb)
+
+def Em.ty(e: Em.E, n: I64): I64 =
+  val Em.E(_, _, _, _, _, _, _, base) = e
+  Tp.tyAt(Em.sOf(e), base, n)
+
+def Em.tyS(e: Em.E, n: I64): I64 = Em.sub(e, Em.ty(e, n))
+
+def Em.ce(e: Em.E, n: I64): I64 =
+  val Em.E(_, _, _, _, _, _, _, base) = e
+  val s = Em.sOf(e)
+  Tp.mxGet(s, Tp.moCe(s, base + n))
+
+def Em.ax(e: Em.E, n: I64): I64 =
+  val Em.E(_, _, _, _, _, _, _, base) = e
+  val s = Em.sOf(e)
+  Tp.mxGet(s, Tp.moAx(s, base + n))
+
+def Em.cty(e: Em.E, t: I64): Unit = Tp.cty(Em.wOf(e), Em.sOf(e), t)
+
+def Em.unsup(e: Em.E, kind: I64): Unit =
+  val k = Em.kOf(e)
+  Em.hinc(k, 2)
+  Em.hinc(k, 64 + kind)
+  Em.po(e,"((int64_t)0)")
+
+// ── symbol text ──
+def Em.symLen(w: Nm.W, sym: I64): I64 =
+  val Nm.W(sy, _, _, _) = w
+  val Nm.Sy(_, _, scap, _, sl, _, _) = sy
+  if 0 <= sym && sym < scap then I64.of(sl(sym)) else 0
+
+def Em.symAt(w: Nm.W, sym: I64, i: I64): I64 =
+  val Nm.W(sy, _, _, _) = w
+  val Nm.Sy(_, _, scap, so, sl, pcap, pool) = sy
+  if 0 <= sym && sym < scap then
+    if 0 <= i && i < I64.of(sl(sym)) then
+      val q = I64.of(so(sym)) + i
+      if 0 <= q && q < pcap then I64.ofU8(pool(q)) else 0 - 1
+    else 0 - 1
+  else 0 - 1
+
+def Em.symPreAt(w: Nm.W, sym: I64, p: Str, i: I64): Bool =
+  if i >= Str.len(p) then true
+  else Em.symAt(w, sym, i) == Str.at(p, i) && Em.symPreAt(w, sym, p, i + 1)
+
+def Em.symPre(w: Nm.W, sym: I64, p: Str): Bool = Em.symPreAt(w, sym, p, 0)
+
+def Em.symIs(w: Nm.W, sym: I64, p: Str): Bool = Em.symLen(w, sym) == Str.len(p) && Em.symPre(w, sym, p)
+
+def Em.lastDot(w: Nm.W, sym: I64, i: I64, acc: I64): I64 =
+  if i < Em.symLen(w, sym) then Em.lastDot(w, sym, i + 1, if Em.symAt(w, sym, i) == 46 then i else acc) else acc
+
+// the text of a symbol after its last dot
+def Em.symTail(e: Em.E, w: Nm.W, sym: I64, i: I64): Unit =
+  if i < Em.symLen(w, sym) then
+    Em.pc(e,Em.symAt(w, sym, i))
+    Em.symTail(e, w,sym, i + 1)
+  else ()
+
+// the capability symbol cap owns the op symbol sg (`Cap.op`)
+def Em.capOwns(w: Nm.W, cap: I64, sg: I64): Bool =
+  Em.symLen(w, cap) < Em.symLen(w, sg) && Em.lastDot(w, sg, 0, 0 - 1) == Em.symLen(w, cap) && Em.symPreAt(w, sg, "", 0) && Em.samePre(w, cap, sg, 0)
+
+def Em.samePre(w: Nm.W, a: I64, b: I64, i: I64): Bool =
+  if i < Em.symLen(w, a) then Em.symAt(w, a, i) == Em.symAt(w, b, i) && Em.samePre(w, a, b, i + 1) else true
+
+def Em.isPrim(w: Nm.W, sym: I64): Bool =
+  Em.symPre(w, sym, "Str.") || Em.symPre(w, sym, "U32.") || Em.symPre(w, sym, "U64.") || Em.symPre(w, sym, "I64.") || Em.symPre(w, sym, "U8.") || Em.symPre(w, sym, "I32.") || Em.symPre(w, sym, "F64.") || Em.symPre(w, sym, "CStr.") || Em.symPre(w, sym, "Array.") || Em.symPre(w, sym, "rt_ptr_") || Em.symIs(w, sym, "rt_globals") || Em.symIs(w, sym, "rt_os_errno")
+
+// a name token text as a C identifier part
+def Em.binder(e: Em.E, tok: I64): Unit =
+  Em.po(e,"v_")
+  Tp.idStr(Em.sOf(e), Na.text(Em.gOf(e), tok), 0)
+  Em.po(e,"_")
+  Em.pi(e,tok)
+
+// a use token of a local: the name of its binder token
+def Em.local(e: Em.E, j: I64): Unit = Em.binder(e, Tp.useRef(Em.xOf(e), j))
+
+// ── literals ──
+def Em.strLen(t: Str, i: I64, n: I64, acc: I64): I64 =
+  if i >= n then acc
+  else if Str.at(t, i) == 92 then Em.strLen(t, i + 2, n, acc + 1)
+  else Em.strLen(t, i + 1, n, acc + 1)
+
+def Em.str(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val t = Na.text(g, Na.tok(g, n))
+  Em.po(e,"((srs_str){(const uint8_t*)")
+  Em.po(e,t)
+  Em.po(e,", ")
+  Em.pi(e,Em.strLen(t, 1, Str.len(t) - 1, 0))
+  Em.po(e,"})")
+
+def Em.lit(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val t = Em.tyS(e, n)
+  Em.po(e,"((")
+  Em.cty(e, t)
+  Em.po(e,")")
+  Em.po(e,Na.text(g, Na.tok(g, n)))
+  if Na.kd(g, n) == Na.kInt() && Tp.kind(s, t) == Tp.bBuiltin() && Tp.cls(s, t) == 11 then Em.po(e,"ULL") else ()
+  Em.po(e,")")
+
+// ── enum values ──
+// `struct E_Name_args` of the type t
+def Em.etag(e: Em.E, t: I64): Unit = Tp.enumTag(Em.wOf(e), Em.sOf(e), t)
+
+// the nullary value of a case: a pointer to a static word that holds its tag (srs_nul)
+def Em.nullary(e: Em.E, n: I64): Unit =
+  Em.po(e,"((")
+  Em.cty(e, Em.tyS(e, n))
+  Em.po(e,")(const void*)&srs_nul[")
+  Em.pi(e,Em.ax(e, n) - 1)
+  Em.po(e,"])")
+
+def Em.fields(e: Em.E, n: I64, r: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    Em.po(e," o")
+    Em.pi(e,n)
+    Em.po(e,"->u.C_")
+    Em.id(e,Em.ce(e, n))
+    Em.po(e,".f")
+    Em.pi(e,i)
+    Em.po(e," = ")
+    Em.expr(e, Na.item(g, r, i), false)
+    Em.po(e,";")
+    Em.fields(e, n, r, i + 1)
+  else ()
+
+def Em.ctor(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val r = Na.b(g, n)
+  if Na.len(g, r) == 0 then Em.nullary(e, n)
+  else
+    val t = Em.tyS(e, n)
+    val w = Em.wOf(e)
+    Em.po(e,"({ ")
+    Em.cty(e, t)
+    Em.po(e," o")
+    Em.pi(e,n)
+    Em.po(e," = (")
+    Em.cty(e, t)
+    Em.po(e,")srs_alloc((int64_t)(offsetof(")
+    Em.etag(e, t)
+    Em.po(e,", u) + sizeof(((")
+    Em.etag(e, t)
+    Em.po(e,"*)0)->u.C_")
+    Em.id(e,Em.ce(e, n))
+    Em.po(e,"))); o")
+    Em.pi(e,n)
+    Em.po(e,"->u.C_")
+    Em.id(e,Em.ce(e, n))
+    Em.po(e,".t_ = ")
+    Em.pi(e,Em.ax(e, n) - 1)
+    Em.po(e,";")
+    Em.fields(e, n, r, 0)
+    Em.po(e," o")
+    Em.pi(e,n)
+    Em.po(e,"; })")
+
+// the type of field i of case sym of the enum type et
+def Em.fieldTy(e: Em.E, sym: I64, et: I64, i: I64): I64 =
+  val s = Em.sOf(e)
+  val start = Tp.sigAt(s, sym, 1)
+  val np = Tp.sigAt(s, sym, 2)
+  Tp.msub(s, Tp.poolAt(s, start + i), start + np, Tp.sigAt(s, sym, 3), Tp.argBase(s, et))
+
+// ── calls ──
+def Em.args(e: Em.E, r: I64, i: I64, lead: Bool): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    if i > 0 || lead then Em.po(e,", ") else ()
+    Em.expr(e, Na.item(g, r, i), false)
+    Em.args(e, r, i + 1, lead)
+  else ()
+
+def Em.vargs(e: Em.E, r: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    if i > 0 then Em.po(e,", ") else ()
+    Em.po(e,"(void*)(")
+    Em.expr(e, Na.item(g, r, i), false)
+    Em.po(e,")")
+    Em.vargs(e, r, i + 1)
+  else ()
+
+// f_Name__A__B of the generic call site j: the site's type args under the substitution of the instance being emitted
+def Em.instArgs(e: Em.E, a: I64, i: I64, nc: I64): Unit =
+  if i < nc then
+    Em.po(e,"_")
+    Tp.mangle(Em.wOf(e), Em.sOf(e), Em.sub(e, Tp.poolAt(Em.sOf(e), a + i)))
+    Em.instArgs(e, a, i + 1, nc)
+  else ()
+
+def Em.instNm(e: Em.E, sym: I64, site: I64): Unit =
+  val s = Em.sOf(e)
+  Em.po(e,"f_")
+  Em.id(e,sym)
+  Em.po(e,"_")
+  Em.instArgs(e, Tp.mxGet(s, Tp.moSite(site, 2)) - 1, 0, Tp.mxGet(s, Tp.moSite(site, 3)))
+
+// the site's type args are the own params: the recursion stays in the instance
+def Em.siteSame(e: Em.E, a: I64, i: I64, nc: I64): Bool =
+  val Em.E(_, _, _, _, pb, _, _, _) = e
+  val s = Em.sOf(e)
+  if i < nc then Em.sub(e, Tp.poolAt(s, a + i)) == Tp.poolAt(s, pb + i) && Em.siteSame(e, a, i + 1, nc) else true
+
+def Em.paramTy(e: Em.E, sym: I64, i: I64): I64 =
+  val s = Em.sOf(e)
+  val start = Tp.sigAt(s, sym, 1)
+  Em.sub(e, Tp.poolAt(s, start + i))
+
+def Em.tmps(e: Em.E, r: I64, sym: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    Em.cty(e, Em.paramTy(e, sym, i))
+    Em.po(e," t")
+    Em.pi(e,i)
+    Em.po(e," = ")
+    Em.expr(e, Na.item(g, r, i), false)
+    Em.po(e,"; ")
+    Em.tmps(e, r, sym, i + 1)
+  else ()
+
+def Em.assigns(e: Em.E, r: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  val Em.E(_, _, _, _, _, _, pr, _) = e
+  if i < Na.len(g, r) then
+    Em.binder(e, Na.tok(g, Na.item(g, pr, i)))
+    Em.po(e," = t")
+    Em.pi(e,i)
+    Em.po(e,"; ")
+    Em.assigns(e, r, i + 1)
+  else ()
+
+def Em.tailCall(e: Em.E, n: I64, sym: I64): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val r = Na.b(g, n)
+  Em.po(e,"({ ")
+  Em.tmps(e, r, sym, 0)
+  Em.assigns(e, r, 0)
+  Em.po(e,"goto srs_tail; (")
+  Em.cty(e, Em.sub(e, Tp.sigAt(s, sym, 0)))
+  Em.po(e,"){0}; })")
+
+def Em.callG(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val w = Em.wOf(e)
+  val Em.E(_, k, _, ntp, _, own, _, _) = e
+  val sym = Em.ce(e, n)
+  val cls = Em.kget(k, sym)
+  val gen = Tp.sigAt(s, sym, 3) > 0 && Em.ax(e, n) > 0
+  val same = !gen || Em.siteSame(e, Tp.mxGet(s, Tp.moSite(Em.ax(e, n) - 1, 2)) - 1, 0, Tp.mxGet(s, Tp.moSite(Em.ax(e, n) - 1, 3)))
+  if tail && sym == own && same && Na.len(g, Na.b(g, n)) == Tp.sigAt(s, sym, 2) then Em.tailCall(e, n, sym)
+  else if cls == 1 && Tp.sigAt(s, sym, 3) > 0 then
+    // a generic extern is one C symbol with void* slots
+    Em.po(e,"((")
+    Em.cty(e, Em.tyS(e, n))
+    Em.po(e,")")
+    Em.id(e,sym)
+    Em.po(e,"(")
+    Em.vargs(e, Na.b(g, n), 0)
+    Em.po(e,"))")
+  else
+    if gen then Em.instNm(e, sym, Em.ax(e, n) - 1)
+    else if cls == 0 then
+      Em.po(e,"f_")
+      Em.id(e,sym)
+    else Em.id(e,sym)
+    Em.po(e,"(")
+    Em.args(e, Na.b(g, n), 0, false)
+    Em.po(e,")")
+
+// the handler of the capability that owns the op symbol sg: the handle table of main
+def Em.hfind(e: Em.E, sg: I64, i: I64): I64 =
+  val k = Em.kOf(e)
+  if i < Em.hget(k, 0) then
+    if Em.capOwns(Em.wOf(e), Em.hget(k, 16 + 2 * i), sg) then Em.hget(k, 17 + 2 * i) else Em.hfind(e, sg, i + 1)
+  else 0
+
+// recv = the use token of the handle the op is called on (a method call), -1 for a plain request
+def Em.capCall(e: Em.E, n: I64, r: I64, recv: I64): Unit =
+  val g = Em.gOf(e)
+  val w = Em.wOf(e)
+  val sg = Em.ce(e, n)
+  val h = Em.hfind(e, sg, 0)
+  if h == 0 then
+    // no handle in the program reaches this op: the C is never run (named: hc 11 noHandler)
+    Em.hinc(Em.kOf(e), 11)
+    Em.po(e,"(abort(), (")
+    Em.cty(e, Em.tyS(e, n))
+    Em.po(e,"){0})")
+  else
+    // an explicit drop op on a handle ends it: its live flag (per activation, named by the binder token of the handle) goes down
+    val ends = Em.isDrop(Em.kOf(e), sg, 0) && recv >= 0
+    if ends then
+      Em.po(e,"(hl_")
+      Em.pi(e,Tp.useRef(Em.xOf(e), recv))
+      Em.po(e," = 0, ")
+    else ()
+    Em.po(e,"h_")
+    Em.id(e,h)
+    Em.po(e,"_")
+    Em.symTail(e, w,sg, Em.lastDot(w, sg, 0, 0 - 1) + 1)
+    Em.po(e,"(hs_")
+    Em.id(e,h)
+    Em.args(e, r, 0, true)
+    Em.po(e,")")
+    if ends then Em.po(e,")") else ()
+
+// ── builtins (Array, Cell): the length index is no part of the C type: an array is a pointer to its elements ──
+def Em.arg(e: Em.E, n: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  Em.po(e,"(")
+  Em.expr(e, Na.item(g, Na.b(g, n), i), false)
+  Em.po(e,")")
+
+def Em.elemC(e: Em.E, n: I64): Unit =
+  val s = Em.sOf(e)
+  Em.cty(e, Tp.arg(s, Em.tyS(e, n), 0))
+
+def Em.nid(e: Em.E, n: I64): Unit =
+  Em.pi(e,n)
+
+def Em.builtin(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val nm = Na.text(g, Na.tok(g, n))
+  if Str.eq(nm, "Array.fill") then
+    Em.po(e,"({ int64_t n")
+    Em.nid(e, n)
+    Em.po(e," = ")
+    Em.arg(e, n, 0)
+    Em.po(e,"; ")
+    Em.elemC(e, n)
+    Em.po(e,"* a")
+    Em.nid(e, n)
+    Em.po(e," = (")
+    Em.elemC(e, n)
+    Em.po(e,"*)srs_alloc(n")
+    Em.nid(e, n)
+    Em.po(e," * (int64_t)sizeof(")
+    Em.elemC(e, n)
+    Em.po(e,")); ")
+    Em.elemC(e, n)
+    Em.po(e," x")
+    Em.nid(e, n)
+    Em.po(e," = ")
+    Em.arg(e, n, 1)
+    Em.po(e,"; for (int64_t i")
+    Em.nid(e, n)
+    Em.po(e," = 0; i")
+    Em.nid(e, n)
+    Em.po(e," < n")
+    Em.nid(e, n)
+    Em.po(e,"; i")
+    Em.nid(e, n)
+    Em.po(e,"++) a")
+    Em.nid(e, n)
+    Em.po(e,"[i")
+    Em.nid(e, n)
+    Em.po(e,"] = x")
+    Em.nid(e, n)
+    Em.po(e,"; a")
+    Em.nid(e, n)
+    Em.po(e,"; })")
+  else if Str.eq(nm, "ACell.load") then
+    Em.po(e,"__atomic_load_n(")
+    Em.arg(e, n, 0)
+    Em.po(e,", __ATOMIC_SEQ_CST)")
+  else if Str.eq(nm, "ACell.store") then
+    Em.po(e,"(__atomic_store_n(")
+    Em.arg(e, n, 0)
+    Em.po(e,", ")
+    Em.arg(e, n, 1)
+    Em.po(e,", __ATOMIC_SEQ_CST), ((int64_t)0))")
+  else if Str.eq(nm, "ACell.fetchAdd") then
+    Em.po(e,"__atomic_fetch_add(")
+    Em.arg(e, n, 0)
+    Em.po(e,", ")
+    Em.arg(e, n, 1)
+    Em.po(e,", __ATOMIC_SEQ_CST)")
+  else if Str.eq(nm, "ACell.cas") || Str.eq(nm, "Array.cas") then
+    val ar = Str.eq(nm, "Array.cas")
+    Em.po(e,"({ ")
+    Em.cty(e, Tp.arg(Em.sOf(e), Em.tyS(e, Na.item(g, Na.b(g, n), 0)), 0))
+    Em.po(e," x")
+    Em.nid(e, n)
+    Em.po(e," = ")
+    Em.arg(e, n, if ar then 2 else 1)
+    Em.po(e,"; __atomic_compare_exchange_n(")
+    if ar then Em.po(e,"&") else ()
+    Em.arg(e, n, 0)
+    if ar then
+      Em.po(e,"[")
+      Em.arg(e, n, 1)
+      Em.po(e,"]")
+    else ()
+    Em.po(e,", &x")
+    Em.nid(e, n)
+    Em.po(e,", ")
+    Em.arg(e, n, if ar then 3 else 2)
+    Em.po(e,", false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); })")
+  else if Str.eq(nm, "Array.aload") || Str.eq(nm, "Array.fetchAdd") then
+    Em.po(e,if Str.eq(nm, "Array.aload") then "__atomic_load_n(&" else "__atomic_fetch_add(&")
+    Em.arg(e, n, 0)
+    Em.po(e,"[")
+    Em.arg(e, n, 1)
+    Em.po(e,"]")
+    if Str.eq(nm, "Array.aload") then Em.po(e,", __ATOMIC_SEQ_CST)")
+    else
+      Em.po(e,", ")
+      Em.arg(e, n, 2)
+      Em.po(e,", __ATOMIC_SEQ_CST)")
+  else if Str.eq(nm, "Array.astore") then
+    Em.po(e,"(__atomic_store_n(&")
+    Em.arg(e, n, 0)
+    Em.po(e,"[")
+    Em.arg(e, n, 1)
+    Em.po(e,"], ")
+    Em.arg(e, n, 2)
+    Em.po(e,", __ATOMIC_SEQ_CST), ((int64_t)0))")
+  else if Str.eq(nm, "Array.put") then
+    Em.po(e,"(")
+    Em.arg(e, n, 0)
+    Em.po(e,"[")
+    Em.arg(e, n, 1)
+    Em.po(e,"] = ")
+    Em.arg(e, n, 2)
+    Em.po(e,", ((int64_t)0))")
+  else if Str.eq(nm, "Array.slice") then
+    Em.po(e,"(")
+    Em.arg(e, n, 0)
+    Em.po(e," + ")
+    Em.arg(e, n, 1)
+    Em.po(e,")")
+  else if Str.eq(nm, "Array.blit") then
+    Em.po(e,"(Array__blit(")
+    Em.arg(e, n, 0)
+    Em.po(e," + ")
+    Em.arg(e, n, 1)
+    Em.po(e,", ")
+    Em.arg(e, n, 2)
+    Em.po(e,", ")
+    Em.arg(e, n, 3)
+    Em.po(e,"), ((int64_t)0))")
+  else if Str.eq(nm, "Cell.new") || Str.eq(nm, "ACell.new") then
+    Em.po(e,"({ ")
+    Em.elemC(e, n)
+    Em.po(e,"* c")
+    Em.nid(e, n)
+    Em.po(e," = (")
+    Em.elemC(e, n)
+    Em.po(e,"*)srs_alloc((int64_t)sizeof(")
+    Em.elemC(e, n)
+    Em.po(e,")); *c")
+    Em.nid(e, n)
+    Em.po(e," = ")
+    Em.arg(e, n, 0)
+    Em.po(e,"; c")
+    Em.nid(e, n)
+    Em.po(e,"; })")
+  else if Str.eq(nm, "Cell.get") then
+    Em.po(e,"(*")
+    Em.arg(e, n, 0)
+    Em.po(e,")")
+  else if Str.eq(nm, "Cell.put") then
+    Em.po(e,"(*")
+    Em.arg(e, n, 0)
+    Em.po(e," = ")
+    Em.arg(e, n, 1)
+    Em.po(e,", ((int64_t)0))")
+  else Em.unsup(e, 61)
+
+def Em.call(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val uk = Tp.useKind(Em.xOf(e), Na.tok(g, n))
+  if uk == Nm.kGlobal() then Em.callG(e, n, tail)
+  else if uk == Nm.kCase() then Em.ctor(e, n)
+  else if uk == Nm.kCap() then Em.capCall(e, n, Na.b(g, n), 0 - 1)
+  else if uk == Nm.kBuiltin() then Em.builtin(e, n)
+  else if uk == Nm.kLocal() then
+    Em.local(e, Na.tok(g, n))
+    Em.po(e,"[")
+    Em.expr(e, Na.item(g, Na.b(g, n), 0), false)
+    Em.po(e,"]")
+  else Em.unsup(e, 60)
+
+// ── operators ──
+def Em.opStr(c: I64): Str =
+  if c == Kc.plus() then "+"
+  else if c == Kc.minus() then "-"
+  else if c == Kc.star() then "*"
+  else if c == Kc.slash() then "/"
+  else if c == Kc.pct() then "%"
+  else if c == Kc.caret() then "^"
+  else if c == Kc.amp() then "&"
+  else if c == Kc.bar() then "|"
+  else if c == Kc.andand() then "&&"
+  else if c == Kc.oror() then "||"
+  else if c == Kc.eqeq() then "=="
+  else if c == Kc.ne() then "!="
+  else if c == Kc.le() then "<="
+  else if c == Kc.ge() then ">="
+  else if c == Kc.lt() || c == Kc.ltg() then "<"
+  else if c == Kc.gt() then ">"
+  else "?op"
+
+def Em.bin(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val c = Tp.clsTok(g, Na.tok(g, n))
+  val l = Na.a(g, n)
+  val r = Na.b(g, n)
+  Em.po(e,"(")
+  Em.expr(e, l, false)
+  if c == Kc.shl() || c == Kc.shr() then
+    Em.po(e,if c == Kc.shl() then " << (" else " >> (")
+    Em.expr(e, r, false)
+    val tl = Em.tyS(e, l)
+    Em.po(e,if Tp.kind(s, tl) == Tp.bBuiltin() && Tp.cls(s, tl) == 5 then " & 31))" else " & 63))")
+  else
+    Em.po(e," ")
+    Em.po(e,Em.opStr(c))
+    Em.po(e," ")
+    Em.expr(e, r, false)
+    Em.po(e,")")
+
+def Em.un(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val c = Tp.clsTok(g, Na.tok(g, n))
+  val a = Na.a(g, n)
+  if c == Kc.minus() && Na.kd(g, a) == Na.kInt() && Str.eq(Na.text(g, Na.tok(g, a)), "9223372036854775808") then Em.po(e,"(-9223372036854775807 - 1)")
+  else
+    Em.po(e,if c == Kc.bang() then "(!" else if c == Kc.tilde() then "(~" else "(-")
+    Em.expr(e, a, false)
+    Em.po(e,")")
+
+def Em.name(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  val j = Na.tok(g, n)
+  val uk = Tp.useKind(Em.xOf(e), j)
+  if uk == Nm.kLocal() then Em.local(e, j)
+  else if uk == Nm.kCase() then Em.nullary(e, n)
+  else if uk == Nm.kBuiltin() then Em.po(e,Na.text(g, j))
+  else if uk == Nm.kGlobal() && Em.kget(Em.kOf(e), Em.ce(e, n)) == 4 then
+    Em.po(e,"((")
+    Em.cty(e, Em.tyS(e, n))
+    Em.po(e,")")
+    Em.id(e,Em.ce(e, n))
+    Em.po(e,")")
+  else Em.unsup(e, Na.kName())
+
+// ── control ──
+def Em.ifx(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val pair = Na.b(g, n)
+  Em.po(e,"(")
+  Em.expr(e, Na.a(g, n), false)
+  Em.po(e," ? ")
+  Em.expr(e, Na.a(g, pair), tail)
+  Em.po(e," : ")
+  Em.expr(e, Na.b(g, pair), tail)
+  Em.po(e,")")
+
+def Em.whilex(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  Em.po(e,"({ while (")
+  Em.expr(e, Na.a(g, n), false)
+  Em.po(e,") { (void)(")
+  Em.expr(e, Na.b(g, n), false)
+  Em.po(e,"); } ((int64_t)0); })")
+
+def Em.assign(e: Em.E, n: I64): Unit =
+  val g = Em.gOf(e)
+  Em.po(e,"(")
+  Em.local(e, Na.tok(g, n))
+  Em.po(e," = (")
+  Em.expr(e, Na.a(g, n), false)
+  Em.po(e,"), ((int64_t)0))")
+
+// the binders of a pattern: field i of the case of node pat, read from the scrutinee temp s<sv>
+def Em.binds(e: Em.E, pat: I64, names: I64, i: I64, sv: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, names) then
+    Em.cty(e, Em.fieldTy(e, Em.ce(e, pat), Em.tyS(e, pat), i))
+    Em.po(e," ")
+    Em.binder(e, Na.item(g, names, i))
+    Em.po(e," = s")
+    Em.pi(e,sv)
+    Em.po(e,"->u.C_")
+    Em.id(e,Em.ce(e, pat))
+    Em.po(e,".f")
+    Em.pi(e,i)
+    Em.po(e,"; ")
+    Em.binds(e, pat, names, i + 1, sv)
+  else ()
+
+def Em.armBody(e: Em.E, arm: I64, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val p = Na.a(g, arm)
+  Em.po(e,"({ ")
+  if Na.kd(g, p) == Na.kPCase() then Em.binds(e, p, Na.a(g, p), 0, n) else ()
+  Em.expr(e, Na.b(g, arm), tail)
+  Em.po(e,"; })")
+
+def Em.arms(e: Em.E, r: I64, i: I64, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    val arm = Na.item(g, r, i)
+    val p = Na.a(g, arm)
+    if Na.kd(g, p) == Na.kPAny() || i + 1 == Na.len(g, r) then Em.armBody(e, arm, n, tail)
+    else
+      Em.po(e,"(s")
+      Em.pi(e,n)
+      Em.po(e,"->tag == ")
+      Em.pi(e,Em.ax(e, p) - 1)
+      Em.po(e,") ? ")
+      Em.armBody(e, arm, n, tail)
+      Em.po(e," : ")
+      Em.arms(e, r, i + 1, n, tail)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Em.over(Em.kOf(e))
+    Em.po(e,"((int64_t)0)")
+
+def Em.matchx(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val sc = Na.a(g, n)
+  Em.po(e,"({ ")
+  Em.cty(e, Em.tyS(e, sc))
+  Em.po(e," s")
+  Em.pi(e,n)
+  Em.po(e," = ")
+  Em.expr(e, sc, false)
+  Em.po(e,"; ")
+  Em.arms(e, Na.b(g, n), 0, n, tail)
+  Em.po(e,"; })")
+
+// ── statements and blocks ──
+def Em.stmt(e: Em.E, st: I64, last: Bool, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val w = Em.wOf(e)
+  val s = Em.sOf(e)
+  val k = Na.kd(g, st)
+  if k == Na.kVal() || k == Na.kVar() then
+    Em.cty(e, Em.tyS(e, st))
+    Em.po(e," ")
+    Em.binder(e, Na.tok(g, st))
+    Em.po(e," = ")
+    Em.expr(e, Na.b(g, st), false)
+    Em.po(e,"; ")
+    if last then Em.po(e,"((int64_t)0); ") else ()
+  else if k == Na.kPatVal() then
+    Em.cty(e, Em.tyS(e, st))
+    Em.po(e," s")
+    Em.pi(e,st)
+    Em.po(e," = ")
+    Em.expr(e, Na.b(g, st), false)
+    Em.po(e,"; ")
+    Em.binds(e, st, Na.a(g, st), 0, st)
+    if last then Em.po(e,"((int64_t)0); ") else ()
+  else if k == Na.kHandle() then
+    val hs = Em.ce(e, st)
+    // the state of an outer handle of the same handler is kept in hv_ and put back at the end of the block
+    Em.po(e,"void* hv_")
+    Em.pi(e,Na.tok(g, st))
+    Em.po(e," = hs_")
+    Em.id(e,hs)
+    Em.po(e,"; hs_")
+    Em.id(e,hs)
+    Em.po(e," = ")
+    if Tp.sigAt(s, hs, 0) != 0 then
+      Em.po(e,"h_")
+      Em.id(e,hs)
+      Em.po(e,"_init(")
+      Em.args(e, Na.b(g, st), 0, false)
+      Em.po(e,")")
+    else Em.po(e,"((void*)0)")
+    Em.po(e,"; int hl_")
+    Em.pi(e,Na.tok(g, st))
+    Em.po(e," = 1; ")
+    if last then Em.po(e,"((int64_t)0); ") else ()
+  else if k == Na.kCheck() then
+    if last then Em.po(e,"((int64_t)0); ") else ()
+  else if k == Na.kDo() then
+    if last then
+      Em.expr(e, Na.a(g, st), tail)
+      Em.po(e,"; ")
+    else
+      Em.po(e,"(void)(")
+      Em.expr(e, Na.a(g, st), false)
+      Em.po(e,"); ")
+  else if last then
+    Em.expr(e, st, tail)
+    Em.po(e,"; ")
+  else
+    Em.po(e,"(void)(")
+    Em.expr(e, st, false)
+    Em.po(e,"); ")
+
+def Em.stmts(e: Em.E, r: I64, i: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    Em.stmt(e, Na.item(g, r, i), i + 1 == Na.len(g, r), tail)
+    Em.stmts(e, r, i + 1, tail)
+  else ()
+
+// a statement that binds and has no value
+def Em.isBinder(k: I64): Bool = k == Na.kVal() || k == Na.kVar() || k == Na.kPatVal() || k == Na.kHandle() || k == Na.kCheck()
+
+def Em.hasHandle(g: Na.G, r: I64, i: I64): Bool =
+  if i < Na.len(g, r) then Na.kd(g, Na.item(g, r, i)) == Na.kHandle() || Em.hasHandle(g, r, i + 1) else false
+
+def Em.stmtsTo(e: Em.E, r: I64, i: I64, end: I64): Unit =
+  if i < end then
+    Em.stmt(e, Na.item(Em.gOf(e), r, i), false, false)
+    Em.stmtsTo(e, r, i + 1, end)
+  else ()
+
+// the drop op of every handle of the block, in reverse order, behind its live flag
+def Em.drops(e: Em.E, r: I64, i: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, r) then
+    Em.drops(e, r, i + 1)
+    val st = Na.item(g, r, i)
+    if Na.kd(g, st) == Na.kHandle() then
+      val w = Em.wOf(e)
+      val dsym = Em.dropOf(Em.kOf(e), Tp.head(Em.sOf(e), Em.ty(e, st)), 0)
+      val h = Em.ce(e, st)
+      val tk = Na.tok(g, st)
+      if dsym != 0 then
+        Em.po(e,"if (hl_")
+        Em.pi(e,tk)
+        Em.po(e,") { hl_")
+        Em.pi(e,tk)
+        Em.po(e," = 0; h_")
+        Em.id(e,h)
+        Em.po(e,"_")
+        Em.symTail(e, w,dsym, Em.lastDot(w, dsym, 0, 0 - 1) + 1)
+        Em.po(e,"(hs_")
+        Em.id(e,h)
+        Em.po(e,"); } ")
+      else ()
+      Em.po(e,"hs_")
+      Em.id(e,h)
+      Em.po(e," = hv_")
+      Em.pi(e,tk)
+      Em.po(e,"; ")
+    else ()
+  else ()
+
+// a block that handles capabilities ends with their drops: its value is kept in a temp across them
+def Em.blockH(e: Em.E, n: I64, r: I64): Unit =
+  val g = Em.gOf(e)
+  val len = Na.len(g, r)
+  val last = Na.item(g, r, len - 1)
+  Em.po(e,"({ ")
+  if Em.isBinder(Na.kd(g, last)) then
+    Em.stmtsTo(e, r, 0, len)
+    Em.drops(e, r, 0)
+    Em.po(e,"((int64_t)0); })")
+  else
+    Em.stmtsTo(e, r, 0, len - 1)
+    Em.cty(e, Em.tyS(e, n))
+    Em.po(e," res")
+    Em.pi(e,n)
+    Em.po(e," = ")
+    Em.expr(e, if Na.kd(g, last) == Na.kDo() then Na.a(g, last) else last, false)
+    Em.po(e,"; ")
+    Em.drops(e, r, 0)
+    Em.po(e,"res")
+    Em.pi(e,n)
+    Em.po(e,"; })")
+
+def Em.block(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val r = Na.a(g, n)
+  if Na.len(g, r) == 0 then Em.po(e,"((int64_t)0)")
+  else if Em.hasHandle(g, r, 0) then Em.blockH(e, n, r)
+  else
+    Em.po(e,"({ ")
+    Em.stmts(e, r, 0, tail)
+    Em.po(e,"})")
+
+def Em.expr(e: Em.E, n: I64, tail: Bool): Unit =
+  val g = Em.gOf(e)
+  val k = Na.kd(g, n)
+  if k == Na.kInt() || k == Na.kChar() then Em.lit(e, n)
+  else if k == Na.kStr() then Em.str(e, n)
+  else if k == Na.kUnit() then Em.po(e,"((int64_t)0)")
+  else if k == Na.kParen() then
+    Em.po(e,"(")
+    Em.expr(e, Na.a(g, n), tail)
+    Em.po(e,")")
+  else if k == Na.kName() then Em.name(e, n)
+  else if k == Na.kCall() then Em.call(e, n, tail)
+  else if k == Na.kMethod() then Em.capCall(e, n, Na.b(g, n), Na.tok(g, n))
+  else if k == Na.kBin() then Em.bin(e, n)
+  else if k == Na.kUn() then Em.un(e, n)
+  else if k == Na.kIf() || k == Na.kIfNl() then Em.ifx(e, n, tail)
+  else if k == Na.kMatch() then Em.matchx(e, n, tail)
+  else if k == Na.kBlock() then Em.block(e, n, tail)
+  else if k == Na.kWhile() then Em.whilex(e, n)
+  else if k == Na.kAssign() then Em.assign(e, n)
+  else if k == Na.kResume() then Em.resume(e, n, tail)
+  else Em.unsup(e, k)
+
+// ── defs: prototypes and bodies ──
+// `(T v_x_J, ...)` of the params list pr of a def; the types come from the signature of sym (substituted), the names from the binders
+def Em.params(e: Em.E, pr: I64, sym: I64, i: I64, n: I64): Unit =
+  val g = Em.gOf(e)
+  if i < n then
+    if i > 0 then Em.po(e,", ") else ()
+    Em.cty(e, Em.paramTy(e, sym, i))
+    Em.po(e," ")
+    Em.binder(e, Na.tok(g, Na.item(g, pr, i)))
+    Em.params(e, pr, sym, i + 1, n)
+  else ()
+
+// `static R name(params)`; inst >= 0: the name of instance inst of the def
+def Em.head(e: Em.E, root: I64, sym: I64, inst: I64): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val pr = Na.a(g, Tp.part(g, Na.b(g, root), 0, Na.kParams()))
+  val n = Tp.sigAt(s, sym, 2)
+  Em.po(e,"static ")
+  Em.cty(e, Em.sub(e, Tp.sigAt(s, sym, 0)))
+  Em.po(e," ")
+  if inst >= 0 then Tp.instName(Em.wOf(e), s, inst)
+  else
+    Em.po(e,"f_")
+    Em.id(e,sym)
+  Em.po(e,"(")
+  if n == 0 then Em.po(e,"void") else Em.params(e, pr, sym, 0, n)
+  Em.po(e,")")
+
+def Em.body(e: Em.E, root: I64, main: Bool): Unit =
+  val g = Em.gOf(e)
+  val s = Em.sOf(e)
+  val b = Tp.part(g, Na.b(g, root), 0, Na.kBody())
+  Em.po(e," { srs_tail: return ")
+  Em.expr(e, Na.a(g, b), true)
+  Em.po(e,"; }\n")
+
+// the env of a def of file context x, instance inst (or -1): the substitution of the instance, the own symbol, the params list
+def Em.envOf(x: Tp.X, k: Em.K, base: I64, root: I64, sym: I64, inst: I64): Em.E =
+  val Tp.X(_, g, s, _, _, _) = x
+  val pr = Na.a(g, Tp.part(g, Na.b(g, root), 0, Na.kParams()))
+  val start = Tp.sigAt(s, sym, 1)
+  val tp0 = start + Tp.sigAt(s, sym, 2)
+  if inst >= 0 then Em.E(x, k, tp0, Tp.sigAt(s, sym, 3), Tp.mxGet(s, Tp.moInst(s, inst, 1)) - 1, sym, pr, base)
+  else Em.E(x, k, tp0, 0, 0, sym, pr, base)
+
+// the instances of the def sym (chain c): prototype (ph 2) or body (ph 3)
+def Em.insts(x: Tp.X, k: Em.K, base: I64, root: I64, sym: I64, c: I64, ph: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  if c > 0 then
+    val e = Em.envOf(x, k, base, root, sym, c - 1)
+    Em.head(e, root, sym, c - 1)
+    if ph == 2 then Em.po(e,";\n")
+    else
+      Em.body(e, root, false)
+      Em.hinc(k, 4)
+    Em.insts(x, k, base, root, sym, Tp.mxGet(s, Tp.moInst(s, c - 1, 3)), ph)
+  else ()
+
+def Em.defRoot(x: Tp.X, k: Em.K, base: I64, root: I64, ph: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  val sym = Tp.symOf(x, Na.a(g, root))
+  val hasBody = Tp.part(g, Na.b(g, root), 0, Na.kBody()) != 0
+  if Tp.sigAt(s, sym, 0) == 0 then Em.hinc(k, 7)
+  else if Tp.sigAt(s, sym, 3) > 0 then
+    Em.insts(x, k, base, root, sym, Tp.mxGet(s, Tp.moIhd(s, sym)), ph)
+  else
+    val e = Em.envOf(x, k, base, root, sym, 0 - 1)
+    Em.head(e, root, sym, 0 - 1)
+    if ph == 2 then Em.po(e,";\n")
+    else
+      Em.body(e, root, false)
+      Em.hinc(k, 3)
+
+// ── handlers ──
+def Em.hsName(e: Em.E, hsym: I64, op: I64): Unit =
+  val g = Em.gOf(e)
+  Em.po(e,"h_")
+  Em.id(e,hsym)
+  Em.po(e,"_")
+  Em.po(e,Na.text(g, op))
+
+// the params of a handler fn: `void* v_self_J` unless the fn names its own self
+// (an untyped binder is the continuation k of a resuming op: no C param)
+def Em.hparams(e: Em.E, pr: I64, i: I64, cnt: I64): Unit =
+  val g = Em.gOf(e)
+  if i < Na.len(g, pr) then
+    val b = Na.item(g, pr, i)
+    if Em.ty(e, b) == 0 then Em.hparams(e, pr, i + 1, cnt)
+    else
+      if cnt > 0 then Em.po(e,", ") else ()
+      Em.cty(e, Em.tyS(e, b))
+      Em.po(e," ")
+      Em.binder(e, Na.tok(g, b))
+      Em.hparams(e, pr, i + 1, cnt + 1)
+  else ()
+
+def Em.ntyped(e: Em.E, pr: I64, i: I64): I64 =
+  if i < Na.len(Em.gOf(e), pr) then Em.ntyped(e, pr, i + 1) + (if Em.ty(e, Na.item(Em.gOf(e), pr, i)) == 0 then 0 else 1) else 0
+
+// a resume k(v) in tail position of an op body: the op returns v; anywhere else it is the named Diag unsupportedResume (hc 13)
+def Em.resume(e: Em.E, n: I64, tail: Bool): Unit =
+  if tail then
+    Em.po(e,"(")
+    Em.expr(e, Na.b(Em.gOf(e), n), false)
+    Em.po(e,")")
+  else
+    Em.hinc(Em.kOf(e), 13)
+    Em.po(e,"((int64_t)0)")
+
+def Em.hfn(x: Tp.X, k: Em.K, base: I64, hsym: I64, d: I64, ph: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  val parts = Na.b(g, d)
+  val b = Tp.part(g, parts, 0, Na.kBody())
+  val pr = Na.a(g, Tp.part(g, parts, 0, Na.kParams()))
+  val e = Em.E(x, k, 0, 0, 0, 0, pr, base)
+  val op = Na.a(g, d)
+  val self = Na.len(g, pr) > 0 && Str.eq(Na.text(g, Na.tok(g, Na.item(g, pr, 0))), "self")
+  val init = Str.eq(Na.text(g, op), "init")
+  if b == 0 then Em.hinc(k, 7)
+  else
+    Em.po(e,"static ")
+    Em.cty(e, Em.ty(e, Na.a(g, b)))
+    Em.po(e," ")
+    Em.hsName(e, hsym, op)
+    Em.po(e,"(")
+    if self || init then
+      if Em.ntyped(e, pr, 0) == 0 then Em.po(e,"void") else Em.hparams(e, pr, 0, 0)
+    else
+      Em.po(e,"void* p_self")
+      if Em.ntyped(e, pr, 0) > 0 then Em.po(e,", ") else ()
+      Em.hparams(e, pr, 0, 0)
+    Em.po(e,")")
+    if ph == 2 then Em.po(e,";\n")
+    else
+      Em.po(e," { return ")
+      Em.expr(e, Na.a(g, b), true)
+      Em.po(e,"; }\n")
+      Em.hinc(k, 5)
+
+def Em.hfns(x: Tp.X, k: Em.K, base: I64, root: I64, hsym: I64, i: I64, ph: I64): Unit =
+  val Tp.X(_, g, _, _, _, _) = x
+  val parts = Na.b(g, root)
+  if i < Na.len(g, parts) then
+    val d = Na.item(g, parts, i)
+    if Na.kd(g, d) == Na.kDef() then Em.hfn(x, k, base, hsym, d, ph) else ()
+    Em.hfns(x, k, base, root, hsym, i + 1, ph)
+  else ()
+
+// ── externs: the class table (ph 0) and the prototypes of the runtime ones (ph 2) ──
+def Em.externTys(e: Em.E, sym: I64, i: I64, n: I64): Unit =
+  if i < n then
+    if i > 0 then Em.po(e,", ") else ()
+    Em.cty(e, Em.paramTy(e, sym, i))
+    Em.externTys(e, sym, i + 1, n)
+  else ()
+
+def Em.voidTys(e: Em.E, n: I64, i: I64): Unit =
+  if i < n then
+    if i > 0 then Em.po(e, ", ") else ()
+    Em.po(e, "void*")
+    Em.voidTys(e, n, i + 1)
+  else ()
+
+def Em.externRoot(x: Tp.X, k: Em.K, base: I64, root: I64, ph: I64): Unit =
+  val Tp.X(w, g, s, _, _, _) = x
+  val inner = Na.b(g, root)
+  if Na.kd(g, inner) == Na.kDef() then
+    val sym = Tp.symOf(x, Na.a(g, inner))
+    if ph == 0 then Em.kset(k, sym, if Na.a(g, root) != 0 then 2 else if Em.isPrim(w, sym) then 3 else 1)
+    else if ph == 2 && Em.kget(k, sym) == 1 then
+      val e = Em.E(x, k, 0, 0, 0, 0, 0, base)
+      val gen = Tp.sigAt(s, sym, 3) > 0
+      if gen then Em.po(e,"void*") else Em.cty(e, Tp.sigAt(s, sym, 0))
+      Em.po(e," ")
+      Em.id(e,sym)
+      Em.po(e,"(")
+      if Tp.sigAt(s, sym, 2) == 0 then Em.po(e,"void")
+      else if gen then Em.voidTys(e, Tp.sigAt(s, sym, 2), 0)
+      else Em.externTys(e, sym, 0, Tp.sigAt(s, sym, 2))
+      Em.po(e,");\n")
+    else ()
+  else if Na.kd(g, inner) == Na.kCVal() && ph == 0 then Em.kset(k, Tp.symOf(x, Na.tok(g, inner)), 4)
+  else ()
+
+// ── enums: the struct of every closed instance of the enum root (ph 1: printed; ph 0: the closure only interns the field types) ──
+// the tag is the smallest unsigned int that holds the case count
+def Em.tagTy(n: I64): Str = if n <= 256 then "uint8_t" else if n <= 65536 then "uint16_t" else "uint32_t"
+
+def Em.caseFields(e: Em.E, sym: I64, et: I64, i: I64, np: I64, pr: Bool): Unit =
+  if i < np then
+    val t = Em.fieldTy(e, sym, et, i)
+    if pr then
+      Em.po(e," ")
+      Em.cty(e, t)
+      Em.po(e," f")
+      Em.pi(e,i)
+      Em.po(e,";")
+    else ()
+    Em.caseFields(e, sym, et, i + 1, np, pr)
+  else ()
+
+def Em.cases(e: Em.E, parts: I64, i: I64, et: I64, pr: Bool): Unit =
+  val g = Em.gOf(e)
+  val x = Em.xOf(e)
+  if i < Na.len(g, parts) then
+    val c = Na.item(g, parts, i)
+    val kd = Na.kd(g, c)
+    if kd == Na.kCase() || kd == Na.kCaseNP() then
+      val sym = Tp.symOf(x, Na.tok(g, c))
+      val np = Tp.sigAt(Em.sOf(e), sym, 2)
+      if np > 0 then
+        if pr then
+          Em.po(e," struct { ")
+          Em.po(e,Em.tagTy(Tp.caseCount(g, parts, 0, 0)))
+          Em.po(e," t_;")
+        else ()
+        Em.caseFields(e, sym, et, 0, np, pr)
+        if pr then
+          Em.po(e," } C_")
+          Em.id(e,sym)
+          Em.po(e,";")
+        else ()
+      else ()
+    else ()
+    Em.cases(e, parts, i + 1, et, pr)
+  else ()
+
+def Em.enumType(e: Em.E, root: I64, t: I64, pr: Bool): Unit =
+  val g = Em.gOf(e)
+  Em.etag(e, t)
+  if pr then
+    Em.po(e," { union { ")
+    Em.po(e,Em.tagTy(Tp.caseCount(g, Na.b(g, root), 0, 0)))
+    Em.po(e," tag; union {")
+  else ()
+  Em.cases(e, Na.b(g, root), 0, t, pr)
+  if pr then Em.po(e," uint8_t none_; } u; }; };\n") else ()
+
+// ── the enum index (PERF-3): the ids of kind enum below hc slot 130 (the type count at the last build), by head symbol, ascending, by a counting sort
+// in two flat arrays: xi holds the ids, list h is xi[xo(h), xo(h+1)) for h <= hc slot 131 (the largest enum head). Types interned after the build
+// (the closure passes) are found by the scan of [build count, count). A head with h + 2 >= kn is not indexed: its scan is the full one.
+def Em.xg(n: I64, xs: Array[U32](n), i: I64): I64 = if 0 <= i && i < n then I64.of(xs(i)) else 0
+
+def Em.xp(n: I64, xs: Array[U32](n), i: I64, v: I64): Unit = if 0 <= i && i < n then Array.put(xs, i, U32.of(v)) else ()
+
+def Em.ixCount(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), i: I64, n: I64, mx: I64): I64 =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Tp.bEnum() && 0 <= h && h + 2 < kn then
+      Em.xp(kn, xo, h + 2, Em.xg(kn, xo, h + 2) + 1)
+      Em.ixCount(tcap, tk, th, kn, xo, i + 1, n, if h > mx then h else mx)
+    else Em.ixCount(tcap, tk, th, kn, xo, i + 1, n, mx)
+  else mx
+
+def Em.ixPre(kn: I64, xo: Array[U32](kn), i: I64, n: I64): Unit =
+  if i <= n && 0 < i && i < kn then
+    Em.xp(kn, xo, i, Em.xg(kn, xo, i) + Em.xg(kn, xo, i - 1))
+    Em.ixPre(kn, xo, i + 1, n)
+  else ()
+
+def Em.ixFill(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), xn: I64, xi: Array[U32](xn), i: I64, n: I64): Unit =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Tp.bEnum() && 0 <= h && h + 2 < kn then
+      val p = Em.xg(kn, xo, h + 1)
+      Em.xp(xn, xi, p, i)
+      Em.xp(kn, xo, h + 1, p + 1)
+    else ()
+    Em.ixFill(tcap, tk, th, kn, xo, xn, xi, i + 1, n)
+  else ()
+
+def Em.ixClear(kn: I64, xo: Array[U32](kn), i: I64, n: I64): Unit =
+  if i <= n && 0 <= i && i < kn then
+    Em.xp(kn, xo, i, 0)
+    Em.ixClear(kn, xo, i + 1, n)
+  else ()
+
+def Em.ixBuild(s: Tp.S, k: Em.K): Unit =
+  val n = Tp.cget(s, Tp.cTypes())
+  if n == Em.hget(k, 130) then ()
+  else
+    val Tp.S(tt, _, _, _, _) = s
+    val Tp.Tt(tcap, tk, _, th, _, _) = tt
+    val Em.K(kn, _, _, _, xo, xn, xi) = k
+    Em.hinc(k, 136)
+    Em.ixClear(kn, xo, 0, Em.hget(k, 132))
+    val mx = Em.ixCount(tcap, tk, th, kn, xo, 1, n, 0)
+    Em.ixPre(kn, xo, 1, mx + 2)
+    Em.hset(k, 132, mx + 2)
+    // xi is an eighth of the type table: more enum ids than room = no index (the full scan answers), never a wrong list
+    if Em.xg(kn, xo, mx + 2) <= xn then
+      Em.ixFill(tcap, tk, th, kn, xo, xn, xi, 1, n)
+      Em.hset(k, 131, mx)
+      Em.hset(k, 130, n)
+    else
+      Em.hinc(k, 134)
+      Em.hset(k, 131, 0 - 1)
+      Em.hset(k, 130, 0)
+
+// the first position in xi[lo, hi) whose id is >= t, else hi
+def Em.ixLb(xn: I64, xi: Array[U32](xn), lo: I64, hi: I64, t: I64): I64 =
+  if lo < hi && 0 <= lo && hi <= xn then
+    val mid = (lo + hi) / 2
+    if Em.xg(xn, xi, mid) < t then Em.ixLb(xn, xi, mid + 1, hi, t) else Em.ixLb(xn, xi, lo, mid, t)
+  else lo
+
+// = Tp.nextEnum(s, esym, t), through the index
+def Em.nextEnum(s: Tp.S, k: Em.K, esym: I64, t: I64): I64 =
+  val Em.K(kn, _, _, _, xo, xn, xi) = k
+  val built = Em.hget(k, 130)
+  if 0 <= esym && esym + 2 < kn then
+    val tail = if t > built then t else built
+    if esym <= Em.hget(k, 131) then
+      val hi = Em.xg(kn, xo, esym + 1)
+      val p = Em.ixLb(xn, xi, Em.xg(kn, xo, esym), hi, t)
+      if p < hi && 0 <= p && p < xn then Em.xg(xn, xi, p) else Em.tailScan(s, k, esym, tail)
+    else Em.tailScan(s, k, esym, tail)
+  else
+    Em.hinc(k, 133)
+    Em.tailScan(s, k, esym, t)
+
+// the unindexed scan from `from` to the type count; counts the range it may walk (hc 135 = sum over all calls of the range size)
+def Em.tailScan(s: Tp.S, k: Em.K, esym: I64, from: I64): I64 =
+  val n = Tp.cget(s, Tp.cTypes())
+  if from < n then Em.hset(k, 135, Em.hget(k, 135) + (n - from)) else ()
+  Tp.nextEnum(s, esym, from)
+
+def Em.enumTypes(e: Em.E, root: I64, esym: I64, t: I64, pr: Bool): Unit =
+  val s = Em.sOf(e)
+  val Em.E(_, k, _, _, _, _, _, _) = e
+  val u = Em.nextEnum(s, k, esym, t)
+  if u < Tp.cget(s, Tp.cTypes()) then
+    if Tp.closedT(s, u) then
+      if pr then Em.enumType(e, root, u, true)
+      else
+        Em.cases(e, Na.b(Em.gOf(e), root), 0, u, false)
+    else ()
+    Em.enumTypes(e, root, esym, u + 1, pr)
+  else ()
+
+// ── the roots of a file, by phase: 0 tables + closure, 1 structs, 2 prototypes, 3 bodies ──
+def Em.roots(x: Tp.X, k: Em.K, f: Nm.F, base: I64, i: I64, prev: I64, ph: I64): Unit =
+  val Nm.F(_, g, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    val kb = I64.ofU8(rk(i))
+    if root == 0 then ()
+    else if kb == 0 then
+      if ph >= 2 && ph <= 3 then Em.defRoot(x, k, base, root, ph)
+      else if ph == 4 then Em.defClose(x, k, base, root, prev)
+      else if ph == 0 then
+        if Str.eq(Na.text(g, Na.a(g, root)), "main") then Em.hset(k, 6, 1) else ()
+        Em.scanMain(x, k, base, root)
+      else ()
+    else if kb == 4 then
+      if ph == 0 then Em.capDrops(x, k, root, 0) else ()
+    else if kb == 1 then
+      if ph == 0 then
+        val cc = Tp.caseCount(g, Na.b(g, root), 0, 0)
+        if cc > Em.hget(k, 10) then Em.hset(k, 10, cc) else ()
+      else if ph == 1 then Em.enumTypes(Em.E(x, k, 0, 0, 0, 0, 0, base), root, Tp.symOf(x, Na.a(g, root)), 1, true)
+      else if ph == 4 then Em.enumTypes(Em.E(x, k, 0, 0, 0, 0, 0, base), root, Tp.symOf(x, Na.a(g, root)), 1, false)
+      else ()
+    else if kb == 2 then Em.externRoot(x, k, base, root, ph)
+    else if kb == 3 then Em.handlerRoot(x, k, base, root, ph)
+    else ()
+    Em.roots(x, k, f, base, i + 1, if root == 0 then prev else root, ph)
+  else ()
+
+// the drop op of a capability (`drop free`): (capability symbol, op symbol) pairs at hc 100 + 2i, the count at hc 12
+def Em.capDrops(x: Tp.X, k: Em.K, root: I64, i: I64): Unit =
+  val Tp.X(w, g, _, _, _, _) = x
+  val parts = Na.b(g, root)
+  if i < Na.len(g, parts) then
+    val n = Na.item(g, parts, i)
+    if Na.kd(g, n) == Na.kDrop() then
+      val p = Na.a(g, root)
+      val o = Na.a(g, n)
+      val c = Em.hget(k, 12)
+      Em.hset(k, 100 + 2 * c, Tp.symOf(x, p))
+      Em.hset(k, 101 + 2 * c, Nm.sym(w, Nm.T(Nm.srcOf(g), Na.toff(g, p), Na.tlen(g, p), Nm.srcOf(g), Na.toff(g, o), Na.tlen(g, o)), false))
+      Em.hset(k, 12, c + 1)
+    else ()
+    Em.capDrops(x, k, root, i + 1)
+  else ()
+
+// the drop op symbol of capability cap, 0 when it has none
+def Em.dropOf(k: Em.K, cap: I64, i: I64): I64 =
+  if i < Em.hget(k, 12) then
+    if Em.hget(k, 100 + 2 * i) == cap then Em.hget(k, 101 + 2 * i) else Em.dropOf(k, cap, i + 1)
+  else 0
+
+// the op symbol sg is the drop op of some capability: calling it ends the handle
+def Em.isDrop(k: Em.K, sg: I64, i: I64): Bool =
+  if i < Em.hget(k, 12) then Em.hget(k, 101 + 2 * i) == sg || Em.isDrop(k, sg, i + 1) else false
+
+def Em.handlerRoot(x: Tp.X, k: Em.K, base: I64, root: I64, ph: I64): Unit =
+  val Tp.X(w, g, _, _, _, _) = x
+  val e = Em.E(x, k, 0, 0, 0, 0, 0, base)
+  val hsym = Tp.symOf(x, Na.a(g, root))
+  if ph == 2 then
+    Em.po(e,"static void* hs_")
+    Em.id(e,hsym)
+    Em.po(e,";\n")
+  else ()
+  if ph >= 2 && ph <= 3 then Em.hfns(x, k, base, root, hsym, 0, ph) else ()
+
+// ── the handles of main: the statements of its body block that are `handle` (the table of capability -> handler) ──
+def Em.scanStmts(x: Tp.X, k: Em.K, base: I64, r: I64, i: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  if i < Na.len(g, r) then
+    val st = Na.item(g, r, i)
+    if Na.kd(g, st) == Na.kHandle() then
+      val c = Em.hget(k, 0)
+      Em.hset(k, 16 + 2 * c, Tp.head(s, Tp.tyAt(s, base, st)))
+      Em.hset(k, 17 + 2 * c, Tp.mxGet(s, Tp.moCe(s, base + st)))
+      Em.hset(k, 0, c + 1)
+    else ()
+    Em.scanStmts(x, k, base, r, i + 1)
+  else ()
+
+def Em.scanMain(x: Tp.X, k: Em.K, base: I64, root: I64): Unit =
+  val Tp.X(_, g, _, _, _, _) = x
+  val b = Tp.part(g, Na.b(g, root), 0, Na.kBody())
+  if b != 0 && Na.kd(g, Na.a(g, b)) == Na.kBlock() then
+    Em.scanStmts(x, k, base, Na.a(g, Na.a(g, b)), 0)
+  else ()
+
+// ── the closure of the types of the generic instances (ph 4): every type a body of an instance mentions, substituted, is interned before the
+// structs are printed. The nodes of a def are the ids above the root of the decl before it (the parser makes a decl's nodes in order) ──
+def Em.instTys(e: Em.E, prev: I64, n: I64, root: I64): Unit =
+  if n <= root then
+    Em.sub(e, Em.ty(e, n))
+    Em.instTys(e, prev, n + 1, root)
+  else ()
+
+def Em.sigTys(e: Em.E, sym: I64, i: I64, n: I64): Unit =
+  if i < n then
+    Em.paramTy(e, sym, i)
+    Em.sigTys(e, sym, i + 1, n)
+  else ()
+
+def Em.instClose(x: Tp.X, k: Em.K, base: I64, root: I64, prev: I64, sym: I64, c: I64): Unit =
+  val Tp.X(_, _, s, _, _, _) = x
+  if c > 0 then
+    val e = Em.envOf(x, k, base, root, sym, c - 1)
+    Em.instTys(e, prev, prev + 1, root)
+    Em.sub(e, Tp.sigAt(s, sym, 0))
+    Em.sigTys(e, sym, 0, Tp.sigAt(s, sym, 2))
+    Em.instClose(x, k, base, root, prev, sym, Tp.mxGet(s, Tp.moInst(s, c - 1, 3)))
+  else ()
+
+def Em.defClose(x: Tp.X, k: Em.K, base: I64, root: I64, prev: I64): Unit =
+  val Tp.X(_, g, s, _, _, _) = x
+  val sym = Tp.symOf(x, Na.a(g, root))
+  if Tp.sigAt(s, sym, 3) > 0 && Tp.sigAt(s, sym, 0) != 0 then Em.instClose(x, k, base, root, prev, sym, Tp.mxGet(s, Tp.moIhd(s, sym)))
+  else ()
+
+def Em.files(w: Nm.W, s: Tp.S, k: Em.K, rs: Coll.List[Tp.R], fi: I64, ph: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Tp.R(f, rcap, rk, rf) = r
+    val Nm.F(_, g, _, _, _, _, _, _) = f
+    Em.roots(Tp.X(w, g, s, rcap, rk, rf), k, f, Tp.mxGet(s, Tp.moFb(s, fi)), 0, 0, ph)
+    Em.files(w, s, k, rest, fi + 1, ph)
+
+// the closure to a fixpoint: structs of the new types intern their field types, which may be new types
+def Em.close(w: Nm.W, s: Tp.S, k: Em.K, rs: Coll.List[Tp.R], pass: I64): Unit =
+  val before = Tp.cget(s, Tp.cTypes())
+  Em.ixBuild(s, k)
+  Em.files(w, s, k, rs, 0, 4)
+  Em.hinc(k, 8)
+  if Tp.cget(s, Tp.cTypes()) != before && pass < 16 then Em.close(w, s, k, rs, pass + 1) else ()
+
+def Em.nul(s: Tp.S, i: I64, n: I64): Unit =
+  if i < n then
+    if i > 0 then Tp.po(s, ",") else ()
+    Tp.pi(s, i)
+    Em.nul(s, i + 1, n)
+  else ()
+
+// srs_alloc is the alloc op of the first Region handler of main
+def Em.allocFn(w: Nm.W, s: Tp.S, k: Em.K, i: I64): Unit =
+  if i < Em.hget(k, 0) then
+    if Em.symIs(w, Em.hget(k, 16 + 2 * i), "Region") then
+      Tp.po(s, "static inline void* srs_alloc(int64_t n) { return h_")
+      Tp.id(s, w, Em.hget(k, 17 + 2 * i))
+      Tp.po(s, "_alloc(hs_")
+      Tp.id(s, w, Em.hget(k, 17 + 2 * i))
+      Tp.po(s, ", n); }\n")
+    else Em.allocFn(w, s, k, i + 1)
+  else Tp.po(s, "static inline void* srs_alloc(int64_t n) { (void)n; abort(); return 0; }\n")
+
+def Em.num(name: Str, v: I64): Unit =
+  Console.eprint(name)
+  Console.eprintI64(v)
+
+def Em.kindRows(k: Em.K, i: I64): Unit =
+  if i < 64 then
+    if Em.hget(k, 64 + i) > 0 then
+      Em.num(" nodekind", i)
+      Em.num("=", Em.hget(k, 64 + i))
+    else ()
+    Em.kindRows(k, i + 1)
+  else ()
+
+def Em.run(): I64 =
+  val fs = Nm.load(2)
+  val ntok = Nm.sumTok(fs, 0)
+  val w = Nm.world(ntok, Nm.sumBytes(fs, 0))
+  Nm.builtins(w)
+  Nm.btypes(w)
+  Nm.declFiles(w, fs, 0)
+  val s = Tp.store(ntok, Tp.sumNodes(fs, 0), Tp.maxNodes(fs, 0), Coll.length(fs))
+  Tp.fileBases(s, fs, 0, 0)
+  val rs = Tp.resolve(w, fs, 0)
+  Tp.aliases(w, s, rs, 0)
+  Tp.initTys(w, s)
+  Tp.cset(s, Tp.cMode(), 0)
+  Tp.headers(w, s, rs, false, 0)
+  Tp.bodies(w, s, rs, 0)
+  Tp.nodeFiles(w, s, fs, 0, false)
+  Tp.mono(s)
+  val bad = Tp.cget(s, Tp.cMis()) + Tp.cget(s, Tp.cHMis()) + Tp.cget(s, Tp.cAnn()) + Tp.cget(s, Tp.cNonEx()) + Tp.cget(s, Tp.cMissE()) + Tp.cget(s, Tp.cUnTot())
+  if bad > 0 || Coll.length(fs) < Args.count() - 2 then
+    Em.num("emit: phase A failed: mismatches=", Tp.cget(s, Tp.cMis()) + Tp.cget(s, Tp.cHMis()))
+    Em.num(" annotate=", Tp.cget(s, Tp.cAnn()))
+    Em.num(" nonexhaustive=", Tp.cget(s, Tp.cNonEx()))
+    Em.num(" missingEntry=", Tp.cget(s, Tp.cMissE()))
+    Em.num(" untyped=", Tp.cget(s, Tp.cUnTot()))
+    Console.eprint("\n")
+    1
+  else
+    val kn = Nm.cget(w, Nm.sSyms()) + 16
+    val hn = 160
+    val Tp.S(tt, _, _, _, _) = s
+    val Tp.Tt(tcap, _, _, _, _, _) = tt
+    val xcap = tcap / 8 + 16
+    val k = Em.K(kn, Array.fill(kn, U8.of(0)), hn, Array.fill(hn, 0), Array.fill(kn, U32.of(0)), xcap, Array.fill(xcap, U32.of(0)))
+    Em.files(w, s, k, rs, 0, 0)
+    Em.close(w, s, k, rs, 0)
+    val tclosed = Tp.cget(s, Tp.cTypes())
+    Em.preamble(s)
+    Tp.fwds(w, s, 1)
+    Em.ixBuild(s, k)
+    Em.files(w, s, k, rs, 0, 1)
+    Tp.po(s, "static const uint64_t srs_nul[")
+    Tp.pi(s, Em.hget(k, 10) + 1)
+    Tp.po(s, "] = {")
+    Em.nul(s, 0, Em.hget(k, 10) + 1)
+    Tp.po(s, "};\n")
+    Em.files(w, s, k, rs, 0, 2)
+    Em.allocFn(w, s, k, 0)
+    Em.preamble2(s)
+    Em.files(w, s, k, rs, 0, 3)
+    Tp.po(s, "int main(int argc, char** argv) { rt_init(argc, argv); return (int)f_main(); }\n")
+    Tp.pflush(s)
+    Em.num("emit: defs=", Em.hget(k, 3))
+    Em.num(" instances=", Em.hget(k, 4))
+    Em.num(" handlerfns=", Em.hget(k, 5))
+    Em.num(" handles=", Em.hget(k, 0))
+    Em.num(" noBodyDefs=", Em.hget(k, 7))
+    Em.num(" closurePasses=", Em.hget(k, 8))
+    Em.num(" lateTypes=", Tp.cget(s, Tp.cTypes()) - tclosed)
+    Em.num(" noHandlerCalls=", Em.hget(k, 11))
+    Em.num(" unsupportedResume=", Em.hget(k, 13))
+    Em.num(" unsupported=", Em.hget(k, 2))
+    Em.num(" overflow=", Em.hget(k, 1))
+    Em.num(" ixUnindexed=", Em.hget(k, 133))
+    Em.num(" ixOverflow=", Em.hget(k, 134))
+    Em.num(" ixTailRange=", Em.hget(k, 135))
+    Em.num(" ixBuilds=", Em.hget(k, 136))
+    Em.kindRows(k, 0)
+    Console.eprint("\n")
+    if Em.hget(k, 2) > 0 || Em.hget(k, 13) > 0 || Em.hget(k, 1) > 0 || Tp.cget(s, Tp.cTypes()) != tclosed || Em.hget(k, 6) == 0 then 1 else 0
