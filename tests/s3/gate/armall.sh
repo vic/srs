@@ -23,6 +23,8 @@ arm evidence 'evidence call f{x}\(' 'def f(x: I64): I64 = show{x}(x)'
 arm type 'type decl' 'type T = I64'
 arm val 'top-level val' 'val k = 1'
 arm multi 'multi handler shots' 'handler Foo for P multi:'
+arm resume 'resume >1 in one op body' '  def choose(k): I64 = resume k(true) + resume k(false)'
+arm twohandlers 'non-Region cap >1 handler \(for\)' $'handler P for Tally:\nhandler Q for Tally:\n  handle p = P()\n  handle q = Q()'
 arm facts '<facts> after params' 'def g(x: I64) <p>: I64 = x'
 arm noresult 'def without result type' 'def h(x: I64) = x'
 arm handleout 'handle outside entry files' HANDLEOUT

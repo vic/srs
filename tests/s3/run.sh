@@ -7,7 +7,7 @@ BIN=${1:-}
 [ -f s2/names.srs ] || { echo "run from the repo root"; exit 2; }
 pass=0; fail=0
 run() { # script [args]
-  out=$(timeout 120 bash "$@" 2>&1); code=$?
+  out=$(timeout ${RUN_T:-120} bash "$@" 2>&1); code=$?
   last=$(printf '%s\n' "$out" | tail -1)
   case "$last" in
     "PASS "*) if [ $code = 0 ]; then pass=$((pass+1)); echo "$last"; else fail=$((fail+1)); echo "FAIL $1 (PASS line with exit $code)"; fi;;
@@ -17,6 +17,9 @@ run() { # script [args]
 }
 for s in lex/oe lex/oab parse/pa parse/pb parse/pc parse/pd parse/neg parse/rt names/nbase names/nc names/nbp names/standing names/nt types/ta types/tb types/tm types/tx types/tc types/ty; do
   run tests/s3/$s.sh "$BIN"
+done
+for s in emit/ea emit/eb emit/ec emit/ed; do
+  RUN_T=900 run tests/s3/$s.sh "$BIN"
 done
 run tests/s3/gate/subset.sh
 run tests/s3/gate/armall.sh
