@@ -1,0 +1,285 @@
+// s3c PARSE-1a: the decl-level skeleton parser, in s2 (vic/c/s3c-front.md F4). It splits one file's token stream (the lexer's
+// Lx.Out) into top-level decls WITHOUT parsing bodies: a body stays a token range, the unit of per-def parallel work (X5).
+// Decl keywords and header shapes learned from s2/parse.srs Parse.decl (dispatch at s2/parse.srs:171-188, Ast.Decl s2/ast.srs:226-235):
+// def, extern (extern ["libc"] def | struct | val), enum, capability, handler, trait, given, type, val.
+// A decl starts at a col-0 code token (a token whose byte before is a newline, or at offset 0): a keyword gives its kind, any other
+// word gives kind Other plus an unknownDecl diag. It ends at the next col-0 code token or at the end of the tokens; the trailing
+// Nl, Dedent and Doc tokens belong to no decl (the next decl's lead-in). The header is the first logical line (head up to its Nl);
+// the body is the tokens after that Nl up to bodyHi, so a one-line def has an empty body (lo == hi).
+// SoA, U32 token ids, no Option in the nodes: a missing name is a missingName diag and the name slot holds the head token.
+
+// the closed decl classes (Proto is the s2 name of capability; kept for the F4 enum, no keyword gives it)
+enum Ps.Kind:
+  case Ps.Def
+  case Ps.Enum
+  case Ps.Extern
+  case Ps.Handler
+  case Ps.Capability
+  case Ps.Trait
+  case Ps.Type
+  case Ps.Val
+  case Ps.Given
+  case Ps.Proto
+  case Ps.Other
+
+enum Ps.Why:
+  case Ps.UnknownDecl
+  case Ps.UnbalancedLayout
+  case Ps.MissingName
+  case Ps.Overflow
+
+def Ps.kindByte(k: Ps.Kind): I64 = k match
+  case Ps.Def => 0
+  case Ps.Enum => 1
+  case Ps.Extern => 2
+  case Ps.Handler => 3
+  case Ps.Capability => 4
+  case Ps.Trait => 5
+  case Ps.Type => 6
+  case Ps.Val => 7
+  case Ps.Given => 8
+  case Ps.Proto => 9
+  case Ps.Other => 10
+
+def Ps.byteKind(c: I64): Coll.Option[Ps.Kind] =
+  if c == 0 then Coll.Some(Ps.Def)
+  else if c == 1 then Coll.Some(Ps.Enum)
+  else if c == 2 then Coll.Some(Ps.Extern)
+  else if c == 3 then Coll.Some(Ps.Handler)
+  else if c == 4 then Coll.Some(Ps.Capability)
+  else if c == 5 then Coll.Some(Ps.Trait)
+  else if c == 6 then Coll.Some(Ps.Type)
+  else if c == 7 then Coll.Some(Ps.Val)
+  else if c == 8 then Coll.Some(Ps.Given)
+  else if c == 9 then Coll.Some(Ps.Proto)
+  else if c == 10 then Coll.Some(Ps.Other)
+  else Coll.None
+
+def Ps.kindName(k: Ps.Kind): Str = k match
+  case Ps.Def => "def"
+  case Ps.Enum => "enum"
+  case Ps.Extern => "extern"
+  case Ps.Handler => "handler"
+  case Ps.Capability => "capability"
+  case Ps.Trait => "trait"
+  case Ps.Type => "type"
+  case Ps.Val => "val"
+  case Ps.Given => "given"
+  case Ps.Proto => "proto"
+  case Ps.Other => "other"
+
+def Ps.isOther(k: Ps.Kind): Bool = k match
+  case Ps.Other => true
+  case _ => false
+
+def Ps.isExtern(k: Ps.Kind): Bool = k match
+  case Ps.Extern => true
+  case _ => false
+
+def Ps.isDef(k: Ps.Kind): Bool = k match
+  case Ps.Def => true
+  case _ => false
+
+// token j is the one-byte operator `=`
+def Ps.isEqAt(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64): Bool =
+  if Ps.isKind(tcap, tk, t, j, Lx.KOp) && 0 <= j && j < tcap then
+    val o = I64.of(to(j))
+    I64.of(tl(j)) == 1 && Str.at(src, o) == 61
+  else false
+
+def Ps.whyByte(w: Ps.Why): I64 = w match
+  case Ps.UnknownDecl => 0
+  case Ps.UnbalancedLayout => 1
+  case Ps.MissingName => 2
+  case Ps.Overflow => 3
+
+def Ps.byteWhy(c: I64): Coll.Option[Ps.Why] =
+  if c == 0 then Coll.Some(Ps.UnknownDecl)
+  else if c == 1 then Coll.Some(Ps.UnbalancedLayout)
+  else if c == 2 then Coll.Some(Ps.MissingName)
+  else if c == 3 then Coll.Some(Ps.Overflow)
+  else Coll.None
+
+def Ps.whyName(w: Ps.Why): Str = w match
+  case Ps.UnknownDecl => "unknownDecl"
+  case Ps.UnbalancedLayout => "unbalancedLayout"
+  case Ps.MissingName => "missingName"
+  case Ps.Overflow => "overflow"
+
+// the result: decl columns (cap slots, c used) and diag columns (dcap slots, d used)
+enum Ps.Out:
+  case Ps.Out(cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64)
+
+// the keyword table (s2/parse.srs:171-188); a word outside it is no decl
+def Ps.kwOf(s: Str): Coll.Option[Ps.Kind] =
+  if Str.eq(s, "def") then Coll.Some(Ps.Def)
+  else if Str.eq(s, "enum") then Coll.Some(Ps.Enum)
+  else if Str.eq(s, "extern") then Coll.Some(Ps.Extern)
+  else if Str.eq(s, "handler") then Coll.Some(Ps.Handler)
+  else if Str.eq(s, "capability") then Coll.Some(Ps.Capability)
+  else if Str.eq(s, "trait") then Coll.Some(Ps.Trait)
+  else if Str.eq(s, "type") then Coll.Some(Ps.Type)
+  else if Str.eq(s, "val") then Coll.Some(Ps.Val)
+  else if Str.eq(s, "given") then Coll.Some(Ps.Given)
+  else Coll.None
+
+// guarded token reads: false outside the tokens
+def Ps.isKind(tcap: I64, tk: Array[U8](tcap), t: I64, j: I64, k: Lx.Kind): Bool =
+  if 0 <= j && j < t && j < tcap then I64.ofU8(tk(j)) == Lx.kindByte(k) else false
+
+// a token that is not layout and not a Doc: its kind byte is below Nl
+def Ps.isCode(tcap: I64, tk: Array[U8](tcap), t: I64, j: I64): Bool =
+  if 0 <= j && j < t && j < tcap then I64.ofU8(tk(j)) < Lx.kindByte(Lx.KNl) else false
+
+// a col-0 code token: at offset 0, or right after a newline byte
+def Ps.isHead(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), t: I64, j: I64): Bool =
+  if 0 <= j && j < t && j < tcap then
+    if I64.ofU8(tk(j)) < Lx.kindByte(Lx.KNl) then
+      val o = I64.of(to(j))
+      o == 0 || Lx.is(src, n, o - 1, 10)
+    else false
+  else false
+
+// the text of the word at token j when it is an identifier
+def Ps.wordIs(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64, w: Str): Bool =
+  if Ps.isKind(tcap, tk, t, j, Lx.KIdent) && 0 <= j && j < tcap then
+    val o = I64.of(to(j))
+    Str.eq(Str.slice(src, o, o + I64.of(tl(j))), w)
+  else false
+
+def Ps.kindOrOther(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64): Ps.Kind =
+  if Ps.isKind(tcap, tk, t, j, Lx.KIdent) && 0 <= j && j < tcap then
+    val o = I64.of(to(j))
+    Ps.kwOf(Str.slice(src, o, o + I64.of(tl(j)))) match
+      case Coll.Some(k) => k
+      case Coll.None => Ps.Other
+  else Ps.Other
+
+// the next col-0 code token at or after j, or t
+def Ps.nextHead(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), t: I64, j: I64): I64 =
+  if j >= t then t
+  else if Ps.isHead(src, n, tcap, tk, to, t, j) then j
+  else Ps.nextHead(src, n, tcap, tk, to, t, j + 1)
+
+// where the decl whose head is before j ends: the next col-0 code token, or t
+def Ps.nextEnd(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), t: I64, j: I64): I64 =
+  if j >= t then t
+  else if Ps.isHead(src, n, tcap, tk, to, t, j) then j
+  else Ps.nextEnd(src, n, tcap, tk, to, t, j + 1)
+
+// back from e over trailing Nl, Dedent and Doc tokens, never to or before the head h
+def Ps.trim(tcap: I64, tk: Array[U8](tcap), t: I64, e: I64, h: I64): I64 =
+  val q = e - 1
+  if q > h && (Ps.isKind(tcap, tk, t, q, Lx.KNl) || Ps.isKind(tcap, tk, t, q, Lx.KDedent) || Ps.isKind(tcap, tk, t, q, Lx.KDoc)) then Ps.trim(tcap, tk, t, q, h)
+  else e
+
+// the first Nl in [j, hi), or hi
+def Ps.firstNl(tcap: I64, tk: Array[U8](tcap), t: I64, j: I64, hi: I64): I64 =
+  if j >= hi then hi
+  else if Ps.isKind(tcap, tk, t, j, Lx.KNl) then j
+  else Ps.firstNl(tcap, tk, t, j + 1, hi)
+
+// Indent minus Dedent over [j, e)
+def Ps.depth(tcap: I64, tk: Array[U8](tcap), t: I64, j: I64, e: I64, acc: I64): I64 =
+  if 0 <= j && j < e && j < t && j < tcap then
+    val b = I64.ofU8(tk(j))
+    if b == Lx.kindByte(Lx.KIndent) then Ps.depth(tcap, tk, t, j + 1, e, acc + 1)
+    else if b == Lx.kindByte(Lx.KDedent) then Ps.depth(tcap, tk, t, j + 1, e, acc - 1)
+    else Ps.depth(tcap, tk, t, j + 1, e, acc)
+  else acc
+
+// the token where the name of the decl at head h is expected: right after the keyword; after extern also an optional
+// "abi" string and one of def, struct, val
+def Ps.nameTok(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, h: I64, k: Ps.Kind): I64 =
+  if Ps.isOther(k) then h
+  else if Ps.isExtern(k) then
+    val j2 = if Ps.isKind(tcap, tk, t, h + 1, Lx.KStr) then h + 2 else h + 1
+    if Ps.wordIs(src, tcap, tk, to, tl, t, j2, "def") || Ps.wordIs(src, tcap, tk, to, tl, t, j2, "struct") || Ps.wordIs(src, tcap, tk, to, tl, t, j2, "val") then j2 + 1
+    else j2
+  else h + 1
+
+// the append primitives. go guarantees room for one decl and four diags before every step.
+// putDecl returns how many diags it added: 0, or 1 when the room was not there (an Overflow diag, unreachable).
+def Ps.putDiag(dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64, w: Ps.Why, o: I64): Unit =
+  if 0 <= d && d < dcap then
+    Array.put(dw, d, U8.of(Ps.whyByte(w)))
+    Array.put(dt, d, U32.of(o))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else ()
+
+def Ps.diagIf(b: Bool, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64, w: Ps.Why, o: I64): I64 =
+  if b then
+    Ps.putDiag(dcap, dw, dt, d, w, o)
+    1
+  else 0
+
+def Ps.putDecl(cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, k: Ps.Kind, n0: I64, h0: I64, l0: I64, h1: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): I64 =
+  if 0 <= c && c < cap then
+    Array.put(kd, c, U8.of(Ps.kindByte(k)))
+    Array.put(nm, c, U32.of(n0))
+    Array.put(hd, c, U32.of(h0))
+    Array.put(lo, c, U32.of(l0))
+    Array.put(hi, c, U32.of(h1))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Ps.putDiag(dcap, dw, dt, d, Ps.Overflow, h0)
+    1
+
+def Ps.parse(src: Str, lx: Lx.Out): Ps.Out =
+  val Lx.Out(tcap, tk, to, tl, t, _, _, _, _) = lx
+  val c0 = 64
+  val d0 = 16
+  val kd = Array.fill(c0, U8.of(0))
+  val nm = Array.fill(c0, U32.of(0))
+  val hd = Array.fill(c0, U32.of(0))
+  val lo = Array.fill(c0, U32.of(0))
+  val hi = Array.fill(c0, U32.of(0))
+  val dw = Array.fill(d0, U8.of(0))
+  val dt = Array.fill(d0, U32.of(0))
+  Ps.go(src, Str.len(src), tcap, tk, to, tl, t, 0, c0, kd, nm, hd, lo, hi, 0, d0, dw, dt, 0)
+
+// the scan from token j; a full column is doubled first (X7 pattern), then one decl is found
+def Ps.go(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64, cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): Ps.Out =
+  if c >= cap then
+    val m = cap * 2
+    val kd2 = Array.fill(m, U8.of(0))
+    val nm2 = Array.fill(m, U32.of(0))
+    val hd2 = Array.fill(m, U32.of(0))
+    val lo2 = Array.fill(m, U32.of(0))
+    val hi2 = Array.fill(m, U32.of(0))
+    Lx.cp8(cap, kd, m, kd2, 0)
+    Lx.cp32(cap, nm, m, nm2, 0)
+    Lx.cp32(cap, hd, m, hd2, 0)
+    Lx.cp32(cap, lo, m, lo2, 0)
+    Lx.cp32(cap, hi, m, hi2, 0)
+    Ps.go(src, n, tcap, tk, to, tl, t, j, m, kd2, nm2, hd2, lo2, hi2, c, dcap, dw, dt, d)
+  else if d + 4 > dcap then
+    val m = dcap * 2
+    val dw2 = Array.fill(m, U8.of(0))
+    val dt2 = Array.fill(m, U32.of(0))
+    Lx.cp8(dcap, dw, m, dw2, 0)
+    Lx.cp32(dcap, dt, m, dt2, 0)
+    Ps.go(src, n, tcap, tk, to, tl, t, j, cap, kd, nm, hd, lo, hi, c, m, dw2, dt2, d)
+  else
+    val h = Ps.nextHead(src, n, tcap, tk, to, t, j)
+    if h >= t then Ps.Out(cap, kd, nm, hd, lo, hi, c, dcap, dw, dt, d)
+    else Ps.decl(src, n, tcap, tk, to, tl, t, h, cap, kd, nm, hd, lo, hi, c, dcap, dw, dt, d)
+
+// the decl whose head is token h: its kind, name, body range and diags, then on from where it ends
+def Ps.decl(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, h: I64, cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): Ps.Out =
+  val k = Ps.kindOrOther(src, tcap, tk, to, tl, t, h)
+  val e1 = Ps.nextEnd(src, n, tcap, tk, to, t, h + 1)
+  // a def with clauses puts its `=` at column 0 (s2/parse.srs Parse.bodyOf): that `=` continues the def, not a new decl
+  val e = if Ps.isDef(k) && Ps.isEqAt(src, tcap, tk, to, tl, t, e1) then Ps.nextEnd(src, n, tcap, tk, to, t, e1 + 1) else e1
+  val hi0 = Ps.trim(tcap, tk, t, e, h)
+  val nl = Ps.firstNl(tcap, tk, t, h, hi0)
+  val lo0 = if nl < hi0 then nl + 1 else hi0
+  val nj = Ps.nameTok(src, tcap, tk, to, tl, t, h, k)
+  val named = Ps.isOther(k) || Ps.isKind(tcap, tk, t, nj, Lx.KIdent)
+  val n0 = if named then nj else h
+  val i1 = Ps.diagIf(Ps.isOther(k), dcap, dw, dt, d, Ps.UnknownDecl, h)
+  val i2 = Ps.diagIf(!named, dcap, dw, dt, d + i1, Ps.MissingName, nj)
+  val i3 = Ps.diagIf(Ps.depth(tcap, tk, t, h, e, 0) != 0, dcap, dw, dt, d + i1 + i2, Ps.UnbalancedLayout, h)
+  val i4 = Ps.putDecl(cap, kd, nm, hd, lo, hi, c, k, n0, h, lo0, hi0, dcap, dw, dt, d + i1 + i2 + i3)
+  Ps.go(src, n, tcap, tk, to, tl, t, e, cap, kd, nm, hd, lo, hi, c + 1, dcap, dw, dt, d + i1 + i2 + i3 + i4)

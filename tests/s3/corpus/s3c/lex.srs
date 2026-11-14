@@ -1,0 +1,406 @@
+// s3c LEX-1b: the lexer, in s2. Grammar learned from s2/lex.srs, data shape new (vic/c/s3c-front.md F2, F5).
+// Output = struct of arrays: per token a kind byte, a byte offset and a byte length (U32); per diag a code and an offset.
+// Layout tokens (Nl, Indent, Dedent) follow s2/lex.srs:13-15 and its rules (go 147-187, dedent 190-196, finish 199-216):
+// they are zero-width (len 0), and go before the Doc tokens just lexed (s2 Lex.under, line 119), so a Doc keeps the
+// layout of the next code line. Doc tokens (s2 TDoc, line 19) exist only in Keep mode; in Skip mode a // comment is a gap.
+// Whitespace is a gap. No EOF token: the end of the tokens is the token count. No sentinel: every byte read is guarded by i < n.
+
+// the closed token classes
+enum Lx.Kind:
+  case Lx.KIdent
+  case Lx.KInt
+  case Lx.KStr
+  case Lx.KChar
+  case Lx.KOp
+  case Lx.KLtGlued
+  case Lx.KNl
+  case Lx.KIndent
+  case Lx.KDedent
+  case Lx.KDoc
+
+// why a byte does not lex (s2/lex.srs:27-33), plus an internal one that no input can reach
+enum Lx.Why:
+  case Lx.Tab
+  case Lx.BadChar
+  case Lx.Unterminated
+  case Lx.BigHex
+  case Lx.BadDedent
+  case Lx.Overflow
+
+// srs fmt keeps the // comments (Keep); the compiler skips them (Skip)
+enum Lx.Notes:
+  case Lx.Keep
+  case Lx.Skip
+
+// where the scan is: Mid = inside a line, Bol = at a line start (s2 bol), Dedenting = closing indents at a line start
+enum Lx.Pos:
+  case Lx.Mid
+  case Lx.Bol
+  case Lx.Dedenting
+
+def Lx.isMid(p: Lx.Pos): Bool = p match
+  case Lx.Mid => true
+  case Lx.Bol => false
+  case Lx.Dedenting => false
+
+def Lx.isBol(p: Lx.Pos): Bool = p match
+  case Lx.Mid => false
+  case Lx.Bol => true
+  case Lx.Dedenting => false
+
+def Lx.keep(nt: Lx.Notes): Bool = nt match
+  case Lx.Keep => true
+  case Lx.Skip => false
+
+def Lx.kindByte(k: Lx.Kind): I64 = k match
+  case Lx.KIdent => 0
+  case Lx.KInt => 1
+  case Lx.KStr => 2
+  case Lx.KChar => 3
+  case Lx.KOp => 4
+  case Lx.KLtGlued => 5
+  case Lx.KNl => 6
+  case Lx.KIndent => 7
+  case Lx.KDedent => 8
+  case Lx.KDoc => 9
+
+def Lx.byteKind(c: I64): Coll.Option[Lx.Kind] =
+  if c == 0 then Coll.Some(Lx.KIdent)
+  else if c == 1 then Coll.Some(Lx.KInt)
+  else if c == 2 then Coll.Some(Lx.KStr)
+  else if c == 3 then Coll.Some(Lx.KChar)
+  else if c == 4 then Coll.Some(Lx.KOp)
+  else if c == 5 then Coll.Some(Lx.KLtGlued)
+  else if c == 6 then Coll.Some(Lx.KNl)
+  else if c == 7 then Coll.Some(Lx.KIndent)
+  else if c == 8 then Coll.Some(Lx.KDedent)
+  else if c == 9 then Coll.Some(Lx.KDoc)
+  else Coll.None
+
+def Lx.kindName(k: Lx.Kind): Str = k match
+  case Lx.KIdent => "ident"
+  case Lx.KInt => "int"
+  case Lx.KStr => "str"
+  case Lx.KChar => "char"
+  case Lx.KOp => "op"
+  case Lx.KLtGlued => "ltglued"
+  case Lx.KNl => "nl"
+  case Lx.KIndent => "indent"
+  case Lx.KDedent => "dedent"
+  case Lx.KDoc => "doc"
+
+def Lx.whyByte(w: Lx.Why): I64 = w match
+  case Lx.Tab => 0
+  case Lx.BadChar => 1
+  case Lx.Unterminated => 2
+  case Lx.BigHex => 3
+  case Lx.BadDedent => 4
+  case Lx.Overflow => 5
+
+def Lx.byteWhy(c: I64): Coll.Option[Lx.Why] =
+  if c == 0 then Coll.Some(Lx.Tab)
+  else if c == 1 then Coll.Some(Lx.BadChar)
+  else if c == 2 then Coll.Some(Lx.Unterminated)
+  else if c == 3 then Coll.Some(Lx.BigHex)
+  else if c == 4 then Coll.Some(Lx.BadDedent)
+  else if c == 5 then Coll.Some(Lx.Overflow)
+  else Coll.None
+
+def Lx.whyName(w: Lx.Why): Str = w match
+  case Lx.Tab => "tab"
+  case Lx.BadChar => "badchar"
+  case Lx.Unterminated => "unterminated"
+  case Lx.BigHex => "bighex"
+  case Lx.BadDedent => "baddedent"
+  case Lx.Overflow => "overflow"
+
+// the result: token columns (cap slots, t used) and diag columns (dcap slots, d used)
+enum Lx.Out:
+  case Lx.Out(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64)
+
+// byte classes (s2/lex.srs:52-60), on a byte already read
+def Lx.isAlpha(c: I64): Bool = c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 95
+def Lx.isDigit(c: I64): Bool = c >= 48 && c <= 57
+def Lx.isPunct(c: I64): Bool =
+  c == 40 || c == 41 || c == 91 || c == 93 || c == 123 || c == 125 || c == 44 || c == 58 || c == 61 || c == 43 || c == 45 || c == 42 || c == 47 || c == 37 || c == 60 || c == 62 || c == 33 || c == 46 || c == 94 || c == 64 || c == 38 || c == 124 || c == 126
+def Lx.isTwo(a: I64, b: I64): Bool =
+  a == 61 && b == 62 || a == 61 && b == 61 || a == 33 && b == 61 || a == 60 && b == 61 || a == 62 && b == 61 || a == 38 && b == 38 || a == 124 && b == 124 || a == 126 && b == 62 || a == 60 && b == 60 || a == 62 && b == 62
+def Lx.gluedTo(p: I64): Bool = Lx.isAlpha(p) || Lx.isDigit(p) || p == 93 || p == 41
+
+// guarded reads: false outside [0, n), so no out-of-range byte is ever compared
+def Lx.is(src: Str, n: I64, i: I64, c: I64): Bool = 0 <= i && i < n && Str.at(src, i) == c
+def Lx.alnumAt(src: Str, n: I64, i: I64): Bool = 0 <= i && i < n && (Lx.isAlpha(Str.at(src, i)) || Lx.isDigit(Str.at(src, i)))
+def Lx.alphaAt(src: Str, n: I64, i: I64): Bool = 0 <= i && i < n && Lx.isAlpha(Str.at(src, i))
+def Lx.digitAt(src: Str, n: I64, i: I64): Bool = 0 <= i && i < n && Lx.isDigit(Str.at(src, i))
+def Lx.hexAt(src: Str, n: I64, i: I64): Bool =
+  0 <= i && i < n && (Lx.isDigit(Str.at(src, i)) || Str.at(src, i) >= 97 && Str.at(src, i) <= 102 || Str.at(src, i) >= 65 && Str.at(src, i) <= 70)
+
+// run ends
+def Lx.spaces(src: Str, n: I64, i: I64): I64 = if Lx.is(src, n, i, 32) then Lx.spaces(src, n, i + 1) else i
+def Lx.wordEnd(src: Str, n: I64, i: I64): I64 = if Lx.alnumAt(src, n, i) then Lx.wordEnd(src, n, i + 1) else i
+// an identifier that starts upper case: Upper(.name)* is one token (s2/lex.srs:101)
+def Lx.dotted(src: Str, n: I64, i: I64): I64 =
+  if Lx.is(src, n, i, 46) && Lx.alphaAt(src, n, i + 1) then Lx.dotted(src, n, Lx.wordEnd(src, n, i + 1)) else i
+def Lx.digitsEnd(src: Str, n: I64, i: I64): I64 = if Lx.digitAt(src, n, i) then Lx.digitsEnd(src, n, i + 1) else i
+def Lx.hexEnd(src: Str, n: I64, i: I64): I64 = if Lx.hexAt(src, n, i) then Lx.hexEnd(src, n, i + 1) else i
+def Lx.lineEnd(src: Str, n: I64, i: I64): I64 = if 0 <= i && i < n && Str.at(src, i) != 10 then Lx.lineEnd(src, n, i + 1) else i
+
+// a hex literal of 2^63 or more (s2/lex.srs:79-84, v < 2^59 keeps v * 16 + 15 below 2^63)
+def Lx.hexVal(c: I64): I64 = if Lx.isDigit(c) then c - 48 else if c >= 97 then c - 87 else c - 55
+def Lx.hexBig(src: Str, n: I64, i: I64, v: I64): Bool =
+  if Lx.hexAt(src, n, i) then
+    if v >= 576460752303423488 then true
+    else Lx.hexBig(src, n, i + 1, v * 16 + Lx.hexVal(Str.at(src, i)))
+  else false
+
+// the closing quote q of a literal from i (a backslash skips the next byte), or the line end, or n
+def Lx.litEnd(src: Str, n: I64, i: I64, q: I64): I64 =
+  if i >= n then i
+  else if Str.at(src, i) == q || Str.at(src, i) == 10 then i
+  else if Str.at(src, i) == 92 then Lx.litEnd(src, n, i + 2, q)
+  else Lx.litEnd(src, n, i + 1, q)
+
+// the width of the operator at i, byte c: >>> is the one three-byte operator (s2/lex.srs:62-66)
+def Lx.opWidth(src: Str, n: I64, i: I64, c: I64): I64 =
+  if c == 62 && Lx.is(src, n, i + 1, 62) && Lx.is(src, n, i + 2, 62) then 3
+  else if i + 1 < n && Lx.isTwo(c, Str.at(src, i + 1)) then 2
+  else 1
+
+// copy loops for the doubling: both indices proved by the guard
+def Lx.cp8(n: I64, xs: Array[U8](n), m: I64, ys: Array[U8](m), i: I64): Unit =
+  if 0 <= i && i < n && i < m then
+    Array.put(ys, i, xs(i))
+    Lx.cp8(n, xs, m, ys, i + 1)
+  else ()
+
+def Lx.cp32(n: I64, xs: Array[U32](n), m: I64, ys: Array[U32](m), i: I64): Unit =
+  if 0 <= i && i < n && i < m then
+    Array.put(ys, i, xs(i))
+    Lx.cp32(n, xs, m, ys, i + 1)
+  else ()
+
+// the append primitives. go guarantees room for one token, one diag and one stack slot before every step.
+// putTok and putStk return how many diags they added: 0, or 1 when the room was not there (an Overflow diag, unreachable).
+// putDiag cannot report its own overflow.
+def Lx.putDiag(dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, w: Lx.Why, o: I64): Unit =
+  if 0 <= d && d < dcap then
+    Array.put(dc, d, U8.of(Lx.whyByte(w)))
+    Array.put(dof, d, U32.of(o))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else ()
+
+def Lx.putTok(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, k: Lx.Kind, o: I64, l: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64): I64 =
+  if 0 <= t && t < cap then
+    Array.put(ks, t, U8.of(Lx.kindByte(k)))
+    Array.put(os, t, U32.of(o))
+    Array.put(ls, t, U32.of(l))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Lx.putDiag(dcap, dc, dof, d, Lx.Overflow, o)
+    1
+
+def Lx.putStk(scap: I64, st: Array[U32](scap), sp: I64, col: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, o: I64): I64 =
+  if 0 <= sp && sp < scap then
+    Array.put(st, sp, U32.of(col))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Lx.putDiag(dcap, dc, dof, d, Lx.Overflow, o)
+    1
+
+// the indent on top of the stack (the stack always holds the base 0 first)
+def Lx.top(scap: I64, st: Array[U32](scap), sp: I64): I64 =
+  val q = sp - 1
+  if 0 <= q && q < scap then I64.of(st(q))
+  // shortcut: the stack always holds its base 0, so sp >= 1; s3 Vec will make it unrepresentable
+  else 0
+
+// the slot where the run of Doc tokens that ends at slot j starts (j itself when no Doc ends there)
+def Lx.docStart(cap: I64, ks: Array[U8](cap), j: I64): I64 =
+  val q = j - 1
+  if 0 <= q && q < cap then
+    if I64.ofU8(ks(q)) == Lx.kindByte(Lx.KDoc) then Lx.docStart(cap, ks, q) else j
+  else j
+
+// slots p..j-1 move up one slot, newest first
+def Lx.shift(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), j: I64, p: I64): Unit =
+  val q = j - 1
+  if 0 <= q && q < cap then
+    if 0 <= j && j < cap && p <= q then
+      Array.put(ks, j, ks(q))
+      Array.put(os, j, os(q))
+      Array.put(ls, j, ls(q))
+      Lx.shift(cap, ks, os, ls, q, p)
+    else ()
+  else ()
+
+// a layout token of kind k, zero-width, goes before the Doc tokens just lexed (s2 Lex.under); its offset is o, or the
+// offset of the first of those Docs
+def Lx.layTok(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, k: Lx.Kind, o: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64): I64 =
+  val p = Lx.docStart(cap, ks, t)
+  if p == t then Lx.putTok(cap, ks, os, ls, t, k, o, 0, dcap, dc, dof, d)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else if 0 <= p && p < cap then
+    if p < t && t < cap then
+      val a = I64.of(os(p))
+      Lx.shift(cap, ks, os, ls, t, p)
+      Lx.putTok(cap, ks, os, ls, p, k, a, 0, dcap, dc, dof, d)
+    else
+      Lx.putDiag(dcap, dc, dof, d, Lx.Overflow, o)
+      1
+  else
+    Lx.putDiag(dcap, dc, dof, d, Lx.Overflow, o)
+    1
+
+// the last token that is not a Doc (looking back from slot j) is a layout token, or there is none (s2 Lex.layoutLast)
+def Lx.layoutLast(cap: I64, ks: Array[U8](cap), j: I64): Bool =
+  if 0 <= j && j < cap then
+    val b = I64.ofU8(ks(j))
+    if b == Lx.kindByte(Lx.KDoc) then Lx.layoutLast(cap, ks, j - 1)
+    else b == Lx.kindByte(Lx.KNl) || b == Lx.kindByte(Lx.KIndent) || b == Lx.kindByte(Lx.KDedent)
+  // shortcut: j < 0 is "no token"; j >= cap cannot happen (j < t <= cap); s3 Vec will make it unrepresentable
+  else true
+
+// the last token that is not a Doc is Nl or Dedent, or there is none: the last code line has its Nl (s2 Lex.lineDone)
+def Lx.lineDone(cap: I64, ks: Array[U8](cap), j: I64): Bool =
+  if 0 <= j && j < cap then
+    val b = I64.ofU8(ks(j))
+    if b == Lx.kindByte(Lx.KDoc) then Lx.lineDone(cap, ks, j - 1)
+    else b == Lx.kindByte(Lx.KNl) || b == Lx.kindByte(Lx.KDedent)
+  // shortcut: j < 0 is "no token"; j >= cap cannot happen (j < t <= cap); s3 Vec will make it unrepresentable
+  else true
+
+// the last token is a blank-line Doc (a Doc of length 0): s2 keeps one per run of blank lines
+def Lx.lastBlank(cap: I64, ks: Array[U8](cap), ls: Array[U32](cap), t: I64): Bool =
+  val q = t - 1
+  if 0 <= q && q < cap then I64.ofU8(ks(q)) == Lx.kindByte(Lx.KDoc) && I64.of(ls(q)) == 0
+  else false
+
+def Lx.lex(nt: Lx.Notes, src: Str): Lx.Out =
+  val c0 = 256
+  val d0 = 16
+  val s0 = 16
+  val ks = Array.fill(c0, U8.of(0))
+  val os = Array.fill(c0, U32.of(0))
+  val ls = Array.fill(c0, U32.of(0))
+  val dc = Array.fill(d0, U8.of(0))
+  val dof = Array.fill(d0, U32.of(0))
+  val st = Array.fill(s0, U32.of(0))
+  Lx.go(src, Str.len(src), nt, 0, c0, ks, os, ls, 0, d0, dc, dof, 0, s0, st, 1, 0, Lx.Bol)
+
+// the scan from i. depth = open ( and [; st = the indent stack (st(0) = 0, sp = its height); a full column is doubled
+// first (X7 pattern), then one step runs with room for a token, a diag and a stack slot
+def Lx.go(src: Str, n: I64, nt: Lx.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if t >= cap then
+    val m = cap * 2
+    val ks2 = Array.fill(m, U8.of(0))
+    val os2 = Array.fill(m, U32.of(0))
+    val ls2 = Array.fill(m, U32.of(0))
+    Lx.cp8(cap, ks, m, ks2, 0)
+    Lx.cp32(cap, os, m, os2, 0)
+    Lx.cp32(cap, ls, m, ls2, 0)
+    Lx.go(src, n, nt, i, m, ks2, os2, ls2, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if d >= dcap then
+    val m = dcap * 2
+    val dc2 = Array.fill(m, U8.of(0))
+    val dof2 = Array.fill(m, U32.of(0))
+    Lx.cp8(dcap, dc, m, dc2, 0)
+    Lx.cp32(dcap, dof, m, dof2, 0)
+    Lx.go(src, n, nt, i, cap, ks, os, ls, t, m, dc2, dof2, d, scap, st, sp, depth, pos)
+  else if sp >= scap then
+    val m = scap * 2
+    val st2 = Array.fill(m, U32.of(0))
+    Lx.cp32(scap, st, m, st2, 0)
+    Lx.go(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, m, st2, sp, depth, pos)
+  else if i >= n then Lx.fin(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if depth == 0 && !Lx.isMid(pos) then Lx.lineStart(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else Lx.mid(src, n, nt, i, Str.at(src, i), cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+
+// the end (s2 Lex.finish): a last Nl if the last code line has none, then a Dedent for each open indent
+def Lx.fin(src: Str, n: I64, nt: Lx.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if !Lx.lineDone(cap, ks, t - 1) then
+    val inc = Lx.layTok(cap, ks, os, ls, t, Lx.KNl, i, dcap, dc, dof, d)
+    Lx.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, pos)
+  else if sp > 1 then
+    val inc = Lx.layTok(cap, ks, os, ls, t, Lx.KDedent, i, dcap, dc, dof, d)
+    Lx.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp - 1, depth, pos)
+  else Lx.Out(cap, ks, os, ls, t, dcap, dc, dof, d)
+
+// a token [i, e) of kind k, then on from e with depth dp
+def Lx.emit(src: Str, n: I64, nt: Lx.Notes, i: I64, e: I64, k: Lx.Kind, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, dp: I64, pos: Lx.Pos): Lx.Out =
+  val inc = Lx.putTok(cap, ks, os, ls, t, k, i, e - i, dcap, dc, dof, d)
+  Lx.go(src, n, nt, e, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, dp, pos)
+
+// a diag at i, then on from e in position p
+def Lx.diag(src: Str, n: I64, nt: Lx.Notes, i: I64, e: I64, w: Lx.Why, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  Lx.putDiag(dcap, dc, dof, d, w, i)
+  Lx.go(src, n, nt, e, cap, ks, os, ls, t, dcap, dc, dof, d + 1, scap, st, sp, depth, pos)
+
+// at a line start with depth 0 (s2 Lex.go, bol branch): the indent of the line
+def Lx.lineStart(src: Str, n: I64, nt: Lx.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  val j = Lx.spaces(src, n, i)
+  if j >= n then Lx.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+  else Lx.lineAt(src, n, nt, i, j, j - i, Str.at(src, j), cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+
+// the first byte c of a line, at j after col spaces
+def Lx.lineAt(src: Str, n: I64, nt: Lx.Notes, i: I64, j: I64, col: I64, c: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if c == 9 then Lx.diag(src, n, nt, j, j + 1, Lx.Tab, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+  // a blank line: Keep adds one blank Doc per run of blank lines, none at the start (s2 Lex.blank)
+  else if c == 10 then
+    if Lx.keep(nt) && t > 0 && !Lx.lastBlank(cap, ks, ls, t) then
+      val inc = Lx.putTok(cap, ks, os, ls, t, Lx.KDoc, j, 0, dcap, dc, dof, d)
+      Lx.go(src, n, nt, j, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, Lx.Mid)
+    else Lx.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+  // a comment line has no indent
+  else if c == 47 && Lx.is(src, n, j + 1, 47) then Lx.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+  else Lx.indent(src, n, nt, i, j, col, Lx.top(scap, st, sp), cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+
+// a code line at col, the stack top is top: deeper = an Indent; shallower = close one indent and look again;
+// the same = nothing; deeper after closing = BadDedent (s2 Lex.go 160-163, Lex.dedent 190-196)
+def Lx.indent(src: Str, n: I64, nt: Lx.Notes, i: I64, j: I64, col: I64, top: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if col < top then
+    val inc = Lx.layTok(cap, ks, os, ls, t, Lx.KDedent, j, dcap, dc, dof, d)
+    Lx.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp - 1, depth, Lx.Dedenting)
+  else if col == top then Lx.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+  else if Lx.isBol(pos) then
+    val inc1 = Lx.putStk(scap, st, sp, col, dcap, dc, dof, d, j)
+    val inc2 = Lx.layTok(cap, ks, os, ls, t, Lx.KIndent, j, dcap, dc, dof, d + inc1)
+    Lx.go(src, n, nt, j, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc1 + inc2, scap, st, sp + 1, depth, Lx.Mid)
+  else Lx.diag(src, n, nt, j, j, Lx.BadDedent, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Mid)
+
+// a newline: an Nl unless the last token is a layout token or the newline is inside ( or [ (s2 Lex.go 135-137)
+def Lx.newline(src: Str, n: I64, nt: Lx.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if depth == 0 && !Lx.layoutLast(cap, ks, t - 1) then
+    val inc = Lx.layTok(cap, ks, os, ls, t, Lx.KNl, i, dcap, dc, dof, d)
+    Lx.go(src, n, nt, i + 1, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, Lx.Bol)
+  else Lx.go(src, n, nt, i + 1, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lx.Bol)
+
+// the token or gap at i, c = the byte there (i < n); pos stays as it was unless a line starts
+def Lx.mid(src: Str, n: I64, nt: Lx.Notes, i: I64, c: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lx.Pos): Lx.Out =
+  if c == 10 then Lx.newline(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 32 || c == 13 then Lx.go(src, n, nt, i + 1, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 47 && Lx.is(src, n, i + 1, 47) then
+    val e = Lx.lineEnd(src, n, i)
+    if Lx.keep(nt) then Lx.emit(src, n, nt, i, e, Lx.KDoc, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lx.go(src, n, nt, e, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if Lx.isAlpha(c) then
+    val e0 = Lx.wordEnd(src, n, i + 1)
+    val e = if c >= 65 && c <= 90 then Lx.dotted(src, n, e0) else e0
+    Lx.emit(src, n, nt, i, e, Lx.KIdent, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if Lx.isDigit(c) then
+    if c == 48 && Lx.is(src, n, i + 1, 120) && Lx.hexAt(src, n, i + 2) then
+      val e = Lx.hexEnd(src, n, i + 2)
+      if Lx.hexBig(src, n, i + 2, 0) then Lx.diag(src, n, nt, i, e, Lx.BigHex, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+      else Lx.emit(src, n, nt, i, e, Lx.KInt, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lx.emit(src, n, nt, i, Lx.digitsEnd(src, n, i), Lx.KInt, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 34 || c == 39 then
+    val e = Lx.litEnd(src, n, i + 1, c)
+    if Lx.is(src, n, e, c) then Lx.emit(src, n, nt, i, e + 1, if c == 34 then Lx.KStr else Lx.KChar, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lx.diag(src, n, nt, i, if e < n then e else n, Lx.Unterminated, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else
+    val w = Lx.opWidth(src, n, i, c)
+    if w == 1 && !Lx.isPunct(c) then Lx.diag(src, n, nt, i, i + 1, if c == 9 then Lx.Tab else Lx.BadChar, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else
+      val dp = if c == 40 || c == 91 then depth + 1 else if (c == 41 || c == 93) && depth > 0 then depth - 1 else depth
+      Lx.emit(src, n, nt, i, i + w, if c == 60 && w == 1 && 0 < i && Lx.gluedTo(Str.at(src, i - 1)) then Lx.KLtGlued else Lx.KOp, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, dp, pos)

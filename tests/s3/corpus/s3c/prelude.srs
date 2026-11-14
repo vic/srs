@@ -1,0 +1,673 @@
+// srs prelude: C ABI bindings + Region effect + allocator handlers.
+
+extern def rt_argc(): I64
+extern def rt_arg(i: I64): Str
+extern def rt_read_file(path: Str): Str
+extern def rt_print(s: Str): Unit
+extern def rt_eprint(s: Str): Unit
+extern def rt_eprint_i64(v: I64): Unit
+extern def rt_print_i64(v: I64): Unit
+extern def rt_print_char(c: I64): Unit
+extern def rt_str_len(s: Str): I64
+extern def rt_str_at(s: Str, i: I64): I64
+extern def rt_str_slice(s: Str, b: I64, e: I64): Str
+extern def rt_str_eq(a: Str, b: Str): Bool
+extern def rt_exit(code: I64): Unit
+extern def rt_heap_new(): Ptr
+extern def rt_heap_alloc(self: Ptr, size: I64): Ptr
+extern def rt_heap_free(self: Ptr): Unit
+
+// Memory region = effect. Open until free; values captured by a region die at free, alloc's memory too (<self>).
+capability Region:
+  state Open, Freed
+  start Open
+  stop Freed
+  def alloc <Open> (size: I64): Ptr<self> <Open>
+  def free <Open> (): Unit <Freed>
+  drop free
+
+// Allocators = handlers of Region.
+
+handler Srs.Heap for Region:
+  def init(): Ptr = rt_heap_new()
+  def alloc(self: Ptr, size: I64): Ptr = rt_heap_alloc(self, size)
+  def free(self: Ptr): Unit = rt_heap_free(self)
+
+// ── Srs.Arena in srs (arena into srs; the C arena, rt_arena_* and srs_pages, is gone). Chunks of
+// 1 MiB come from 64 MiB reservations (mmap, 2 MiB aligned, advised for huge pages) and a freed chunk waits on a spare
+// list; a block over a chunk is its own mmap, unmapped at free. State: the arena is one word (its head chunk), a chunk
+// is a 3-word header {next, used, cap} then its bytes (rt/srs_rt.c chunk, emit.srs srs_chunk: the same layout), and the
+// process-lifetime state is the rt_globals block, one word per name below. Pointers are kept as I64 addresses.
+// These defs are named Srs.*: they run as the prelude's own code and may call the rt_ prims and the libc functions.
+def Srs.Arena.gSpare(): I64 = 0
+def Srs.Arena.gCur(): I64 = 1
+def Srs.Arena.gEnd(): I64 = 2
+def Srs.Arena.gFree(): I64 = 3
+def Srs.Arena.gSmall(): I64 = 4
+def Srs.Arena.gSmallEnd(): I64 = 5
+def Srs.Arena.hNext(): I64 = 0
+def Srs.Arena.hUsed(): I64 = 1
+def Srs.Arena.hCap(): I64 = 2
+def Srs.Arena.header(): I64 = 24
+def Srs.Arena.chunk(): I64 = 1048576
+def Srs.Arena.reserve(): I64 = 33554432
+def Srs.Arena.huge(): I64 = 2097152
+def Srs.Arena.page(): I64 = 4096
+
+def Srs.Arena.addr(p: Ptr): I64 = I64.ofU64(rt_ptr_addr(p))
+def Srs.Arena.at(a: I64): Ptr = rt_ptr_of(U64.ofI64(a))
+def Srs.Arena.up(n: I64, to: I64): I64 = (n + to - 1) / to * to
+
+def Srs.Arena.flags(): I32 =
+  I32.of(I64.ofU64(U64.ofI64(I64.ofI32(MAP_PRIVATE)) | U64.ofI64(I64.ofI32(MAP_ANONYMOUS)) | U64.ofI64(I64.ofI32(MAP_NORESERVE))))
+def Srs.Arena.prot(): I32 = I32.of(I64.ofU64(U64.ofI64(I64.ofI32(PROT_READ)) | U64.ofI64(I64.ofI32(PROT_WRITE))))
+
+// len bytes of fresh zeroed pages; failure is the C arena's: a message and exit 70
+def Srs.Arena.map(len: I64): Ptr =
+  val p = mmap(Srs.Arena.at(0), U64.ofI64(len), Srs.Arena.prot(), Srs.Arena.flags(), I32.of(0 - 1), 0)
+  if Srs.Arena.addr(p) == 0 - 1 then
+    rt_eprint("srs: out of memory\n")
+    rt_exit(70)
+    p
+  else p
+
+// n bytes (a multiple of a page) from the current reservation, a new one when it is used up
+def Srs.Arena.pages(size: I64): Ptr =
+  val g = rt_globals()
+  val n = Srs.Arena.up(size, Srs.Arena.page())
+  if rt_ptr_get(g, Srs.Arena.gEnd()) - rt_ptr_get(g, Srs.Arena.gCur()) >= n then Srs.Arena.take(g, n)
+  else
+    val want = if n > Srs.Arena.reserve() then Srs.Arena.up(n, Srs.Arena.huge()) else Srs.Arena.reserve()
+    val p = Srs.Arena.map(want + Srs.Arena.huge())
+    val mask = U64.ofI64(Srs.Arena.huge() - 1)
+    val a = rt_ptr_of(rt_ptr_addr(p) + mask & ~mask)
+    val armed = if rt_ptr_get(g, Srs.Arena.gEnd()) != 0 && Srs.Gate.idle(g) then Srs.Pages.arm() else g
+    val adv = Srs.Pages.advise(g, a, want)
+    rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
+    rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
+    Srs.Arena.take(g, n)
+
+def Srs.Arena.take(g: Ptr, n: I64): Ptr =
+  val cur = rt_ptr_get(g, Srs.Arena.gCur())
+  rt_ptr_set(g, Srs.Arena.gCur(), cur + n)
+  Srs.Arena.at(cur)
+
+// the arena struct: a freed one, else 8 bytes of the current page
+def Srs.Arena.newArena(): Ptr =
+  val g = rt_globals()
+  val free = rt_ptr_get(g, Srs.Arena.gFree())
+  if free != 0 then
+    val s = Srs.Arena.at(free)
+    rt_ptr_set(g, Srs.Arena.gFree(), rt_ptr_get(s, 0))
+    rt_ptr_set(s, 0, 0)
+    s
+  else
+    val cur = rt_ptr_get(g, Srs.Arena.gSmall())
+    val s = if cur != 0 && cur < rt_ptr_get(g, Srs.Arena.gSmallEnd()) then Srs.Arena.at(cur) else Srs.Arena.smallPage(g)
+    rt_ptr_set(g, Srs.Arena.gSmall(), Srs.Arena.addr(s) + 8)
+    s
+
+def Srs.Arena.smallPage(g: Ptr): Ptr =
+  val p = Srs.Arena.pages(Srs.Arena.page())
+  rt_ptr_set(g, Srs.Arena.gSmallEnd(), Srs.Arena.addr(p) + Srs.Arena.page())
+  p
+
+def Srs.Arena.bump(c: Ptr, n: I64): Ptr =
+  val used = rt_ptr_get(c, Srs.Arena.hUsed())
+  rt_ptr_set(c, Srs.Arena.hUsed(), used + n)
+  rt_ptr_add(c, Srs.Arena.header() + used)
+
+// a new head chunk with room for n bytes: a spare one, a fresh one, or (n over a chunk) its own mapping
+def Srs.Arena.open(self: Ptr, n: I64): Ptr =
+  val g = rt_globals()
+  val spare = rt_ptr_get(g, Srs.Arena.gSpare())
+  val big = n > Srs.Arena.chunk()
+  val c =
+    if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)
+  rt_ptr_set(c, Srs.Arena.hNext(), rt_ptr_get(self, 0))
+  rt_ptr_set(c, Srs.Arena.hUsed(), 0)
+  rt_ptr_set(c, Srs.Arena.hCap(), if big then n else Srs.Arena.chunk())
+  rt_ptr_set(self, 0, Srs.Arena.addr(c))
+  c
+
+def Srs.Arena.fresh(g: Ptr, spare: I64): Ptr =
+  if spare != 0 then
+    val s = Srs.Arena.at(spare)
+    rt_ptr_set(g, Srs.Arena.gSpare(), rt_ptr_get(s, Srs.Arena.hNext()))
+    s
+  else Srs.Arena.pages(Srs.Arena.header() + Srs.Arena.chunk())
+
+def Srs.Arena.alloc(self: Ptr, size: I64): Ptr =
+  val n = Srs.Arena.up(size, 8)
+  val head = rt_ptr_get(self, 0)
+  if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then
+    Srs.Arena.bump(Srs.Arena.at(head), n)
+  else Srs.Arena.bump(Srs.Arena.open(self, n), n)
+
+// every chunk of the arena: a chunk size goes on the spare list, a big block is unmapped; then the struct is kept for reuse
+def Srs.Arena.release(g: Ptr, c: I64): Unit =
+  if c == 0 then ()
+  else
+    val ch = Srs.Arena.at(c)
+    val next = rt_ptr_get(ch, Srs.Arena.hNext())
+    val cap = rt_ptr_get(ch, Srs.Arena.hCap())
+    if cap == Srs.Arena.chunk() then
+      rt_ptr_set(ch, Srs.Arena.hNext(), rt_ptr_get(g, Srs.Arena.gSpare()))
+      rt_ptr_set(g, Srs.Arena.gSpare(), c)
+    else
+      val un = munmap(ch, U64.ofI64(Srs.Arena.up(Srs.Arena.header() + cap, Srs.Arena.page())))
+      ()
+    Srs.Arena.release(g, next)
+
+def Srs.Arena.free(self: Ptr): Unit =
+  val g = rt_globals()
+  Srs.Arena.release(g, rt_ptr_get(self, 0))
+  rt_ptr_set(self, 0, rt_ptr_get(g, Srs.Arena.gFree()))
+  rt_ptr_set(g, Srs.Arena.gFree(), Srs.Arena.addr(self))
+
+handler Srs.Arena for Region:
+  def init(): Ptr = Srs.Arena.newArena()
+  def alloc(self: Ptr, size: I64): Ptr = Srs.Arena.alloc(self, size)
+  def free(self: Ptr): Unit = Srs.Arena.free(self)
+
+// ── Pages: the one authority to ask the kernel for huge pages. A program that never handles Srs.Pages (only main may,
+// Ty.worldHandler) gets no advice until its Arena makes a second 32 MiB reservation: the Arena arms the gate itself
+// (a program past 32 MiB pays the one /proc/vmstat read; a small one pays nothing). The Arena advises each fresh
+// reservation while the gate is On: main (or the Arena) arms it with the machine-wide count of failed huge-page faults
+// (/proc/vmstat thp_fault_fallback), and it shuts for good once more than
+// Srs.Pages.limit() failed since (each failure cost a compaction stall). The gate is the rt_globals words tag, base and
+// seen (the last count read); only Srs.Gate.arm and Srs.Gate.shut write tag, and nothing turns a Shut gate On again.
+// A constructor with a field allocates in a Region and the prelude fns have none, so the gate enum has no field: base is a word.
+enum Srs.Gate:
+  case Srs.GateIdle
+  case Srs.GateOn
+  case Srs.GateShut
+
+def Srs.Gate.tag(): I64 = 6
+def Srs.Gate.base(): I64 = 7
+def Srs.Gate.seen(): I64 = 8
+
+def Srs.Gate.read(g: Ptr): Srs.Gate =
+  val t = rt_ptr_get(g, Srs.Gate.tag())
+  if t == 1 then Srs.GateOn
+  else if t == 2 then Srs.GateShut
+  else Srs.GateIdle
+
+def Srs.Gate.shut(g: Ptr): Unit = rt_ptr_set(g, Srs.Gate.tag(), 2)
+
+def Srs.Gate.idle(g: Ptr): Bool = Srs.Gate.read(g) match
+  case Srs.GateIdle => true
+  case Srs.GateOn => false
+  case Srs.GateShut => false
+
+def Srs.Gate.on(g: Ptr): Unit =
+  rt_ptr_set(g, Srs.Gate.base(), rt_ptr_get(g, Srs.Gate.seen()))
+  rt_ptr_set(g, Srs.Gate.tag(), 1)
+
+// Idle -> On with the count last seen as the base; any other state stays as it is
+def Srs.Gate.arm(g: Ptr): Unit = if Srs.Gate.idle(g) then Srs.Gate.on(g) else ()
+
+def Srs.Pages.limit(): I64 = 64
+
+// the index after the next newline, or the length of s
+def Srs.Pages.eol(s: Str, i: I64): I64 =
+  if i >= Str.len(s) then i
+  else if Str.at(s, i) == 10 then i + 1
+  else Srs.Pages.eol(s, i + 1)
+
+def Srs.Pages.num(s: Str, i: I64, acc: I64): I64 =
+  if i < Str.len(s) && Str.at(s, i) >= 48 && Str.at(s, i) <= 57 then
+    Srs.Pages.num(s, i + 1, acc * 10 + Str.at(s, i) - 48)
+  else acc
+
+def Srs.Pages.keep(g: Ptr, n: I64): Bool =
+  rt_ptr_set(g, Srs.Gate.seen(), n)
+  true
+
+// the line "thp_fault_fallback N" (the space ends the name: thp_fault_fallback_charge is another line): N goes to seen
+def Srs.Pages.scan(g: Ptr, s: Str, i: I64): Bool =
+  if i + 19 > Str.len(s) then false
+  else if Str.eq(Str.slice(s, i, i + 19), "thp_fault_fallback ") then Srs.Pages.keep(g, Srs.Pages.num(s, i + 19, 0))
+  else Srs.Pages.scan(g, s, Srs.Pages.eol(s, i))
+
+// true when the count was read into seen
+def Srs.Pages.sample(g: Ptr): Bool = Srs.Pages.read(g, rt_fs_read_all("/proc/vmstat"))
+
+// a failed read is a Str of negative length (rt_fs_read_all)
+def Srs.Pages.read(g: Ptr, s: Str): Bool = if Str.len(s) < 0 then false else Srs.Pages.scan(g, s, 0)
+
+def Srs.Pages.huge(a: Ptr, len: I64): Unit =
+  val r = madvise(a, U64.ofI64(len), MADV_HUGEPAGE)
+  ()
+
+// an unreadable count or more than limit() failures since arming shuts the gate
+def Srs.Pages.step(g: Ptr, a: Ptr, len: I64, ok: Bool): Unit =
+  if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then
+    Srs.Pages.huge(a, len)
+  else Srs.Gate.shut(g)
+
+// advise len bytes at a (a fresh, 2 MiB aligned reservation) while the gate is On
+def Srs.Pages.advise(g: Ptr, a: Ptr, len: I64): Unit = Srs.Gate.read(g) match
+  case Srs.GateIdle => ()
+  case Srs.GateShut => ()
+  case Srs.GateOn => Srs.Pages.step(g, a, len, Srs.Pages.sample(g))
+
+def Srs.Pages.arm(): Ptr =
+  val g = rt_globals()
+  val ok = Srs.Pages.sample(g)
+  val r = if ok then Srs.Gate.arm(g) else Srs.Gate.shut(g)
+  g
+
+capability Pages:
+  // false once the gate shut (or when main armed none)
+  def live(): Bool
+
+handler Srs.Pages for Pages:
+  def init(): Ptr = Srs.Pages.arm()
+  def live(self: Ptr): Bool = Srs.Gate.read(self) match
+    case Srs.GateOn => true
+    case Srs.GateIdle => false
+    case Srs.GateShut => false
+
+// strings: pure primitives, no effect (vic 2026-11-09)
+extern def Str.len(s: Str): I64
+extern def Str.at(s: Str, i: I64): I64
+extern def Str.slice(s: Str, b: I64, e: I64): Str
+extern def Str.eq(a: Str, b: Str): Bool
+
+// words U32, U64: the only conversions between int types, pure, static inline in the emitted C (s2/emit.srs
+// Emit.wordPrims). U32.of and U32.ofU64 keep the low 32 bits, U64.of and I64.of widen exactly, U64.ofI64 and
+// I64.ofU64 keep the 64 bits (two's complement)
+extern def U32.of(x: I64): U32
+extern def U32.ofU64(x: U64): U32
+extern def U64.of(x: U32): U64
+extern def U64.ofI64(x: I64): U64
+extern def I64.of(x: U32): I64
+// the little-endian word at byte i of s, TOTAL: a byte outside [0, Str.len(s)) reads as 0 (Emit.wordLoad)
+extern def Str.u32le(s: Str, i: I64): U32
+extern def Str.u64le(s: Str, i: I64): U64
+extern def I64.ofU64(x: U64): I64
+// a sorts before b by bytes as unsigned values, a proper prefix first (memcmp); byte c is in s[i, e), i and e clamped
+// to [0, Str.len(s)) (memchr). Static inline (Emit.strPrims)
+extern def Str.less(a: Str, b: Str): Bool
+extern def Str.has(s: Str, c: I64, i: I64, e: I64): Bool
+
+// R0a bytes: U8 is storage only (an Array[U8](n) element), with no literal and no operator (C promotes uint8_t to
+// int). U8.of keeps the low 8 bits. Str.ofBytes views the n bytes of xs as a Str with no copy, so the Str lives in
+// the region of xs
+extern def U8.of(x: I64): U8
+extern def I64.ofU8(x: U8): I64
+extern def Str.ofBytes {r: Region} (n: I64, xs: Array[U8](n)<r>): Str<r>
+// CStr.of copies the bytes of s and a NUL into the region r: the const char* a libc param takes (Emit.cstrOf). A NUL
+// inside s ends the C string there
+extern def CStr.of {r: Region} (s: Str): CStr<r>
+// CStr.argv copies the n pointers of xs and a NULL into the region r: the char *const argv[] of execvp and posix_spawn
+// (Emit.cargv). No CStr is NULL, so CStr.argv is the only way to an argv, and every argv ends in its NULL
+extern def CStr.argv {r: Region} (n: I64, xs: Array[CStr](n)<r>): CArgv<r>
+// rt_os_errno: errno after a failed libc call (a static inline in C), for the Srs.* handlers over libc
+extern def rt_os_errno(): I32
+
+// R0b I32: storage for a C int (libc results), no literal and no operator. I32.of keeps the low 32 bits, I64.ofI32 sign-extends
+extern def I32.of(x: I64): I32
+extern def I64.ofI32(x: I32): I64
+
+// the srs Arena's raw memory (arena into srs): rt_ names, so only a Srs.* handler fn may call them. Inline prims emitted
+// by s2c (Emit.ptrPrims): word i of a block, a byte offset, a pointer as a number and back, the allocator's state block
+extern def rt_ptr_get(p: Ptr, i: I64): I64
+extern def rt_ptr_set(p: Ptr, i: I64, v: I64): Unit
+extern def rt_ptr_add(p: Ptr, n: I64): Ptr
+extern def rt_ptr_addr(p: Ptr): U64
+extern def rt_ptr_of(a: U64): Ptr
+extern def rt_globals(): Ptr
+
+// pages from the OS (extern "libc": the C compiler checks each against <sys/mman.h>); the flags are the C constants
+extern "libc" def mmap(addr: Ptr, len: U64, prot: I32, flags: I32, fd: I32, off: I64): Ptr
+extern "libc" def munmap(addr: Ptr, len: U64): I32
+extern "libc" def madvise(addr: Ptr, len: U64, advice: I32): I32
+extern "libc" val PROT_READ: I32
+extern "libc" val PROT_WRITE: I32
+extern "libc" val MAP_PRIVATE: I32
+extern "libc" val MAP_ANONYMOUS: I32
+extern "libc" val MAP_NORESERVE: I32
+extern "libc" val MADV_HUGEPAGE: I32
+
+// rotations: n is taken mod the width (each shift masks its count), so n = 0 and n = 32 give x; clang emits one ror
+def U32.rotr(x: U32, n: I64): U32 = x >> n | x << 32 - n
+def U32.rotl(x: U32, n: I64): U32 = x << n | x >> 32 - n
+def U64.rotr(x: U64, n: I64): U64 = x >> n | x << 64 - n
+def U64.rotl(x: U64, n: I64): U64 = x << n | x >> 64 - n
+
+// the authorities of a program, one protocol each (vic 2026-11-09): a fn requests Console.print(s), its row is inferred,
+// main handles it with handle c = Srs.Console(). rt_* belong in the bodies of the Srs.* handlers only
+// the state of a handler that keeps none (a handler with no init: s2/parse.srs Parse.stateless)
+extern def Srs.noState(): Ptr
+// what rt_print and rt_print_i64 write between begin and end, as one string
+extern def rt_capture_begin(): Unit
+extern def rt_capture_end(): Str
+// the bytes printed since the last newline (stdout: since its last flush)
+extern def rt_column(): I64
+
+// captureBegin .. captureEnd: the prints between them are one string, not output (captures nest); column: the bytes
+// printed since the last newline
+capability Console:
+  def print(s: Str): Unit
+  def printI64(v: I64): Unit
+  def printChar(c: I64): Unit
+  def eprint(s: Str): Unit
+  def eprintI64(v: I64): Unit
+  def captureBegin(): Unit
+  def captureEnd(): Str
+  def column(): I64
+
+handler Srs.Console for Console:
+  def print(s: Str): Unit = rt_print(s)
+  def printI64(v: I64): Unit = rt_print_i64(v)
+  def printChar(c: I64): Unit = rt_print_char(c)
+  def eprint(s: Str): Unit = rt_eprint(s)
+  def eprintI64(v: I64): Unit = rt_eprint_i64(v)
+  def captureBegin(): Unit = rt_capture_begin()
+  def captureEnd(): Str = rt_capture_end()
+  def column(): I64 = rt_column()
+
+capability Args:
+  def count(): I64
+  def at(i: I64): Str
+
+handler Srs.Args for Args:
+  def count(): I64 = rt_argc()
+  def at(i: I64): Str = rt_arg(i)
+
+// ── the outside world (A13): every OS observation is an op of Files, Env, Clock, Net or Process, so a fn whose row has
+// none of them reads nothing outside its arguments. Failures are values (Os.Err), never an abort
+extern def rt_fs_bytes(path: Str): Str
+extern def rt_fs_read_all(path: Str): Str
+extern def rt_fs_kind(path: Str, follow: Bool): I64
+extern def rt_fs_exec(path: Str): Bool
+extern def rt_fs_list(path: Str): Str
+extern def rt_fs_readlink(path: Str): Str
+extern def rt_fs_realpath(path: Str): Str
+extern def rt_fs_cwd(): Str
+extern def rt_env_get(name: Str): Str
+extern def rt_clock_now(): I64
+extern def rt_net_new(): Ptr
+extern def rt_net_connect(self: Ptr, path: Str): I64
+extern def rt_net_send(self: Ptr, s: Str): I64
+extern def rt_net_recv(self: Ptr, n: I64): Str
+extern def rt_net_drain(self: Ptr): Str
+extern def rt_net_close(self: Ptr): Unit
+extern def rt_proc_new(): Ptr
+extern def rt_proc_arg(self: Ptr, a: Str): Unit
+extern def rt_proc_run(self: Ptr): I64
+
+// why an OS op failed (errno, as rt/srs_rt.c os_code maps it)
+enum Os.Err:
+  case Os.NotFound
+  case Os.Denied
+  case Os.NotDir
+  case Os.IsDir
+  case Os.Loop
+  case Os.TooLong
+  // a path or name with a NUL byte: refused, never cut short at the NUL
+  case Os.BadPath
+  case Os.Refused
+  // the peer is gone, or the connection never opened
+  case Os.Closed
+  case Os.Other(errno: I64)
+
+enum Os.Res [A: Type]:
+  case Os.Ok(v: A)
+  case Os.Fail(e: Os.Err)
+
+enum Os.Status:
+  case Os.Done
+  case Os.Failed(e: Os.Err)
+
+// what a path names; Os.Absent: stat failed (snx fsKind 0)
+enum Os.Kind:
+  case Os.Absent
+  case Os.Regular
+  case Os.Dir
+  case Os.Link
+  case Os.Special
+
+// stat follows a symlink, lstat does not
+enum Os.Links:
+  case Os.Follow
+  case Os.NoFollow
+
+enum Os.Strs:
+  case Os.End
+  case Os.More(s: Str, rest: Os.Strs)
+
+enum Os.Var:
+  case Os.Unset
+  case Os.Set(v: Str)
+
+enum Os.Ran:
+  case Os.Exited(code: I64)
+  case Os.Killed(signal: I64)
+  case Os.NoStart(e: Os.Err)
+
+// the codes of rt/srs_rt.c os_code; 1000 + errno for the rest
+def Os.err(c: I64): Os.Err =
+  if c == 1 then Os.NotFound
+  else if c == 2 then Os.Denied
+  else if c == 3 then Os.NotDir
+  else if c == 4 then Os.IsDir
+  else if c == 5 then Os.Loop
+  else if c == 6 then Os.TooLong
+  else if c == 7 then Os.BadPath
+  else if c == 8 then Os.Refused
+  else if c == 9 then Os.Closed
+  else Os.Other(c - 1000)
+
+// a Str from rt: its bytes, or length -code on failure
+def Os.res(s: Str): Os.Res[Str] = if Str.len(s) < 0 then Os.Fail(Os.err(0 - Str.len(s))) else Os.Ok(s)
+
+def Os.status(c: I64): Os.Status = if c == 0 then Os.Done else Os.Failed(Os.err(c))
+
+def Os.follow(l: Os.Links): Bool = l match
+  case Os.Follow => true
+  case Os.NoFollow => false
+
+// rt_fs_kind's code, in Os.Kind order
+def Os.kind(k: I64): Os.Kind =
+  if k == 1 then Os.Regular
+  else if k == 2 then Os.Dir
+  else if k == 3 then Os.Link
+  else if k == 4 then Os.Special
+  else Os.Absent
+
+// names each followed by a NUL, cut from the end so the list keeps their order
+def Os.names(s: Str): Os.Strs =
+  var acc = Os.End
+  var j = Str.len(s) - 1
+  while j >= 0 do
+    var k = j - 1
+    while k >= 0 && Str.at(s, k) != 0 do k = k - 1
+    acc = Os.More(Str.slice(s, k + 1, j), acc)
+    j = k
+  acc
+
+def Os.listRes(s: Str): Os.Res[Os.Strs] = if Str.len(s) < 0 then Os.Fail(Os.err(0 - Str.len(s))) else Os.Ok(Os.names(s))
+
+def Os.var(s: Str): Os.Var = if Str.len(s) < 0 then Os.Unset else Os.Set(s)
+
+// rt_proc_run's how * 2^20 + val (rt/srs_rt.c OS_HOW)
+def Os.ran(r: I64): Os.Ran =
+  val how = r / 1048576
+  val v = r % 1048576
+  if how == 0 then Os.Exited(v)
+  else if how == 1 then Os.Killed(v)
+  else Os.NoStart(Os.err(v))
+
+capability Files:
+  def read(path: Str): Str
+  // st_size bytes (a file in /proc reads as empty); readAll reads to the end of the file
+  def bytes(path: Str): Os.Res[Str]
+  def readAll(path: Str): Os.Res[Str]
+  def kind(path: Str, l: Os.Links): Os.Kind
+  def executable(path: Str): Bool
+  // the names but . and .., sorted by bytes
+  def list(path: Str): Os.Res[Os.Strs]
+  def readLink(path: Str): Os.Res[Str]
+  def realPath(path: Str): Os.Res[Str]
+  def cwd(): Os.Res[Str]
+
+handler Srs.Files for Files:
+  def read(path: Str): Str = rt_read_file(path)
+  def bytes(path: Str): Os.Res[Str] = Os.res(rt_fs_bytes(path))
+  def readAll(path: Str): Os.Res[Str] = Os.res(rt_fs_read_all(path))
+  def kind(path: Str, l: Os.Links): Os.Kind = Os.kind(rt_fs_kind(path, Os.follow(l)))
+  def executable(path: Str): Bool = rt_fs_exec(path)
+  def list(path: Str): Os.Res[Os.Strs] = Os.listRes(rt_fs_list(path))
+  def readLink(path: Str): Os.Res[Str] = Os.res(rt_fs_readlink(path))
+  def realPath(path: Str): Os.Res[Str] = Os.res(rt_fs_realpath(path))
+  def cwd(): Os.Res[Str] = Os.res(rt_fs_cwd())
+
+capability Env:
+  def get(name: Str): Os.Var
+
+handler Srs.Env for Env:
+  def get(name: Str): Os.Var = Os.var(rt_env_get(name))
+
+capability Clock:
+  // seconds since the epoch
+  def now(): I64
+
+handler Srs.Clock for Clock:
+  def now(): I64 = rt_clock_now()
+
+// a client stream to a Unix socket. connect moves to Open even when it fails (its Os.Status says so): the ops of a
+// connection that did not open return Os.Closed, and close is due in both cases
+capability Net:
+  state Closed, Open
+  start Closed
+  stop Closed
+  def connect <Closed> (path: Str): Os.Status <Open>
+  def send <Open> (s: Str): Os.Status <Open>
+  // up to n bytes, fewer only at the end of the stream
+  def recv <Open> (n: I64): Os.Res[Str] <Open>
+  // every byte up to the end of the stream
+  def drain <Open> (): Os.Res[Str] <Open>
+  def close <Open> (): Unit <Closed>
+
+handler Srs.Net for Net:
+  def init(): Ptr = rt_net_new()
+  def connect(self: Ptr, path: Str): Os.Status = Os.status(rt_net_connect(self, path))
+  def send(self: Ptr, s: Str): Os.Status = Os.status(rt_net_send(self, s))
+  def recv(self: Ptr, n: I64): Os.Res[Str] = Os.res(rt_net_recv(self, n))
+  def drain(self: Ptr): Os.Res[Str] = Os.res(rt_net_drain(self))
+  def close(self: Ptr): Unit = rt_net_close(self)
+
+capability Process:
+  // argv[0] is found on PATH, as execvp; the child shares stdin, stdout and stderr; run waits for it
+  def run(argv: Os.Strs): Os.Ran
+
+handler Srs.Process for Process:
+  def run(argv: Os.Strs): Os.Ran =
+    val p = rt_proc_new()
+    var a = argv
+    var go = true
+    while go do a match
+      case Os.End => go = false
+      case Os.More(s, rest) =>
+        rt_proc_arg(p, s)
+        a = rest
+    Os.ran(rt_proc_run(p))
+
+capability Exit:
+  def exit(code: I64): Unit
+
+handler Srs.Exit for Exit:
+  def exit(code: I64): Unit = rt_exit(code)
+
+// a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
+def strHash(s: Str): I64 =
+  var h = 2166136261
+  var i = 0
+  val n = Str.len(s)
+  while i < n do
+    h = (h + Str.at(s, i)) * 16777619 % 4294967296
+    i = i + 1
+  h
+
+// A1 arrays (vic/c/array-design.md; s2/types.srs Ty.atCall, Ty.tabulate): xs.at(i) is Ok(xs(i)) or Out(i), never a
+// crash; Array.tabulate[F](n) fills element i with the given Array.Gen[F, A]'s at(i)
+enum Array.Index [A: Type]:
+  case Array.Ok(v: A)
+  case Array.Out(i: I64)
+
+trait Array.Gen [F: Type] [A: Type]:
+  def at(i: I64): A
+
+// A1 Cell[A] (s2/types.srs Ty.cellPut): Cell.put(c, v) is a request on Mut, so a fn that writes a cell has Mut in its row
+capability Mut:
+  def write(): Unit
+
+handler Srs.Mut for Mut:
+  def write(): Unit = ()
+
+// the compiler's store (s2/store.srs): the root of the store and its entries, written through StoreOut (an entry is open until commit)
+extern def rt_store_dir(): Str
+extern def rt_out_new(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr
+extern def rt_out_str(self: Ptr, s: Str): Unit
+extern def rt_out_commit(self: Ptr): Unit
+extern def rt_fout_new(path: Str): Ptr
+extern def rt_store_read(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
+
+// the store's root and its entries, read (the authority of the store: SRS_STORE, else $HOME/.srs/store)
+capability Store:
+  def dir(): Str
+  def load(dir: Str, a: I64, b: I64, c: I64, d: I64): Str
+
+handler Srs.Store for Store:
+  def dir(): Str = rt_store_dir()
+  def load(dir: Str, a: I64, b: I64, c: I64, d: I64): Str = rt_store_read(dir, a, b, c, d)
+
+// an entry is open until commit renames it into place
+capability StoreOut:
+  state Writing, Done
+  start Writing
+  stop Done
+  def put <Writing> (s: Str): Unit <Writing>
+  def commit <Writing> (): Unit <Done>
+
+handler Srs.StoreFile for StoreOut:
+  def init(dir: Str, a: I64, b: I64, c: I64, d: I64): Ptr = rt_out_new(dir, a, b, c, d)
+  def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
+  def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// F64: a C double (IEEE 754 binary64): storage, no literal and no operator. Its arithmetic, compare and conversions are
+// prims (s2c Emit.f64Prims). ofBits and bits keep the 64 bits; truncI64 rounds toward 0, and is 0 out of the I64 range
+// and for NaN
+extern def F64.ofBits(b: I64): F64
+extern def F64.bits(x: F64): I64
+extern def F64.ofI64(i: I64): F64
+extern def F64.truncI64(x: F64): I64
+extern def F64.add(a: F64, b: F64): F64
+extern def F64.sub(a: F64, b: F64): F64
+extern def F64.mul(a: F64, b: F64): F64
+extern def F64.div(a: F64, b: F64): F64
+extern def F64.lt(a: F64, b: F64): Bool
+extern def F64.eq(a: F64, b: F64): Bool
+extern def F64.ceil(x: F64): F64
+extern def F64.floor(x: F64): F64
+// x as text into the n bytes of buf (how 0 = %g, 1 = %f, 2 = %.*e with prec digits): its length, at most n - 1 (C
+// snprintf); the text of s as a float (C strtod of its first 511 bytes: 0 when none is read)
+extern def F64.fmt(n: I64, buf: Array[U8](n), how: I64, prec: I64, x: F64): I64
+extern def F64.parse(s: Str): F64
+
+// a source file rewritten whole (srs fmt): the new text goes to a file beside it, renamed over it at commit
+handler Srs.FileOut for StoreOut:
+  def init(path: Str): Ptr = rt_fout_new(path)
+  def put(self: Ptr, s: Str): Unit = rt_out_str(self, s)
+  def commit(self: Ptr): Unit = rt_out_commit(self)
+
+// ACell[A] (s2/types.srs Ty.atomCall): ACell.load, store, cas and fetchAdd are requests on Atomic, so a fn that touches an
+// atomic word has Atomic in its row (or an {a: Atomic} binder) and main handles it; the ops are the __atomic builtins
+capability Atomic:
+  def touch(): Unit
+
+handler Srs.Atomic for Atomic:
+  def touch(): Unit = ()
