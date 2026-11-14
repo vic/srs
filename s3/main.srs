@@ -1,0 +1,71 @@
+// s3c LEX-1 driver: s3c --lex F1 F2 ... prints "path tokens=N diags=D"; s3c --lex-dump F prints "kind off len" per token,
+// then "diag code off" per diag. A file that does not read is named and the exit code is 1.
+
+def M.sp(): Unit = Console.print(" ")
+def M.nl(): Unit = Console.print("\n")
+
+def M.tokLines(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, j: I64): Unit =
+  if 0 <= j && j < t && j < cap then
+    Lx.byteKind(I64.ofU8(ks(j))) match
+      case Coll.Some(k) => Console.print(Lx.kindName(k))
+      case Coll.None => Console.print("badkind")
+    M.sp()
+    Console.printI64(I64.of(os(j)))
+    M.sp()
+    Console.printI64(I64.of(ls(j)))
+    M.nl()
+    M.tokLines(cap, ks, os, ls, t, j + 1)
+  else ()
+
+def M.diagLines(dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, j: I64): Unit =
+  if 0 <= j && j < d && j < dcap then
+    Console.print("diag ")
+    Lx.byteWhy(I64.ofU8(dc(j))) match
+      case Coll.Some(w) => Console.print(Lx.whyName(w))
+      case Coll.None => Console.print("badwhy")
+    M.sp()
+    Console.printI64(I64.of(dof(j)))
+    M.nl()
+    M.diagLines(dcap, dc, dof, d, j + 1)
+  else ()
+
+// dump = true: one line per token and diag; false: the counts line
+def M.file(dump: Bool, nt: Lx.Notes, p: Str, src: Str): Unit =
+  val Lx.Out(cap, ks, os, ls, t, dcap, dc, dof, d) = Lx.lex(nt, src)
+  if dump then
+    M.tokLines(cap, ks, os, ls, t, 0)
+    M.diagLines(dcap, dc, dof, d, 0)
+  else
+    Console.print(p)
+    Console.print(" tokens=")
+    Console.printI64(t)
+    Console.print(" diags=")
+    Console.printI64(d)
+    M.nl()
+
+def M.files(dump: Bool, nt: Lx.Notes, i: I64, bad: I64): I64 =
+  if i >= Args.count() then bad
+  else
+    val p = Args.at(i)
+    Files.bytes(p) match
+      case Os.Ok(src) =>
+        M.file(dump, nt, p, src)
+        M.files(dump, nt, i + 1, bad)
+      case Os.Fail(_) =>
+        Console.print(p)
+        Console.print(" unreadable\n")
+        M.files(dump, nt, i + 1, 1)
+
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Args()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  handle fs = Srs.Files()
+  if Args.count() > 1 && Str.eq(Args.at(1), "--lex") then M.files(false, Lx.Skip, 2, 0)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-keep") then M.files(false, Lx.Keep, 2, 0)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-dump") then M.files(true, Lx.Skip, 2, 0)
+  else if Args.count() > 1 && Str.eq(Args.at(1), "--lex-dump-keep") then M.files(true, Lx.Keep, 2, 0)
+  else
+    Console.print("usage: s3c (--lex | --lex-keep) F... | (--lex-dump | --lex-dump-keep) F\n")
+    2
