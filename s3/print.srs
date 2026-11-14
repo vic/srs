@@ -1,0 +1,338 @@
+// s3c PARSE-1b: the AST printer, in s2. It prints a def or enum node back as source text: each token's source text, the
+// punctuation as literals, layout from the structure: ind = the indent of the line being written, a block is at ind + 2.
+// The oracle relexes this text (skip mode) and compares it with the decl's own tokens. Spacing only matters for a `<` (glued to the
+// token before it iff the source token was an ltglued) and for tokens that would merge: a name next to a name gets a space.
+
+def Pr.s(x: Str): Unit = Console.print(x)
+def Pr.tok(g: Na.G, j: I64): Unit = Console.print(Na.text(g, j))
+
+def Pr.spaces(n: I64): Unit =
+  if n > 0 then
+    Console.print(" ")
+    Pr.spaces(n - 1)
+  else ()
+
+// a new line at indent n
+def Pr.line(n: I64): Unit =
+  Console.print("\n")
+  Pr.spaces(n)
+
+// token ids of the list r, separated by ", "
+def Pr.toks(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    Pr.tok(g, Na.item(g, r, i))
+    Pr.toks(g, r, i + 1)
+  else ()
+
+// ── types, groups ──
+def Pr.tys(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    Pr.ty(g, Na.item(g, r, i))
+    Pr.tys(g, r, i + 1)
+  else ()
+
+def Pr.ty(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kTyCaps() then
+    Pr.ty(g, Na.a(g, n))
+    Pr.s("<")
+    Pr.toks(g, Na.b(g, n), 0)
+    Pr.s(">")
+  else
+    Pr.tok(g, Na.tok(g, n))
+    if Na.a(g, n) != 0 then
+      Pr.s("[")
+      Pr.tys(g, Na.a(g, n), 0)
+      Pr.s("]")
+    else ()
+    if Na.b(g, n) != 0 then
+      Pr.s("(")
+      Pr.exprs(g, Na.b(g, n), 0, 0)
+      Pr.s(")")
+    else ()
+
+def Pr.binders(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    val b = Na.item(g, r, i)
+    if Na.kd(g, b) == Na.kBind() then
+      Pr.tok(g, Na.tok(g, b))
+      Pr.s(": ")
+      Pr.ty(g, Na.a(g, b))
+    else Pr.ty(g, Na.a(g, b))
+    Pr.binders(g, r, i + 1)
+  else ()
+
+def Pr.atom(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  Pr.tok(g, Na.tok(g, n))
+  if k == Na.kAtomCall() then
+    Pr.s("(")
+    Pr.toks(g, Na.a(g, n), 0)
+    Pr.s(")")
+  else if k == Na.kAtomAt() then
+    Pr.s(": ")
+    Pr.tok(g, Na.a(g, n))
+  else if k == Na.kAtomInf() then
+    Pr.s(" ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s(" ")
+    Pr.tok(g, Na.b(g, n))
+  else
+    Pr.s(" ")
+    Pr.tok(g, Na.a(g, n))
+
+def Pr.atoms(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    Pr.atom(g, Na.item(g, r, i))
+    Pr.atoms(g, r, i + 1)
+  else ()
+
+// a header part: group, params, return type, exit facts, body
+def Pr.part(g: Na.G, n: I64, ind: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kGTypes() then
+    Pr.s("[")
+    Pr.binders(g, Na.a(g, n), 0)
+    Pr.s("]")
+  else if k == Na.kGEv() then
+    Pr.s("{")
+    Pr.binders(g, Na.a(g, n), 0)
+    Pr.s("}")
+  else if k == Na.kGFacts() || k == Na.kExit() then
+    Pr.s(" <")
+    Pr.atoms(g, Na.a(g, n), 0)
+    Pr.s(">")
+  else if k == Na.kParams() then
+    Pr.s("(")
+    Pr.binders(g, Na.a(g, n), 0)
+    Pr.s(")")
+  else if k == Na.kRet() then
+    Pr.s(": ")
+    Pr.ty(g, Na.a(g, n))
+  else if k == Na.kBody() then
+    Pr.s(" = ")
+    Pr.rhs(g, Na.a(g, n), ind)
+  else ()
+
+def Pr.parts(g: Na.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Na.len(g, r) then
+    Pr.part(g, Na.item(g, r, i), ind)
+    Pr.parts(g, r, i + 1, ind)
+  else ()
+
+// ── expressions ──
+def Pr.exprs(g: Na.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Na.len(g, r) then
+    if i > 0 then Pr.s(", ") else ()
+    Pr.expr(g, Na.item(g, r, i), ind)
+    Pr.exprs(g, r, i + 1, ind)
+  else ()
+
+def Pr.callGroups(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    if Na.kd(g, n) == Na.kCGTys() then
+      Pr.s("[")
+      Pr.tys(g, Na.a(g, n), 0)
+      Pr.s("]")
+    else
+      Pr.s("{")
+      Pr.toks(g, Na.a(g, n), 0)
+      Pr.s("}")
+    Pr.callGroups(g, r, i + 1)
+  else ()
+
+def Pr.pat(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  Pr.tok(g, Na.tok(g, n))
+  if k == Na.kPCase() then
+    Pr.s("(")
+    Pr.toks(g, Na.a(g, n), 0)
+    Pr.s(")")
+  else ()
+
+def Pr.arms(g: Na.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    Pr.line(ind + 2)
+    Pr.s("case ")
+    Pr.pat(g, Na.a(g, n))
+    Pr.s(" => ")
+    Pr.rhs(g, Na.b(g, n), ind + 2)
+    Pr.arms(g, r, i + 1, ind)
+  else ()
+
+// the right side of =, then, else, do, =>: a block goes on its own lines
+def Pr.rhs(g: Na.G, n: I64, ind: I64): Unit =
+  if Na.kd(g, n) == Na.kBlock() then Pr.stmts(g, Na.a(g, n), 0, ind + 2)
+  else Pr.expr(g, n, ind)
+
+def Pr.stmts(g: Na.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Na.len(g, r) then
+    Pr.line(ind)
+    Pr.stmt(g, Na.item(g, r, i), ind)
+    Pr.stmts(g, r, i + 1, ind)
+  else ()
+
+def Pr.stmt(g: Na.G, n: I64, ind: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kVal() || k == Na.kVar() then
+    if k == Na.kVal() then Pr.s("val ") else Pr.s("var ")
+    Pr.tok(g, Na.tok(g, n))
+    if Na.a(g, n) != 0 then
+      Pr.s(": ")
+      Pr.ty(g, Na.a(g, n))
+    else ()
+    Pr.s(" = ")
+    Pr.rhs(g, Na.b(g, n), ind)
+  else if k == Na.kPatVal() then
+    Pr.s("val ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s("(")
+    Pr.toks(g, Na.a(g, n), 0)
+    Pr.s(") = ")
+    Pr.rhs(g, Na.b(g, n), ind)
+  else if k == Na.kHandle() then
+    Pr.s("handle ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" = ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s("(")
+    Pr.exprs(g, Na.b(g, n), 0, ind)
+    Pr.s(")")
+  else if k == Na.kCheck() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" ")
+    Pr.expr(g, Na.a(g, n), ind)
+  else Pr.expr(g, Na.a(g, n), ind)
+
+// a binary < written glued to its left operand stays glued
+def Pr.bin(g: Na.G, n: I64, ind: I64): Unit =
+  Pr.expr(g, Na.a(g, n), ind)
+  if Na.cls(g, Na.tok(g, n)) == Kc.ltg() then
+    Pr.s("<")
+    Pr.expr(g, Na.b(g, n), ind)
+  else
+    Pr.s(" ")
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" ")
+    Pr.expr(g, Na.b(g, n), ind)
+
+// the last token of the expression is a Dedent (a block or match arms close its lines), so a following else is on a new line
+def Pr.endsDed(g: Na.G, n: I64): Bool =
+  val k = Na.kd(g, n)
+  if k == Na.kBlock() || k == Na.kMatch() then true
+  else if k == Na.kIf() || k == Na.kIfNl() then Pr.endsDed(g, Na.b(g, Na.b(g, n)))
+  else if k == Na.kWhile() then Pr.endsDed(g, Na.b(g, n))
+  else if k == Na.kAssign() then Pr.endsDed(g, Na.a(g, n))
+  else false
+
+def Pr.ifE(g: Na.G, n: I64, ind: I64): Unit =
+  val p = Na.b(g, n)
+  val t = Na.a(g, p)
+  Pr.s("if ")
+  Pr.expr(g, Na.a(g, n), ind)
+  Pr.s(" then ")
+  Pr.rhs(g, t, ind)
+  if Na.kd(g, n) == Na.kIfNl() || Pr.endsDed(g, t) then Pr.line(ind) else Pr.s(" ")
+  Pr.s("else ")
+  Pr.rhs(g, Na.b(g, p), ind)
+
+def Pr.expr(g: Na.G, n: I64, ind: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kInt() || k == Na.kStr() || k == Na.kChar() || k == Na.kName() then Pr.tok(g, Na.tok(g, n))
+  else if k == Na.kUnit() then Pr.s("()")
+  else if k == Na.kParen() then
+    Pr.s("(")
+    Pr.expr(g, Na.a(g, n), ind)
+    Pr.s(")")
+  else if k == Na.kCall() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.callGroups(g, Na.a(g, n), 0)
+    Pr.s("(")
+    Pr.exprs(g, Na.b(g, n), 0, ind)
+    Pr.s(")")
+  else if k == Na.kMethod() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(".")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s("(")
+    Pr.exprs(g, Na.b(g, n), 0, ind)
+    Pr.s(")")
+  else if k == Na.kResume() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.s("(")
+    Pr.expr(g, Na.b(g, n), ind)
+    Pr.s(")")
+  else if k == Na.kBin() then Pr.bin(g, n, ind)
+  else if k == Na.kUn() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.expr(g, Na.a(g, n), ind)
+  else if k == Na.kIf() || k == Na.kIfNl() then Pr.ifE(g, n, ind)
+  else if k == Na.kMatch() then
+    Pr.expr(g, Na.a(g, n), ind)
+    Pr.s(" match")
+    Pr.arms(g, Na.b(g, n), 0, ind)
+  else if k == Na.kWhile() then
+    Pr.s("while ")
+    Pr.expr(g, Na.a(g, n), ind)
+    Pr.s(" do ")
+    Pr.rhs(g, Na.b(g, n), ind)
+  else if k == Na.kAssign() then
+    Pr.tok(g, Na.tok(g, n))
+    Pr.s(" = ")
+    Pr.rhs(g, Na.a(g, n), ind)
+  else if k == Na.kBlock() then Pr.rhs(g, n, ind)
+  else ()
+
+// ── decls ──
+def Pr.cases(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    val k = Na.kd(g, n)
+    if k == Na.kCase() then
+      Pr.line(2)
+      Pr.s("case ")
+      Pr.tok(g, Na.tok(g, n))
+      Pr.s("(")
+      Pr.binders(g, Na.a(g, n), 0)
+      Pr.s(")")
+    else if k == Na.kCaseNP() then
+      Pr.line(2)
+      Pr.s("case ")
+      Pr.tok(g, Na.tok(g, n))
+    else ()
+    Pr.cases(g, r, i + 1)
+  else ()
+
+// the root of a def or enum decl (at indent 0)
+def Pr.decl(g: Na.G, n: I64): Unit =
+  val k = Na.kd(g, n)
+  if k == Na.kDef() then
+    Pr.s("def ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.parts(g, Na.b(g, n), 0, 0)
+  else if k == Na.kEnum() then
+    Pr.s("enum ")
+    Pr.tok(g, Na.a(g, n))
+    Pr.enumGroups(g, Na.b(g, n), 0)
+    Pr.s(":")
+    Pr.cases(g, Na.b(g, n), 0)
+  else ()
+
+// the groups before the cases of an enum
+def Pr.enumGroups(g: Na.G, r: I64, i: I64): Unit =
+  if i < Na.len(g, r) then
+    val n = Na.item(g, r, i)
+    val k = Na.kd(g, n)
+    if k == Na.kCase() || k == Na.kCaseNP() then ()
+    else
+      Pr.part(g, n, 0)
+      Pr.enumGroups(g, r, i + 1)
+  else ()
