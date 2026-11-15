@@ -34,6 +34,8 @@ in
         pkgs:
         [
           pkgs.zig # S0 compiler + C compiler/linker (C3, C4)
+          pkgs.tinycc # srs development C compiler (default CC of s4-cc builds; vic 2026-11-16)
+          pkgs.gcc # gcc -O1 builds the s4 kernel: 9.7 s build, 0.09 s per check (vic 2026-11-16)
           pkgs.lean4 # lean-check: the soundness proofs of the effect checker (C10)
           pkgs.coreutils # timeout in tests/run.sh
           pkgs.git
