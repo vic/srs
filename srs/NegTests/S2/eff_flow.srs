@@ -1,0 +1,18 @@
+// prompt: s2 corpus neg eff_flow: the kernel must reject it with exactly these codes (s2 expects error[op-not-allowed])
+val NegTests.S2.eff_flow {NegTest}: Never =
+  capability Door:
+    state Open, Shut
+    start Open
+    stop Shut
+    def shut <Open> (): Unit <Shut>
+
+  handler Hinge for Door:
+    def shut(): Unit = ()
+
+  def main(): I64 =
+    handle d = Hinge()
+    Door.shut()
+    Door.shut()
+    0
+  NegTest.expect("op-not-allowed", "the s2 corpus expects error[op-not-allowed] for eff_flow")
+

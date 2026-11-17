@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg tval_impure: the kernel must reject it with exactly these codes (s2 expects error[no-compile-time-value])
+val NegTests.S2.tval_impure {NegTest}: Never =
+  type Bits (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def noisy(): I64 =
+    Console.print("x")
+    8
+  def tf(x: Bits(noisy())): Bool = x
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "no-compile-time-value", "untyped", "the s2 corpus expects error[no-compile-time-value] for tval_impure")
+

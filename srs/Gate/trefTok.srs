@@ -1,0 +1,12 @@
+// prompt: tref(u, v) rows for unit u: a type token of u (kind Resolve.tBase() + Resolve.tDecl()) names a type declared by unit v
+// (Gate.tyUnit): type references, which ref(u, v) (global decl uses) does not hold.
+def Gate.trefTok(w: Resolve.W, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    if I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tDecl() then
+      Gate.tyUnit(w, I64.of(rf(j))) match
+        case Coll.Some(v) => Gate.row2(u, v)
+        case Coll.None => ()
+    else ()
+    Gate.trefTok(w, u, rcap, rk, rf, j + 1)
+  else ()
+

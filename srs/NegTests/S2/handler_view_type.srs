@@ -1,0 +1,23 @@
+// prompt: s2 corpus neg handler_view_type: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.handler_view_type {NegTest}: Never =
+  capability Pad:
+    state Writing, Viewed, Gone
+    start Writing
+    stop Gone
+    def view <Writing> (): View{self} <Viewed>
+    transition ends Writing -> Gone, Viewed -> Gone
+    def done <s ends t> (): Unit <t>
+
+  handler HPad for Pad:
+    def view(): I64 = 3
+    def done(): Unit = ()
+
+  type View {b: Pad} <b: Viewed> = Ptr
+
+  def main(): I64 =
+    handle b = HPad()
+    val v = b.view()
+    b.done()
+    0
+  NegTest.expect("mismatch", "ptr-outside-srs", "the s2 corpus expects error[mismatch] for handler_view_type")
+

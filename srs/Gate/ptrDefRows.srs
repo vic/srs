@@ -1,0 +1,9 @@
+// prompt: ptrDef(u) for each unit u that is a constrained type definition with body Ptr[A](n) (Gate.hasPtr and Gate.ptrDefOk):
+// a refined pointer type; only trusted image code may make or consume its values through externs.
+def Gate.ptrDefRows(sp: I64, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    if Gate.hasPtr(sp, rcap, rk, rf, 0) && Gate.ptrDefOk(f, rcap, rk, rf, sp, 0) then Gate.row1(u) else ()
+    Gate.ptrDefRows(sp, rest, u + 1)
+

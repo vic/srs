@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg trait_arity: the kernel must reject it with exactly these codes (s2 expects error[trait-arity])
+val NegTests.S2.trait_arity {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64, Bool]:
+    def show(x: I64): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("trait-arity", "the s2 corpus expects error[trait-arity] for trait_arity")
+

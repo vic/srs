@@ -1,0 +1,12 @@
+// prompt: two state facts for the same capability binder at entry: the kernel must reject it with fact-twice.
+val NegTests.factTwice {NegTest}: Never =
+  capability ZqDoor:
+    state Shut, Open1, Open2
+    start Shut
+    stop Open2
+    transition knocks Shut -> Open1, Open1 -> Open2
+    def knock <s knocks t> (): I64 <t>
+  def zqTwice {d: ZqDoor} <d: Shut, d: Open1> (): I64 = 0
+  def main(): I64 = 0
+  NegTest.expect("fact-twice", "binder d gets two entry states, Shut and Open1; a binder has one state")
+

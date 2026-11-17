@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg tev_generic: the kernel must reject it with exactly these codes (s2 expects error[no-given])
+val NegTests.S2.tev_generic {NegTest}: Never =
+  trait Ord [A: Type]:
+    def lt(a: A, b: A): Bool
+  enum Box [A: Type]:
+    case Box(v: A)
+  given Ord[I64]:
+    def lt(a: I64, b: I64): Bool = a < b
+  type SortedBox [A: Type] {o: Ord[A]} = Box[A]
+  def f [A: Type] (b: SortedBox[A]): I64 = 0
+  def main(): I64 = 0
+  NegTest.expect("no-given", "the s2 corpus expects error[no-given] for tev_generic")
+

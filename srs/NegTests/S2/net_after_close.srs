@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg net_after_close: the kernel must reject it with exactly these codes (s2 expects error[op-not-allowed])
+val NegTests.S2.net_after_close {NegTest}: Never =
+  def main(): I64 =
+    handle r = Srs.Arena()
+    handle n = Srs.Net()
+    n.connect("/tmp/x.sock")
+    n.close()
+    n.send("x")
+    0
+  NegTest.expect("op-not-allowed", "the s2 corpus expects error[op-not-allowed] for net_after_close")
+

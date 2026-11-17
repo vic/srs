@@ -1,0 +1,6 @@
+// prompt: alignment (fil-c FC58-61): rt_ptr_add has the one caller Srs.Arena.wordAdd (whole-word offsets), so a Srs.Arena.* unit that
+// adds a byte count directly must be rejected with error[ptr-align] (F5e badAlign); the body is user code, so its Srs.* unit is also
+// error[reserved-name].
+val NegTests.ptrAlign {NegTest}: Never =
+  def Srs.Arena.zzMis(c: Srs.Mem): Srs.Mem = rt_ptr_add(c, 3)
+  NegTest.expect("reserved-name", "ptr-align", "rt_ptr_add(c, 3) moves a pointer by 3 bytes; only Srs.Arena.wordAdd adds offsets, in whole words")

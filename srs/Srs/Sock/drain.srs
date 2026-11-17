@@ -1,0 +1,12 @@
+// prompt: print the bytes read from fd (got so far) in 4096-byte chunks until EOF, an error or 1040000 bytes: libc read fills a
+// fresh srs array from index 0, so no pointer arithmetic is needed (the caller captures the printed text).
+def Srs.Sock.drain(fd: I64, got: I64): Unit =
+  if got < 1040000 then
+    val c = Array.fill(4096, U8.of(0))
+    val r = read(I32.of(fd), c, 4096)
+    if r > 0 then
+      Console.print(Str.slice(Str.ofBytes(4096, c), 0, r))
+      Srs.Sock.drain(fd, got + r)
+    else ()
+  else ()
+

@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg tl_nocase: the kernel must reject it with exactly these codes (s2 expects error[no-type-case])
+val NegTests.S2.tl_nocase {NegTest}: Never =
+  type Id [A: Type] = A
+  type Wide [A: Type] = A match
+    case Bool => I64
+  def f(x: Wide[Str]): I64 = 0
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "no-type-case", "the s2 corpus expects error[no-type-case] for tl_nocase")
+

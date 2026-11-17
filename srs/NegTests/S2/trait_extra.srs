@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg trait_extra: the kernel must reject it with exactly these codes (s2 expects error[not-a-method])
+val NegTests.S2.trait_extra {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def show(x: I64): I64 = x
+    def extra(x: I64): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("not-a-method", "the s2 corpus expects error[not-a-method] for trait_extra")
+

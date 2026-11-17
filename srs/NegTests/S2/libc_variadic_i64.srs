@@ -1,0 +1,7 @@
+// prompt: s2 corpus neg libc_variadic_i64: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.libc_variadic_i64 {NegTest}: Never =
+  extern "libc" def open(path: CStr, flags: I32, ...): I32
+  def Lv.f(p: CStr, fl: I32, x: I64): I32 = open(p, fl, x)
+  def main(): I64 = 0
+  NegTest.expect("libc-outside-handler", "s2 expects error[mismatch] for libc_variadic_i64; s4 rejects it with other codes (code fidelity gap)")
+

@@ -1,0 +1,21 @@
+// prompt: s2 corpus neg handle_row_end_state: the kernel must reject it with exactly these codes (s2 expects error[region-ended-under-handle])
+val NegTests.S2.handle_row_end_state {NegTest}: Never =
+  enum Sx:
+    case Sx(v: I64)
+  capability Sp:
+    def get(): I64
+
+  handler Hs for Sp:
+    def init(): Sx = Sx(41)
+    def get(self: Sx): I64 = self match
+      case Sx(v) => v + 1
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle r = Srs.Arena()
+    handle h = Hs()
+    r.free()
+    Console.printI64(Sp.get())
+    0
+  NegTest.expect("region-ended-under-handle", "the s2 corpus expects error[region-ended-under-handle] for handle_row_end_state")
+

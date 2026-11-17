@@ -1,4 +1,4 @@
-// prompt: a call of a global def n (tail = tail position): a self tail call is a jump; a generic class-1 extern is one C symbol with void* slots; else the def, instance or extern name with the args (a class-1 C extern first gets its {} binders as srs_cap* args, Emit.capArgs; a def that drops {} binders gets their caps last, Emit.pdArgs); a call whose one explicit evidence is a Region handle allocates in it (srs_cur set around the call, Emit.curWrap)
+// prompt: a call of a global def n (tail = tail position): a self tail call is a jump; a generic class-1 extern is one C symbol with void* slots; else the def, instance or extern name with the args (a class-1 C extern first gets its {} binders as srs_cap* args, Emit.capArgs; a libc class-2 extern gets its array args as void*, Emit.libcArgs; a def that drops {} binders gets their caps last, Emit.pdArgs); a call whose one explicit evidence is a Region handle allocates in it (srs_cur set around the call, Emit.curWrap)
 def Emit.callG(e: Emit.E, n: I64, tail: Bool): Unit =
   val g = Emit.gOf(e)
   val s = Emit.sOf(e)
@@ -39,7 +39,7 @@ def Emit.callG(e: Emit.E, n: I64, tail: Bool): Unit =
     else Emit.id(e,sym)
     Emit.po(e,"(")
     if cls == 1 then Emit.capArgs(e, Typer.sigAt(s, sym, 4), Ast.len(g, Ast.b(g, n)) > 0) else ()
-    Emit.args(e, Ast.b(g, n), 0, false)
+    if cls == 2 then Emit.libcArgs(e, Ast.b(g, n), 0) else Emit.args(e, Ast.b(g, n), 0, false)
     if cls == 0 then Emit.pdArgs(e, n, Emit.pdGet(k, sym), 0, Ast.len(g, Ast.b(g, n)) > 0) else ()
     Emit.po(e,")")
     if cw >= 0 then

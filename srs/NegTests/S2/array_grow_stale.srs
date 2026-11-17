@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg array_grow_stale: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.array_grow_stale {NegTest}: Never =
+  def G.run(cap: I64, xs: Array[I64](cap), len: I64): I64 =
+    val m = cap * 2
+    val ys = Array.fill(m, 0)
+    G.run(m, xs, len)
+  def main(): I64 = 0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for array_grow_stale")
+

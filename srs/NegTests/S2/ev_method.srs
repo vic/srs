@@ -1,0 +1,8 @@
+// prompt: s2 corpus neg ev_method: the kernel must reject it with exactly these codes (s2 expects error[no-op])
+val NegTests.S2.ev_method {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  def f [A: Type] {s: Show[A]} (x: A): I64 = s.other(x)
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "untyped", "s2 expects error[no-op] for ev_method; s4 rejects it with other codes (code fidelity gap)")
+

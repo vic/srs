@@ -1,0 +1,16 @@
+// prompt: s2 corpus neg cap_order: the kernel must reject it with exactly these codes (s2 expects error[capability-not-ended])
+val NegTests.S2.cap_order {NegTest}: Never =
+  capability Lamp:
+    state Off, On
+    start Off
+    stop On
+    def on <Off> (): Unit <On>
+
+  handler HLamp for Lamp:
+    def on(): Unit = ()
+
+  def main(): I64 =
+    handle l = HLamp()
+    0
+  NegTest.expect("capability-not-ended", "the s2 corpus expects error[capability-not-ended] for cap_order")
+

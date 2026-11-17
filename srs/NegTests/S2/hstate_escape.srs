@@ -1,0 +1,25 @@
+// prompt: s2 corpus neg hstate_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.hstate_escape {NegTest}: Never =
+  enum Hx.St:
+    case Hx.St.Mk(n: I64, xs: Array[I64](n))
+
+  capability Hx:
+    def snap(): Hx.St
+
+  handler Hhx for Hx:
+    def init(): Hx.St =
+      val n = 3
+      Hx.St.Mk(n, Array.fill(n, 0))
+    def snap(self: Hx.St): Hx.St = self
+
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle a = Srs.Arena()
+    val s: Hx.St =
+      handle b = Srs.Arena()
+      handle t = Hhx()
+      Hx.snap()
+    s match
+      case Hx.St.Mk(n, xs) => n
+  NegTest.expect("unhandled-effect", "s2 expects error[region-escape] for hstate_escape; s4 rejects it with other codes (code fidelity gap)")
+

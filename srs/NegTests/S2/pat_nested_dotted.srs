@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg pat_nested_dotted: the kernel must reject it with exactly these codes (s2 expects error[])
+val NegTests.S2.pat_nested_dotted {NegTest}: Never =
+  enum E:
+    case E.A
+  enum W:
+    case W.W1(e: E)
+  def f(w: W): I64 = w match
+    case W.W1(Zz.Q) => 1
+  def main(): I64 = 0
+  NegTest.expect("nested-pattern", "the s2 corpus expects error[] for pat_nested_dotted")
+

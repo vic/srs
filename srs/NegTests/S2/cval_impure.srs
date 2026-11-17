@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cval_impure: the kernel must reject it with exactly these codes (s2 expects error[impure-call])
+val NegTests.S2.cval_impure {NegTest}: Never =
+  def say(x: I64): Unit = Console.print("a")
+  def f(x: I64): I64 =
+    say(x)
+    x
+  val g: I64 = f(1)
+  def main(): I64 = 0
+  NegTest.expect("impure-call", "the s2 corpus expects error[impure-call] for cval_impure")
+

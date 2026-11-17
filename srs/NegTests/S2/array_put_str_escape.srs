@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg array_put_str_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.array_put_str_escape {NegTest}: Never =
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r = Srs.Arena()
+    val n = 2
+    val i = 0
+    val outer = Array.fill(n, "")
+    handle r2 = Srs.Arena()
+    val bs = Array.fill(n, U8.of(104))
+    val s = Str.ofBytes{r2}(n, bs)
+    if 0 <= i && i < n then Array.put(outer, i, s) else ()
+    0
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for array_put_str_escape")
+

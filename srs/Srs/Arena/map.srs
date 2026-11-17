@@ -1,5 +1,5 @@
-// len bytes of fresh zeroed pages; failure is the C arena's: a message and exit 70
-def Srs.Arena.map(len: I64): Ptr =
+// prompt: len bytes of fresh zeroed pages; failure is the C arena's: a message and exit 70.
+def Srs.Arena.map(len: I64): Srs.Mem =
   val p = mmap(Srs.Arena.at(0), U64.ofI64(len), Srs.Arena.prot(), Srs.Arena.flags(), I32.of(0 - 1), 0)
   if Srs.Arena.addr(p) == 0 - 1 then
     rt_eprint("srs: out of memory\n")

@@ -1,4 +1,7 @@
-def Srs.Pages.arm(): Ptr =
+// prompt: arm the gate with the machine-wide count of failed huge-page faults (or shut it when unreadable); the one Mut handle
+// of the Pages entry (its writes go to the globals block); the globals block is the result.
+def Srs.Pages.arm(): Array[I64](16) =
+  handle m = Srs.Mut()
   val g = rt_globals()
   val ok = Srs.Pages.sample(g)
   val r = if ok then Srs.Gate.arm(g) else Srs.Gate.shut(g)

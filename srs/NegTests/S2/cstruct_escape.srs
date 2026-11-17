@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cstruct_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.cstruct_escape {NegTest}: Never =
+  extern "libc" struct flock:
+    l_start: I64
+  def Cs.leak(): flock =
+    handle r = Srs.Arena()
+    flock.new()
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for cstruct_escape")
+

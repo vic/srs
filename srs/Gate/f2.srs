@@ -1,5 +1,7 @@
-def Gate.f2(ps: Os.Strs, xs: Os.Strs): Kernel.Res =
-  val Gate.In(names, rows) = Gate.f2In(ps, xs)
+// prompt: run the Datalog gate over files ps (texts xs; us = user unit names) and print one diag line per rejected unit and code
+// (families F2..F5e); Res(0, "") when no rule fires.
+def Gate.f2(ps: Os.Strs, xs: Os.Strs, us: Os.Strs): Kernel.Res =
+  val Gate.In(names, rows) = Gate.f2In(ps, xs, us)
   val Planner.Res2(err, txt) = Planner.textS(Gate.rulesAll(), Planner.Mem(names, rows))
   if Str.len(err) > 0 then Kernel.Res(1, err)
   else
@@ -60,3 +62,4 @@ def Gate.f2(ps: Os.Strs, xs: Os.Strs): Kernel.Res =
       Gate.listMsg("error[slice-unproved]", ps, bsl, 0)
       Console.print(bsig)
       Kernel.Res(1, Console.captureEnd())
+

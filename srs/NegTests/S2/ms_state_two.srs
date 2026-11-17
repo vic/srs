@@ -1,0 +1,27 @@
+// prompt: s2 corpus neg ms_state_two: the kernel must reject it with exactly these codes (s2 expects error[multishot-state])
+val NegTests.S2.ms_state_two {NegTest}: Never =
+  capability NonDet:
+    def choose(): Bool
+  handler Count [A: Type] for NonDet:
+    def done(x: A): I64 = 1
+    def choose(k): I64 = resume k(true) + resume k(false)
+  capability Lamp:
+    state Off, On
+    start Off
+    stop Off
+    def on <Off> (): Unit <On>
+    def off <On> (): Unit <Off>
+  handler HLamp for Lamp:
+    def on(): Unit = ()
+    def off(): Unit = ()
+  def run(): I64 =
+    handle l = HLamp()
+    handle nd = Count()
+    val a = nd.choose()
+    l.on()
+    val b = nd.choose()
+    l.off()
+    0
+  def main(): I64 = run()
+  NegTest.expect("multishot-state", "the s2 corpus expects error[multishot-state] for ms_state_two")
+

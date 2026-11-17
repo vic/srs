@@ -1,0 +1,18 @@
+// prompt: a list built in an arena region and read after the region is freed: the kernel must reject the read with use-after-free.
+val NegTests.useAfterFree {NegTest}: Never =
+  enum ZqList:
+    case ZqNil
+    case ZqCons(h: I64, t: ZqList)
+  def zqBuild {r: Srs.Region} (n: I64): ZqList =
+    if n == 0 then ZqNil else ZqCons(n, zqBuild(n - 1))
+  def zqSum(xs: ZqList): I64 =
+    xs match
+      case ZqNil => 0
+      case ZqCons(h, t) => h + zqSum(t)
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val xs = zqBuild(3)
+    r.free()
+    zqSum(xs)
+  NegTest.expect("use-after-free", "xs lives in region r; reading it after r.free() reads freed memory")
+

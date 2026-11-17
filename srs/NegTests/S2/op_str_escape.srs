@@ -1,0 +1,22 @@
+// prompt: s2 corpus neg op_str_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.op_str_escape {NegTest}: Never =
+  capability Os1:
+    def name(): Str
+
+  handler Hos for Os1:
+    def name(): Str =
+      val n = 3
+      val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+      Str.ofBytes(n, xs)
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle a = Srs.Arena()
+    val s: Str =
+      handle b = Srs.Arena()
+      handle h = Hos()
+      Os1.name()
+    Console.print(s)
+    0
+  NegTest.expect("unhandled-effect", "s2 expects error[region-escape] for op_str_escape; s4 rejects it with other codes (code fidelity gap)")
+

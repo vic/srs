@@ -1,0 +1,8 @@
+// prompt: s2 corpus neg chosen_count: the kernel must reject it with exactly these codes (s2 expects error[chosen-count])
+val NegTests.S2.chosen_count {NegTest}: Never =
+  def make {r: Srs.Region} (n: I64): I64 = n
+  def main(): I64 =
+    handle a = Srs.Heap()
+    make{a, a}(1)
+  NegTest.expect("region-escape", "s2 expects error[chosen-count] for chosen_count; s4 rejects it with other codes (code fidelity gap)")
+

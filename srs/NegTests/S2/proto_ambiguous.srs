@@ -1,0 +1,30 @@
+// prompt: s2 corpus neg proto_ambiguous: the kernel must reject it with exactly these codes (s2 expects error[protocol-ambiguous])
+val NegTests.S2.proto_ambiguous {NegTest}: Never =
+  capability PThunk:
+    state Pending, Busy, Done, Lost
+    start Pending
+    stop Done
+    transition tries Pending -> Busy, Pending -> Lost
+    def tryClaim <s tries t> (): Bool <t>
+    def run <Busy> (): I64 <Busy>
+    def put <Busy> (v: I64): Unit <Done>
+    def wait <Lost> (): I64 <Done>
+
+  handler HP for PThunk:
+    def tryClaim(): Bool = true
+    def run(): I64 = 42
+    def put(v: I64): Unit = ()
+    def wait(): I64 = 0
+
+  def main(): I64 =
+    handle t = HP()
+    if t.tryClaim() then
+      val v = t.run()
+      t.put(v)
+      v
+    else
+      val w = t.run()
+      t.put(w)
+      w
+  NegTest.expect("op-not-allowed", "s2 expects error[protocol-ambiguous] for proto_ambiguous; s4 rejects it with other codes (code fidelity gap)")
+

@@ -1,5 +1,6 @@
-def Srs.Arena.smallPage(g: Ptr): Ptr =
+// prompt: a fresh small page for arena structs; its end goes to the globals word gSmallEnd.
+def Srs.Arena.smallPage(g: Array[I64](16)): Srs.Mem =
   val p = Srs.Arena.pages(Srs.Arena.page())
-  rt_ptr_set(g, Srs.Arena.gSmallEnd(), Srs.Arena.addr(p) + Srs.Arena.page())
+  Srs.Globals.set(g, Srs.Arena.gSmallEnd(), Srs.Arena.addr(p) + Srs.Arena.page())
   p
 

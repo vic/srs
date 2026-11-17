@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg srs_name_forge: a user unit named Srs.* (here a handler Srs.Forge that calls rt_print) must be rejected
+// with exactly error[reserved-name] (F5e badReserved): Srs.* names belong to the trusted image.
+val NegTests.S2.srs_name_forge {NegTest}: Never =
+  extern def rt_print(s: Str): Unit
+  capability Forge:
+    def go(): Unit
+  handler Srs.Forge for Forge:
+    def go(): Unit = rt_print("forged\n")
+  def main(): I64 =
+    handle f = Srs.Forge()
+    Forge.go()
+    0
+  NegTest.expect("reserved-name", "the s2 corpus expects error[reserved-name]: a user Srs.* handler could call any rt_* extern")

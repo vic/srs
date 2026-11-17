@@ -1,16 +1,17 @@
-// n bytes (a multiple of a page) from the current reservation, a new one when it is used up
-def Srs.Arena.pages(size: I64): Ptr =
+// prompt: size bytes (rounded up to a page) from the current reservation, a new 2 MiB aligned reservation when it is used up
+// (advised for huge pages while the gate is On).
+def Srs.Arena.pages(size: I64): Srs.Mem =
   val g = rt_globals()
   val n = Srs.Arena.up(size, Srs.Arena.page())
-  if rt_ptr_get(g, Srs.Arena.gEnd()) - rt_ptr_get(g, Srs.Arena.gCur()) >= n then Srs.Arena.take(g, n)
+  if Srs.Globals.get(g, Srs.Arena.gEnd()) - Srs.Globals.get(g, Srs.Arena.gCur()) >= n then Srs.Arena.take(g, n)
   else
     val want = if n > Srs.Arena.reserve() then Srs.Arena.up(n, Srs.Arena.huge()) else Srs.Arena.reserve()
     val p = Srs.Arena.map(want + Srs.Arena.huge())
     val mask = U64.ofI64(Srs.Arena.huge() - 1)
     val a = rt_ptr_of(rt_ptr_addr(p) + mask & ~mask)
-    val armed = if rt_ptr_get(g, Srs.Arena.gEnd()) != 0 && Srs.Gate.idle(g) then Srs.Pages.arm() else g
+    val armed = if Srs.Globals.get(g, Srs.Arena.gEnd()) != 0 && Srs.Gate.idle(g) then Srs.Pages.arm() else g
     val adv = Srs.Pages.advise(g, a, want)
-    rt_ptr_set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
-    rt_ptr_set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
+    Srs.Globals.set(g, Srs.Arena.gCur(), Srs.Arena.addr(a))
+    Srs.Globals.set(g, Srs.Arena.gEnd(), Srs.Arena.addr(a) + want)
     Srs.Arena.take(g, n)
 

@@ -1,0 +1,9 @@
+// prompt: write byte i.. of the sockaddr_un of path into sa (m = Str.len(path) + 3): [0] AF_UNIX, [1] 0, [2, m - 1) the path
+// bytes, [m - 1] the NUL; each index is guarded, so the gate proves it.
+def Srs.Sock.addr(m: I64, sa: Array[U8](m), path: Str, i: I64): Unit =
+  if 0 <= i && i < m then
+    val b = if i == 0 then I64.ofI32(AF_UNIX) else if i >= 2 && i - 2 < Str.len(path) then Str.at(path, i - 2) else 0
+    Array.put(sa, i, U8.of(b))
+    Srs.Sock.addr(m, sa, path, i + 1)
+  else ()
+

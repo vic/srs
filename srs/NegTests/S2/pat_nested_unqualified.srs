@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg pat_nested_unqualified: the kernel must reject it with exactly these codes (s2 expects error[nested-pattern])
+val NegTests.S2.pat_nested_unqualified {NegTest}: Never =
+  enum U:
+    case Ua
+    case Ub
+  enum W:
+    case W3(u: U)
+  def f(w: W): I64 = w match
+    case W3(Ua) => 1
+    case _ => 0
+  def main(): I64 = 0
+  NegTest.expect("nested-pattern", "the s2 corpus expects error[nested-pattern] for pat_nested_unqualified")
+

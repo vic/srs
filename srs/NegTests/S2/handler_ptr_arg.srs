@@ -1,0 +1,26 @@
+// prompt: s2 corpus neg handler_ptr_arg: the kernel must reject it with exactly these codes (s2 expects error[use-after-free])
+val NegTests.S2.handler_ptr_arg {NegTest}: Never =
+  capability Pool:
+    state Open, Shut
+    start Open
+    stop Shut
+    def keep <Open> (q: Ptr): Ptr<self> <Open>
+    def shut <Open> (): Unit <Shut>
+    drop shut
+
+  handler HPool for Pool:
+    def keep(q: Ptr): Ptr = q
+    def shut(): Unit = ()
+
+  def peek(p: Ptr): I64 = 7
+
+  def main(): I64 =
+    handle p = HPool()
+    handle a = Srs.Arena()
+    val x = Pool.keep(a.alloc(8))
+    a.free()
+    val n = peek(x)
+    p.shut()
+    n
+  NegTest.expect("ptr-outside-srs", "s2 expects error[use-after-free] for handler_ptr_arg; s4 rejects it with other codes (code fidelity gap)")
+

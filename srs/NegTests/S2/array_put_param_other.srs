@@ -1,0 +1,7 @@
+// prompt: s2 corpus neg array_put_param_other: the kernel must reject it with exactly these codes (s2 expects error[capability-bound])
+val NegTests.S2.array_put_param_other {NegTest}: Never =
+  def Po.push {r: Srs.Region} {s: Srs.Region} (n: I64, xs: Array[Str](n)<r>, i: I64, v: Str<s>): Unit =
+    if 0 <= i && i < n then Array.put(xs, i, v) else ()
+  def main(): I64 = 0
+  NegTest.expect("capability-bound", "region-escape", "the s2 corpus expects error[capability-bound] for array_put_param_other")
+

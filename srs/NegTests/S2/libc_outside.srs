@@ -1,0 +1,7 @@
+// prompt: s2 corpus neg libc_outside: the kernel must reject it with exactly these codes (s2 expects error[libc-outside-handler])
+val NegTests.S2.libc_outside {NegTest}: Never =
+  extern "libc" def getpid(): I32
+
+  def main(): I64 = I64.ofI32(getpid())
+  NegTest.expect("libc-outside-handler", "the s2 corpus expects error[libc-outside-handler] for libc_outside")
+

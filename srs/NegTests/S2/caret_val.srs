@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg caret_val: the kernel must reject it with exactly these codes (s2 expects error[use-after-free])
+val NegTests.S2.caret_val {NegTest}: Never =
+  extern def peekw(p: Ptr): I64
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle tmp = Srs.Arena()
+    val p: Ptr<tmp> = tmp.alloc(8)
+    tmp.free()
+    peekw(p)
+  NegTest.expect("ptr-outside-srs", "s2 expects error[use-after-free] for caret_val; s4 rejects it with other codes (code fidelity gap)")
+

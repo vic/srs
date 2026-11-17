@@ -1,0 +1,22 @@
+// prompt: s2 corpus neg hstate_init_region: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.hstate_init_region {NegTest}: Never =
+  enum Hi.St:
+    case Hi.St.Mk(n: I64, xs: Array[I64](n))
+
+  capability Hi:
+    def n(): I64
+
+  handler Hhi for Hi:
+    def init(): Hi.St =
+      handle r = Srs.Arena()
+      val k = 3
+      Hi.St.Mk(k, Array.fill(k, 0))
+    def n(self: Hi.St): I64 = self match
+      case Hi.St.Mk(k, xs) => k
+
+  def main(): I64 =
+    handle a = Srs.Arena()
+    handle t = Hhi()
+    Hi.n()
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for hstate_init_region")
+

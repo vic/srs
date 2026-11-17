@@ -1,0 +1,14 @@
+// prompt: a state fact on a capability binder names a state that the capability does not declare: the kernel must reject it with unknown-state.
+val NegTests.unknownState {NegTest}: Never =
+  capability ZqSeq:
+    state S0, S1, Done
+    start S0
+    stop Done
+    transition as S0 -> S1
+    transition cs S1 -> Done
+    def a <s as t> (): Unit <t>
+    def c <s cs t> (): Unit <t>
+  def zqUse {q: ZqSeq} <q: Nope> (): I64 = 0
+  def main(): I64 = 0
+  NegTest.expect("unknown-state", "ZqSeq declares S0, S1 and Done; Nope is no state of it")
+

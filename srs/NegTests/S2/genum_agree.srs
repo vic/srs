@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg genum_agree: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.genum_agree {NegTest}: Never =
+  enum Opt [A: Type]:
+    case None
+    case Some(v: A)
+  def get [A: Type] (o: Opt[A], d: A): A = o match
+    case None => d
+    case Some(v) => v
+  def main(): I64 =
+    handle r = Srs.Arena()
+    get(Some(1), true)
+  NegTest.expect("region-escape", "s2 expects error[mismatch] for genum_agree; s4 rejects it with other codes (code fidelity gap)")
+

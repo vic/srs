@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg handler_result_type: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.handler_result_type {NegTest}: Never =
+  capability Tag:
+    def name(): Str
+
+  handler HTag for Tag:
+    def name(): I64 = 5
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle t = HTag()
+    Console.print(t.name())
+    0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for handler_result_type")
+

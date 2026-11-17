@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg ev_ambig_local: the kernel must reject it with exactly these codes (s2 expects error[ambiguous-evidence])
+val NegTests.S2.ev_ambig_local {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+  def f {s: Show[I64]} {t: Show[I64]} (x: I64): I64 = print(x)
+  def main(): I64 = 0
+  NegTest.expect("ambiguous-evidence", "the s2 corpus expects error[ambiguous-evidence] for ev_ambig_local")
+

@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg double_free: the kernel must reject it with exactly these codes (s2 expects error[op-not-allowed])
+val NegTests.S2.double_free {NegTest}: Never =
+  def main(): I64 =
+    handle r = Srs.Arena()
+    r.free()
+    r.free()
+    0
+  NegTest.expect("op-not-allowed", "the s2 corpus expects error[op-not-allowed] for double_free")
+

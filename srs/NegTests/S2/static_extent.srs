@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg static_extent: the kernel must reject it with exactly these codes (s2 expects error[unhandled-effect])
+val NegTests.S2.static_extent {NegTest}: Never =
+  def show(n: I64): Unit = Console.printI64(n)
+
+  def main(): I64 =
+    show(1)
+    handle c = Srs.Console()
+    show(2)
+    0
+  NegTest.expect("unhandled-effect", "the s2 corpus expects error[unhandled-effect] for static_extent")
+

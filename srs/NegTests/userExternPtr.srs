@@ -1,0 +1,7 @@
+// prompt: user code may not write an extern that names the bare Ptr type (F5e badUserPtr, fil-c FC64-66 default-deny FFI): a
+// user memset over Ptr would write any memory; the kernel must reject it with error[ptr-outside-srs].
+val NegTests.userExternPtr {NegTest}: Never =
+  extern "libc" def memset(d: Ptr, c: I32, n: U64): Ptr
+  def main(): I64 = 0
+  NegTest.expect("ptr-outside-srs", "a user extern over the bare Ptr type is raw memory access outside the trusted image")
+

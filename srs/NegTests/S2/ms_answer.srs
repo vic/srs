@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg ms_answer: the kernel must reject it with exactly these codes (s2 expects error[answer-type])
+val NegTests.S2.ms_answer {NegTest}: Never =
+  capability NonDet:
+    def choose(): Bool
+  handler AllAnswers [A: Type] for NonDet:
+    def choose(k): Bool = true
+  def main(): I64 = 0
+  NegTest.expect("answer-type", "the s2 corpus expects error[answer-type] for ms_answer")
+

@@ -1,0 +1,20 @@
+// prompt: s2 corpus neg tparam_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.tparam_escape {NegTest}: Never =
+  enum Esc.Box:
+    case Esc.Box(v: I64)
+
+  trait Esc.Id [A: Type] [B: Type]:
+    def conv(x: A): B
+
+  given Esc.Id[Esc.Box, Esc.Box]:
+    def conv(x: Esc.Box): Esc.Box = x
+
+  def Esc.pick [A: Type] (x: A): A = x
+  def Esc.via [A: Type] [B: Type] {c: Esc.Id[A, B]} (x: A): B = c.conv(x)
+
+  def Esc.leak(): Esc.Box =
+    handle r = Srs.Arena()
+    Esc.pick(Esc.Box(1))
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for tparam_escape")
+

@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg op_binder_type: the kernel must reject it with exactly these codes (s2 expects error[op-binder])
+val NegTests.S2.op_binder_type {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): Str
+
+  capability Ob:
+    def mk {s: Show[I64]} (n: I64): Str
+
+  def main(): I64 = 0
+  NegTest.expect("op-binder", "the s2 corpus expects error[op-binder] for op_binder_type")
+

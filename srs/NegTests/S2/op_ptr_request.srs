@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg op_ptr_request: the kernel must reject it with exactly these codes (s2 expects error[use-after-free])
+val NegTests.S2.op_ptr_request {NegTest}: Never =
+  def peek(p: Ptr): I64 = 7
+  def main(): I64 =
+    handle tmp = Srs.Arena()
+    val p = Srs.Region.alloc(8)
+    tmp.free()
+    peek(p)
+  NegTest.expect("ptr-outside-srs", "s2 expects error[use-after-free] for op_ptr_request; s4 rejects it with other codes (code fidelity gap)")
+

@@ -1,0 +1,42 @@
+// prompt: s2 corpus neg tf_maker: the kernel must reject it with exactly these codes (s2 expects error[stale-value])
+val NegTests.S2.tf_maker {NegTest}: Never =
+  capability Scratch:
+    state Building, Viewed, Gone
+    start Building
+    stop Gone
+    def add <Building> (s: Str): Unit <Building>
+    def view <Building> (): Ptr <Viewed>
+    def clear <Viewed> (): Unit <Building>
+    transition ends Building -> Gone, Viewed -> Gone
+    def done <s ends t> (): Unit <t>
+
+  handler HScratch for Scratch:
+    def add(s: Str): Unit = ()
+    def view(): Ptr = Srs.noState()
+    def clear(): Unit = ()
+    def done(): Unit = ()
+
+  type View {b: Scratch} <b: Viewed> = Ptr
+  extern def I6.viewOf {b: Scratch} <b: Viewed> (p: Ptr): View
+  def I6.hash {b: Scratch} <b: Viewed> (v: View): I64 = 7
+  def I6.keep(p: Ptr): I64 = 0
+
+  def I6.fill {b: Scratch} <b: Building> (s: Str): View <b: Viewed> =
+    b.add(s)
+    I6.viewOf(b.view())
+  def I6.first {o: Scratch} <o: Building> (): View <o: Building> =
+    handle b1 = HScratch()
+    val v: View = I6.fill{b1}("Derive(")
+    b1.done()
+    v
+  def I6.second {o: Scratch} <o: Building> (): I64 <o: Viewed> =
+    val v: View = I6.first()
+    val w: View = I6.fill("text")
+    I6.hash(v) + I6.hash(w)
+  def main(): I64 =
+    handle o = HScratch()
+    val n = I6.second()
+    o.done()
+    n
+  NegTest.expect("ptr-outside-srs", "use-after-free", "s2 expects error[stale-value] for tf_maker; s4 rejects it with other codes (code fidelity gap)")
+

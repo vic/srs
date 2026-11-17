@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cap_alloc_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.cap_alloc_escape {NegTest}: Never =
+  type Text {r: Srs.Region} <r: Open> = Str
+  extern def cap_text {r: Srs.Region} <r: Open> (n: I64): Text
+  def mk {sess: Srs.Region} <sess: Open> (n: I64): Text =
+    handle a = Srs.Arena()
+    cap_text{a}(n)
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for cap_alloc_escape")
+

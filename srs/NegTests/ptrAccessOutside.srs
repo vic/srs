@@ -1,0 +1,6 @@
+// prompt: raw word access (rt_ptr_get) outside Srs.Arena.* and the globals units Srs.Gate.* / Srs.Pages.* must be rejected with
+// error[ptr-access-outside-allocator] (F5e badPtrMem); the body is user code, so its Srs.* unit is also error[reserved-name].
+val NegTests.ptrAccessOutside {NegTest}: Never =
+  def Srs.NtPa.peek(p: Srs.Mem): I64 = rt_ptr_get(p, 0)
+  NegTest.expect("reserved-name", "ptr-access-outside-allocator", "only the allocator and the globals units read raw words; Srs.NtPa.peek is neither")
+

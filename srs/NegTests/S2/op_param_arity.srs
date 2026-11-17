@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg op_param_arity: the kernel must reject it with exactly these codes (s2 expects error[handler-arity])
+val NegTests.S2.op_param_arity {NegTest}: Never =
+  capability Pa:
+    def put(x: I64): I64
+
+  handler Hpa for Pa:
+    def put(x: I64, y: I64): I64 = x + y
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle h = Hpa()
+    Console.printI64(Pa.put(3))
+    0
+  NegTest.expect("handler-arity", "the s2 corpus expects error[handler-arity] for op_param_arity")
+

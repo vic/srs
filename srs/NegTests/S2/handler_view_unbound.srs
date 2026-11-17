@@ -1,0 +1,31 @@
+// prompt: s2 corpus neg handler_view_unbound: the kernel must reject it with exactly these codes (s2 expects error[capability-bound])
+val NegTests.S2.handler_view_unbound {NegTest}: Never =
+  capability Pad:
+    state Writing, Viewed, Gone
+    start Writing
+    stop Gone
+    def view <Writing> (): View{self} <Viewed>
+    transition ends Writing -> Gone, Viewed -> Gone
+    def done <s ends t> (): Unit <t>
+
+  handler HInner for Pad:
+    def view(): Ptr = Srs.noState()
+    def done(): Unit = ()
+
+  handler HOuter for Pad:
+    def view(): View = Pad.view()
+    def done(): Unit = ()
+
+  type View {b: Pad} <b: Viewed> = Ptr
+  def hash {b: Pad} <b: Viewed> (v: View): I64 = 5
+
+  def main(): I64 =
+    handle a = HInner()
+    handle b = HOuter()
+    val v = b.view()
+    a.done()
+    val n = hash{b}(v)
+    b.done()
+    n
+  NegTest.expect("mismatch", "ptr-outside-srs", "s2 expects error[capability-bound] for handler_view_unbound; s4 rejects it with other codes (code fidelity gap)")
+

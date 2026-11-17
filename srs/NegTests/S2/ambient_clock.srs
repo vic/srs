@@ -1,0 +1,14 @@
+// prompt: s2 corpus neg ambient_clock: the kernel must reject it with exactly these codes (s2 expects error[ambient-world])
+val NegTests.S2.ambient_clock {NegTest}: Never =
+  def peek(): Unit =
+    handle e = Srs.Clock()
+    Clock.now()
+    ()
+
+  def main(): I64 =
+    handle c = Srs.Console()
+    handle r = Srs.Arena()
+    peek()
+    0
+  NegTest.expect("ambient-world", "the s2 corpus expects error[ambient-world] for ambient_clock")
+

@@ -1,7 +1,9 @@
-// a new head chunk with room for n bytes: a spare one, a fresh one, or (n over a chunk) its own mapping
-def Srs.Arena.open(self: Ptr, n: I64): Ptr =
+// prompt: a new head chunk with room for n bytes: a spare one, a fresh one, or (n over a chunk) its own mapping; the one Mut
+// handle of this allocator entry (the slow path of alloc).
+def Srs.Arena.open(self: Srs.Mem, n: I64): Srs.Mem =
+  handle m = Srs.Mut()
   val g = rt_globals()
-  val spare = rt_ptr_get(g, Srs.Arena.gSpare())
+  val spare = Srs.Globals.get(g, Srs.Arena.gSpare())
   val big = n > Srs.Arena.chunk()
   val c =
     if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)

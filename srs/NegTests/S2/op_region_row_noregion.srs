@@ -1,0 +1,19 @@
+// prompt: s2 corpus neg op_region_row_noregion: the kernel must reject it with exactly these codes (s2 expects error[unhandled-effect])
+val NegTests.S2.op_region_row_noregion {NegTest}: Never =
+  capability Rg:
+    def mk {r: Srs.Region} (n: I64): Str<r>
+
+  handler Hrg for Rg:
+    def mk {r: Srs.Region} (n: I64): Str<r> =
+      val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+      Str.ofBytes(n, xs)
+
+  def Rr.go(n: I64): Str = Rg.mk(n)
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle h = Hrg()
+    Console.print(Rr.go(3))
+    0
+  NegTest.expect("unhandled-effect", "the s2 corpus expects error[unhandled-effect] for op_region_row_noregion")
+

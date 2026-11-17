@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg trait_miss: the kernel must reject it with exactly these codes (s2 expects error[not-a-method])
+val NegTests.S2.trait_miss {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def other(x: I64): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("missing-method", "not-a-method", "the s2 corpus expects error[not-a-method] for trait_miss")
+

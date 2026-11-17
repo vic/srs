@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cargv_not_array: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.cargv_not_array {NegTest}: Never =
+  def CA.take(a: CArgv): I64 = 0
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val n = 1
+    val xs = Array.fill(n, CStr.of("true"))
+    CA.take(xs)
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for cargv_not_array")
+

@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cell_nomut: the kernel must reject it with exactly these codes (s2 expects error[unhandled-effect])
+val NegTests.S2.cell_nomut {NegTest}: Never =
+  def Cl.set(c: Cell[I64]): Unit = Cell.put(c, 1)
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val c = Cell.new(0)
+    Cl.set(c)
+    0
+  NegTest.expect("unhandled-effect", "the s2 corpus expects error[unhandled-effect] for cell_nomut")
+

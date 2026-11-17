@@ -1,0 +1,6 @@
+// prompt: s2 corpus neg generic_agree: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.generic_agree {NegTest}: Never =
+  def pick [A: Type] (c: Bool, a: A, b: A): A = if c then a else b
+  def main(): I64 = pick(true, 1, false)
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for generic_agree")
+
