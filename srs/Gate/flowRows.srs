@@ -1,0 +1,10 @@
+// every unit carries flow facts: a plain def may call a def that needs a capability (no-capability), or hold one
+def Gate.flowRows(w: Resolve.W, sel: Gate.Fk, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+    if Gate.fkB(sel) == Gate.fkB(Gate.FUse) then Gate.useTok(u, rcap, rk, rf, 0)
+    else Gate.flowRoots(w, g, sel, u, rcap, rk, rf, rc, dk, dr, 0)
+    Gate.flowRows(w, sel, rest, u + 1)
+

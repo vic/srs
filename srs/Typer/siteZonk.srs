@@ -1,0 +1,18 @@
+// the sites j..end of the def just checked get their args as ground ids in the pool
+def Typer.siteZonk(s: Typer.S, j: I64, end: I64): Unit =
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  if j < end then
+    val m = Typer.mark(s)
+    Typer.zonkVars(s, Typer.mxGet(s, Typer.moSite(j, 4)), 0, Typer.mxGet(s, Typer.moSite(j, 3)))
+    val n = Typer.cget(s, Typer.cSp()) - m
+    val top = Typer.cget(s, Typer.cATop())
+    if top + n <= acap then
+      Typer.cpArgs(s, m, 0, n, top)
+      Typer.cset(s, Typer.cATop(), top + n)
+      Typer.mxSet(s, Typer.moSite(j, 2), top + 1)
+    else Typer.over(s)
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.siteZonk(s, j + 1, end)
+  else ()
+

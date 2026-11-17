@@ -1,0 +1,30 @@
+// prompt: a type decl not yet set, `type X [A..] = T` or a match type `type X [A..] = S match case P => R ..`: when its body names
+// no unset type definition (no pending ref), the body type (T, or the scrutinee S) of X by the symbol of X (Typer.declTySet), and
+// as the signature of X (Typer.sigStore) the case types (P, R pairs) as params, the [] binder tokens as type params, then the trait
+// constraint block [count, trait {} binder types] (read by Typer.consNom), and the count of its constraint groups ({} <>,
+// Typer.consN; > 0 = nominal) as its evidence count; else nothing (a later pass of Typer.tdefFix retries). A decl with value
+// binders `type X (n: I64) = ..` (or a value match) is set by Typer.tdefVal.
+def Typer.tdefRoot(x: Typer.X, root: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val al = Typer.part(g, Ast.b(g, root), 0, Ast.kAlias())
+  val tm = Typer.part(g, Ast.b(g, root), 0, Ast.kTyMatch())
+  val pr = Typer.part(g, Ast.b(g, root), 0, Ast.kParams())
+  val vm = Typer.part(g, Ast.b(g, root), 0, Ast.kValMatch())
+  val sym = Typer.symOf(x, Ast.a(g, root))
+  if (pr != 0 || vm != 0) && Typer.declTyGet(s, sym) == 0 then Typer.tdefVal(x, sym, if pr != 0 then Ast.a(g, pr) else 0, vm, al)
+  else if (al != 0 || tm != 0) && Typer.declTyGet(s, sym) == 0 then
+    val p0 = Typer.cget(s, Typer.cTdPend())
+    val m = Typer.mark(s)
+    val np = if tm != 0 then Typer.tarmTys(x, Ast.b(g, tm), 0) else 0
+    Typer.tpToks(x, Ast.b(g, root), 0)
+    Typer.evBinders(x, Ast.b(g, root), 0)
+    val ntp = Typer.cget(s, Typer.cSp()) - m - np
+    Typer.push(s, Typer.traitEvN(x, Ast.b(g, root), 0))
+    Typer.traitEvPush(x, Ast.b(g, root), 0)
+    val body = Typer.ty(x, Ast.a(g, if tm != 0 then tm else al))
+    if Typer.cget(s, Typer.cTdPend()) == p0 && body != 0 then
+      Typer.declTySet(s, sym, body)
+      Typer.sigStore(s, sym, body, np, ntp, Typer.consN(g, Ast.b(g, root), 0), m)
+      Typer.cinc(s, Typer.cTdSet())
+    else Typer.cset(s, Typer.cSp(), m)
+  else ()

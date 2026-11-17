@@ -1,0 +1,11 @@
+// prompt: add the handle statement node st to the handle table (capability -> handler; Emit.hfind, Emit.hmulti, Emit.hdisp read it); a full table (it ends where the handle-binder stack starts) counts overflow (hc 1, the emit fails)
+def Emit.hadd(x: Typer.X, k: Emit.K, base: I64, st: I64): Unit =
+  val Typer.X(_, _, s, _, _, _) = x
+  val c = Emit.hget(k, 0)
+  // the drop table starts at word 100 (Emit.dropOf), so the handle table ends before it
+  if 17 + 2 * c < 100 then
+    Emit.hset(k, 16 + 2 * c, Typer.head(s, Typer.tyAt(s, base, st)))
+    Emit.hset(k, 17 + 2 * c, Typer.mxGet(s, Typer.moCe(s, base + st)))
+    Emit.hset(k, 0, c + 1)
+  else Emit.hinc(k, 1)
+

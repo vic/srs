@@ -1,0 +1,15 @@
+def Printer.binders(g: Ast.G, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    if i > 0 then Printer.s(", ") else ()
+    val b = Ast.item(g, r, i)
+    val bk = Ast.kd(g, b)
+    if bk == Ast.kBind() then
+      Printer.tok(g, Ast.tok(g, b))
+      Printer.s(": ")
+      Printer.ty(g, Ast.a(g, b))
+    else if bk == Ast.kBare() then Printer.tok(g, Ast.tok(g, b))
+    else if bk == Ast.kDots() then Printer.s("...")
+    else Printer.ty(g, Ast.a(g, b))
+    Printer.binders(g, r, i + 1)
+  else ()
+

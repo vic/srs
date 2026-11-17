@@ -1,0 +1,31 @@
+// prompt: the loads `T x = *(T*)e_[idx];` of a segment in the order of Emit.msPtrs: params of sym (phase 0) then the vals of r below upto (phase 1)
+def Emit.msLoads(e: Emit.E, r: I64, pr: I64, sym: I64, i: I64, upto: I64, ph: I64, idx: I64): Unit =
+  val g = Emit.gOf(e)
+  if ph == 0 then
+    if pr != 0 && i < Ast.len(g, pr) then
+      if Ast.kd(g, Ast.item(g, pr, i)) == Ast.kBind() then
+        Emit.cty(e, Emit.paramTy(e, sym, i))
+        Emit.po(e," ")
+        Emit.binder(e, Ast.tok(g, Ast.item(g, pr, i)))
+        Emit.po(e," = *(")
+        Emit.cty(e, Emit.paramTy(e, sym, i))
+        Emit.po(e,"*)e_[")
+        Emit.pi(e, idx)
+        Emit.po(e,"]; ")
+        Emit.msLoads(e, r, pr, sym, i + 1, upto, 0, idx + 1)
+      else Emit.msLoads(e, r, pr, sym, i + 1, upto, 0, idx)
+    else Emit.msLoads(e, r, pr, sym, 0, upto, 1, idx)
+  else if i < upto then
+    val st = Ast.item(g, r, i)
+    if Ast.kd(g, st) == Ast.kVal() then
+      Emit.cty(e, Emit.tyS(e, st))
+      Emit.po(e," ")
+      Emit.binder(e, Ast.tok(g, st))
+      Emit.po(e," = *(")
+      Emit.cty(e, Emit.tyS(e, st))
+      Emit.po(e,"*)e_[")
+      Emit.pi(e, idx)
+      Emit.po(e,"]; ")
+      Emit.msLoads(e, r, pr, sym, i + 1, upto, 1, idx + 1)
+    else Emit.msLoads(e, r, pr, sym, i + 1, upto, 1, idx)
+  else ()

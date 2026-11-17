@@ -1,0 +1,22 @@
+// the types, clauses and body of a def, in written order (kRet / kOpRet: the result type of a def / of a capability op)
+def Resolve.parts(x: Resolve.X, parts: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    val k = Ast.kd(g, p)
+    if k == Ast.kGEv() || k == Ast.kParams() then Resolve.binderTys(x, Ast.a(g, p), 0)
+    else if k == Ast.kRet() || k == Ast.kOpRet() then Resolve.ty(x, Ast.a(g, p))
+    else if k == Ast.kOpRetC() then
+      Resolve.ty(x, Ast.a(g, p))
+      Resolve.tuseList(x, Ast.b(g, p), 0)
+    else if k == Ast.kClause() then
+      val sp = Resolve.sp(x)
+      Resolve.bindResult(x, Ast.tok(g, p))
+      Resolve.expr(x, Ast.a(g, p))
+      Resolve.setSp(x, sp)
+    else if k == Ast.kProofUs() then Resolve.useList(x, Ast.a(g, p), 0)
+    else if k == Ast.kBody() then Resolve.expr(x, Ast.a(g, p))
+    else ()
+    Resolve.parts(x, parts, i + 1)
+  else ()
+

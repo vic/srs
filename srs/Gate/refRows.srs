@@ -1,0 +1,9 @@
+def Gate.refRows(w: Resolve.W, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.W(sy, gt, sc, cn) = w
+    val Resolve.Gt(gcap, gk, gf, gl, gs, tcap, tab, a1, a2, a3) = gt
+    Gate.refTok(gcap, gf, u, rcap, rk, rf, 0)
+    Gate.refRows(w, rest, u + 1)
+

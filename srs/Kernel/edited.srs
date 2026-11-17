@@ -1,0 +1,12 @@
+// t with its only occurrence of old replaced by nw; none when old occurs zero or several times
+def Kernel.edited(t: Str, old: Str, nw: Str): Coll.Option[Str] = Kernel.findFrom(t, old, 0) match
+  case Coll.None => Coll.None
+  case Coll.Some(i) => Kernel.findFrom(t, old, i + 1) match
+    case Coll.Some(j) => Coll.None
+    case Coll.None =>
+      Console.captureBegin()
+      Console.print(Str.slice(t, 0, i))
+      Console.print(nw)
+      Console.print(Str.slice(t, i + Str.len(old), Str.len(t)))
+      Coll.Some(Console.captureEnd())
+

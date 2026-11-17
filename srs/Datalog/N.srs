@@ -1,0 +1,11 @@
+// s3 Datalog substrate (DL-1): the executor of a planned, stratified program (mkplan.awk makes the plan; this file runs it).
+// a relation is an append-only row store of U32 columns (row-major) plus hash indexes over bound column sets: head slots
+// and a per-row next link, both U32 (a row id + 1; 0 ends a chain). the full-column index of a relation is its dedup set and
+// the test of a negated atom. semi-naive: a round drives every recursive variant from the rows added in the last round
+// (ds..de), the other atoms probe the full relation. a stratum runs to fixpoint before the next (negation reads only lower
+// strata). a walk keeps the store snapshot it started with, so a store that grows under it never moves a chain.
+
+// ── numbers ──
+enum Datalog.N:
+  case Datalog.N(v: I64, i: I64)
+

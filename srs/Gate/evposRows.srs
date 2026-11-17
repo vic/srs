@@ -1,0 +1,8 @@
+// evpos(u, x, i): the evidence binder x of the def is at position i over all its {..} groups
+def Gate.evposRows(g: Ast.G, u: I64, l: I64, k: I64, off: I64): Unit =
+  if k < Ast.len(g, l) then
+    val n = Ast.item(g, l, k)
+    if Ast.kd(g, n) == Ast.kBind() then Gate.row3(u, Ast.tok(g, n), off + k) else ()
+    Gate.evposRows(g, u, l, k + 1, off)
+  else ()
+

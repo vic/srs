@@ -1,0 +1,8 @@
+// a type head token names data that lives in a region: a non-scalar builtin (Array, Str, ...), an enum or a declared type; a type parameter is not judged
+def Gate.isDataTok(w: Resolve.W, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), t: I64): Bool =
+  if 0 <= t && t < rcap then
+    val k = I64.ofU8(rk(t))
+    if k == Resolve.tBase() + Resolve.tBuiltin() then !Gate.isScalarSym(w, I64.of(rf(t)))
+    else k == Resolve.tBase() + Resolve.tEnum() || k == Resolve.tBase() + Resolve.tDecl()
+  else false
+

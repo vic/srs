@@ -1,0 +1,9 @@
+// prompt: gl(j..) = the givens u.. in unit order.
+def Kernel.nfGivFill(dn: I64, gv: Array[U8](dn), gn: I64, gl: Array[U32](gn), u: I64, j: I64): Unit =
+  if 0 <= u && u < dn then
+    if I64.ofU8(gv(u)) == 1 && 0 <= j && j < gn then
+      Array.put(gl, j, U32.of(u))
+      Kernel.nfGivFill(dn, gv, gn, gl, u + 1, j + 1)
+    else Kernel.nfGivFill(dn, gv, gn, gl, u + 1, j)
+  else ()
+

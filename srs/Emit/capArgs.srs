@@ -1,0 +1,7 @@
+// prompt: ev capability args of a call of a C extern: the extern allocates through srs_cap_alloc, which allocates where srs_alloc does (the program's Region handler, Emit.allocFn), so the cap value itself is not read (NULL). shortcut: s4 has one allocator per program, not one per handle; upgrade when srs_alloc takes the handle state
+def Emit.capArgs(e: Emit.E, ev: I64, more: Bool): Unit =
+  if ev > 0 then
+    Emit.po(e,"(srs_cap*)0")
+    if ev > 1 || more then Emit.po(e,", ") else ()
+    Emit.capArgs(e, ev - 1, more)
+  else ()

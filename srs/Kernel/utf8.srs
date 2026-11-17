@@ -1,0 +1,15 @@
+def Kernel.utf8(n: I64, xs: Array[U8](n), o: I64, cp: I64): I64 =
+  if cp < 128 then Kernel.put(n, xs, o, cp)
+  else if cp < 2048 then
+    val o1 = Kernel.put(n, xs, o, 192 + cp / 64)
+    Kernel.put(n, xs, o1, 128 + cp % 64)
+  else if cp < 65536 then
+    val o1 = Kernel.put(n, xs, o, 224 + cp / 4096)
+    val o2 = Kernel.put(n, xs, o1, 128 + cp / 64 % 64)
+    Kernel.put(n, xs, o2, 128 + cp % 64)
+  else
+    val o1 = Kernel.put(n, xs, o, 240 + cp / 262144)
+    val o2 = Kernel.put(n, xs, o1, 128 + cp / 4096 % 64)
+    val o3 = Kernel.put(n, xs, o2, 128 + cp / 64 % 64)
+    Kernel.put(n, xs, o3, 128 + cp % 64)
+

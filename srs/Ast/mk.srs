@@ -1,0 +1,17 @@
+// append a node; returns its id (0, the absent node, with an overflow counted, when the room was not there)
+def Ast.mk(g: Ast.G, kind: I64, tok: I64, a: I64, b: I64): I64 =
+  val Ast.G(_, nd, _, _) = g
+  val Ast.Nd(ncap, nk, nt, na, nb) = nd
+  val n = Ast.cget(g, Ast.sNodes())
+  if 0 <= n && n < ncap then
+    Array.put(nk, n, U8.of(kind))
+    Array.put(nt, n, U32.of(tok))
+    Array.put(na, n, U32.of(a))
+    Array.put(nb, n, U32.of(b))
+    Ast.cset(g, Ast.sNodes(), n + 1)
+    n
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Ast.cinc(g, Ast.sOver())
+    0
+

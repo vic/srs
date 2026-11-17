@@ -1,0 +1,12 @@
+// prompt: print identifier token tk with its alias expanded: SHORT -> LONG, SHORT "." rest -> LONG "." rest (first alias that
+// matches), else tk as it is.
+def Kernel.alPrint(tk: Str, al: Kernel.Al): Unit = al match
+  case Kernel.AlEnd => Console.print(tk)
+  case Kernel.AlMore(s, l, r) =>
+    val m = Str.len(s)
+    if Str.eq(tk, s) then Console.print(l)
+    else if Str.len(tk) > m && Str.eq(Str.slice(tk, 0, m), s) && Str.at(tk, m) == 46 then
+      Console.print(l)
+      Console.print(Str.slice(tk, m, Str.len(tk)))
+    else Kernel.alPrint(tk, r)
+

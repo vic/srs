@@ -1,0 +1,4 @@
+// prompt: true when a handle-table entry i.. is for capability cap with a handler other than h: cap has two handlers in the program, so its requests dispatch on the innermost one at run time (hc_<cap>, Emit.hdisp)
+def Emit.hmulti(k: Emit.K, cap: I64, h: I64, i: I64): Bool =
+  if i < Emit.hget(k, 0) then (Emit.hget(k, 16 + 2 * i) == cap && Emit.hget(k, 17 + 2 * i) != h) || Emit.hmulti(k, cap, h, i + 1) else false
+

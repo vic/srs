@@ -1,0 +1,8 @@
+// the closure to a fixpoint: structs of the new types intern their field types, which may be new types
+def Emit.close(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R], pass: I64): Unit =
+  val before = Typer.cget(s, Typer.cTypes())
+  Emit.ixBuild(s, k)
+  Emit.files(w, s, k, rs, 0, 4)
+  Emit.hinc(k, 8)
+  if Typer.cget(s, Typer.cTypes()) != before && pass < 16 then Emit.close(w, s, k, rs, pass + 1) else ()
+

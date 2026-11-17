@@ -1,0 +1,6 @@
+// prompt: the kernel must reject a plain value of the body type where a type with constraints is wanted (vic 2026-11-16: constraints
+// make a type nominal), with error[mismatch].
+val NegTests.nominal {NegTest}: Never =
+  type NtNm.Pos {c: Console} = I64
+  def NtNm.f(): NtNm.Pos = 1
+  NegTest.expect("mismatch", "NtNm.Pos has a constraint, so it is nominal: the I64 literal 1 is not a NtNm.Pos")

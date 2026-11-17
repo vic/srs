@@ -1,0 +1,11 @@
+def Gate.rargsRow(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, ea: I64, eat: I64, em: I64): Unit =
+  Gate.localOf(g, rcap, rk, rf, ea) match
+    case Coll.Some(a) =>
+      Gate.localOf(g, rcap, rk, rf, eat) match
+        case Coll.Some(at) =>
+          Gate.localOf(g, rcap, rk, rf, em) match
+            case Coll.Some(m) => Gate.row5(u, n, a, at, m)
+            case Coll.None => ()
+        case Coll.None => ()
+    case Coll.None => ()
+

@@ -1,0 +1,16 @@
+// prompt: the Disk capability over libc files, no data in its state: put creates path, copies s into a byte array and writes it
+// with one write(2) (-1 = create or write failed, -2 = close failed, 0 = ok); dir makes one directory (an existing one is fine).
+handler Srs.Disk for Disk:
+  def init(): Srs.Disk.State = Srs.Disk.Files
+  def put(self: Srs.Disk.State, path: Str, s: Str): I64 =
+    val fd = I64.ofI32(creat(CStr.of(path), I32.of(420)))
+    if fd < 0 then 0 - 1
+    else
+      val n = Str.len(s)
+      val xs = Array.fill(n, U8.of(0))
+      Srs.Disk.copy(n, xs, s, 0)
+      val w = write(I32.of(fd), xs, n)
+      val c = I64.ofI32(close(I32.of(fd)))
+      if c != 0 then 0 - 2 else if w != n then 0 - 1 else 0
+  def dir(self: Srs.Disk.State, path: Str): Unit = if I64.ofI32(mkdir(CStr.of(path), I32.of(493))) == 0 then () else ()
+

@@ -1,0 +1,17 @@
+// the ops of a capability are requests Cap.op: signatures under the symbol of `Cap.op` (gen: the capability has [] binders, see Tp.opSymGen)
+def Typer.capOps(x: Typer.X, root: I64, i: I64, gen: Bool): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kCapDef() then
+      val p = Ast.a(g, root)
+      val o = Ast.a(g, n)
+      val sigSym = if gen then Typer.opSymGen(x, p, o) else Resolve.sym(w, Resolve.T(Resolve.srcOf(g), Ast.toff(g, p), Ast.tlen(g, p), Resolve.srcOf(g), Ast.toff(g, o), Ast.tlen(g, o)), false)
+      Typer.sigOf(x, n, sigSym, false)
+      Typer.opAdd(s, Typer.symOf(x, p), Typer.symIns(x, o), sigSym)
+    else ()
+    Typer.capOps(x, root, i + 1, gen)
+  else ()
+
+

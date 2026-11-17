@@ -1,0 +1,12 @@
+// ── expressions ──
+// the binary level of a class, 0 = none (lowest first: || | / ^ / && & / == != / < <= > >= << >> / + - / * / %)
+def Parser.level(c: I64): I64 =
+  if c == Token.oror() || c == Token.bar() then 1
+  else if c == Token.caret() then 2
+  else if c == Token.andand() || c == Token.amp() then 3
+  else if c == Token.eqeq() || c == Token.ne() then 4
+  else if c == Token.lt() || c == Token.ltg() || c == Token.le() || c == Token.gt() || c == Token.ge() || c == Token.shl() || c == Token.shr() then 5
+  else if c == Token.plus() || c == Token.minus() then 6
+  else if c == Token.star() || c == Token.slash() || c == Token.pct() then 7
+  else 0
+

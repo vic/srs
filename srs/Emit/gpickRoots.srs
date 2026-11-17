@@ -1,0 +1,13 @@
+// prompt: the best given (Emit.gbetter) among the given roots (kind 8) i.. of file fi whose head covers goal z (Typer.gmatch)
+def Emit.gpickRoots(x: Typer.X, f: Resolve.F, i: I64, fi: I64, z: I64, best: Emit.GPick): Emit.GPick =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  val Typer.X(_, _, s, _, _, _) = x
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    val nb = if root != 0 && I64.ofU8(rk(i)) == 8 then
+      val h = Typer.ty(x, Ast.a(g, root))
+      if Typer.gmatch(s, h, z) then Emit.gbetter(s, Emit.GAt(fi, root, h, Typer.consN(g, Ast.b(g, root), 0) > 0), best) else best
+    else best
+    Emit.gpickRoots(x, f, i + 1, fi, z, nb)
+  else best
+

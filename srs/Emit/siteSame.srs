@@ -1,0 +1,6 @@
+// the site's type args are the own params: the recursion stays in the instance
+def Emit.siteSame(e: Emit.E, a: I64, i: I64, nc: I64): Bool =
+  val Emit.E(_, _, _, _, pb, _, _, _) = e
+  val s = Emit.sOf(e)
+  if i < nc then Emit.sub(e, Typer.poolAt(s, a + i)) == Typer.poolAt(s, pb + i) && Emit.siteSame(e, a, i + 1, nc) else true
+

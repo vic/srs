@@ -1,0 +1,8 @@
+def Resolve.useGlobal(x: Resolve.X, j: I64, sym: I64): Unit =
+  val Resolve.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(gcap, gk, _, _, _, tcap, tab, _, _, _) = gt
+  val d = if 0 <= sym && sym < tcap then I64.of(tab(sym)) else 0
+  if 0 < d && 0 <= d && d < gcap then Resolve.set(x, j, I64.ofU8(gk(d)), d)
+  else Resolve.set(x, j, Resolve.kUnres(), 0)
+

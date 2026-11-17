@@ -1,0 +1,11 @@
+// struct Name: NL IND (field: ty)* DED, a field type I32, I64, U32 or U64
+def Parser.cstruct(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  Parser.stopIf(g, Parser.ok(g) && Parser.dotted(g, nm), nm)
+  val m = Ast.mark(g)
+  Parser.blockOpen(g)
+  Parser.fields(g)
+  Ast.mk(g, Ast.kCStruct(), nm, 0, Ast.close(g, m))
+

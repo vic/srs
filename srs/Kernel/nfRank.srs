@@ -1,0 +1,11 @@
+// prompt: rnk(u) for every member u of scc c; returns the number of members whose shape hash equals another member's (ties).
+def Kernel.nfRank(tj: Kernel.Tj, nf: Kernel.Nf, c: I64, u: I64, ties: I64): I64 =
+  val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if 0 <= u && u < tn && u < n then
+    if I64.of(comp(u)) == c then
+      Array.put(rnk, u, U32.of(Kernel.nfLt(tj, nf, c, u, 0, false, 0)))
+      Kernel.nfRank(tj, nf, c, u + 1, if Kernel.nfLt(tj, nf, c, u, 0, true, 0) > 0 then ties + 1 else ties)
+    else Kernel.nfRank(tj, nf, c, u + 1, ties)
+  else ties
+

@@ -1,0 +1,27 @@
+// prompt: the C of a method on an extern struct (callee = the struct symbol): `T.new()` (receiver no local) is sizeof(struct T) zeroed bytes from srs_alloc (the caller's Region); `s.f()` reads the field through the real header struct, cast to the field's srs type
+def Emit.cstructCall(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val ss = Emit.ce(e, n)
+  val tok = Ast.tok(g, n)
+  if Typer.useKind(Emit.xOf(e), tok) == Resolve.kLocal() then
+    Emit.po(e,"((")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e,")((struct ")
+    Emit.id(e, ss)
+    Emit.po(e,"*)")
+    Emit.local(e, tok)
+    Emit.po(e,")->")
+    Emit.po(e, Ast.text(g, Ast.a(g, n)))
+    Emit.po(e,")")
+  else
+    Emit.po(e,"({ void* cs")
+    Emit.nid(e, n)
+    Emit.po(e," = srs_alloc((int64_t)sizeof(struct ")
+    Emit.id(e, ss)
+    Emit.po(e,")); memset(cs")
+    Emit.nid(e, n)
+    Emit.po(e,", 0, sizeof(struct ")
+    Emit.id(e, ss)
+    Emit.po(e,")); cs")
+    Emit.nid(e, n)
+    Emit.po(e,"; })")

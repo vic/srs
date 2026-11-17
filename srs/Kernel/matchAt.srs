@@ -1,0 +1,8 @@
+// pattern char 39 (') stands for a double quote (34)
+def Kernel.matchAt(s: Str, pat: Str, j: I64, k: I64, m: I64): Bool =
+  if k >= m then true
+  else
+    val pc = Str.at(pat, k)
+    val want = if pc == 39 then 34 else pc
+    if Str.at(s, j + k) != want then false else Kernel.matchAt(s, pat, j, k + 1, m)
+

@@ -1,0 +1,7 @@
+// prompt: mark symbol sym as an extern def (Typer.flagExtern in the sx column).
+def Typer.externSet(s: Typer.S, sym: I64): Unit =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, _, _, _, _, _, _, sx) = sg
+  if 0 < sym && sym < gcap then Array.put(sx, sym, U8.of(Typer.flagExtern())) else Typer.over(s)
+
+

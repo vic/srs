@@ -1,0 +1,10 @@
+def Emit.un(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val c = Typer.clsTok(g, Ast.tok(g, n))
+  val a = Ast.a(g, n)
+  if c == Token.minus() && Ast.kd(g, a) == Ast.kInt() && Str.eq(Ast.text(g, Ast.tok(g, a)), "9223372036854775808") then Emit.po(e,"(-9223372036854775807 - 1)")
+  else
+    Emit.po(e,if c == Token.bang() then "(!" else if c == Token.tilde() then "(~" else "(-")
+    Emit.expr(e, a, false)
+    Emit.po(e,")")
+

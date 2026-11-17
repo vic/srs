@@ -1,0 +1,26 @@
+// a name at j, c = its class, c1 = the class after it
+def Parser.nameExpr(g: Ast.G, c: I64, j: I64, c1: I64): I64 =
+  if c == Token.kresume() && c1 != Token.lp() then
+    // resume k(v): exactly one value
+    Parser.adv(g)
+    val k = Parser.ident(g)
+    val xs = Parser.args(g)
+    if Ast.len(g, xs) == 1 then Ast.mk(g, Ast.kResume(), j, k, Ast.item(g, xs, 0))
+    else Parser.fail(g)
+  else if c1 == Token.lp() then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kCall(), j, 0, Parser.args(g))
+  else if c1 == Token.lb() || c1 == Token.lc() then
+    Parser.adv(g)
+    val m = Ast.mark(g)
+    val gs = Parser.callGroups(g, m)
+    Ast.mk(g, Ast.kCall(), j, gs, Parser.args(g))
+  else if c1 == Token.dot() then
+    Parser.adv(g)
+    Parser.adv(g)
+    val op = Parser.ident(g)
+    Ast.mk(g, Ast.kMethod(), j, op, Parser.args(g))
+  else
+    Parser.adv(g)
+    Ast.mk(g, Ast.kName(), j, 0, 0)
+

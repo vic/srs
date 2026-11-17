@@ -1,0 +1,16 @@
+// prompt: true when atoms i.. of a rule clause with head terms (h0, h1) form a chain: each atom is next(x, op, y) (3 terms) or rel(x, y) (2 terms); atom 0 starts at h0, atom i starts where atom i - 1 ends, the last ends at h1; every inner link is a fresh name (not h0, not h1, no other link)
+def Gate.rchk(g: Ast.G, atoms: I64, i: I64, h0: Str, h1: Str): Bool =
+  val n = Ast.len(g, atoms)
+  if i < n then
+    val a = Ast.item(g, atoms, i)
+    val ts = Ast.a(g, a)
+    val m = Ast.len(g, ts)
+    val isNext = Str.eq(Ast.text(g, Ast.tok(g, a)), "next")
+    val shape = (isNext && m == 3) || (!isNext && m == 2)
+    val from = Ast.text(g, Ast.item(g, ts, 0))
+    val want = if i == 0 then h0 else Ast.text(g, Ast.item(g, Ast.a(g, Ast.item(g, atoms, i - 1)), Ast.len(g, Ast.a(g, Ast.item(g, atoms, i - 1))) - 1))
+    val to = Ast.text(g, Ast.item(g, ts, m - 1))
+    val endOk = if i == n - 1 then Str.eq(to, h1) else !Str.eq(to, h0) && !Str.eq(to, h1) && !Gate.rlinkSeen(g, atoms, 0, i, to)
+    shape && Str.eq(from, want) && endOk && Gate.rchk(g, atoms, i + 1, h0, h1)
+  else n > 0
+

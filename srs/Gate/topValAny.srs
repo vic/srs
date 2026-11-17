@@ -1,0 +1,9 @@
+// prompt: true when a root i.. of file f is a top-level val without a constraint group (a def root whose head token is the keyword
+// `val` and that has no {} or <> group): a compile-time value (vic 2026-11-16), s2 Pure rules apply to it.
+def Gate.topValAny(f: Resolve.F, i: I64): Bool =
+  val Resolve.F(_, g, _, _, rc, _, dr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(dr(i))
+    (root != 0 && Ast.kd(g, root) == Ast.kDef() && Str.eq(Ast.text(g, Ast.tok(g, root)), "val") && Typer.consN(g, Ast.b(g, root), 0) == 0) || Gate.topValAny(f, i + 1)
+  else false
+

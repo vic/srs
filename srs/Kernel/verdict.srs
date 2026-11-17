@@ -1,0 +1,6 @@
+// a child killed by a signal or never started is a crash: unknown, never counted as a reject
+def Kernel.verdict(r: Os.Ran): Kernel.Verdict = r match
+  case Os.Exited(c) => Kernel.vOfCode(c)
+  case Os.Killed(_) => Kernel.VCrash
+  case Os.NoStart(_) => Kernel.VCrash
+

@@ -1,0 +1,11 @@
+def Kernel.negrun(ws: Os.Strs): Str = ws match
+  case Os.End => "usage: negrun PRELUDE LIST"
+  case Os.More(pre, rest) => rest match
+    case Os.End => "usage: negrun PRELUDE LIST"
+    case Os.More(lp, r2) => Files.bytes(lp) match
+      case Os.Fail(_) => "list unreadable"
+      case Os.Ok(lst) =>
+        Console.captureBegin()
+        Kernel.negLoop(Args.at(0), pre, lst, 0, 0, 0, 0, 0)
+        Console.captureEnd()
+

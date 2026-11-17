@@ -1,0 +1,6 @@
+// an unreadable count or more than limit() failures since arming shuts the gate
+def Srs.Pages.step(g: Ptr, a: Ptr, len: I64, ok: Bool): Unit =
+  if ok && rt_ptr_get(g, Srs.Gate.seen()) - rt_ptr_get(g, Srs.Gate.base()) <= Srs.Pages.limit() then
+    Srs.Pages.huge(a, len)
+  else Srs.Gate.shut(g)
+

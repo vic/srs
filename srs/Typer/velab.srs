@@ -1,0 +1,14 @@
+// prompt: the type value type sym denotes with its values in env entries fb..: costs 1 fuel (out of fuel = the Diag no-compile-time-value); body 1 picks the case of its scrutinee value, 2 is the alias type, 3 the alias value type use (Typer.ctUse)
+def Typer.velab(s: Typer.S, sym: I64, fb: I64, j: I64): I64 =
+  val ss = Typer.sigAt(s, sym, 1)
+  val b = ss + 1 + Typer.poolAt(s, ss)
+  val bk = Typer.poolAt(s, b)
+  Typer.cset(s, Typer.cCtFuel(), Typer.cget(s, Typer.cCtFuel()) - 1)
+  if Typer.cget(s, Typer.cCtFuel()) < 0 then
+    Typer.diag(s, Typer.dNoCt(), j)
+    0
+  else if bk == 1 then Typer.ctPick(s, Typer.ctAt(s, fb + Typer.poolAt(s, b + 1)), b + 3, Typer.poolAt(s, b + 2), j)
+  else if bk == 2 then Typer.poolAt(s, b + 1)
+  else if bk == 3 then Typer.ctUse(s, Typer.poolAt(s, b + 1), Typer.poolAt(s, b + 2), b + 3, fb, j)
+  else 0
+

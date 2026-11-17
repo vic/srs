@@ -1,0 +1,14 @@
+def Parser.terms(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.rp()) then
+    Parser.adv(g)
+    Ast.close(g, m)
+  else if Token.isName(Parser.cl(g)) || Parser.is(g, Token.int()) then
+    Ast.push(g, Parser.cur(g))
+    Parser.adv(g)
+    Parser.comma(g)
+    Parser.terms(g, m)
+  else
+    Parser.fail(g)
+    Ast.close(g, m)
+

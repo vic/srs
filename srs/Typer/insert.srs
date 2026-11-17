@@ -1,0 +1,23 @@
+def Typer.insert(s: Typer.S, kind: I64, cls: I64, head: I64, m: I64, n: I64, slot: I64): I64 =
+  val Typer.S(tt, hh, pl, _, _) = s
+  val Typer.Tt(tcap, tk, tc, th, ta, tn) = tt
+  val Typer.Hh(hcap, hs) = hh
+  val Typer.Pl(acap, _, _, _) = pl
+  val id = Typer.cget(s, Typer.cTypes())
+  val top = Typer.cget(s, Typer.cATop())
+  if 0 <= id && id < tcap && 0 <= slot && slot < hcap && top + n <= acap then
+    Array.put(tk, id, U8.of(kind))
+    Array.put(tc, id, U8.of(cls))
+    Array.put(th, id, U32.of(head))
+    Array.put(ta, id, U32.of(top))
+    Array.put(tn, id, U32.of(n))
+    Typer.cpArgs(s, m, 0, n, top)
+    Array.put(hs, slot, U32.of(id))
+    Typer.cset(s, Typer.cTypes(), id + 1)
+    Typer.cset(s, Typer.cATop(), top + n)
+    id
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Typer.over(s)
+    0
+

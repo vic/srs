@@ -1,0 +1,9 @@
+// hideB(u, a): the type binder a of the def has the name of a builtin type (the resolver's table: Nm.bty declares them with kind tBuiltin)
+def Gate.hideRows(w: Resolve.W, g: Ast.G, u: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val s = Gate.tsym(w, g, Ast.tok(g, Ast.item(g, l, i)))
+    val Resolve.W(_, gt, _, _) = w
+    val Resolve.Gt(_, _, _, _, _, tcap, _, tyk, _, _) = gt
+    if 0 <= s && s < tcap && I64.ofU8(tyk(s)) == Resolve.tBuiltin() + 1 then Gate.row2(u, s) else ()
+    Gate.hideRows(w, g, u, l, i + 1)
+  else ()

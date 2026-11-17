@@ -1,0 +1,8 @@
+// prompt: the body type of nominal type t (its decl's body with the decl's [] binders replaced by the args of t); any other type as it is.
+def Typer.unfold(s: Typer.S, t: I64): I64 =
+  if Typer.kind(s, t) == Typer.bNominal() then
+    val h = Typer.head(s, t)
+    Typer.msub(s, Typer.sigAt(s, h, 0), Typer.sigAt(s, h, 1) + Typer.sigAt(s, h, 2), Typer.sigAt(s, h, 3), Typer.argBase(s, t))
+  else t
+
+

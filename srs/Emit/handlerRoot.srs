@@ -1,0 +1,16 @@
+def Emit.handlerRoot(x: Typer.X, k: Emit.K, base: I64, root: I64, ph: I64): Unit =
+  val Typer.X(w, g, _, _, _, _) = x
+  val e = Emit.E(x, k, 0, 0, 0, 0, 0, base)
+  val hsym = Typer.symOf(x, Ast.a(g, root))
+  if ph == 2 then
+    Emit.po(e,"static void* hs_")
+    Emit.id(e,hsym)
+    Emit.po(e,"; static int64_t ho_")
+    Emit.id(e,hsym)
+    Emit.po(e,"; static int64_t hc_")
+    Emit.id(e, Emit.capOfH(Emit.sOf(e), hsym))
+    Emit.po(e,";\n")
+// prompt: a handler root: phase 2 its globals (state hs_<H>, outer handler ho_<H>, and the innermost-handler word hc_<cap> of its capability: repeated tentative definitions are legal C) and fn prototypes, phase 3 its fn bodies
+  else ()
+  if ph >= 2 && ph <= 3 && !Typer.isMulti(Emit.sOf(e), hsym) then Emit.hfns(x, k, base, root, hsym, 0, ph) else ()
+

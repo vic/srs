@@ -1,0 +1,13 @@
+// the type as text: Name[arg, ...]; a param P<id>, a var ?<id>
+def Typer.tyText(w: Resolve.W, s: Typer.S, t: I64): Unit =
+  val k = Typer.kind(s, t)
+  if k == Typer.bVar() then Typer.num(s,"?", Typer.head(s, t))
+  else if k == Typer.bParam() then Typer.num(s,"P", Typer.head(s, t))
+  else
+    Typer.id(s, w, Typer.head(s, t))
+    if Typer.vn(s, t) > 0 then
+      Typer.po(s,"[")
+      Typer.tyTextArgs(w, s, t, 0, Typer.vn(s, t))
+      Typer.po(s,"]")
+    else ()
+

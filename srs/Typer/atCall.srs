@@ -1,0 +1,20 @@
+// prompt: xs.at(j) on an array local xs: Array[A](n) (s2/types.srs Ty.atCall): op `at`, one I64 arg, result Array.Index[A] (Ok(xs(j)) when 0 <= j < n, else Out(j), never a crash). The C reads n, so the length key must be a literal or a named local binder; any other op, arity or length is untyped (code 91, as an unknown method).
+def Typer.atCall(x: Typer.X, n: I64, rt: I64): I64 =
+  val Typer.X(w, g, s, _, _, _) = x
+  val j = Ast.tok(g, n)
+  val r = Ast.b(g, n)
+  val ln = Typer.walk(s, Typer.arg(s, rt, 1))
+  val named = Typer.kind(s, ln) == Typer.bLen() && (Typer.head(s, ln) == Typer.tBind() || Typer.head(s, ln) == Typer.tLit())
+  if !Str.eq(Ast.text(g, Ast.a(g, n)), "at") || Ast.len(g, r) != 1 || !named then
+    Typer.args(x, r, 0)
+    Typer.untyped(x, j, 91)
+  else
+    val ti = Typer.cget(s, Typer.tI64())
+    val a = Ast.item(g, r, 0)
+    Typer.expect(x, Ast.tok(g, a), Typer.expr(x, a, ti), ti)
+    val ix = Resolve.sym(w, Resolve.lit("Array.Index"), false)
+    Typer.ceRec(s, n, ix)
+    val m = Typer.mark(s)
+    Typer.push(s, Typer.arg(s, rt, 0))
+    Typer.mk(s, Typer.bEnum(), 0, ix, m)
+

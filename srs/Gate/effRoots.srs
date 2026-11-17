@@ -1,0 +1,12 @@
+def Gate.effRoots(w: Resolve.W, e: Gate.Er, g: Ast.G, u: I64, rc: I64, dk: Array[U8](rc), dr: Array[U32](rc), i: I64): Unit =
+  if 0 <= i && i < rc then
+    val kb = I64.ofU8(dk(i))
+    val root = I64.of(dr(i))
+    e match
+      case Gate.EHtop => if kb == Split.kindByte(Split.Def) then Gate.hbody(w, g, u, root) else ()
+      case Gate.EHfor => if kb == Split.kindByte(Split.Handler) then Gate.hforItems(w, g, u, Ast.b(g, root), 0) else ()
+      case Gate.EReq => ()
+      case Gate.ECall => ()
+    Gate.effRoots(w, e, g, u, rc, dk, dr, i + 1)
+  else ()
+

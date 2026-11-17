@@ -1,0 +1,9 @@
+// prompt: the aliases of t from byte i (a line start): every line that starts (column 0) with `alias SHORT = LONG`.
+def Kernel.aliases(t: Str, i: I64, acc: Kernel.Al): Kernel.Al =
+  if i >= Str.len(t) then acc
+  else
+    val e = Kernel.eol(t, i)
+    val nx = if Kernel.isAliasAt(t, i) then Kernel.alias1(t, i + 6, e, acc) else acc
+    Kernel.aliases(t, e + 1, nx)
+
+

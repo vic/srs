@@ -1,0 +1,12 @@
+// ── defs: prototypes and bodies ──
+// `(T v_x_J, ...)` of the params list pr of a def; the types come from the signature of sym (substituted), the names from the binders
+def Emit.params(e: Emit.E, pr: I64, sym: I64, i: I64, n: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < n then
+    if i > 0 then Emit.po(e,", ") else ()
+    Emit.cty(e, Emit.paramTy(e, sym, i))
+    Emit.po(e," ")
+    Emit.binder(e, Ast.tok(g, Ast.item(g, pr, i)))
+    Emit.params(e, pr, sym, i + 1, n)
+  else ()
+

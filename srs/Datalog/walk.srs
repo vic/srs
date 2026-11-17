@@ -1,0 +1,6 @@
+def Datalog.walk {g: Srs.Region} (st: Datalog.St, hv: I64, sp: I64, nxt: I64, k: I64, ar: I64, rn: I64, xs: Array[U32](rn), nc: I64, nx: Array[U32](nc), node: I64): Unit =
+  if node == 0 then () else
+    val row = node - 1
+    if Datalog.matchCols(st, rn, xs, row * ar, sp, 0, ar) then Datalog.join(st, hv, nxt, k - 1) else ()
+    Datalog.walk(st, hv, sp, nxt, k, ar, rn, xs, nc, nx, Datalog.u(nc, nx, row))
+

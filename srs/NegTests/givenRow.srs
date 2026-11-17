@@ -1,0 +1,11 @@
+// a given's row is within its trait method's capabilities: Show.show declares Srs.Region only
+// prompt: the kernel must reject a given method that uses Console when its trait method declares only Srs.Region, with error[given-row].
+val NegTests.givenRow {NegTest}: Never =
+  trait Show [A: Type]:
+    def show {Srs.Region} (x: A): I64
+  given Show[I64]:
+    def show(x: I64): I64 =
+      Console.print("x")
+      x
+  NegTest.expect("given-row", "a given method may use only the capabilities its trait method declares")
+

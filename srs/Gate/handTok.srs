@@ -1,0 +1,7 @@
+// hand(u, h): unit u installs the handler h (`handle x = H()` resolves H as a type token of kind THandler, ref = its symbol)
+def Gate.handTok(u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    if I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tHandler() then Gate.row2(u, I64.of(rf(j))) else ()
+    Gate.handTok(u, rcap, rk, rf, j + 1)
+  else ()
+

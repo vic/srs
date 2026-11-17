@@ -1,0 +1,48 @@
+// the root of a decl (at indent 0)
+def Printer.decl(g: Ast.G, n: I64): Unit =
+  val k = Ast.kd(g, n)
+  if k == Ast.kDef() then Printer.defN(g, n, 0)
+  else if k == Ast.kEnum() then
+    Printer.s("enum ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.enumGroups(g, Ast.b(g, n), 0)
+    Printer.s(":")
+    Printer.cases(g, Ast.b(g, n), 0)
+  else if k == Ast.kExtern() then
+    Printer.s("extern ")
+    if Ast.a(g, n) != 0 then
+      Printer.tok(g, Ast.a(g, n))
+      Printer.s(" ")
+    else ()
+    Printer.extern(g, Ast.b(g, n))
+  else if k == Ast.kHandler() then
+    Printer.s("handler ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.inl(g, Ast.b(g, n), 0)
+    Printer.s(":")
+    Printer.members(g, Ast.b(g, n), 0)
+  else if k == Ast.kProto() then
+    Printer.s("capability ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s(":")
+    Printer.capItems(g, Ast.b(g, n), 0)
+  else if k == Ast.kTrait() then
+    Printer.s("trait ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.inl(g, Ast.b(g, n), 0)
+    Printer.s(":")
+    Printer.members(g, Ast.b(g, n), 0)
+  else if k == Ast.kGiven() then
+    Printer.s("given")
+    Printer.inl(g, Ast.b(g, n), 0)
+    Printer.s(" ")
+    Printer.ty(g, Ast.a(g, n))
+    Printer.s(":")
+    Printer.members(g, Ast.b(g, n), 0)
+  else if k == Ast.kType() then
+    Printer.s("type ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.inl(g, Ast.b(g, n), 0)
+  else if k == Ast.kVal() then Printer.stmt(g, n, 0)
+  else ()
+

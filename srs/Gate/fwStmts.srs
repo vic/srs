@@ -1,0 +1,17 @@
+def Gate.fwStmts(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), blk: I64, l: I64, i: I64): Unit =
+  val len = Ast.len(g, l)
+  if len == 0 then Gate.fx(sel, u, blk)
+  else if i < len then
+    val s = Ast.item(g, l, i)
+    if i == 0 then Gate.fe(sel, Gate.FEe, u, blk, s) else ()
+    Gate.fw(w, g, sel, u, rcap, rk, rf, blk, s)
+    if i + 1 < len then Gate.fe(sel, Gate.FXe, u, s, Ast.item(g, l, i + 1))
+    else
+      Gate.fe(sel, Gate.FXx, u, s, blk)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FLast) then
+        val e = if Ast.kd(g, s) == Ast.kDo() then Ast.a(g, s) else s
+        Gate.row4(u, e, blk, Ast.tok(g, e))
+      else ()
+    Gate.fwStmts(w, g, sel, u, rcap, rk, rf, blk, l, i + 1)
+  else ()
+

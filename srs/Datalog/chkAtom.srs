@@ -1,0 +1,11 @@
+def Datalog.chkAtom(st: Datalog.St, a: I64, i: I64): I64 =
+  val t = Datalog.p(st, a)
+  if t >= 2 && t <= 4 then
+    (if i == 0 then 1 else 0) + Datalog.chkSpec(st, 1, Datalog.p(st, a + 1), Datalog.p(st, a + 2)) + Datalog.chkSpec(st, 1, Datalog.p(st, a + 3), Datalog.p(st, a + 4))
+  else if (t == 0 || t == 1) && 0 <= Datalog.p(st, a + 1) && Datalog.p(st, a + 1) < Datalog.nr(st) then
+    val rel = Datalog.p(st, a + 1)
+    val ar = Datalog.p(st, rel)
+    val ixd = if i == 0 && t == 0 then 0 else (if 0 <= Datalog.p(st, a + 2) && Datalog.p(st, a + 2) < Datalog.ni(st) && Datalog.p(st, Datalog.nr(st) + 2 * Datalog.p(st, a + 2)) == rel && Datalog.p(st, Datalog.nr(st) + 2 * Datalog.p(st, a + 2) + 1) == Datalog.atomMask(st, a + 3, 0, ar, 1) then 0 else 1)
+    (if i == 0 && t != 0 then 1 else 0) + ixd + Datalog.chkCols(st, t, a + 3, 0, ar)
+  else 1
+

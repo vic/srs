@@ -1,0 +1,15 @@
+// the arena struct: a freed one, else 8 bytes of the current page
+def Srs.Arena.newArena(): Ptr =
+  val g = rt_globals()
+  val free = rt_ptr_get(g, Srs.Arena.gFree())
+  if free != 0 then
+    val s = Srs.Arena.at(free)
+    rt_ptr_set(g, Srs.Arena.gFree(), rt_ptr_get(s, 0))
+    rt_ptr_set(s, 0, 0)
+    s
+  else
+    val cur = rt_ptr_get(g, Srs.Arena.gSmall())
+    val s = if cur != 0 && cur < rt_ptr_get(g, Srs.Arena.gSmallEnd()) then Srs.Arena.at(cur) else Srs.Arena.smallPage(g)
+    rt_ptr_set(g, Srs.Arena.gSmall(), Srs.Arena.addr(s) + 8)
+    s
+

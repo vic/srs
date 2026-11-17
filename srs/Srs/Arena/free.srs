@@ -1,0 +1,6 @@
+def Srs.Arena.free(self: Ptr): Unit =
+  val g = rt_globals()
+  Srs.Arena.release(g, rt_ptr_get(self, 0))
+  rt_ptr_set(self, 0, rt_ptr_get(g, Srs.Arena.gFree()))
+  rt_ptr_set(g, Srs.Arena.gFree(), Srs.Arena.addr(self))
+

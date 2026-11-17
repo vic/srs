@@ -1,0 +1,15 @@
+// prompt: the kernel must reject main calling an op with a {r: Srs.Region} binder when main has no Srs.Region provider, with error[no-capability].
+val NegTests.opRegionNone {NegTest}: Never =
+  capability Rn:
+    def mk {r: Srs.Region} (n: I64): Str<r>
+  handler Hrn for Rn:
+    def mk {r: Srs.Region} (n: I64): Str<r> =
+      val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+      Str.ofBytes(n, xs)
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle h = Hrn()
+    Console.print(Rn.mk(3))
+    0
+  NegTest.expect("no-capability", "the op needs a Srs.Region capability of the caller and main has none in scope")
+

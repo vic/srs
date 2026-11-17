@@ -1,0 +1,7 @@
+// prompt: the index of the value binder (kBind item of list pr, from i) whose binder token is ref, -1 when none
+def Typer.ctBinIx(x: Typer.X, pr: I64, ref: I64, i: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, pr) then
+    if Ast.tok(g, Ast.item(g, pr, i)) == ref then i else Typer.ctBinIx(x, pr, ref, i + 1)
+  else 0 - 1
+

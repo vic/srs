@@ -1,0 +1,19 @@
+// prompt: binary operator c on I64 a and r: + - * / % (division by zero is no value) and the comparisons; CtNo when r is no I64
+def Typer.ctBinI(c: I64, a: I64, r: Typer.Ct): Typer.Ct = r match
+  case Typer.CtInt(b) =>
+    // shortcut: + - * wrap as C I64 does; reject overflow when the evaluator gets checked arithmetic (vic/c/fil-c-rules.md overflow family)
+    if c == Token.plus() then Typer.CtInt(a + b)
+    else if c == Token.minus() then Typer.CtInt(a - b)
+    else if c == Token.star() then Typer.CtInt(a * b)
+    else if c == Token.slash() && b != 0 then Typer.CtInt(a / b)
+    else if c == Token.pct() && b != 0 then Typer.CtInt(a % b)
+    else if c == Token.eqeq() then Typer.CtBool(a == b)
+    else if c == Token.ne() then Typer.CtBool(a != b)
+    else if c == Token.lt() then Typer.CtBool(a < b)
+    else if c == Token.le() then Typer.CtBool(a <= b)
+    else if c == Token.gt() then Typer.CtBool(a > b)
+    else if c == Token.ge() then Typer.CtBool(a >= b)
+    else Typer.CtNo
+  case Typer.CtBool(_) => Typer.CtNo
+  case Typer.CtNo => Typer.CtNo
+

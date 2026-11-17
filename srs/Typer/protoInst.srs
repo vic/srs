@@ -1,0 +1,16 @@
+// the prototype of instance i of the def with params list pr
+def Typer.protoInst(x: Typer.X, i: I64, pr: I64): Unit =
+  val Typer.X(w, _, s, _, _, _) = x
+  val sym = Typer.mxGet(s, Typer.moInst(s, i, 0))
+  val base = Typer.mxGet(s, Typer.moInst(s, i, 1)) - 1
+  val n = Typer.sigAt(s, sym, 2)
+  val start = Typer.sigAt(s, sym, 1)
+  val ntp = Typer.sigAt(s, sym, 3)
+  Typer.po(s, "static ")
+  Typer.cty(w, s, Typer.msub(s, Typer.sigAt(s, sym, 0), start + n, ntp, base))
+  Typer.po(s, " ")
+  Typer.instName(w, s, i)
+  Typer.po(s, "(")
+  if n == 0 then Typer.po(s, "void") else Typer.pParamsInst(x, pr, 0, start, n, start + n, ntp, base)
+  Typer.po(s, ");\n")
+

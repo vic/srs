@@ -1,0 +1,17 @@
+// runs an executor input on the engine (s3/dl.srs) and returns every relation as Dl.printAll prints it; the engine state lives in the heap region g opened here
+def Planner.run(txt: Str): Str =
+  handle g = Srs.Heap()
+  val Datalog.N(pn, i1) = Datalog.num(txt, 0)
+  val Datalog.N(nr, i2) = Datalog.num(txt, i1)
+  val Datalog.N(ni, i3) = Datalog.num(txt, i2)
+  val Datalog.N(ns, i4) = Datalog.num(txt, i3)
+  val Datalog.N(mx, i5) = Datalog.num(txt, i4)
+  val st = Datalog.init(pn, nr, ni)
+  val i6 = Datalog.fillP(st, txt, i5, 0, pn)
+  Datalog.br(st, 0, 0)
+  val i7 = Datalog.loadFacts(st, txt, i6, 0)
+  Datalog.run(st, 0, ns, nr + 2 * ni)
+  Console.captureBegin()
+  Datalog.printAll(st, 0)
+  Console.captureEnd()
+

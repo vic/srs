@@ -1,0 +1,9 @@
+def Kernel.base(i: I64): Kernel.Base =
+  if i >= Args.count() then Kernel.Base(Os.End, Os.End, 0)
+  else
+    val p = Args.at(i)
+    val Kernel.Base(ps, xs, bad) = Kernel.base(i + 1)
+    Files.bytes(p) match
+      case Os.Ok(src) => Kernel.Base(Os.More(p, ps), Os.More(src, xs), bad)
+      case Os.Fail(_) => Kernel.Base(ps, xs, bad + 1)
+

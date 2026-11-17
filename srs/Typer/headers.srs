@@ -1,0 +1,13 @@
+def Typer.headers(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R], dump: Bool, fi: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    if fi == 0 then Typer.cstructAll(w, s, rs) else ()
+    Typer.cset(s, Typer.cFile(), fi)
+// prompt: the header pass over files rs (file index fi): extern struct names are marked first (Typer.cstructAll, at fi 0), then per file the mutability pass and the root headers (Typer.fileDefs)
+    Typer.cset(s, Typer.cTyBase(), Typer.mxGet(s, Typer.moFb(s, fi)))
+    Typer.mutPass(Typer.X(w, g, s, rcap, rk, rf), 1, Ast.cget(g, Ast.sNodes()))
+    Typer.fileDefs(Typer.X(w, g, s, rcap, rk, rf), f, 0, dump)
+    Typer.headers(w, s, rest, dump, fi + 1)
+

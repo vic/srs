@@ -1,0 +1,15 @@
+def Typer.traitMethods(x: Typer.X, root: I64, ts: I64, i: I64): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kDef() then
+      val p = Ast.a(g, root)
+      val o = Ast.a(g, n)
+      val sigSym = Resolve.sym(w, Resolve.T(Resolve.srcOf(g), Ast.toff(g, p), Ast.tlen(g, p), Resolve.srcOf(g), Ast.toff(g, o), Ast.tlen(g, o)), true)
+      Typer.sigOf(x, n, sigSym, false)
+      Typer.opAdd(s, ts, Typer.symIns(x, o), sigSym)
+    else ()
+    Typer.traitMethods(x, root, ts, i + 1)
+  else ()
+

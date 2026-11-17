@@ -1,0 +1,15 @@
+def Printer.extern(g: Ast.G, n: I64): Unit =
+  val k = Ast.kd(g, n)
+  if k == Ast.kDef() then Printer.defN(g, n, 0)
+  else if k == Ast.kCStruct() then
+    Printer.s("struct ")
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(":")
+    Printer.fields(g, Ast.b(g, n), 0)
+  else if k == Ast.kCVal() then
+    Printer.s("val ")
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(": ")
+    Printer.ty(g, Ast.a(g, n))
+  else ()
+

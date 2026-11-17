@@ -1,0 +1,10 @@
+def Gate.psubNames(w: Resolve.W, g: Ast.G, dot: Bool, u: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val t = Ast.item(g, l, i)
+    val d = Gate.hasDot(Ast.text(g, t), 0)
+    if dot && d then Gate.row2(u, t)
+    else if !dot && !d then Gate.row2(u, Resolve.sym(w, Resolve.tokT(g, t), false))
+    else ()
+    Gate.psubNames(w, g, dot, u, l, i + 1)
+  else ()
+

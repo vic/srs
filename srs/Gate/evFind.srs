@@ -1,0 +1,8 @@
+// the {..} binder of the def header parts r whose name has symbol sym; dflt when none has it
+def Gate.evFind(w: Resolve.W, g: Ast.G, r: I64, i: I64, sym: I64, dflt: I64): I64 =
+  if i < Ast.len(g, r) then
+    val p = Ast.item(g, r, i)
+    if Ast.kd(g, p) == Ast.kGEv() then Gate.evFindL(w, g, Ast.a(g, p), 0, sym, Gate.evFind(w, g, r, i + 1, sym, dflt))
+    else Gate.evFind(w, g, r, i + 1, sym, dflt)
+  else dflt
+

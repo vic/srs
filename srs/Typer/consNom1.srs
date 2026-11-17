@@ -1,0 +1,10 @@
+// prompt: the trait constraints k.. (c of them at pool b) of the nominal type t (decl h): each, with h's [] binders replaced by the
+// args of t, must be held by the def owner (Typer.evHeld) or covered by a given (Typer.givenAny); else the Diag no-given at token j.
+def Typer.consNom1(s: Typer.S, owner: I64, t: I64, h: I64, j: I64, b: I64, k: I64, c: I64): Unit =
+  if k < c then
+    val z = Typer.msub(s, Typer.poolAt(s, b + k), Typer.sigAt(s, h, 1) + Typer.sigAt(s, h, 2), Typer.sigAt(s, h, 3), Typer.argBase(s, t))
+    if Typer.evHeld(s, owner, z) || Typer.givenAny(s, z, 1, Typer.cget(s, Typer.cTypes())) then () else Typer.diag(s, Typer.dNoGiven(), j)
+    Typer.consNom1(s, owner, t, h, j, b, k + 1, c)
+  else ()
+
+

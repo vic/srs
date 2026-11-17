@@ -1,0 +1,12 @@
+// a handler's parts: its [] binders are types in its defs, its `for` type names a capability (with its args), then its defs
+def Resolve.handlerParts(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kGTypes() then Resolve.bindTpList(x, Ast.a(g, n), 0)
+    else if k == Ast.kHFor() then Resolve.ty(x, Ast.b(g, n))
+    else if k == Ast.kDef() then Resolve.defN(x, n)
+    else ()
+    Resolve.handlerParts(x, r, i + 1)
+  else ()

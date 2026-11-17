@@ -1,0 +1,15 @@
+def Typer.pc(s: Typer.S, ch: I64): Unit =
+  val Typer.S(_, _, _, c, _) = s
+  val Typer.Cn(cnn, cn, _, _, _, _, obc, ob) = c
+  val o = Typer.cOut()
+  if 0 <= o && o < cnn then
+    val n = cn(o)
+    if 0 <= n && n < obc then
+      Array.put(ob, n, U8.of(ch))
+      Array.put(cn, o, n + 1)
+    else if n > 0 then
+      Typer.pflush(s)
+      Typer.pc(s, ch)
+    else Console.printChar(ch)
+  else Console.printChar(ch)
+

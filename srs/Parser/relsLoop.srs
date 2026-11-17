@@ -1,0 +1,13 @@
+// every def entered by <s r t> names a transition r of its capability (s2 resolveOps 729)
+def Parser.relsLoop(g: Ast.G, r: I64, i: I64): Unit =
+  if Parser.ok(g) && i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCapDef() then
+      val en = Parser.findEntry(g, Ast.b(g, n), 0)
+      if en != 0 && Ast.len(g, Ast.a(g, en)) == 3 then
+        Parser.stopIf(g, !Parser.relDeclared(g, r, 0, Ast.item(g, Ast.a(g, en), 1)), Ast.tok(g, n))
+      else ()
+    else ()
+    Parser.relsLoop(g, r, i + 1)
+  else ()
+

@@ -1,0 +1,8 @@
+def Coll.rotateR [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] = l match
+  case Coll.Tip => Coll.bin(k, v, l, r2)
+  case Coll.Bin(_, k2, v2, ll, lr) =>
+    if Coll.size(lr) < Coll.ratio() * Coll.size(ll) then Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+    else lr match
+      case Coll.Tip => Coll.bin(k2, v2, ll, Coll.bin(k, v, lr, r2))
+      case Coll.Bin(_, k3, v3, lrl, lrr) => Coll.bin(k3, v3, Coll.bin(k2, v2, ll, lrl), Coll.bin(k, v, lrr, r2))
+

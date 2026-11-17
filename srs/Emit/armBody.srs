@@ -1,0 +1,8 @@
+def Emit.armBody(e: Emit.E, arm: I64, n: I64, tail: Bool): Unit =
+  val g = Emit.gOf(e)
+  val p = Ast.a(g, arm)
+  Emit.po(e,"({ ")
+  if Ast.kd(g, p) == Ast.kPCase() then Emit.binds(e, p, Ast.a(g, p), 0, n) else ()
+  Emit.expr(e, Ast.b(g, arm), tail)
+  Emit.po(e,"; })")
+

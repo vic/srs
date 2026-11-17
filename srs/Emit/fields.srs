@@ -1,0 +1,15 @@
+def Emit.fields(e: Emit.E, n: I64, r: I64, i: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, r) then
+    Emit.po(e," o")
+    Emit.pi(e,n)
+    Emit.po(e,"->u.C_")
+    Emit.id(e,Emit.ce(e, n))
+    Emit.po(e,".f")
+    Emit.pi(e,i)
+    Emit.po(e," = ")
+    Emit.expr(e, Ast.item(g, r, i), false)
+    Emit.po(e,";")
+    Emit.fields(e, n, r, i + 1)
+  else ()
+

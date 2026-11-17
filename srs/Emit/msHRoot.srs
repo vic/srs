@@ -1,0 +1,8 @@
+// prompt: the root node of the handler with symbol hs among the roots i.. of file f, 0 when f does not hold it (Emit.msHSite tries every file)
+def Emit.msHRoot(x: Typer.X, f: Resolve.F, hs: I64, i: I64): I64 =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 && I64.ofU8(rk(i)) == 3 && Typer.symOf(x, Ast.a(g, root)) == hs then root else Emit.msHRoot(x, f, hs, i + 1)
+  else 0
+

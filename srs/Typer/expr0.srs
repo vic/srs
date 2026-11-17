@@ -1,0 +1,42 @@
+def Typer.expr0(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, n)
+  if k == Ast.kInt() then
+    val ti = Typer.intLit(s, want)
+    if !Typer.litFits(Ast.text(g, Ast.tok(g, n)), Typer.cls(s, ti)) then Typer.mis(s, Ast.tok(g, n)) else ()
+    ti
+  else if k == Ast.kChar() then Typer.intLit(s, want)
+  else if k == Ast.kStr() then Typer.cget(s, Typer.tStr())
+  else if k == Ast.kUnit() then Typer.cget(s, Typer.tUnit())
+  else if k == Ast.kParen() then Typer.expr(x, Ast.a(g, n), want)
+  else if k == Ast.kName() then Typer.name(x, n, want)
+  else if k == Ast.kCall() then Typer.call(x, n, want)
+  else if k == Ast.kMethod() then Typer.method(x, n, want)
+  else if k == Ast.kBin() then Typer.bin(x, n, want)
+  else if k == Ast.kUn() then Typer.unx(x, n, want)
+  else if k == Ast.kIf() || k == Ast.kIfNl() then Typer.ifx(x, n, want)
+  else if k == Ast.kMatch() then Typer.matchx(x, n, want)
+  else if k == Ast.kBlock() then Typer.stmts(x, Ast.a(g, n), 0, want)
+  else if k == Ast.kWhile() then
+    val tb = Typer.cget(s, Typer.tBool())
+    Typer.expect(x, Ast.tok(g, Ast.a(g, n)), Typer.expr(x, Ast.a(g, n), tb), tb)
+    Typer.expr(x, Ast.b(g, n), 0)
+    Typer.cget(s, Typer.tUnit())
+  else if k == Ast.kAssign() then
+    val j = Ast.tok(g, n)
+    val tv = if Typer.useKind(x, j) == Resolve.kLocal() then Typer.ltGet(s, Typer.useRef(x, j)) else 0
+    Typer.expect(x, j, Typer.expr(x, Ast.a(g, n), tv), tv)
+    Typer.cget(s, Typer.tUnit())
+  else if k == Ast.kQuant() then
+    // forall / exists x: T. body: x is a local of T, the body is a Bool
+    val bd = Ast.a(g, n)
+    val tb = Typer.cget(s, Typer.tBool())
+    val tq = Typer.ty(x, Ast.a(g, bd))
+    Typer.ltSet(s, Ast.tok(g, bd), tq)
+    Typer.tyPut(s, bd, tq)
+    Typer.expect(x, Ast.tok(g, Ast.b(g, n)), Typer.expr(x, Ast.b(g, n), tb), tb)
+    tb
+  else if k == Ast.kResume() then Typer.resumeX(x, n)
+  else Typer.untyped(x, Ast.tok(g, n), k)
+// prompt: the type of expression node n against want, by node kind; resume k(v) is Typer.resumeX; any other kind is untyped.
+

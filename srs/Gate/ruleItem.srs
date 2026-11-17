@@ -1,0 +1,21 @@
+// prompt: the rows of rule def node n (clause id = the node) of capability unit c for selector sel: RLen its atom count, RBad when it is no chain, RAtom one row per atom i (kind 0 next with x = the op symbol, kind 1 a rule atom with x = the rule symbol)
+def Gate.ruleItem(w: Resolve.W, g: Ast.G, sel: Gate.Rk, c: I64, n: I64, i: I64): Unit =
+  val r = Gate.tsym(w, g, Ast.a(g, n))
+  val atoms = Ast.b(g, Ast.b(g, n))
+  if Gate.rkB(sel) == Gate.rkB(Gate.RLen) then Gate.row4(c, r, n, Ast.len(g, atoms))
+  else if Gate.rkB(sel) == Gate.rkB(Gate.RBad) then
+    if !Gate.ruleChain(g, n) then Gate.row2(c, n) else ()
+  else if Gate.rkB(sel) == Gate.rkB(Gate.RAtom) && i < Ast.len(g, atoms) then
+    val a = Ast.item(g, atoms, i)
+    val ts = Ast.a(g, a)
+    val isNext = Str.eq(Ast.text(g, Ast.tok(g, a)), "next") && Ast.len(g, ts) == 3
+    Console.printI64(c)
+    Console.print("\t")
+    Console.printI64(r)
+    Console.print("\t")
+    Console.printI64(n)
+    Console.print("\t")
+    Gate.row4(i, i + 1, if isNext then 0 else 1, if isNext then Gate.tsym(w, g, Ast.item(g, ts, 1)) else Gate.tsym(w, g, Ast.tok(g, a)))
+    Gate.ruleItem(w, g, sel, c, n, i + 1)
+  else ()
+

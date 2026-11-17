@@ -1,0 +1,10 @@
+def Datalog.reix {g: Srs.Region} (st: Datalog.St, r: I64, cap2: I64, a: I64, n: I64, j: I64, j1: I64): Unit =
+  if j >= j1 then () else
+    val x = Datalog.rl(st, j)
+    val hc2 = Datalog.hcOf(cap2)
+    val hs2 = Array.fill(hc2, U32.of(0))
+    val nx2 = Array.fill(cap2, U32.of(0))
+    Datalog.putIx(st, x, Datalog.Ix.Mk(hc2, hs2, cap2, nx2))
+    Datalog.relink(st, r, x, a, 0, n)
+    Datalog.reix(st, r, cap2, a, n, j + 1, j1)
+

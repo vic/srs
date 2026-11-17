@@ -1,0 +1,6 @@
+// prompt: true when a line starting at byte i of s is a decl head: column 0 holds a char above space that is not '/' and not '='
+// (a def with clauses puts its `=` at column 0: it continues the def, like Split.decl; s2 prog contracts), and the line is not an
+// alias line (aliases belong to the decl below them).
+def Kernel.isHead(s: Str, i: I64): Bool =
+  val c = Str.at(s, i)
+  c > 32 && c != 47 && c != 61 && Kernel.isAliasAt(s, i) == false

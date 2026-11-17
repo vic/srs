@@ -1,0 +1,17 @@
+def Parser.tbody(g: Ast.G, vp: I64): I64 =
+  val j = Parser.cur(g)
+  if Parser.ok(g) && vp != 0 && Token.isName(Parser.cl(g)) && Parser.cl1(g) == Token.kmatch() && Parser.binderNamed(g, Ast.a(g, vp), 0, j) then
+    Parser.adv(g)
+    Parser.adv(g)
+    Parser.eat(g, Token.nl())
+    Parser.eat(g, Token.indent())
+    Ast.mk(g, Ast.kValMatch(), j, 0, Parser.varms(g, Ast.mark(g)))
+  else
+    val t = Parser.ty(g)
+    if Parser.ok(g) && Parser.is(g, Token.kmatch()) then
+      Parser.adv(g)
+      Parser.eat(g, Token.nl())
+      Parser.eat(g, Token.indent())
+      Ast.mk(g, Ast.kTyMatch(), j, t, Parser.tarms(g, Ast.mark(g)))
+    else Ast.mk(g, Ast.kAlias(), j, t, 0)
+

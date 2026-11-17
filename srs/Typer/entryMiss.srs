@@ -1,0 +1,14 @@
+def Typer.entryMiss(x: Typer.X, nd: I64, t: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val idx = Typer.cget(s, Typer.cTyBase()) + nd
+  val k = Ast.kd(g, nd)
+  val mTy = t == 0 || !Typer.noVar(s, t)
+  val mCe = Typer.needCe(x, nd) && Typer.mxGet(s, Typer.moCe(s, idx)) == 0
+  val mAx = Typer.needAx(x, nd) && Typer.mxGet(s, Typer.moAx(s, idx)) == 0
+  val mLit = (k == Ast.kInt() || k == Ast.kChar()) && Typer.litBad(s, t)
+  if mTy then Typer.cinc(s, Typer.cTyBad()) else ()
+  if mCe then Typer.cinc(s, Typer.cMissCe()) else ()
+  if mAx then Typer.cinc(s, Typer.cMissAx()) else ()
+  if mLit then Typer.cinc(s, Typer.cMissLit()) else ()
+  if mTy || mCe || mAx || mLit then Typer.diag(s, Typer.dMissing(), Ast.tok(g, nd)) else ()
+

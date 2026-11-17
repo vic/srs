@@ -1,0 +1,6 @@
+// the C compiler line of every build (cycle, cc, tests): vic 2026-11-16 "srs compilation must use CC env or default to tinyc"
+// prompt: the words of $CC (a compiler and its own flags, e.g. `zig cc -O1 -static -target x86_64-linux-musl`), or `tcc` when CC is
+// unset or blank, then -std=gnu11 -w -o OUT IN bootstrap/srs_rt.c (the runtime next to the seed, relative to the repo root).
+def Kernel.ccArgv(inp: Str, out: Str): Os.Strs =
+  val tail = Os.More("-std=gnu11", Os.More("-w", Os.More("-o", Os.More(out, Os.More(inp, Os.More("bootstrap/srs_rt.c", Os.End))))))
+  Kernel.ccHead(Env.get("CC"), tail)

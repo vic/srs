@@ -1,0 +1,7 @@
+def Datalog.run {g: Srs.Region} (st: Datalog.St, s: I64, ns: I64, off: I64): Unit =
+  if s >= ns then () else
+    val nv = Datalog.p(st, off)
+    Datalog.allDelta(st, 0)
+    Datalog.round(st, 0, off + 1, nv)
+    Datalog.run(st, s + 1, ns, Datalog.skipVars(st, off + 1, nv))
+

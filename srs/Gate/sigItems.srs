@@ -1,0 +1,11 @@
+// the ops of a capability or the fns of a handler (items l of unit u), keyed by name symbol, so a rule can compare a handler fn with the op it implements; the decl telescope's [] binders are type binders of every op
+def Gate.sigItems(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, self: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val d = Ast.item(g, l, i)
+    if Ast.kd(g, d) == Ast.kCapDef() || Ast.kd(g, d) == Ast.kDef() then
+      val o = Gate.tsym(w, g, Ast.a(g, d))
+      Gate.sigParts(w, g, sel, u, self, o, Ast.b(g, d), 0)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FSigT) then Gate.sigTpAll(w, g, u, o, l, 0) else ()
+    else ()
+    Gate.sigItems(w, g, sel, u, self, l, i + 1)
+  else ()

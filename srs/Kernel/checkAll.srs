@@ -1,0 +1,19 @@
+// the gate of an image with negative tests: dup check of all units, the form of NegTest headers, the check of the plain image,
+// then every NegTest body must be rejected with exactly its expected codes (K.negT)
+// prompt: admit image im only when no unit name is duplicated, every NegTest header has the NegTest form, the plain image (no
+// NegTests) passes Kernel.check, and every NegTest body is rejected with exactly its expected codes (Kernel.negRunT; results
+// cached by kernel binary, plain image and body).
+def Kernel.checkAll(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img): Kernel.Res =
+  val Kernel.Res(dc, dout) = Gate.dup(im)
+  if dc != 0 then Kernel.Res(dc, dout)
+  else Kernel.negForm(im) match
+    case Coll.Some(n) => Kernel.Res(1, Kernel.msg2("error[negtest-form] NegTest takes only val NAME {NegTest}: Never = e: ", n))
+    case Coll.None =>
+      val pl = Kernel.plain(im)
+      val Kernel.Res(c, out) = Kernel.check(bp, bt, pl)
+      if c != 0 then Kernel.Res(c, out)
+      else
+        val Kernel.NegR(nc, _, nout) = Kernel.negRunT(Kernel.negRunOf(Args.at(0), Kernel.negBase(pl)), im, Os.End, 0, 0)
+        if nc != 0 then Kernel.Res(1, Kernel.msg2("error[negtest-failed]\n", nout)) else Kernel.Res(0, out)
+
+

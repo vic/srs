@@ -1,0 +1,18 @@
+// prompt: push 4 words per case of value match arms r from i: pattern kind (0 `_`, 1 I64 literal, 2 true/false), the value as hi, lo words, the result type; a pattern whose kind is not the scrutinee's kind sk (or a string) is the Diag value-pattern-type
+def Typer.ctArms(x: Typer.X, r: I64, i: I64, sk: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val a = Ast.item(g, r, i)
+    val p = Ast.a(g, a)
+    val t = Ast.text(g, p)
+    val c = Typer.clsTok(g, p)
+    val pk = if c == Token.under() then 0 else if c == Token.int() && Typer.litOk(t, 0) then 1 else if Str.eq(t, "true") || Str.eq(t, "false") then 2 else 3
+    if pk == 3 || (pk != 0 && pk != sk) then Typer.diag(s, Typer.dValPattern(), p) else ()
+    val v = if pk == 1 then Typer.dec(t, 0, 0) else if pk == 2 && Str.eq(t, "true") then 1 else 0
+    Typer.push(s, pk)
+    Typer.push(s, v / 4294967296)
+    Typer.push(s, v % 4294967296)
+    Typer.push(s, Typer.ty(x, Ast.b(g, a)))
+    Typer.ctArms(x, r, i + 1, sk)
+  else ()
+

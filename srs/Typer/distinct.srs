@@ -1,0 +1,8 @@
+// the number of distinct cases among the arms
+def Typer.distinct(x: Typer.X, r: I64, i: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val sym = Typer.armSym(x, Ast.item(g, r, i))
+    Typer.distinct(x, r, i + 1) + (if sym != 0 && !Typer.seen(x, r, 0, i, sym) then 1 else 0)
+  else 0
+

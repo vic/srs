@@ -1,0 +1,20 @@
+// prompt: the answer type of a block handled by multi-shot handler name token j whose rest has type a (vic Q-M3): done's result with the handler's first [] binder replaced by a; without done, a
+def Typer.msAnswer(x: Typer.X, j: I64, a: I64): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  val d = Typer.doneSym(x, j)
+  val r = Typer.sigAt(s, d, 0)
+  val top = Typer.cget(s, Typer.cATop())
+  if r == 0 then a
+  else if top + 1 <= acap then
+    val m = Typer.mark(s)
+    Typer.push(s, a)
+    Typer.cpArgs(s, m, 0, 1, top)
+    Typer.cset(s, Typer.cATop(), top + 1)
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.msub(s, r, Typer.sigAt(s, d, 1) + Typer.sigAt(s, d, 2), Typer.sigAt(s, d, 3), top)
+  else
+    Typer.over(s)
+    0
+

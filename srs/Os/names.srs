@@ -1,0 +1,11 @@
+// names each followed by a NUL, cut from the end so the list keeps their order
+def Os.names(s: Str): Os.Strs =
+  var acc = Os.End
+  var j = Str.len(s) - 1
+  while j >= 0 do
+    var k = j - 1
+    while k >= 0 && Str.at(s, k) != 0 do k = k - 1
+    acc = Os.More(Str.slice(s, k + 1, j), acc)
+    j = k
+  acc
+

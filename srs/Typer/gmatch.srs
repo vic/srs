@@ -1,0 +1,8 @@
+// prompt: true when the given head h covers type z: equal kind, head and args, where a param of h covers any type.
+// shortcut: a param of h is a wildcard (no consistency between two uses of one param, no check of the given's own {} evidence);
+// upgrade with given resolution (s2 Ty.goals, given-fuel).
+def Typer.gmatch(s: Typer.S, h: I64, z: I64): Bool =
+  if Typer.kind(s, h) == Typer.bParam() then true
+  else Typer.kind(s, h) == Typer.kind(s, z) && Typer.head(s, h) == Typer.head(s, z) && Typer.nargs(s, h) == Typer.nargs(s, z) && Typer.gmatchArgs(s, h, z, 0, Typer.nargs(s, h))
+
+

@@ -1,0 +1,12 @@
+// the expression e of a clause or a loop `invariant` / `decreases` (keyword token kw) is typed in scope 2 (its own totals)
+def Typer.clauseExpr(x: Typer.X, kw: I64, e: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val sc = Typer.cget(s, Typer.cScope())
+  val tb = Typer.cget(s, Typer.tBool())
+  // decreases: a measure, no type is wanted (the absent type 0 unifies with anything)
+  val want = if Str.eq(Ast.text(g, kw), "decreases") then 0 else tb
+  Typer.cset(s, Typer.cScope(), 2)
+  Typer.cinc(s, Typer.cCCl())
+  Typer.expect(x, Ast.tok(g, e), Typer.expr(x, e, want), want)
+  Typer.cset(s, Typer.cScope(), sc)
+

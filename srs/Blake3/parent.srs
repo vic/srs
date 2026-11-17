@@ -1,0 +1,9 @@
+def Blake3.parent(ln: I64, l: Array[U32](ln), rn: I64, r: Array[U32](rn), root: Bool, cn: I64, cv: Array[U32](cn)): Unit =
+  val m = Array.fill(16, U32.of(0))
+  val t = Array.fill(16, U32.of(0))
+  val v = Array.fill(16, U32.of(0))
+  Blake3.cat8(ln, l, rn, r, 16, m, 0)
+  Blake3.ivInto(cn, cv, 0)
+  Blake3.compress(cn, cv, 16, m, 16, t, 16, v, 0, 64, if root then 12 else 4)
+  Blake3.take(16, v, cn, cv, 0)
+

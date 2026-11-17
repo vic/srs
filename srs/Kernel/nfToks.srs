@@ -1,0 +1,18 @@
+// prompt: print the stream of tokens j.. of the unit named own: comments (Token.doc) skipped; a token that names a unit printed by
+// Kernel.nfRef; an unresolved token by Kernel.nfOther.
+def Kernel.nfToks(w: Resolve.W, tj: Kernel.Tj, nf: Kernel.Nf, c: I64, md: Kernel.Md, g: Ast.G, own: Str, tcap: I64, cls: Array[U8](tcap), t: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < t && j < tcap && j < rcap then
+    val k = I64.ofU8(cls(j))
+    if k != Token.doc() then
+      val Resolve.W(sy, gt, sc, cn) = w
+      val Resolve.Gt(gcap, gk, gf, gl, gs, ycap, tab, tyk, tyf, tyl) = gt
+      val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+      val rkj = I64.ofU8(rk(j))
+      val d = I64.of(rf(j))
+      Kernel.tokDep(gcap, gf, ycap, tyk, tyf, 0, n, rkj, d) match
+        case Coll.Some(v) => Kernel.nfRef(tj, nf, c, md, v, if rkj >= Resolve.tBase() then -1 else d)
+        case Coll.None => Kernel.nfOther(w, tj, nf, c, md, g, own, n, k, j)
+    else ()
+    Kernel.nfToks(w, tj, nf, c, md, g, own, tcap, cls, t, rcap, rk, rf, j + 1)
+  else ()
+

@@ -1,0 +1,7 @@
+// the mask of the columns bound (tag 0 or 1) in an atom's specs
+def Datalog.atomMask(st: Datalog.St, sp: I64, c: I64, a: I64, pw: I64): I64 =
+  if c >= a then 0
+  else
+    val tag = Datalog.p(st, sp + 2 * c)
+    (if tag == 0 || tag == 1 then pw else 0) + Datalog.atomMask(st, sp, c + 1, a, pw * 2)
+

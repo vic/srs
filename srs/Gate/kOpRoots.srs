@@ -1,0 +1,8 @@
+// prompt: Gate.kOpRows over the roots i.. of one file: the fns of each handler root (kind 3)
+def Gate.kOpRoots(w: Resolve.W, g: Ast.G, u: I64, rc: I64, rk: Array[U8](rc), rr: Array[U32](rc), i: I64): Unit =
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 && I64.ofU8(rk(i)) == 3 then Gate.kOpFns(w, g, u, Ast.b(g, root), 0) else ()
+    Gate.kOpRoots(w, g, u, rc, rk, rr, i + 1)
+  else ()
+

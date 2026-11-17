@@ -1,0 +1,7 @@
+def Blake3.perm1(mn: I64, m: Array[U32](mn), tn: I64, t: Array[U32](tn), i: I64): Unit =
+  if 0 <= i && i < 16 && i < mn then
+    val p = Blake3.perm(i)
+    if 0 <= p && p < tn then Array.put(m, i, t(p)) else ()
+    Blake3.perm1(mn, m, tn, t, i + 1)
+  else ()
+

@@ -1,0 +1,14 @@
+// prompt: resume k(v): k must be a continuation binder (Srs.Cont[V, R], Typer.contBind); v is checked against V and the resume is an R. Any other k is untyped (the resolver already rejects a k that is no continuation binder)
+def Typer.resumeX(x: Typer.X, n: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val kj = Ast.a(g, n)
+  val v = Ast.b(g, n)
+  val kt = if Typer.useKind(x, kj) == Resolve.kLocal() then Typer.walk(s, Typer.ltGet(s, Typer.useRef(x, kj))) else 0
+  if kt != 0 && Typer.kind(s, kt) == Typer.bOther() && Typer.head(s, kt) == Typer.contSym(x) then
+    val tv = Typer.arg(s, kt, 0)
+    Typer.expect(x, Ast.tok(g, v), Typer.expr(x, v, tv), tv)
+    Typer.arg(s, kt, 1)
+  else
+    val u = Typer.expr(x, v, 0)
+    Typer.untyped(x, Ast.tok(g, n), Ast.kResume())
+

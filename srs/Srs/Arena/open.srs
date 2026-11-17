@@ -1,0 +1,13 @@
+// a new head chunk with room for n bytes: a spare one, a fresh one, or (n over a chunk) its own mapping
+def Srs.Arena.open(self: Ptr, n: I64): Ptr =
+  val g = rt_globals()
+  val spare = rt_ptr_get(g, Srs.Arena.gSpare())
+  val big = n > Srs.Arena.chunk()
+  val c =
+    if big then Srs.Arena.map(Srs.Arena.up(Srs.Arena.header() + n, Srs.Arena.page())) else Srs.Arena.fresh(g, spare)
+  rt_ptr_set(c, Srs.Arena.hNext(), rt_ptr_get(self, 0))
+  rt_ptr_set(c, Srs.Arena.hUsed(), 0)
+  rt_ptr_set(c, Srs.Arena.hCap(), if big then n else Srs.Arena.chunk())
+  rt_ptr_set(self, 0, Srs.Arena.addr(c))
+  c
+

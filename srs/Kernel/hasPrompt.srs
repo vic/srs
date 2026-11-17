@@ -1,0 +1,6 @@
+// prompt: true when t has a line that starts (column 0) with "// prompt:" followed by some text on that line; search from byte i.
+def Kernel.hasPrompt(t: Str, i: I64): Bool = Kernel.findFrom(t, "// prompt:", i) match
+  case Coll.None => false
+  case Coll.Some(p) =>
+    if (p == 0 || Str.at(t, p - 1) == 10) && Kernel.lineHasText(t, p + 10) then true else Kernel.hasPrompt(t, p + 1)
+

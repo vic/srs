@@ -1,0 +1,12 @@
+// prompt: the cap of evidence arg token a: `&hk_<ref>` for a handle binder of this fn (Emit.hlook), `rp_<ref>` for a dropped {} binder param of this fn (Emit.pdIs); any other is unsupported (the emit fails)
+def Emit.pdCap(e: Emit.E, a: I64): Unit =
+  val k = Emit.kOf(e)
+  val ref = if a >= 0 then Typer.useRef(Emit.xOf(e), a) else 0
+  if a >= 0 && Emit.hlook(k, ref, Emit.hget(k, Emit.hsBase()) - 1) != 0 then
+    Emit.po(e,"&hk_")
+    Emit.pi(e, ref)
+  else if a >= 0 && Emit.pdIs(k, ref, 0) then
+    Emit.po(e,"rp_")
+    Emit.pi(e, ref)
+  else Emit.unsup(e, Ast.kGEv())
+

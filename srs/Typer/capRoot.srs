@@ -1,0 +1,14 @@
+// a capability: its [] binders are the signature of the capability symbol (ntp, tokens), like a trait, so recv.op instantiates them from recv's type (Tp.method); then its ops
+def Typer.capRoot(x: Typer.X, root: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  val ntp = Typer.groupN(g, parts, 0, Ast.kGTypes(), 0)
+  if ntp > 0 then
+    val cs = Typer.symOf(x, Ast.a(g, root))
+    val m = Typer.mark(s)
+    Typer.tpToks(x, parts, 0)
+    Typer.sigStore(s, cs, Typer.mk(s, Typer.bCap(), 0, cs, Typer.mark(s)), 0, ntp, 0, m)
+  else ()
+  Typer.capOps(x, root, 0, ntp > 0)
+
+

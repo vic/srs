@@ -1,0 +1,25 @@
+// the facts of a given decl (head type = Na.a, parts = Na.b): its telescope binders, head names, head args, sizes, evidence types
+def Gate.givenRows(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, root: I64, parts: I64, i: I64): Unit =
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    val k = Ast.kd(g, p)
+    if k == Ast.kGTypes() && Gate.fkB(sel) == Gate.fkB(Gate.FGTp) then Gate.gTpRows(w, g, u, Ast.a(g, p), 0) else ()
+    if k == Ast.kGEv() && Gate.fkB(sel) == Gate.fkB(Gate.FGEvSize) then Gate.gEvSizes(g, u, Ast.a(g, p), 0) else ()
+    if k == Ast.kGEv() && Gate.fkB(sel) == Gate.fkB(Gate.FEvTy) then Gate.evTyRows(w, g, u, Ast.a(g, p), 0) else ()
+    Gate.givenRows(w, g, sel, u, root, parts, i + 1)
+  else
+    val hd = Ast.a(g, root)
+    if Gate.fkB(sel) == Gate.fkB(Gate.FGHd) then Gate.tyToks(w, g, u, hd) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FGHdSize) then Gate.row2(u, Gate.tySize(g, hd)) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FGHu) then
+      Gate.headUnit(w, g, hd) match
+        case Coll.Some(c) => Gate.row2(u, c)
+        case Coll.None => ()
+    else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FGArg) then
+      Gate.headUnit(w, g, hd) match
+        case Coll.Some(c) => Gate.gArgRows(w, g, u, c, Ast.a(g, hd), 0)
+        case Coll.None => ()
+    else ()
+
+

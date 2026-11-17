@@ -1,0 +1,6 @@
+// prompt: the handler of the handle whose binder token is tk, searched from stack entry i down (innermost first), 0 when tk is no handle binder of the current fn body
+def Emit.hlook(k: Emit.K, tk: I64, i: I64): I64 =
+  if i < 0 then 0
+  else if Emit.hget(k, Emit.hsBase() + 1 + 2 * i) == tk then Emit.hget(k, Emit.hsBase() + 2 + 2 * i)
+  else Emit.hlook(k, tk, i - 1)
+

@@ -1,0 +1,14 @@
+// prompt: the params `srs_cap* rp_<binder token>` of the dropped {} binders (mask bits from idx) of def root, recorded as the current fn's dropped binders (Emit.pdCur, c so far, at most 8); lead = a param was printed before
+def Emit.pdParams(e: Emit.E, root: I64, mask: I64, idx: I64, c: I64, lead: Bool): Unit =
+  val g = Emit.gOf(e)
+  val k = Emit.kOf(e)
+  val b = Emit.evBinderAt(g, Ast.b(g, root), 0, idx)
+  if b != 0 && Emit.pdBit(mask, idx) && c < 8 then
+    if lead || c > 0 then Emit.po(e,", ") else ()
+    Emit.po(e,"srs_cap* rp_")
+    Emit.pi(e, Ast.tok(g, b))
+    Emit.hset(k, Emit.pdCur(k) + 1 + c, Ast.tok(g, b))
+    Emit.pdParams(e, root, mask, idx + 1, c + 1, lead)
+  else if b != 0 then Emit.pdParams(e, root, mask, idx + 1, c, lead)
+  else Emit.hset(k, Emit.pdCur(k), c)
+

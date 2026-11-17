@@ -1,0 +1,7 @@
+// prompt: true when the type node t names a trait (its head token resolves to a trait type).
+def Typer.isTraitTy(x: Typer.X, t: I64): Bool =
+  val Typer.X(_, g, _, rcap, rk, _) = x
+  val j = Ast.tok(g, t)
+  0 <= j && j < rcap && I64.ofU8(rk(j)) - Resolve.tBase() == Resolve.tTrait()
+
+

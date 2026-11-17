@@ -1,0 +1,12 @@
+// a continuation binder is no value: a value use of its name goes on to the globals
+def Resolve.useLocal(x: Resolve.X, j: I64, i: I64, sym: I64): Unit =
+  val Resolve.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Resolve.W(_, _, sc, _) = w
+  val Resolve.Sc(cap, _, st, sk) = sc
+  if 0 <= i && i < cap then
+    if I64.ofU8(sk(i)) == Resolve.bImplicit() then Resolve.set(x, j, Resolve.kBuiltin(), I64.of(st(i)))
+    else if I64.ofU8(sk(i)) == Resolve.bCont() then Resolve.useGlobal(x, j, sym)
+    else Resolve.set(x, j, Resolve.kLocal(), I64.of(st(i)))
+  // shortcut: Nm.look answers an index below cap; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+

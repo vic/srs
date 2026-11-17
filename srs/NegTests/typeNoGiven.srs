@@ -1,0 +1,12 @@
+// prompt: the kernel must reject a def whose signature names a type with a trait constraint ({o: Ord[A]}) at a type arg that no given
+// covers and the def does not hold, with error[no-given] (s2 negs tev_none, tev_generic).
+val NegTests.typeNoGiven {NegTest}: Never =
+  trait NtTg.Ord [A: Type]:
+    def lt(a: A, b: A): Bool
+  enum NtTg.Box [A: Type]:
+    case NtTg.Box(v: A)
+  given NtTg.Ord[I64]:
+    def lt(a: I64, b: I64): Bool = a < b
+  type NtTg.Sorted [A: Type] {o: NtTg.Ord[A]} = NtTg.Box[A]
+  def NtTg.f [A: Type] (b: NtTg.Sorted[A]): I64 = 0
+  NegTest.expect("no-given", "Sorted[A] needs Ord[A]; f holds no {o: Ord[A]} and no given covers a param")

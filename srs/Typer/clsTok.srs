@@ -1,0 +1,7 @@
+// ═══ STAGE 2: bodies. per def: the local types by binder token (Sg.sl), type vars by index (Sg.sv, reset per def: a flat union-find
+// of bindings), first-order unification; check mode = `want` (0 = none) is passed down to literals, if/match arms, args and the tail ═══
+def Typer.clsTok(g: Ast.G, j: I64): I64 =
+  val Ast.G(tk, _, _, _) = g
+  val Ast.Tk(_, tcap, cls, _, _, t) = tk
+  if 0 <= j && j < t && j < tcap then I64.ofU8(cls(j)) else Token.eof()
+

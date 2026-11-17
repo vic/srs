@@ -1,0 +1,20 @@
+// prompt: --build DIR OUT.c (CI fixpoint, no s4-cc client): load the image tree DIR, admit it through the whole gate as `load` does (Kernel.checkAll: duplicates, NegTest form, typer and Datalog families, every NegTest), then emit its C to OUT.c (Kernel.build). Exit 0 = built, 1 = rejected or emit failed (the reasons on stderr), 2 = a dir of the tree cannot be listed. The fixpoint holds when OUT.c equals the seed this binary was built from.
+def Kernel.buildMain(dir: Str, out: Str): I64 =
+  val Kernel.Lr(im, bad) = Kernel.loadTree(dir, "", Os.End, Kernel.Lr(Kernel.Empty, 0))
+  if bad > 0 then
+    Console.eprint("unreadable image tree\n")
+    2
+  else
+    val Kernel.Res(code, why) = Kernel.checkAll(Os.End, Os.End, im)
+    if code != 0 then
+      Console.eprint(why)
+      Console.eprint("\nimage rejected\n")
+      1
+    else
+      val Kernel.Res(c, w2) = Kernel.build(Os.End, Os.End, im, out)
+      if c != 0 then
+        Console.eprint(w2)
+        Console.eprint("\n")
+        1
+      else 0
+

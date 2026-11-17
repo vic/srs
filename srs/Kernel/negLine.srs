@@ -1,0 +1,18 @@
+// prompt: the report of one NegTest n whose body the kernel judged: ok when the verdict is a rejection and the code sets want and
+// got are equal; the line says the expected codes, the found codes and the human reason why.
+def Kernel.negLine(n: Str, ok: Bool, vn: Str, want: Os.Strs, got: Os.Strs, why: Str, diags: Str): Str =
+  Console.captureBegin()
+  Console.print(n)
+  Console.print(if ok then " ok: " else " FAIL: ")
+  Console.print("expected rejection with")
+  Kernel.printWs(want)
+  Console.print(", found ")
+  Console.print(vn)
+  Console.print(" with")
+  Kernel.printWs(got)
+  Console.print(": ")
+  Console.print(why)
+  Console.print("\n")
+  if ok then () else Console.print(diags)
+  Console.captureEnd()
+

@@ -1,0 +1,12 @@
+def Parser.expr(g: Ast.G): I64 =
+  if !Parser.ok(g) then 0
+  else if Parser.is(g, Token.kif()) then Parser.ifExpr(g)
+  else if Parser.is(g, Token.kwhile()) then Parser.whileExpr(g)
+  else if Parser.is(g, Token.kforall()) || Parser.is(g, Token.kexists()) then Parser.quant(g)
+  else if Token.isName(Parser.cl(g)) && Parser.cl1(g) == Token.eq() then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    Parser.adv(g)
+    Ast.mk(g, Ast.kAssign(), j, Parser.rhs(g), 0)
+  else Parser.matchOf(g, Parser.binary(g, 1))
+

@@ -1,0 +1,8 @@
+def Typer.bindGroups(x: Typer.X, parts: I64, i: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kGEv() || Ast.kd(g, p) == Ast.kParams() then Typer.bindParams(x, Ast.a(g, p), 0) else ()
+    Typer.bindGroups(x, parts, i + 1)
+  else ()
+

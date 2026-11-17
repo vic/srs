@@ -1,0 +1,15 @@
+// prompt: the kernel must reject an if arm that returns data allocated in an Arena opened in that arm, with error[region-escape].
+val NegTests.armEsc {NegTest}: Never =
+  def Ae.get(): Str =
+    if true then
+      handle r = Srs.Arena()
+      val n = 3
+      val xs: Array[U8](n) = Array.fill(n, U8.of(66))
+      Str.ofBytes(n, xs)
+    else "no"
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle r = Srs.Arena()
+    Console.print(Ae.get())
+    0
+  NegTest.expect("region-escape", "the arm's Arena closes at the end of the arm, so the Str it returns would dangle")

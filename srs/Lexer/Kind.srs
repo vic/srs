@@ -1,0 +1,20 @@
+// s3c LEX-1b: the lexer, in s2. Grammar learned from s2/lex.srs, data shape new (vic/c/s3c-front.md F2, F5).
+// Output = struct of arrays: per token a kind byte, a byte offset and a byte length (U32); per diag a code and an offset.
+// Layout tokens (Nl, Indent, Dedent) follow s2/lex.srs:13-15 and its rules (go 147-187, dedent 190-196, finish 199-216):
+// they are zero-width (len 0), and go before the Doc tokens just lexed (s2 Lex.under, line 119), so a Doc keeps the
+// layout of the next code line. Doc tokens (s2 TDoc, line 19) exist only in Keep mode; in Skip mode a // comment is a gap.
+// Whitespace is a gap. No EOF token: the end of the tokens is the token count. No sentinel: every byte read is guarded by i < n.
+
+// the closed token classes
+enum Lexer.Kind:
+  case Lexer.KIdent
+  case Lexer.KInt
+  case Lexer.KStr
+  case Lexer.KChar
+  case Lexer.KOp
+  case Lexer.KLtGlued
+  case Lexer.KNl
+  case Lexer.KIndent
+  case Lexer.KDedent
+  case Lexer.KDoc
+

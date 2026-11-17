@@ -1,0 +1,6 @@
+def Planner.minEst(b: Planner.Atoms, i: I64, est: Planner.Ints, bi: Kernel.At, be: I64): Kernel.At = b match
+  case Planner.ANil => bi
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    if Planner.not(ng) && Planner.nth(est, r) < be then Planner.minEst(rest, i + 1, est, Kernel.Found(i), Planner.nth(est, r)) else Planner.minEst(rest, i + 1, est, bi, be)
+

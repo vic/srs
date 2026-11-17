@@ -1,0 +1,13 @@
+// prompt: set the type definitions of all files rs in dependency order, whatever the order of the files (each unit is a file and the
+// image is in name order): Typer.tdefFix in type definition mode (an unset type decl in a body is pending), then the type-fuel Diags of
+// the type definitions left unset (Typer.tdefLeft per file).
+def Typer.tdefAll(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R]): Unit =
+  Typer.cset(s, Typer.cTdMode(), 1)
+  Typer.tdefFix(w, s, rs)
+  Typer.tdefPass(w, s, rs, 0, true)
+  Typer.cset(s, Typer.cTdMode(), 0)
+  // the compile-time code of the pure defs (value args of types call them: Typer.ctCall)
+  Typer.ctDefs(w, s, rs, 0)
+
+
+

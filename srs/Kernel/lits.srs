@@ -1,0 +1,8 @@
+// the string literals of t[i, e), last first
+def Kernel.lits(t: Str, i: I64, e: I64, acc: Os.Strs): Os.Strs =
+  val a = Kernel.charFrom(t, Kernel.quote(), i)
+  if a >= e then acc
+  else
+    val z = Kernel.charFrom(t, Kernel.quote(), a + 1)
+    if z >= e then acc else Kernel.lits(t, z + 1, e, Os.More(Str.slice(t, a + 1, z), acc))
+

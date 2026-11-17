@@ -1,0 +1,11 @@
+def Gate.reqOpFiles(w: Resolve.W, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    val Resolve.W(_, gt, _, _) = w
+    val Resolve.Gt(gcap, _, gf, _, _, _, _, _, _, _) = gt
+    Gate.reqOpToks(w, g, gcap, gf, u, rcap, rk, rf, 0)
+    Gate.reqOpFiles(w, rest, u + 1)
+
+

@@ -1,0 +1,23 @@
+// requires|ensures|returns|decreases|invariant expr | proof using f, ... | proof by induction x | proof lean "..." (s2 Parse.clause 497)
+def Parser.clause(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  if Parser.isW(g, "proof") then
+    Parser.adv(g)
+    if Parser.isW(g, "using") then
+      Parser.adv(g)
+      Ast.mk(g, Ast.kProofUs(), j, Parser.nameLine(g, Ast.mark(g)), 0)
+    else if Parser.isW(g, "by") then
+      Parser.adv(g)
+      if Parser.isW(g, "induction") then
+        Parser.adv(g)
+        Ast.mk(g, Ast.kProofInd(), j, Parser.ident(g), 0)
+      else Parser.fail(g)
+    else if Parser.isW(g, "lean") then
+      Parser.adv(g)
+      Ast.mk(g, Ast.kProofLean(), j, Parser.eat(g, Token.str()), 0)
+    else Parser.fail(g)
+  else if Parser.isW(g, "requires") || Parser.isW(g, "ensures") || Parser.isW(g, "returns") || Parser.is(g, Token.kdecreases()) || Parser.is(g, Token.kinvariant()) then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kClause(), j, Parser.expr(g), 0)
+  else Parser.fail(g)
+

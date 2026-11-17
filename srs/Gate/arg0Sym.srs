@@ -1,0 +1,7 @@
+// the symbol of the first arg head of type t, or of its head when it has no args
+def Gate.arg0Sym(w: Resolve.W, g: Ast.G, t: I64): I64 =
+  if Ast.kd(g, t) == Ast.kTyCaps() then Gate.arg0Sym(w, g, Ast.a(g, t))
+  else if Ast.a(g, t) != 0 && Ast.len(g, Ast.a(g, t)) > 0 then Gate.tsym(w, g, Ast.tok(g, Ast.item(g, Ast.a(g, t), 0)))
+  else Gate.tsym(w, g, Ast.tok(g, t))
+
+

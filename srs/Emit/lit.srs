@@ -1,0 +1,11 @@
+def Emit.lit(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val s = Emit.sOf(e)
+  val t = Emit.tyS(e, n)
+  Emit.po(e,"((")
+  Emit.cty(e, t)
+  Emit.po(e,")")
+  Emit.po(e,Ast.text(g, Ast.tok(g, n)))
+  if Ast.kd(g, n) == Ast.kInt() && Typer.kind(s, t) == Typer.bBuiltin() && Typer.cls(s, t) == 11 then Emit.po(e,"ULL") else ()
+  Emit.po(e,")")
+

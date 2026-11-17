@@ -1,0 +1,14 @@
+def Resolve.parseFile(p: Str, src: Str): Resolve.F =
+  val lx = Lexer.lex(Lexer.Skip, src)
+  val Split.Out(cap, kd, _, hd, _, hi, c, _, _, _, _) = Split.parse(src, lx)
+  val g = Parser.build(src, lx)
+  val rc = c + 1
+  val rk = Array.fill(rc, U8.of(0))
+  val rr = Array.fill(rc, U32.of(0))
+  val perr = Resolve.parseDecls(g, cap, kd, hd, hi, c, rc, rk, rr, 0, 0)
+  val lcap = Resolve.tcapOf(g)
+  val ln = Array.fill(lcap, U32.of(0))
+  val Lexer.Out(_, _, _, _, t, _, _, _, _) = lx
+  Resolve.lineFill(g, lcap, ln, 0, t, 0, 1)
+  Resolve.F(p, g, lcap, ln, rc, rk, rr, perr)
+

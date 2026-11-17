@@ -1,0 +1,6 @@
+// prompt: the kernel must reject a type definition whose body names itself (no pass of the type definitions can set it), with
+// error[type-fuel].
+val NegTests.typeFuel {NegTest}: Never =
+  type NtTf.Loop [A: Type] = NtTf.Loop[A]
+  def NtTf.f(x: NtTf.Loop[I64]): I64 = 0
+  NegTest.expect("type-fuel", "NtTf.Loop is defined by itself, so it never gets a type")

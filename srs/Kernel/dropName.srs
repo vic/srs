@@ -1,0 +1,9 @@
+// the image without the unit named n, and the count of missing names (1 when no unit has that name)
+def Kernel.dropName(im: Kernel.Img, n: Str): Kernel.Lr = im match
+  case Kernel.Empty => Kernel.Lr(Kernel.Empty, 1)
+  case Kernel.Unit(m, t, r) =>
+    if Str.eq(m, n) then Kernel.Lr(r, 0)
+    else
+      val Kernel.Lr(r2, b) = Kernel.dropName(r, n)
+      Kernel.Lr(Kernel.Unit(m, t, r2), b)
+

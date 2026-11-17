@@ -1,0 +1,12 @@
+// forall x: ty => expr, exists x: ty => expr (s2 Parse.quant 1139)
+def Parser.quant(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val x = Parser.cur(g)
+  Parser.ident(g)
+  Parser.eat(g, Token.colon())
+  val t = Parser.ty(g)
+  val bd = Ast.mk(g, Ast.kBind(), x, t, 0)
+  Parser.eat(g, Token.arrow())
+  Ast.mk(g, Ast.kQuant(), j, bd, Parser.expr(g))
+

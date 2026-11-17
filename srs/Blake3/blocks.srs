@@ -1,0 +1,12 @@
+def Blake3.blocks(s: Str, cs: I64, clen: I64, nb: I64, b: I64, ci: I64, root: Bool, cn: I64, cv: Array[U32](cn), mn: I64, m: Array[U32](mn), tn: I64, t: Array[U32](tn), vn: I64, v: Array[U32](vn)): Unit =
+  if b < nb then
+    val rem = clen - 64 * b
+    val blen = if rem > 64 then 64 else if rem < 0 then 0 else rem
+    Blake3.load(s, cs + 64 * b, blen, mn, m, 0)
+    val last = b == nb - 1
+    val flags = (if b == 0 then 1 else 0) + (if last then 2 else 0) + (if last && root then 8 else 0)
+    Blake3.compress(cn, cv, mn, m, tn, t, vn, v, ci, blen, flags)
+    Blake3.take(vn, v, cn, cv, 0)
+    Blake3.blocks(s, cs, clen, nb, b + 1, ci, root, cn, cv, mn, m, tn, t, vn, v)
+  else ()
+

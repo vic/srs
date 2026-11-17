@@ -1,0 +1,9 @@
+// prompt: the text the resolver, typer, gate and emitter see for unit text t: t itself when it has no alias line, else t with its
+// aliases expanded (Kernel.unal). The image and the store keep t as written.
+def Kernel.unalias(t: Str): Str = Kernel.aliases(t, 0, Kernel.AlEnd) match
+  case Kernel.AlEnd => t
+  case Kernel.AlMore(_, _, _) =>
+    Console.captureBegin()
+    Kernel.unal(t, 0, Str.len(t), Kernel.aliases(t, 0, Kernel.AlEnd))
+    Console.captureEnd()
+

@@ -1,0 +1,16 @@
+// the fn bodies of a handler: they are emitted code (scope 1)
+// prompt: type check each fn of a handler (scope 1); a multi-shot op clause first binds its continuation (Typer.contBind).
+def Typer.handlerBodies(x: Typer.X, root: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kDef() then
+      Typer.cset(s, Typer.cScope(), 1)
+      Typer.contBind(x, Typer.symOf(x, Ast.a(g, root)), n)
+      Typer.checkDef(x, n, 1, 0)
+      Typer.cset(s, Typer.cScope(), 0)
+    else ()
+    Typer.handlerBodies(x, root, i + 1)
+  else ()
+

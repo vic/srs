@@ -1,0 +1,14 @@
+// the field types of a case name the other fields of the case
+def Resolve.cases(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCase() then
+      val sp = Resolve.sp(x)
+      Resolve.bindBinders(x, Ast.a(g, n), 0)
+      Resolve.binderTys(x, Ast.a(g, n), 0)
+      Resolve.setSp(x, sp)
+    else ()
+    Resolve.cases(x, r, i + 1)
+  else ()
+

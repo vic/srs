@@ -1,0 +1,7 @@
+// index id of (relation, bound mask): the full mask is the relation's own index; else one id per new pair, from nr
+def Planner.idxid(xs: Planner.Ix, nr: I64, r: I64, m: I64, full: I64): Planner.Xr =
+  if m == full then Planner.Xr(r, xs)
+  else Planner.ixFind(xs, r, m, nr) match
+    case Kernel.Found(i) => Planner.Xr(i, xs)
+    case Kernel.Missing => Planner.Xr(nr + Planner.ixLen(xs, 0), Planner.ixSnoc(xs, r, m))
+

@@ -1,0 +1,12 @@
+// prompt: check the trait constraints of type t and of every type inside it (Typer.consNom1 for each nominal type) for the def owner.
+def Typer.consCheck(s: Typer.S, owner: I64, t: I64, j: I64): Unit =
+  if t != 0 then
+    if Typer.kind(s, t) == Typer.bNominal() then
+      val h = Typer.head(s, t)
+      val b = Typer.sigAt(s, h, 1) + Typer.sigAt(s, h, 2) + Typer.sigAt(s, h, 3)
+      Typer.consNom1(s, owner, t, h, j, b + 1, 0, Typer.poolAt(s, b))
+    else ()
+    Typer.consArgs(s, owner, t, j, 0, Typer.nargs(s, t))
+  else ()
+
+

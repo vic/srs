@@ -1,0 +1,10 @@
+// prompt: the type definition roots (kind 6) of file f from root index i: Typer.tdefRoot on each.
+def Typer.fileTdefs(x: Typer.X, f: Resolve.F, i: I64): Unit =
+  val Resolve.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 6 && root != 0 then Typer.tdefRoot(x, root) else ()
+    Typer.fileTdefs(x, f, i + 1)
+  else ()
+
+

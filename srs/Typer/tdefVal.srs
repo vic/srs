@@ -1,0 +1,35 @@
+// prompt: set type decl sym with value binder list pr (`type T (n: I64) = ..`, vic ruling Q-U3 a): its signature pool holds [binder count, binder kinds, body]; body = 1 value match (scrutinee binder index, case count, 4 words per case: Typer.ctArms), 2 a plain alias type, 3 an alias that is a value type use (target symbol, arg count, the arg codes over the binders); decl type = Unit as the set marker, flag Typer.flagValTy; nothing while the body names an unset type decl (Typer.tdefFix retries)
+def Typer.tdefVal(x: Typer.X, sym: I64, pr: I64, vm: I64, al: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val p0 = Typer.cget(s, Typer.cTdPend())
+  val m = Typer.mark(s)
+  val nb = Ast.len(g, pr)
+  Typer.push(s, nb)
+  Typer.ctBinders(x, pr, 0)
+  val ok = if vm != 0 then
+    val si = Typer.ctBinTxt(x, pr, Ast.text(g, Ast.tok(g, vm)), 0)
+    // the value match node (its token is the scrutinee) has the scrutinee binder's type entry
+    Typer.tyPut(s, vm, if si >= 0 then Typer.tyAt(s, Typer.cget(s, Typer.cTyBase()), Ast.item(g, pr, si)) else 0)
+    Typer.push(s, 1)
+    Typer.push(s, si)
+    Typer.push(s, Ast.len(g, Ast.b(g, vm)))
+    Typer.ctArms(x, Ast.b(g, vm), 0, if si >= 0 then Typer.stkAt(s, m + 1 + si) else 0)
+    si >= 0
+  else if al != 0 && Ast.kd(g, Ast.a(g, al)) == Ast.kTy() && Typer.isValTy(s, Typer.symOf(x, Ast.tok(g, Ast.a(g, al)))) then
+    val t = Ast.a(g, al)
+    Typer.push(s, 3)
+    Typer.push(s, Typer.symOf(x, Ast.tok(g, t)))
+    Typer.push(s, if Ast.b(g, t) != 0 then Ast.len(g, Ast.b(g, t)) else 0)
+    Ast.b(g, t) == 0 || Typer.ctCodes(x, Ast.b(g, t), 0, pr)
+  else if al != 0 then
+    Typer.push(s, 2)
+    Typer.push(s, Typer.ty(x, Ast.a(g, al)))
+    true
+  else false
+  if ok && Typer.cget(s, Typer.cTdPend()) == p0 then
+    Typer.declTySet(s, sym, Typer.cget(s, Typer.tUnit()))
+    Typer.valTySet(s, sym)
+    Typer.sigStore(s, sym, Typer.cget(s, Typer.tUnit()), Typer.cget(s, Typer.cSp()) - m, 0, 0, m)
+    Typer.cinc(s, Typer.cTdSet())
+  else Typer.cset(s, Typer.cSp(), m)
+

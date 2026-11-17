@@ -1,0 +1,16 @@
+// the first n mismatches: path:line text
+def Typer.showAt(s: Typer.S, fs: Coll.List[Resolve.F], at: I64, tag: Str, i: I64): Unit =
+  Resolve.nth(fs, Typer.cget(s, at + 2 * i)) match
+    case Coll.Some(f) =>
+      val Resolve.F(path, g, lcap, ln, _, _, _, _) = f
+      val j = Typer.cget(s, at + 2 * i + 1)
+      Typer.po(s,tag)
+      Typer.po(s," ")
+      Typer.po(s,path)
+      Typer.po(s,":")
+      Typer.pi(s,Resolve.lineAt(lcap, ln, j))
+      Typer.po(s," ")
+      Typer.po(s,Ast.text(g, j))
+      Typer.po(s,"\n")
+    case Coll.None => Typer.po(s,"badfile\n")
+

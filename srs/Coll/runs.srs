@@ -1,0 +1,6 @@
+// the natural runs of xs, each strictly descending, the latest run first. In an Up run an equal key replaces the run
+// head (the later binding wins); a one-element Up run turns Down when the next key is smaller.
+def Coll.runs [V: Type] (xs: Coll.List[Coll.KV[V]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(x, t) => Coll.runStep(t, Coll.Up, x, Coll.Nil, Coll.Nil)
+

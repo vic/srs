@@ -1,0 +1,10 @@
+def Typer.idLoop(s: Typer.S, pcap: I64, pool: Array[U8](pcap), p: I64, i: I64, n: I64, b: I64): Unit =
+  val q = p + i
+  if i < n && 0 <= q && q < pcap then
+    if I64.ofU8(pool(q)) == 46 then
+      Typer.idRun(s, pcap, pool, p, b, i)
+      Typer.po(s, "__")
+      Typer.idLoop(s, pcap, pool, p, i + 1, n, i + 1)
+    else Typer.idLoop(s, pcap, pool, p, i + 1, n, b)
+  else Typer.idRun(s, pcap, pool, p, b, i)
+

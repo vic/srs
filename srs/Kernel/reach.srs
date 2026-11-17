@@ -1,0 +1,11 @@
+def Kernel.reach(gr: Kernel.Gr, n: I64, mk: Array[U8](n), u: I64): Unit =
+  val Kernel.Gr(dg, m, adj) = gr
+  val Kernel.Dg(_, n1, off, _, _) = dg
+  val w = u + 1
+  if 0 <= u && u < n && u < n1 && 0 <= w && w < n1 then
+    if I64.ofU8(mk(u)) == 0 then
+      Array.put(mk, u, U8.of(1))
+      Kernel.reachE(gr, n, mk, I64.of(off(u)), I64.of(off(w)))
+    else ()
+  else ()
+

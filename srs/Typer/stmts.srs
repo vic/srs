@@ -1,0 +1,14 @@
+// prompt: the statements r[i..] of a block against want: a handle of a multi-shot handler followed by more statements makes the block an answer: the rest is typed on its own (type a) and the block is Typer.msAnswer(a), checked against want by the caller
+def Typer.stmts(x: Typer.X, r: I64, i: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val last = i + 1 == Ast.len(g, r)
+    val st = Ast.item(g, r, i)
+    if !last && Ast.kd(g, st) == Ast.kHandle() && Typer.isMulti(s, Typer.symOf(x, Ast.a(g, st))) then
+      val u = Typer.stmt(x, st, 0)
+      Typer.msAnswer(x, Ast.a(g, st), Typer.stmts(x, r, i + 1, 0))
+    else
+      val t = Typer.stmt(x, st, if last then want else 0)
+      if last then t else Typer.stmts(x, r, i + 1, want)
+  else Typer.cget(s, Typer.tUnit())
+

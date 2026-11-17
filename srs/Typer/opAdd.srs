@@ -1,0 +1,13 @@
+// the ops table: (owner symbol, op name symbol) -> the symbol its signature is stored under; counter slot 31 = the count
+def Typer.opAdd(s: Typer.S, owner: I64, op: I64, sg: I64): Unit =
+  val Typer.S(_, _, _, c, _) = s
+  val Typer.Cn(_, _, ocap, oo, opp, os, _, _) = c
+  val n = Typer.cget(s, 31)
+  if 0 <= n && n < ocap then
+    Array.put(oo, n, U32.of(owner))
+    Array.put(opp, n, U32.of(op))
+    Array.put(os, n, U32.of(sg))
+    Typer.cset(s, 31, n + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Typer.cinc(s, Typer.cOver())
+

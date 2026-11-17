@@ -1,0 +1,30 @@
+def Resolve.dumpLine(x: Resolve.X, j: I64, kb: I64, ref: I64): Unit =
+  val Resolve.X(w, g, _, path, _, lcap, ln, _, _, _) = x
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(gcap, _, gf, gl, gs, _, _, _, _, _) = gt
+  Console.print(path)
+  Console.print(":")
+  Console.printI64(Resolve.lineAt(lcap, ln, j))
+  Console.print(" ")
+  Console.print(Ast.text(g, j))
+  Console.print(" ")
+  Console.print(Resolve.kindStr(kb))
+  Console.print(" ")
+  if kb == Resolve.kLocal() then
+    Console.printI64(Resolve.lineAt(lcap, ln, ref))
+    Console.print(":")
+    Console.print(Ast.text(g, ref))
+    Console.print(" ut=")
+    Console.printI64(j)
+    Console.print(" tt=")
+    Console.printI64(ref)
+  else if kb == Resolve.kUnres() || kb == Resolve.kBuiltin() then Console.print("-")
+  else if 0 <= ref && ref < gcap then
+    Console.printI64(I64.of(gf(ref)))
+    Console.print(":")
+    Console.printI64(I64.of(gl(ref)))
+    Console.print(":")
+    Resolve.printSym(w, I64.of(gs(ref)))
+  else Console.print("badref")
+  Console.print("\n")
+

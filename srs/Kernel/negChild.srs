@@ -1,0 +1,15 @@
+// prompt: judge the NegTest body probe of NegTest n in a child process (Kernel.negtArgv) over the plain image of run r: the
+// verdict of the child and the diag lines it wrote.
+def Kernel.negChild(r: Kernel.NegRun, n: Str, probe: Str): Kernel.Judged =
+  val Kernel.NegRun(self, base, _) = r
+  val pp = Kernel.msg2(Kernel.negDir(), "/probe.srs")
+  val op = Kernel.msg2(Kernel.negDir(), "/out.txt")
+  if Disk.put(pp, probe) != 0 || Disk.put(op, "") != 0 then Kernel.Judged(Kernel.VUnread, Kernel.msg2(n, " error[negtest-io] write failed\n"))
+  else
+    val v = Kernel.verdict(Process.run(Kernel.negtArgv(self, base, pp, op)))
+    val diags = Files.bytes(op) match
+      case Os.Ok(o) => o
+      case Os.Fail(_) => ""
+    Kernel.Judged(v, diags)
+
+

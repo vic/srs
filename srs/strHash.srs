@@ -1,0 +1,10 @@
+// a 32-bit multiplicative string hash; every step stays below 2^56, so no I64 overflow
+def strHash(s: Str): I64 =
+  var h = 2166136261
+  var i = 0
+  val n = Str.len(s)
+  while i < n do
+    h = (h + Str.at(s, i)) * 16777619 % 4294967296
+    i = i + 1
+  h
+

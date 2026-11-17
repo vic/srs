@@ -1,0 +1,10 @@
+def Blake3.fin(cn: I64, cv: Array[U32](cn), vn: I64, v: Array[U32](vn), i: I64): Unit =
+  if 0 <= i && i < 8 && i < cn then
+    val k = i + 8
+    if 0 <= i && i < vn && 0 <= k && k < vn then
+      Array.put(v, i, v(i) ^ v(k))
+      Array.put(v, k, v(k) ^ cv(i))
+    else ()
+    Blake3.fin(cn, cv, vn, v, i + 1)
+  else ()
+

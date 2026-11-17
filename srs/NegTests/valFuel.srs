@@ -1,0 +1,13 @@
+// prompt: the kernel must reject a value arg whose def call never ends: its compile-time evaluation runs out of fuel (comptime-eval ruling Q-U2), with error[no-compile-time-value] (missingEntry for the param of the untyped type)
+val NegTests.valFuel {NegTest}: Never =
+  type NtVf.B (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def NtVf.spin(n: I64): I64 =
+    var i = 0
+    while true do
+      i = i + 1
+    i
+  def NtVf.f(x: NtVf.B(NtVf.spin(1))): I64 = 0
+  NegTest.expect("no-compile-time-value", "missingEntry", "spin loops forever, so the fuel of the type use runs out and B has no value arg")
+

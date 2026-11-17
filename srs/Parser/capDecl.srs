@@ -1,0 +1,14 @@
+// ── capability (s2 Parse.proto 706): name telescope, then items until the end of the block ──
+def Parser.capDecl(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  Parser.tele(g)
+  Parser.blockOpen(g)
+  Parser.items(g)
+  val r = Ast.close(g, m)
+  Parser.relsLoop(g, r, 0)
+  Ast.mk(g, Ast.kProto(), j, nm, r)
+
+

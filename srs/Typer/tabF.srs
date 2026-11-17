@@ -1,0 +1,10 @@
+// prompt: the F of Array.tabulate[F](n): the one type of the call's first group (a [] group), recorded as the node's aux type (column rv, Typer.rvRec) for the emitter; a call without exactly one [] group of one type is untyped (code 90)
+def Typer.tabF(x: Typer.X, n: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val gr = Ast.a(g, n)
+  if Ast.len(g, gr) == 1 && Ast.kd(g, Ast.item(g, gr, 0)) == Ast.kCGTys() && Ast.len(g, Ast.a(g, Ast.item(g, gr, 0))) == 1 then
+    Typer.rvRec(s, n, Typer.ty(x, Ast.item(g, Ast.a(g, Ast.item(g, gr, 0)), 0)))
+  else
+    val u = Typer.untyped(x, Ast.tok(g, n), 90)
+    ()
+

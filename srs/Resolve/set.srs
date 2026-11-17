@@ -1,0 +1,20 @@
+// record the resolution of use token j
+def Resolve.set(x: Resolve.X, j: I64, kb: I64, ref: I64): Unit =
+  val Resolve.X(w, _, fi, _, dump, _, _, rcap, rk, rf) = x
+  if 0 <= j && j < rcap then
+    Array.put(rk, j, U8.of(kb))
+    Array.put(rf, j, U32.of(ref))
+  // shortcut: a use token is a token of its file, always below rcap; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+  Resolve.cinc(w, Resolve.sKinds() + kb)
+  if kb == Resolve.kUnres() then
+    Resolve.cinc(w, Resolve.sUnres())
+    val sh = Resolve.cget(w, Resolve.sShown())
+    if sh < Resolve.maxShown() then
+      Resolve.cset(w, Resolve.sUFile() + sh, fi)
+      Resolve.cset(w, Resolve.sUTok() + sh, j)
+      Resolve.cset(w, Resolve.sShown(), sh + 1)
+    else ()
+  else Resolve.cinc(w, Resolve.sRes())
+  if dump then Resolve.dumpLine(x, j, kb, ref) else ()
+

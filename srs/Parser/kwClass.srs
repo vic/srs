@@ -1,0 +1,45 @@
+// s3c PARSE-1b: the AST parser for def and enum decls, in s2. Grammar learned from s2/parse.srs (Parse.fn 453, Parse.groups 530,
+// Parse.ty 617, Parse.enumDecl 664, Parse.rhs 1025, Parse.stmt 1082, Parse.expr 1125, Parse.binOf 1228, Parse.primary 1298);
+// the data shape is new (s3/ast.srs: nodes in SoA, lists in xs, absence = Na.kNone). Skip-mode tokens only: a Doc token is a parse error.
+// Differences from the s2 AST, all to stay lossless for the oracle (relex(print) == tokens): a parenthesized expression is kParen,
+// a block is never collapsed to its one statement, `val C(a, b) = e` is one flat statement (its rest of the block stays in the list),
+// an else on its own line is kIfNl, a call keeps the written order of its [T] and {a} groups.
+// A decl ends where the skeleton parser (s3/parse.srs) cut it: trailing Nl and Dedent are not in the range, so the end of the range
+// closes every open block. PARSE-1c adds every other decl kind (extern, handler, capability, trait, type, given, val), the clauses
+// (requires, ensures, returns, decreases, invariant, proof) and forall/exists, from s2/parse.srs 171-188, 201-1000.
+
+// one token's class from the lexer's kind byte and its text
+def Parser.kwClass(s: Str, l: I64): I64 =
+  if l == 1 then
+    if Str.eq(s, "_") then Token.under() else Token.ident()
+  else if l == 2 then
+    if Str.eq(s, "if") then Token.kif()
+    else if Str.eq(s, "do") then Token.kdo()
+    else Token.ident()
+  else if l == 3 then
+    if Str.eq(s, "def") then Token.kdef()
+    else if Str.eq(s, "val") then Token.kval()
+    else if Str.eq(s, "var") then Token.kvar()
+    else Token.ident()
+  else if l == 4 then
+    if Str.eq(s, "enum") then Token.kenum()
+    else if Str.eq(s, "case") then Token.kcase()
+    else if Str.eq(s, "then") then Token.kthen()
+    else if Str.eq(s, "else") then Token.kelse()
+    else Token.ident()
+  else if l == 5 then
+    if Str.eq(s, "while") then Token.kwhile()
+    else if Str.eq(s, "match") then Token.kmatch()
+    else Token.ident()
+  else if l == 6 then
+    if Str.eq(s, "handle") then Token.khandle()
+    else if Str.eq(s, "resume") then Token.kresume()
+    else if Str.eq(s, "forall") then Token.kforall()
+    else if Str.eq(s, "exists") then Token.kexists()
+    else Token.ident()
+  else if l == 9 then
+    if Str.eq(s, "invariant") then Token.kinvariant()
+    else if Str.eq(s, "decreases") then Token.kdecreases()
+    else Token.ident()
+  else Token.ident()
+

@@ -1,0 +1,11 @@
+// Q12 exhaustiveness (a missing arm is undefined behaviour in C): every case of the enum is an arm, or there is a `_`
+def Typer.exhaustive(x: Typer.X, n: I64, r: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if Typer.hasAny(x, r, 0) then ()
+  else
+    val first = if Ast.len(g, r) > 0 then Typer.armSym(x, Ast.item(g, r, 0)) else 0
+    val total = if first != 0 then Typer.sigAt(s, first, 4) else 0
+    if total == 0 then Typer.cinc(s, Typer.cExSkip())
+    else if Typer.distinct(x, r, 0) < total then Typer.diag(s, Typer.dNonEx(), Ast.tok(g, n))
+    else ()
+

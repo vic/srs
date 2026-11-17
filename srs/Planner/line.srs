@@ -1,0 +1,12 @@
+def Planner.line(l: Str, pg: Planner.Prog): Planner.Prog =
+  val Planner.Prog(names, ars, ins, rules, err) = pg
+  if Str.len(err) > 0 then pg
+  else if Kernel.matchAt(l, ".decl ", 0, 0, 6) then
+    val op = Kernel.chAt(l, 40)
+    if op >= Str.len(l) then Planner.withErr(pg, "bad .decl")
+    else Planner.Prog(Planner.snoc(names, Str.slice(l, 6, op)), Planner.isnoc(ars, Planner.slen(Planner.splitc(Str.slice(l, op + 1, Planner.lastCh(l, 41)), 0), 0)), ins, rules, err)
+  else if Kernel.matchAt(l, ".input ", 0, 0, 7) then Planner.Prog(names, ars, Planner.snoc(ins, Str.slice(l, 7, Kernel.chAt(l, 40))), rules, err)
+  else Kernel.find(l, " :- ", 0) match
+    case Kernel.Found(j) => Planner.rule(l, j, pg)
+    case Kernel.Missing => pg
+

@@ -1,0 +1,13 @@
+// the end of a def: the logged nodes get their ground type; a node whose type is absent or still has a var is counted (cTyBad)
+// A node needs a callee entry (a call or use of a global / case / builtin, a method, a pattern, a handle), a tag / site entry (a case use,
+// a call of a generic def), a literal kind (an int / char literal is I64, U32 or U64). The gaps are the named Diag missingEntry.
+def Typer.needCe(x: Typer.X, nd: I64): Bool =
+  val Typer.X(_, g, _, _, _, _) = x
+  val k = Ast.kd(g, nd)
+  val j = Ast.tok(g, nd)
+  val uk = Typer.useKind(x, j)
+  if k == Ast.kCall() then
+    uk == Resolve.kGlobal() || uk == Resolve.kCase() || uk == Resolve.kCap() || (uk == Resolve.kBuiltin() && Typer.builtinArity(Ast.text(g, j)) >= 0)
+  else if k == Ast.kName() then uk == Resolve.kGlobal() || uk == Resolve.kCase()
+  else k == Ast.kMethod() || k == Ast.kPCase() || k == Ast.kPCaseNP() || k == Ast.kPatVal() || k == Ast.kHandle()
+

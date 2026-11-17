@@ -1,0 +1,62 @@
+// prompt: the segments of a chain from statement start of r (first = the chain's first segment: it binds no cut value): loads of the env (CPS: k_, ke_ first), the cut binder from v_, the statements up to the next cut, then `return` the cut with its continuation (the next segment; at the last statement the chain end: CPS k_, site end segment); no cut left: the chain end applied to the last value (CPS k_(ke_, v), site md_<site>(v) or v). A cut that is no val and not last is unsupported. proto prints only the headers.
+def Emit.msChain(e: Emit.E, r: I64, start: I64, first: Bool, site: I64, ckey: I64, cps: Bool, rT: I64, kV: I64, done: Bool, proto: Bool): Unit =
+  val g = Emit.gOf(e)
+  val s = Emit.sOf(e)
+  val Emit.E(_, _, _, _, _, own, pr, _) = e
+  val len = Ast.len(g, r)
+  val vT = if first then Typer.cget(s, Typer.tI64()) else Emit.tyS(e, Ast.item(g, r, start - 1))
+  val c = Emit.msNextCut(e, r, start)
+  Emit.msSegHead(e, site, ckey, start, rT, vT)
+  if proto then Emit.po(e,";\n")
+  else
+    Emit.po(e," { ")
+    if cps then
+      Emit.cty(e, rT)
+      Emit.po(e," (*k_)(void**, ")
+      Emit.cty(e, kV)
+      Emit.po(e,") = *(")
+      Emit.cty(e, rT)
+      Emit.po(e," (**)(void**, ")
+      Emit.cty(e, kV)
+      Emit.po(e,"))e_[1]; void** ke_ = *(void***)e_[2]; ")
+    else ()
+    Emit.msLoads(e, r, pr, own, 0, if first then start else start - 1, 0, if cps then 3 else 1)
+    if !first then
+      Emit.cty(e, vT)
+      Emit.po(e," ")
+      Emit.binder(e, Ast.tok(g, Ast.item(g, r, start - 1)))
+      Emit.po(e," = v_; ")
+    else ()
+    if c < len then
+      Emit.msNoH(e, r, start, c)
+      Emit.stmtsTo(e, r, start, c)
+      val st = Ast.item(g, r, c)
+      if c + 1 < len && Ast.kd(g, st) != Ast.kVal() then Emit.unsup(e, Ast.kd(g, st)) else ()
+      Emit.po(e,"void* en_[] = { 0")
+      if cps then Emit.po(e,", &k_, &ke_") else ()
+      Emit.msPtrs(e, r, pr, 0, c, 0)
+      Emit.po(e," }; return ")
+      Emit.msCutX(e, if Ast.kd(g, st) == Ast.kVal() then Ast.b(g, st) else if Ast.kd(g, st) == Ast.kDo() then Ast.a(g, st) else st, site, ckey, if c + 1 < len then c + 1 else if cps then 0 - 2 else 0 - 1)
+      Emit.po(e,"; }\n")
+    else
+      Emit.msNoH(e, r, start, len)
+      Emit.stmtsTo(e, r, start, len - 1)
+      val lst = Ast.item(g, r, len - 1)
+      if Emit.isBinder(Ast.kd(g, lst)) then Emit.stmt(e, lst, false, false) else ()
+      Emit.po(e,"return ")
+      if cps then Emit.po(e,"k_(ke_, ")
+      else if done then
+        Emit.po(e,"md_")
+        Emit.pi(e, site)
+        Emit.po(e,"(")
+      else Emit.po(e,"(")
+      if Emit.isBinder(Ast.kd(g, lst)) then Emit.po(e,"((int64_t)0)") else Emit.expr(e, if Ast.kd(g, lst) == Ast.kDo() then Ast.a(g, lst) else lst, false)
+      Emit.po(e,"); }\n")
+  if c < len then
+    if c + 1 < len then Emit.msChain(e, r, c + 1, false, site, ckey, cps, rT, kV, done, proto)
+    else if !cps then
+      val st = Ast.item(g, r, c)
+      Emit.msEnd(e, site, ckey, rT, Emit.tyS(e, if Ast.kd(g, st) == Ast.kDo() then Ast.a(g, st) else st), done, proto)
+    else ()
+  else ()
+

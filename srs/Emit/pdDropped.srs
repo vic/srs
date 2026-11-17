@@ -1,0 +1,7 @@
+// prompt: true when a node i..hi is a drop op (Emit.isDrop) whose receiver is the local with binder token tok (`r.free()` on the {} binder r)
+def Emit.pdDropped(x: Typer.X, k: Emit.K, base: I64, i: I64, hi: I64, tok: I64): Bool =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < hi then
+    (Ast.kd(g, i) == Ast.kMethod() && Typer.useRef(x, Ast.tok(g, i)) == tok && Emit.isDrop(k, Typer.mxGet(s, Typer.moCe(s, base + i)), 0)) || Emit.pdDropped(x, k, base, i + 1, hi, tok)
+  else false
+

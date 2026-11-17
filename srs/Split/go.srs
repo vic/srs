@@ -1,0 +1,27 @@
+// the scan from token j; a full column is doubled first (X7 pattern), then one decl is found
+def Split.go(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, j: I64, cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): Split.Out =
+  if c >= cap then
+    val m = cap * 2
+    val kd2 = Array.fill(m, U8.of(0))
+    val nm2 = Array.fill(m, U32.of(0))
+    val hd2 = Array.fill(m, U32.of(0))
+    val lo2 = Array.fill(m, U32.of(0))
+    val hi2 = Array.fill(m, U32.of(0))
+    Lexer.cp8(cap, kd, m, kd2, 0)
+    Lexer.cp32(cap, nm, m, nm2, 0)
+    Lexer.cp32(cap, hd, m, hd2, 0)
+    Lexer.cp32(cap, lo, m, lo2, 0)
+    Lexer.cp32(cap, hi, m, hi2, 0)
+    Split.go(src, n, tcap, tk, to, tl, t, j, m, kd2, nm2, hd2, lo2, hi2, c, dcap, dw, dt, d)
+  else if d + 4 > dcap then
+    val m = dcap * 2
+    val dw2 = Array.fill(m, U8.of(0))
+    val dt2 = Array.fill(m, U32.of(0))
+    Lexer.cp8(dcap, dw, m, dw2, 0)
+    Lexer.cp32(dcap, dt, m, dt2, 0)
+    Split.go(src, n, tcap, tk, to, tl, t, j, cap, kd, nm, hd, lo, hi, c, m, dw2, dt2, d)
+  else
+    val h = Split.nextHead(src, n, tcap, tk, to, t, j)
+    if h >= t then Split.Out(cap, kd, nm, hd, lo, hi, c, dcap, dw, dt, d)
+    else Split.decl(src, n, tcap, tk, to, tl, t, h, cap, kd, nm, hd, lo, hi, c, dcap, dw, dt, d)
+

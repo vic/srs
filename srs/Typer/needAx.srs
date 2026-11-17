@@ -1,0 +1,9 @@
+def Typer.needAx(x: Typer.X, nd: I64): Bool =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, nd)
+  val j = Ast.tok(g, nd)
+  val uk = Typer.useKind(x, j)
+  if k == Ast.kCall() then uk == Resolve.kCase() || (uk == Resolve.kGlobal() && Typer.sigAt(s, Typer.declSym(x, Typer.useRef(x, j)), 3) > 0)
+  else if k == Ast.kName() then uk == Resolve.kCase()
+  else k == Ast.kPCase() || k == Ast.kPCaseNP() || k == Ast.kPatVal()
+

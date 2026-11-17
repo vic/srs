@@ -1,0 +1,11 @@
+// the types of the binders (kBind: tok = name, a = type) of list r, pushed on the stack
+def Typer.binderTys(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    val bt = Typer.ty(x, Ast.a(g, b))
+    Typer.push(s, bt)
+    Typer.tyPut(s, b, bt)
+    Typer.binderTys(x, r, i + 1)
+  else ()
+

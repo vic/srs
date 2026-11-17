@@ -1,0 +1,14 @@
+def Kernel.tjE(t: Kernel.Tj, dg: Kernel.Dg, m: I64, adj: Array[U32](m), u: I64, e: I64, z: I64): Unit =
+  if e < z && 0 <= e && e < m then
+    val Kernel.Tj(n, idx, low, on, st, comp, c3, ctr) = t
+    val v = I64.of(adj(e))
+    if 0 <= v && v < n && 0 <= u && u < n then
+      if I64.of(idx(v)) == 0 then
+        Kernel.tj(t, dg, m, adj, v)
+        if I64.of(low(v)) < I64.of(low(u)) then Array.put(low, u, low(v)) else ()
+      else if I64.ofU8(on(v)) == 1 && I64.of(idx(v)) < I64.of(low(u)) then Array.put(low, u, idx(v))
+      else ()
+    else ()
+    Kernel.tjE(t, dg, m, adj, u, e + 1, z)
+  else ()
+

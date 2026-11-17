@@ -1,0 +1,5 @@
+// prompt: control: a def call that asks for {p: Process} from a def holding no Process is rejected with error[no-capability].
+val NegTests.defEvidence {NegTest}: Never =
+  def NtDe.g {p: Process} (): I64 = 1
+  def NtDe.f(): I64 = NtDe.g()
+  NegTest.expect("no-capability", "NtDe.g asks for {p: Process}; NtDe.f holds no Process")

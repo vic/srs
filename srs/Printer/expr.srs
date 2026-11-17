@@ -1,0 +1,60 @@
+def Printer.expr(g: Ast.G, n: I64, ind: I64): Unit =
+  val k = Ast.kd(g, n)
+  if k == Ast.kInt() || k == Ast.kStr() || k == Ast.kChar() || k == Ast.kName() then Printer.tok(g, Ast.tok(g, n))
+  else if k == Ast.kUnit() then Printer.s("()")
+  else if k == Ast.kParen() then
+    Printer.s("(")
+    Printer.expr(g, Ast.a(g, n), ind)
+    Printer.s(")")
+  else if k == Ast.kCall() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.callGroups(g, Ast.a(g, n), 0)
+    Printer.s("(")
+    Printer.exprs(g, Ast.b(g, n), 0, ind)
+    Printer.s(")")
+  else if k == Ast.kMethod() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(".")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s("(")
+    Printer.exprs(g, Ast.b(g, n), 0, ind)
+    Printer.s(")")
+  else if k == Ast.kResume() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(" ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s("(")
+    Printer.expr(g, Ast.b(g, n), ind)
+    Printer.s(")")
+  else if k == Ast.kBin() then Printer.bin(g, n, ind)
+  else if k == Ast.kUn() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.expr(g, Ast.a(g, n), ind)
+  else if k == Ast.kIf() || k == Ast.kIfNl() then Printer.ifE(g, n, ind)
+  else if k == Ast.kMatch() then
+    Printer.expr(g, Ast.a(g, n), ind)
+    Printer.s(" match")
+    Printer.arms(g, Ast.b(g, n), 0, ind)
+  else if k == Ast.kWhile() then
+    Printer.s("while ")
+    Printer.expr(g, Ast.a(g, n), ind)
+    if Printer.endsDed(g, Ast.a(g, n)) then
+      Printer.line(ind)
+      Printer.s("do ")
+    else Printer.s(" do ")
+    Printer.rhs(g, Ast.b(g, n), ind)
+  else if k == Ast.kAssign() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(" = ")
+    Printer.rhs(g, Ast.a(g, n), ind)
+  else if k == Ast.kBlock() then Printer.rhs(g, n, ind)
+  else if k == Ast.kQuant() then
+    Printer.tok(g, Ast.tok(g, n))
+    Printer.s(" ")
+    Printer.tok(g, Ast.tok(g, Ast.a(g, n)))
+    Printer.s(": ")
+    Printer.ty(g, Ast.a(g, Ast.a(g, n)))
+    Printer.s(" => ")
+    Printer.expr(g, Ast.b(g, n), ind)
+  else ()
+

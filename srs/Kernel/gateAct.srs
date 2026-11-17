@@ -1,0 +1,11 @@
+// gate BASE FILE: the gate's verdict and diagnostics for the units of FILE on top of BASE
+def Kernel.gateAct(ws: Os.Strs): Kernel.Res = ws match
+  case Os.End => Kernel.Res(1, "usage: gate BASE FILE")
+  case Os.More(pre, r) => r match
+    case Os.End => Kernel.Res(1, "usage: gate BASE FILE")
+    case Os.More(p, _) => Files.bytes(pre) match
+      case Os.Fail(_) => Kernel.Res(1, "base unreadable")
+      case Os.Ok(pt) => Files.bytes(p) match
+        case Os.Fail(_) => Kernel.Res(1, "file unreadable")
+        case Os.Ok(t) => Kernel.check(Os.End, Os.End, Kernel.splitAdd(Kernel.split(Kernel.Empty, pt), t))
+

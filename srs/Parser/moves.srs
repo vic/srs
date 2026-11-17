@@ -1,0 +1,7 @@
+// <A> .. <B> moves A to B; <s r t> .. <t> moves by r; no facts: each state stays (s2 Parse.moves 873)
+def Parser.moves(g: Ast.G, j: I64, en: I64, ex: I64): Unit =
+  if !Parser.ok(g) then ()
+  else if en == 0 then Parser.stopIf(g, ex != 0, j)
+  else if Ast.len(g, Ast.a(g, en)) == 1 then Parser.stopIf(g, ex == 0, j)
+  else Parser.stopIf(g, ex == 0 || !Str.eq(Ast.text(g, ex), Ast.text(g, Ast.item(g, Ast.a(g, en), 2))), j)
+

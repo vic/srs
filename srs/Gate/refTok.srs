@@ -1,0 +1,8 @@
+def Gate.refTok(gcap: I64, gf: Array[U32](gcap), u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    val k = I64.ofU8(rk(j))
+    val d = I64.of(rf(j))
+    if (k == 0 || k == 2 || k == 4) && 0 < d && d < gcap then Gate.row2(u, I64.of(gf(d))) else ()
+    Gate.refTok(gcap, gf, u, rcap, rk, rf, j + 1)
+  else ()
+

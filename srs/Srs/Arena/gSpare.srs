@@ -1,0 +1,7 @@
+// ── Srs.Arena in srs (arena into srs; the C arena, rt_arena_* and srs_pages, is gone). Chunks of
+// 1 MiB come from 64 MiB reservations (mmap, 2 MiB aligned, advised for huge pages) and a freed chunk waits on a spare
+// list; a block over a chunk is its own mmap, unmapped at free. State: the arena is one word (its head chunk), a chunk
+// is a 3-word header {next, used, cap} then its bytes (rt/srs_rt.c chunk, emit.srs srs_chunk: the same layout), and the
+// process-lifetime state is the rt_globals block, one word per name below. Pointers are kept as I64 addresses.
+// These defs are named Srs.*: they run as the prelude's own code and may call the rt_ prims and the libc functions.
+def Srs.Arena.gSpare(): I64 = 0

@@ -1,0 +1,6 @@
+// the prims that need the run arena (after srs_alloc)
+// prompt: the prims that need the run arena (after srs_alloc); srs_cap_alloc follows (Emit.capAllocFn)
+def Emit.preamble2(s: Typer.S): Unit =
+  Typer.po(s, "static inline const char* CStr__of(srs_str s) { int64_t n = 0; while (n < s.n && s.p[n] != 0) n++; char* c = (char*)srs_alloc(n + 1); if (n > 0) memcpy(c, s.p, (size_t)n); c[n] = 0; return c; }\n")
+  Typer.po(s, "static inline char *const* CStr__argv(int64_t n, const char** xs) { const char** a = (const char**)srs_alloc((n + 1) * (int64_t)sizeof(char*)); for (int64_t i = 0; i < n; i++) a[i] = xs[i]; a[n] = 0; return (char *const*)a; }\n")
+

@@ -1,0 +1,7 @@
+// xs with the entry of s bound to v (added last when s is absent)
+def Coll.sSet [V: Type] (xs: Coll.List[Coll.SEntry[V]], s: Sym.Sym, v: V): Coll.List[Coll.SEntry[V]] = xs match
+  case Coll.Nil => Coll.Cons(Coll.SEntry(s, v), Coll.Nil)
+  case Coll.Cons(e, t) => e match
+    case Coll.SEntry(s2, _) =>
+      if Sym.eq(s, s2) then Coll.Cons(Coll.SEntry(s, v), t) else Coll.Cons(e, Coll.sSet(t, s, v))
+

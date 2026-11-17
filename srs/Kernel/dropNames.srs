@@ -1,0 +1,6 @@
+// drop action: the image without the units named in ws, and the count of names that name no unit
+def Kernel.dropNames(im: Kernel.Img, ws: Os.Strs, bad: I64): Kernel.Lr = ws match
+  case Os.End => Kernel.Lr(im, bad)
+  case Os.More(w, rest) =>
+    val Kernel.Lr(im2, b) = Kernel.dropName(im, w)
+    Kernel.dropNames(im2, rest, bad + b)

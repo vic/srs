@@ -1,0 +1,8 @@
+// prompt: the compiler words of the CC value v before tail: the words of v when it has one, else `tcc`.
+def Kernel.ccHead(v: Os.Var, tail: Os.Strs): Os.Strs = v match
+  case Os.Set(s) =>
+    Kernel.words(s, 0) match
+      case Os.End => Os.More("tcc", tail)
+      case Os.More(w, r) => Kernel.cat(Os.More(w, r), tail)
+  case Os.Unset => Os.More("tcc", tail)
+

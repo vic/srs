@@ -1,0 +1,10 @@
+// rhs := NL IND block | expr; a block node keeps its last token (the Dedent that ends it) in b
+def Parser.rhs(g: Ast.G): I64 =
+  if Parser.ok(g) && Parser.is(g, Token.nl()) && Parser.cl1(g) == Token.indent() then
+    Parser.adv(g)
+    Parser.adv(g)
+    val j = Parser.cur(g)
+    val l = Parser.stmts(g, Ast.mark(g))
+    Ast.mk(g, Ast.kBlock(), j, l, Parser.cur(g) - 1)
+  else Parser.expr(g)
+

@@ -1,0 +1,12 @@
+// ── builtin calls, typed as s2/types.srs types them: Array.slice 949, Array.fill 813, Array.tabulate 834, Array.put 898, Array.blit 923,
+// Array.aload / astore / cas / fetchAdd 741, Cell.new 640, Cell.get 663, Cell.put 681, ACell.new 704, ACell.load / store / cas / fetchAdd 769.
+// The length index of Array[A](n) is no part of an s3 type (the facts pass owns it), so Array.fill(n, x) is Array[typeof x]. Not checked here
+// (flow, not typing): the index proofs, the word type of an atomic op (Ty.isWord, s2/types.srs 694), the Mut / Atomic request. ──
+// the type Name[a] (Array, Cell, ACell: one class 12, kind array)
+def Typer.wrapT(x: Typer.X, name: Str, a: I64, ln: I64): I64 =
+  val Typer.X(w, _, s, _, _, _) = x
+  val m = Typer.mark(s)
+  Typer.push(s, a)
+  if Str.eq(name, "Array") then Typer.push(s, ln) else ()
+  Typer.mk(s, Typer.bArray(), 12, Resolve.sym(w, Resolve.lit(name), false), m)
+

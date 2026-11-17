@@ -1,0 +1,9 @@
+// prompt: true (and counted in Typer.cTdPend) when type use t names a type decl not set yet while type definitions are set (Typer.cTdMode): its value args are not looked at before the decl is set
+def Typer.tyPend(x: Typer.X, t: I64): Bool =
+  val Typer.X(_, g, s, rcap, rk, _) = x
+  val j = Ast.tok(g, t)
+  val tk = if 0 <= j && j < rcap then I64.ofU8(rk(j)) - Resolve.tBase() else Resolve.tUnres()
+  if Typer.cget(s, Typer.cTdMode()) == 1 && tk == Resolve.tDecl() && !Typer.isCStruct(s, Typer.symIns(x, j)) && Typer.declTyGet(s, Typer.symOf(x, j)) == 0 then
+    Typer.cinc(s, Typer.cTdPend())
+    true
+  else false

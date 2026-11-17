@@ -1,0 +1,12 @@
+// a capability's defs are the requests Cap.op
+def Resolve.declOps(w: Resolve.W, g: Ast.G, lcap: I64, ln: Array[U32](lcap), fi: I64, ptok: I64, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCapDef() then
+      val s = Resolve.srcOf(g)
+      val t = Resolve.T(s, Ast.toff(g, ptok), Ast.tlen(g, ptok), s, Ast.toff(g, Ast.a(g, n)), Ast.tlen(g, Ast.a(g, n)))
+      Resolve.declare(w, Resolve.kCap(), fi, Resolve.lineAt(lcap, ln, Ast.a(g, n)), Resolve.sym(w, t, true))
+    else ()
+    Resolve.declOps(w, g, lcap, ln, fi, ptok, r, i + 1)
+  else ()
+

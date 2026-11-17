@@ -1,0 +1,5 @@
+def Kernel.pick(im: Kernel.Img, n: I64, mk: Array[U8](n), u: I64): Kernel.Img = im match
+  case Kernel.Empty => Kernel.Empty
+  case Kernel.Unit(nm, t, r) =>
+    if 0 <= u && u < n && I64.ofU8(mk(u)) == 1 then Kernel.Unit(nm, t, Kernel.pick(r, n, mk, u + 1)) else Kernel.pick(r, n, mk, u + 1)
+

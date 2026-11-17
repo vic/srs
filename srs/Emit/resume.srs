@@ -1,0 +1,15 @@
+// a resume k(v) in tail position of an op body: the op returns v; anywhere else it is the named Diag unsupportedResume (hc 13)
+// prompt: resume k(v): inside a multi-shot op fn (resume mode, Emit.msMh) it calls the continuation k_(ke_, v); else only in tail position of a one-shot op body (the op returns v), anywhere else unsupportedResume (hc 13, the emit fails)
+def Emit.resume(e: Emit.E, n: I64, tail: Bool): Unit =
+  if Emit.hget(Emit.kOf(e), Emit.msBase() + 1) == 1 then
+    Emit.po(e,"k_(ke_, ")
+    Emit.expr(e, Ast.b(Emit.gOf(e), n), false)
+    Emit.po(e,")")
+  else if tail then
+    Emit.po(e,"(")
+    Emit.expr(e, Ast.b(Emit.gOf(e), n), false)
+    Emit.po(e,")")
+  else
+    Emit.hinc(Emit.kOf(e), 13)
+    Emit.po(e,"((int64_t)0)")
+

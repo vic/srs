@@ -1,0 +1,6 @@
+// K0: the files of an image held in memory: paths ps and texts xs, in order (same parse as Nm.load)
+def Resolve.loadMem(ps: Os.Strs, xs: Os.Strs): Coll.List[Resolve.F] = ps match
+  case Os.End => Coll.Nil
+  case Os.More(p, prest) => xs match
+    case Os.End => Coll.Nil
+    case Os.More(x, xrest) => Coll.Cons(Resolve.parseFile(p, x), Resolve.loadMem(prest, xrest))

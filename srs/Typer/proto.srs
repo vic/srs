@@ -1,0 +1,12 @@
+// `static R f_Name(T p_x, ...);` (Emit.sig); `void` for no params
+def Typer.proto(x: Typer.X, sym: I64, pr: I64): Unit =
+  val Typer.X(w, _, s, _, _, _) = x
+  val n = Typer.sigAt(s, sym, 2)
+  Typer.po(s, "static ")
+  Typer.cty(w, s, Typer.sigAt(s, sym, 0))
+  Typer.po(s, " f_")
+  Typer.id(s, w, sym)
+  Typer.po(s, "(")
+  if n == 0 then Typer.po(s, "void") else Typer.pParams(x, pr, 0, Typer.sigAt(s, sym, 1), n)
+  Typer.po(s, ");\n")
+

@@ -1,0 +1,6 @@
+// the unit that a resolved token (kind k, ref d) names: a global, case or capability op by decl id, a type by symbol
+def Kernel.tokDep(gcap: I64, gf: Array[U32](gcap), tcap: I64, tyk: Array[U8](tcap), tyf: Array[U32](tcap), lo: I64, n: I64, k: I64, d: I64): Coll.Option[I64] =
+  if (k == Resolve.kGlobal() || k == Resolve.kCase() || k == Resolve.kCap()) && 0 < d && d < gcap then Kernel.unitOf(I64.of(gf(d)) - lo, n)
+  else if k >= Resolve.tBase() && 0 < d && d < tcap && I64.ofU8(tyk(d)) > 0 then Kernel.unitOf(I64.of(tyf(d)) - lo, n)
+  else Coll.None
+

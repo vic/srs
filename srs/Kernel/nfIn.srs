@@ -1,0 +1,12 @@
+// prompt: print the in-scc ref to member v in mode md (see K.Md).
+def Kernel.nfIn(nf: Kernel.Nf, md: Kernel.Md, v: I64): Unit =
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  md match
+    case Kernel.MAnon => Console.print("@")
+    case Kernel.MShape =>
+      Console.print("%")
+      Kernel.nfHex(n8, lh, v)
+    case Kernel.MFull =>
+      Console.print("@")
+      if 0 <= v && v < n then Console.printI64(I64.of(rnk(v))) else ()
+

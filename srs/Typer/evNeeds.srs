@@ -1,0 +1,8 @@
+// prompt: the trait evidence of a call n of def sym (type vars from v0): every trait evidence type of its signature is checked
+// (Typer.evNeed1); a def with no evidence (column 4 = 0) needs none.
+def Typer.evNeeds(x: Typer.X, n: I64, sym: I64, v0: I64): Unit =
+  val Typer.X(_, _, s, _, _, _) = x
+  if Typer.sigAt(s, sym, 4) > 0 then
+    val b = Typer.evBlock(s, sym)
+    Typer.evNeed1(x, n, Typer.sigAt(s, sym, 1) + Typer.sigAt(s, sym, 2), Typer.sigAt(s, sym, 3), v0, b + 1, 0, Typer.poolAt(s, b))
+  else ()

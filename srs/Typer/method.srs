@@ -1,0 +1,28 @@
+// prompt: recv.op(args): recv is a local of a capability type (a handle), a trait type (evidence), an array (xs.at(j), Typer.atCall) or an extern struct (s.f(), Typer.cstructField), or the name of an extern struct (T.new(), Typer.cstructNew); a cap/trait op's signature is found by (owner, op). The receiver type is recorded on the node (Typer.rvRec) for the emitter.
+def Typer.method(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, n)
+  val rt = if Typer.useKind(x, j) == Resolve.kLocal() then Typer.walk(s, Typer.ltGet(s, Typer.useRef(x, j))) else 0
+  if rt != 0 then Typer.rvRec(s, n, rt) else ()
+  val sr = if rt == 0 then Typer.symIns(x, j) else 0
+  val ci = if rt != 0 && Typer.kind(s, rt) == Typer.bBuiltin() && Typer.isCStruct(s, Typer.head(s, rt)) then Typer.head(s, rt) else 0
+  val sg = if rt != 0 && Typer.kind(s, rt) == Typer.bCap() then Typer.opFind(s, Typer.head(s, rt), Typer.symIns(x, Ast.a(g, n)), 0) else 0
+  if sr != 0 && Typer.isCStruct(s, sr) then Typer.cstructNew(x, n, sr)
+  else if ci != 0 then Typer.cstructField(x, n, ci)
+  else if Typer.isArrayT(x, rt) then Typer.atCall(x, n, rt)
+  else if sg == 0 then
+    Typer.args(x, Ast.b(g, n), 0)
+    Typer.untyped(x, j, 91)
+  else
+    Typer.ceRec(s, n, sg)
+    val ts = Typer.head(s, rt)
+    val ntp = Typer.sigAt(s, ts, 3)
+    val tp0 = Typer.sigAt(s, ts, 1) + Typer.sigAt(s, ts, 2)
+    val np = Typer.sigAt(s, sg, 2)
+    val v0 = Typer.cget(s, Typer.cNVar())
+    Typer.freshN(s, ntp)
+    Typer.bindTraitArgs(x, rt, v0, 0, ntp)
+    if Ast.len(g, Ast.b(g, n)) != np then Typer.mis(s, j) else ()
+    Typer.callArgs(x, Ast.b(g, n), 0, np, Typer.sigAt(s, sg, 1), tp0, ntp, v0, Typer.sigAt(s, sg, 1) + np + Typer.sigAt(s, sg, 3))
+    Typer.lsubTop(x, Typer.inst(s, Typer.sigAt(s, sg, 0), tp0, ntp, v0), Ast.b(g, n), Typer.sigAt(s, sg, 1) + np + Typer.sigAt(s, sg, 3), np, false)
+

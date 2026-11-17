@@ -1,0 +1,8 @@
+// capParamR(u): a value param of the def has a capability type (a capability is a {} binder, not a param)
+def Gate.capParams(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    val t = Ast.tok(g, Ast.a(g, n))
+    if Ast.kd(g, n) == Ast.kBind() && 0 <= t && t < rcap && I64.ofU8(rk(t)) == Resolve.tBase() + Resolve.tCap() then Gate.row1(u) else ()
+    Gate.capParams(g, u, rcap, rk, l, i + 1)
+  else ()

@@ -1,0 +1,7 @@
+def Planner.recV(rule: Planner.Rule, b: Planner.Atoms, i: I64, s: I64, st: Planner.Ints, nr: I64, ars: Planner.Ints, acc: Planner.Acc): Planner.Acc = b match
+  case Planner.ANil => acc
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    if Planner.not(ng) && Planner.nth(st, r) == s then Planner.recV(rule, rest, i + 1, s, st, nr, ars, Planner.addV(acc, s, Planner.variant(rule, i, 1, Planner.accXs(acc), nr, ars)))
+    else Planner.recV(rule, rest, i + 1, s, st, nr, ars, acc)
+

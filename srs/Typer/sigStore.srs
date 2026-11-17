@@ -1,0 +1,25 @@
+// store the signature of symbol sym: result type ret, params = the stack items above m
+// the stack above m holds np param type ids then tps type-param tokens (Tp.tpToks): both go to the pool
+// prompt: store the signature of sym (result ret, np params, tps type params, ev evidence count) with the stack items above m copied
+// to the pool; a second signature of one symbol is counted as a duplicate.
+def Typer.sigStore(s: Typer.S, sym: I64, ret: I64, np: I64, tps: I64, ev: I64, m: I64): Unit =
+  val Typer.S(_, _, pl, _, sg) = s
+  val Typer.Pl(acap, ap, _, _) = pl
+  val Typer.Sg(gcap, sr, ss, sn, st, se, _, _, _, _, _, _, _) = sg
+  val n = Typer.cget(s, Typer.cSp()) - m
+  val top = Typer.cget(s, Typer.cATop())
+  if 0 < sym && 0 <= sym && sym < gcap && top + n <= acap then
+    if I64.of(sr(sym)) != 0 then Typer.cinc(s, Typer.cDup())
+    else
+      Array.put(sr, sym, U32.of(ret))
+      Array.put(ss, sym, U32.of(top))
+      Array.put(sn, sym, U32.of(np))
+      Array.put(st, sym, U32.of(tps))
+      Array.put(se, sym, U32.of(ev))
+      Typer.cpArgs(s, m, 0, n, top)
+      Typer.cset(s, Typer.cATop(), top + n)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Typer.over(s)
+  Typer.cset(s, Typer.cSp(), m)
+
+

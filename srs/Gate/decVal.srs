@@ -1,0 +1,7 @@
+// the value of a decimal digit string from i; none when a char is not a digit or the string is empty
+def Gate.decVal(s: Str, i: I64, acc: I64): Coll.Option[I64] =
+  if i >= Str.len(s) then (if i == 0 then Coll.None else Coll.Some(acc))
+  else
+    val c = Str.at(s, i)
+    if 48 <= c && c <= 57 then Gate.decVal(s, i + 1, acc * 10 + (c - 48)) else Coll.None
+

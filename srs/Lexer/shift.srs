@@ -1,0 +1,12 @@
+// slots p..j-1 move up one slot, newest first
+def Lexer.shift(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), j: I64, p: I64): Unit =
+  val q = j - 1
+  if 0 <= q && q < cap then
+    if 0 <= j && j < cap && p <= q then
+      Array.put(ks, j, ks(q))
+      Array.put(os, j, os(q))
+      Array.put(ls, j, ls(q))
+      Lexer.shift(cap, ks, os, ls, q, p)
+    else ()
+  else ()
+

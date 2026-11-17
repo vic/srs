@@ -1,0 +1,13 @@
+// htop(u, hu, h): a `handle x = H()` statement at the top level of a def body of unit u installs the handler unit hu at token h
+def Gate.hstmts(w: Resolve.W, g: Ast.G, u: I64, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val st = Ast.item(g, r, i)
+    if Ast.kd(g, st) == Ast.kHandle() then
+      val h = Ast.a(g, st)
+      Gate.tyUnit(w, Resolve.sym(w, Resolve.tokT(g, h), false)) match
+        case Coll.Some(hu) => Gate.row3(u, hu, h)
+        case Coll.None => ()
+    else ()
+    Gate.hstmts(w, g, u, r, i + 1)
+  else ()
+

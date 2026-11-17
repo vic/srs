@@ -1,0 +1,17 @@
+// prompt: the cached judgement of the entry key ek: Some only for a complete entry (header line "rejected" or "ACCEPTED",
+// trailer line "end KEY"); no key, a missing, partial or foreign entry is a miss (None), never a result.
+def Kernel.negGet(ek: Coll.Option[Str]): Coll.Option[Kernel.Judged] = ek match
+  case Coll.None => Coll.None
+  case Coll.Some(k) => Files.bytes(Kernel.negEntry(k)) match
+    case Os.Fail(_) => Coll.None
+    case Os.Ok(e) =>
+      val tr = Kernel.negTrail(k)
+      val n = Str.len(e)
+      val m = Str.len(tr)
+      if n >= m && Str.eq(Str.slice(e, n - m, n), tr) then
+        Kernel.negHead(e, n - m, Kernel.VReject) match
+          case Coll.Some(j) => Coll.Some(j)
+          case Coll.None => Kernel.negHead(e, n - m, Kernel.VAccept)
+      else Coll.None
+
+

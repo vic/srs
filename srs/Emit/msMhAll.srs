@@ -1,0 +1,15 @@
+// prompt: the fns of a multi-shot handler at a site, from part i: done (Emit.msMd), each continuation clause (Emit.msMh); any other fn (init, a clause without k) is unsupported
+def Emit.msMhAll(eh: Emit.E, hroot: I64, hs: I64, site: I64, rT: I64, proto: Bool, i: I64): Unit =
+  val g = Emit.gOf(eh)
+  val parts = Ast.b(g, hroot)
+  if i < Ast.len(g, parts) then
+    val d = Ast.item(g, parts, i)
+    if Ast.kd(g, d) == Ast.kDef() then
+      val pr = Ast.a(g, Typer.part(g, Ast.b(g, d), 0, Ast.kParams()))
+      if Str.eq(Ast.text(g, Ast.a(g, d)), "done") then Emit.msMd(eh, d, site, proto)
+      else if pr != 0 && Ast.len(g, pr) > 0 && Ast.kd(g, Ast.item(g, pr, 0)) != Ast.kBind() then Emit.msMh(eh, d, hs, site, rT, proto)
+      else Emit.unsup(eh, Ast.kDef())
+    else ()
+    Emit.msMhAll(eh, hroot, hs, site, rT, proto, i + 1)
+  else ()
+

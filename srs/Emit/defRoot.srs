@@ -1,0 +1,15 @@
+def Emit.defRoot(x: Typer.X, k: Emit.K, base: I64, root: I64, ph: I64): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  val sym = Typer.symOf(x, Ast.a(g, root))
+  val hasBody = Typer.part(g, Ast.b(g, root), 0, Ast.kBody()) != 0
+  if Typer.sigAt(s, sym, 0) == 0 then Emit.hinc(k, 7)
+  else if Typer.sigAt(s, sym, 3) > 0 then
+    Emit.insts(x, k, base, root, sym, Typer.mxGet(s, Typer.moIhd(s, sym)), ph)
+  else
+    val e = Emit.envOf(x, k, base, root, sym, 0 - 1)
+    Emit.head(e, root, sym, 0 - 1)
+    if ph == 2 then Emit.po(e,";\n")
+    else
+      Emit.body(e, root, false)
+      Emit.hinc(k, 3)
+

@@ -1,0 +1,6 @@
+// prompt: mark CPS defs over all files rs (phase 5 of Emit.roots) until a pass changes nothing
+def Emit.msFix(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R]): Unit =
+  Emit.hset(k, Emit.msBase(), 0)
+  Emit.files(w, s, k, rs, 0, 5)
+  if Emit.hget(k, Emit.msBase()) > 0 then Emit.msFix(w, s, k, rs) else ()
+

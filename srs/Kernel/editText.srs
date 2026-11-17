@@ -1,0 +1,7 @@
+// the edit action text is OLD, a line ===, then NEW
+def Kernel.editText(im: Kernel.Img, n: Str, text: Str): Coll.Option[Str] = Kernel.findFrom(text, "\n===\n", 0) match
+  case Coll.None => Coll.None
+  case Coll.Some(s) => Kernel.textOf(im, n) match
+    case Coll.None => Coll.None
+    case Coll.Some(t) => Kernel.edited(t, Str.slice(text, 0, s), Str.slice(text, s + 5, Str.len(text)))
+

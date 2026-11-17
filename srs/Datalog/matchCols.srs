@@ -1,0 +1,14 @@
+// ── join ──
+// the columns of a row against an atom's specs: tag 0 const, 1 bound slot, 2 binds a slot, 5 equals a slot bound in this atom
+def Datalog.matchCols(st: Datalog.St, rn: I64, xs: Array[U32](rn), rb: I64, sp: I64, c: I64, a: I64): Bool =
+  if c >= a then true
+  else
+    val tag = Datalog.p(st, sp + 2 * c)
+    val v = Datalog.p(st, sp + 2 * c + 1)
+    val x = Datalog.u(rn, xs, rb + c)
+    if tag == 2 then
+      Datalog.setEnv(st, v, x)
+      Datalog.matchCols(st, rn, xs, rb, sp, c + 1, a)
+    else if x == (if tag == 0 then v else Datalog.env(st, v)) then Datalog.matchCols(st, rn, xs, rb, sp, c + 1, a)
+    else false
+

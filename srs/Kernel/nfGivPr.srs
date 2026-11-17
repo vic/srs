@@ -1,0 +1,14 @@
+// prompt: print the given outside scc c of rank k (scan a..), then go on with rank k + 1 while k < gn.
+def Kernel.nfGivPr(tj: Kernel.Tj, nf: Kernel.Nf, gn: I64, gl: Array[U32](gn), grk: Array[U32](gn), c: I64, k: I64, a: I64): Unit =
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if k < gn then
+    if 0 <= a && a < gn then
+      if Kernel.nfOut(tj, gn, gl, c, a) && I64.of(grk(a)) == k then
+        Console.print("#")
+        Kernel.nfHex(n8, ids, I64.of(gl(a)))
+        Console.print(" ")
+      else ()
+      Kernel.nfGivPr(tj, nf, gn, gl, grk, c, k, a + 1)
+    else Kernel.nfGivPr(tj, nf, gn, gl, grk, c, k + 1, 0)
+  else ()
+

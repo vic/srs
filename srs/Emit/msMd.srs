@@ -1,0 +1,23 @@
+// prompt: the done fn of a site: `R md_<site>(A x)` with the handler's A := the rest type (Emit.msHE)
+def Emit.msMd(eh: Emit.E, d: I64, site: I64, proto: Bool): Unit =
+  val Emit.E(x, k, tp0, ntp, pb, _, _, base) = eh
+  val Typer.X(_, g, _, _, _, _) = x
+  val parts = Ast.b(g, d)
+  val b = Typer.part(g, parts, 0, Ast.kBody())
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  val ed = Emit.E(x, k, tp0, ntp, pb, 0, pr, base)
+  if b == 0 then Emit.unsup(ed, Ast.kDef())
+  else
+    Emit.po(ed,"static ")
+    Emit.cty(ed, Emit.tyS(ed, Ast.a(g, b)))
+    Emit.po(ed," md_")
+    Emit.pi(ed, site)
+    Emit.po(ed,"(")
+    if Emit.ntyped(ed, pr, 0) == 0 then Emit.po(ed,"void") else Emit.hparams(ed, pr, 0, 0)
+    Emit.po(ed,")")
+    if proto then Emit.po(ed,";\n")
+    else
+      Emit.po(ed," { return ")
+      Emit.expr(ed, Ast.a(g, b), false)
+      Emit.po(ed,"; }\n")
+

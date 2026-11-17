@@ -1,0 +1,15 @@
+// push a [] type binder: not a value local, so not counted in sLocals
+def Resolve.pushT(x: Resolve.X, t: Resolve.T, tok: I64): Unit =
+  val Resolve.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Resolve.W(_, _, sc, _) = w
+  val Resolve.Sc(cap, ss, st, sk) = sc
+  val sym = Resolve.sym(w, t, true)
+  val sp = Resolve.cget(w, Resolve.sSp())
+  if 0 < sym && 0 <= sp && sp < cap then
+    Array.put(ss, sp, U32.of(sym))
+    Array.put(st, sp, U32.of(tok))
+    Array.put(sk, sp, U8.of(Resolve.bTParam()))
+    Resolve.cset(w, Resolve.sSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+

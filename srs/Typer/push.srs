@@ -1,0 +1,10 @@
+def Typer.push(s: Typer.S, v: I64): Unit =
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(_, _, scap, stk) = pl
+  val sp = Typer.cget(s, Typer.cSp())
+  if 0 <= sp && sp < scap then
+    Array.put(stk, sp, U32.of(v))
+    Typer.cset(s, Typer.cSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Typer.over(s)
+

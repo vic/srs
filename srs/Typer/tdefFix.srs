@@ -1,0 +1,8 @@
+// prompt: repeat one pass over all files rs while a pass sets a new type definition (at most one pass per type definition).
+def Typer.tdefFix(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R]): Unit =
+  val n0 = Typer.cget(s, Typer.cTdSet())
+  Typer.tdefPass(w, s, rs, 0, false)
+  if Typer.cget(s, Typer.cTdSet()) != n0 then Typer.tdefFix(w, s, rs) else ()
+
+
+

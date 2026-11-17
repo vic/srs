@@ -1,0 +1,49 @@
+def Resolve.root0(x: Resolve.X, kb: I64, root: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  Resolve.setSp(x, 0)
+  if kb == 0 then Resolve.defN(x, root)
+  else if kb == 1 then
+    Resolve.bindTps(x, Ast.b(g, root), 0)
+    Resolve.cases(x, Ast.b(g, root), 0)
+    Resolve.setSp(x, 0)
+  else if kb == 2 then
+    val inner = Ast.b(g, root)
+    val ik = Ast.kd(g, inner)
+    if ik == Ast.kDef() then Resolve.defN(x, inner)
+    else if ik == Ast.kCVal() then Resolve.ty(x, Ast.a(g, inner))
+    else if ik == Ast.kCStruct() then Resolve.fieldTys(x, Ast.b(g, inner), 0)
+    else ()
+  else if kb == 3 then
+    Resolve.handlerParts(x, Ast.b(g, root), 0)
+    Resolve.setSp(x, 0)
+  else if kb == 4 then
+    Resolve.bindTps(x, Ast.b(g, root), 0)
+    Resolve.setCapSig(x, 1)
+    Resolve.defsOf(x, Ast.b(g, root), 0)
+    Resolve.setCapSig(x, 0)
+    Resolve.setSp(x, 0)
+  else if kb == 5 then
+    Resolve.bindTps(x, Ast.b(g, root), 0)
+    Resolve.bindEv(x, Ast.b(g, root), 0)
+    Resolve.parts(x, Ast.b(g, root), 0)
+    Resolve.defsOf(x, Ast.b(g, root), 0)
+// prompt: resolve the names of decl root (kind byte kb): defs, enums, externs, handlers, capabilities, traits (their [] and {}
+// binders and group types, like a given: s2 prog cap_region_traitg), type defs, givens and top-level vals.
+    Resolve.setSp(x, 0)
+  else if kb == 6 then
+    Resolve.bindTps(x, Ast.b(g, root), 0)
+    Resolve.bindPar(x, Ast.b(g, root), 0)
+    Resolve.typeParts(x, Ast.b(g, root), 0)
+    Resolve.setSp(x, 0)
+  else if kb == 8 then
+    Resolve.bindTps(x, Ast.b(g, root), 0)
+    Resolve.bindEv(x, Ast.b(g, root), 0)
+    Resolve.parts(x, Ast.b(g, root), 0)
+    Resolve.ty(x, Ast.a(g, root))
+    Resolve.defsOf(x, Ast.b(g, root), 0)
+    Resolve.setSp(x, 0)
+  else if kb == 7 then
+    Resolve.ty(x, Ast.a(g, root))
+    Resolve.expr(x, Ast.b(g, root))
+  else ()
+

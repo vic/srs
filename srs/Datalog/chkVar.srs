@@ -1,0 +1,9 @@
+def Datalog.chkVar(st: Datalog.St, off: I64): I64 =
+  val hv = off + 1
+  val hr = Datalog.p(st, hv)
+  if hr < 0 || hr >= Datalog.nr(st) then 1 else
+    val ha = Datalog.p(st, hr)
+    Datalog.zeroEnv(st, 0)
+    val d = Datalog.chkAtoms(st, off + 3 + 2 * ha, Datalog.p(st, off + 2 + 2 * ha), 0)
+    d + Datalog.chkHead(st, hv, 0, ha) + (if Datalog.p(st, off) == 0 || Datalog.p(st, off) == 1 then 0 else 1)
+

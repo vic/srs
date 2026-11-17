@@ -1,0 +1,6 @@
+// prompt: binary operator c on Bool a and r: && || == !=; CtNo when r is no Bool
+def Typer.ctBinB(c: I64, a: Bool, r: Typer.Ct): Typer.Ct = r match
+  case Typer.CtBool(b) => if c == Token.andand() then Typer.CtBool(a && b) else if c == Token.oror() then Typer.CtBool(a || b) else if c == Token.eqeq() then Typer.CtBool(a == b) else if c == Token.ne() then Typer.CtBool(a != b) else Typer.CtNo
+  case Typer.CtInt(_) => Typer.CtNo
+  case Typer.CtNo => Typer.CtNo
+

@@ -1,0 +1,14 @@
+// prompt: the kernel must reject a call that writes a param cell while an Arena opened in the caller is open, with error[cell-seal].
+val NegTests.cellSealCall {NegTest}: Never =
+  def CS.set(c: Cell[Str], s: Str): Unit = Cell.put(c, s)
+  def CS.inner(c: Cell[Str]): Unit =
+    handle q = Srs.Arena()
+    val n = 3
+    CS.set(c, Str.ofBytes(n, Array.fill(n, U8.of(65))))
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r = Srs.Arena()
+    val c = Cell.new("x")
+    CS.inner(c)
+    0
+  NegTest.expect("cell-seal", "CS.set writes its param cell, called while the inner Arena q is open, and q dies before the cell")

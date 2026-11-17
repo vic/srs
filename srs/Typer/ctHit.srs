@@ -1,0 +1,6 @@
+// prompt: true when a value of kind w matches case pattern (pk 0 `_`, 1 the I64 w, 2 the Bool w != 0) of a value match type
+def Typer.ctHit(pk: I64, w: I64, v: Typer.Ct): Bool = v match
+  case Typer.CtInt(a) => pk == 0 || (pk == 1 && a == w)
+  case Typer.CtBool(b) => pk == 0 || (pk == 2 && (w != 0) == b)
+  case Typer.CtNo => false
+

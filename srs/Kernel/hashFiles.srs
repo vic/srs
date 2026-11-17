@@ -1,0 +1,11 @@
+def Kernel.hashFiles(ws: Os.Strs): Unit = ws match
+  case Os.End => ()
+  case Os.More(p, r) =>
+    Files.bytes(p) match
+      case Os.Ok(t) => Console.print(Blake3.hash(t))
+      case Os.Fail(_) => Console.print("unreadable")
+    Console.print("  ")
+    Console.print(p)
+    Console.print("\n")
+    Kernel.hashFiles(r)
+

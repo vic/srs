@@ -1,0 +1,9 @@
+// the length an arg expression e is as a value: a literal or a plain local by name, any other expression a fresh rigid (no Diag: there is no annotation)
+def Typer.lenVal(x: Typer.X, e: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, e)
+  if k == Ast.kParen() then Typer.lenVal(x, Ast.a(g, e))
+  else if k == Ast.kInt() && Typer.litOk(Ast.text(g, Ast.tok(g, e)), 0) then Typer.lenLit(s, Typer.dec(Ast.text(g, Ast.tok(g, e)), 0, 0))
+  else if k == Ast.kName() && Typer.useKind(x, Ast.tok(g, e)) == Resolve.kLocal() && !Typer.isMut(s, Typer.useRef(x, Ast.tok(g, e))) then Typer.lenBind(s, Typer.useRef(x, Ast.tok(g, e)))
+  else Typer.lenFresh(s)
+

@@ -1,0 +1,13 @@
+// a code line at col, the stack top is top: deeper = an Indent; shallower = close one indent and look again;
+// the same = nothing; deeper after closing = BadDedent (s2 Lex.go 160-163, Lex.dedent 190-196)
+def Lexer.indent(src: Str, n: I64, nt: Lexer.Notes, i: I64, j: I64, col: I64, top: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if col < top then
+    val inc = Lexer.layTok(cap, ks, os, ls, t, Lexer.KDedent, j, dcap, dc, dof, d)
+    Lexer.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp - 1, depth, Lexer.Dedenting)
+  else if col == top then Lexer.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Mid)
+  else if Lexer.isBol(pos) then
+    val inc1 = Lexer.putStk(scap, st, sp, col, dcap, dc, dof, d, j)
+    val inc2 = Lexer.layTok(cap, ks, os, ls, t, Lexer.KIndent, j, dcap, dc, dof, d + inc1)
+    Lexer.go(src, n, nt, j, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc1 + inc2, scap, st, sp + 1, depth, Lexer.Mid)
+  else Lexer.diag(src, n, nt, j, j, Lexer.BadDedent, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Mid)
+

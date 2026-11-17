@@ -1,0 +1,9 @@
+// prompt: the site copies of every CPS def (class 6) in every file of rs from file index fi (one unit is one file, Kernel.build)
+def Emit.msCgFiles(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R], fi: I64, site: I64, rT: I64, done: Bool, proto: Bool): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Emit.msCgAll(Typer.X(w, g, s, rcap, rk, rf), k, f, Typer.mxGet(s, Typer.moFb(s, fi)), site, rT, done, proto, 0)
+    Emit.msCgFiles(w, s, k, rest, fi + 1, site, rT, done, proto)
+

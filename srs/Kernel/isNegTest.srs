@@ -1,0 +1,8 @@
+// true when unit text t is a negative test: val NAME {NegTest}: Never = e
+def Kernel.isNegTest(t: Str): Bool = Kernel.hdrAt(t, 0) match
+  case Coll.Some(h) =>
+    val s = Kernel.nmEnd(t, h)
+    val e = Kernel.hdrEnd(t, s, 0)
+    Kernel.startsAt(t, h - Str.len("val "), "val ") && Kernel.startsAt(t, e, "=") && Kernel.sigEq(t, s, e, Kernel.negSig(), 0, Str.len(Kernel.negSig()))
+  case Coll.None => false
+

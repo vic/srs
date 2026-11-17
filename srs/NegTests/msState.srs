@@ -1,0 +1,25 @@
+// prompt: the kernel must reject a capability whose state at a multi-shot resume point differs from its state at the end of the body, with error[multishot-state] (s2 neg ms_state_before, vic Q-M4: each resume re-enters the rest with the capability in its state at that point)
+val NegTests.msState {NegTest}: Never =
+  capability NtMt.NonDet:
+    def choose(): Bool
+  handler NtMt.Count [A: Type] for NtMt.NonDet:
+    def done(x: A): I64 = 1
+    def choose(k): I64 = resume k(true) + resume k(false)
+  capability NtMt.Lamp:
+    state Off, On
+    start Off
+    stop Off
+    def on <Off> (): Unit <On>
+    def off <On> (): Unit <Off>
+  handler NtMt.HLamp for NtMt.Lamp:
+    def on(): Unit = ()
+    def off(): Unit = ()
+  def NtMt.run(): I64 =
+    handle l = NtMt.HLamp()
+    handle nd = NtMt.Count()
+    l.on()
+    val a = nd.choose()
+    l.off()
+    0
+  def main(): I64 = NtMt.run()
+  NegTest.expect("multishot-state", "the lamp is On at the choose but Off at the end, so the second branch would start in the wrong state")

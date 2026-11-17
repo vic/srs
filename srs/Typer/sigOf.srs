@@ -1,0 +1,31 @@
+// the signature of the def-like node `root` (parts = Na.b) under the symbol sym
+// prompt: store the signature of the def-like node root under sym: param types, [] tokens, binder lengths, then the trait evidence
+// block [count, trait evidence types] (Typer.evBlock, read by Typer.evNeeds), the result type, the [] and {} group counts.
+def Typer.sigOf(x: Typer.X, root: I64, sym: I64, dump: Bool): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  val tps = Typer.groupN(g, parts, 0, Ast.kGTypes(), 0)
+  val ev = Typer.groupN(g, parts, 0, Ast.kGEv(), 0)
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  val m = Typer.mark(s)
+  Typer.binderTys(x, pr, 0)
+  val np = Typer.mark(s) - m
+  Typer.tpToks(x, parts, 0)
+  Typer.binderLens(x, pr, 0)
+  Typer.push(s, Typer.traitEvN(x, parts, 0))
+  Typer.traitEvPush(x, parts, 0)
+  val rp = Typer.part(g, parts, 0, Ast.kRet())
+  val rp2 = if rp != 0 then rp else Typer.part(g, parts, 0, Ast.kOpRet())
+  val rp3 = if rp2 != 0 then rp2 else Typer.part(g, parts, 0, Ast.kOpRetC())
+  val ret = Typer.ty(x, Ast.a(g, rp3))
+  Typer.sigStore(s, sym, ret, np, tps, ev, m)
+  Typer.evBinders(x, parts, 0)
+  Typer.cinc(s, Typer.cDefs())
+  if tps > 0 then Typer.cinc(s, Typer.cGeneric()) else ()
+  if ev > 0 then Typer.cinc(s, Typer.cEvid()) else ()
+  if tps == 0 && ev == 0 then
+    Typer.cinc(s, Typer.cProtos())
+    if dump then Typer.proto(x, sym, pr) else ()
+  else ()
+
+

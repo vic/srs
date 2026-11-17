@@ -1,0 +1,28 @@
+// the scan from i. depth = open ( and [; st = the indent stack (st(0) = 0, sp = its height); a full column is doubled
+// first (X7 pattern), then one step runs with room for a token, a diag and a stack slot
+def Lexer.go(src: Str, n: I64, nt: Lexer.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if t >= cap then
+    val m = cap * 2
+    val ks2 = Array.fill(m, U8.of(0))
+    val os2 = Array.fill(m, U32.of(0))
+    val ls2 = Array.fill(m, U32.of(0))
+    Lexer.cp8(cap, ks, m, ks2, 0)
+    Lexer.cp32(cap, os, m, os2, 0)
+    Lexer.cp32(cap, ls, m, ls2, 0)
+    Lexer.go(src, n, nt, i, m, ks2, os2, ls2, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if d >= dcap then
+    val m = dcap * 2
+    val dc2 = Array.fill(m, U8.of(0))
+    val dof2 = Array.fill(m, U32.of(0))
+    Lexer.cp8(dcap, dc, m, dc2, 0)
+    Lexer.cp32(dcap, dof, m, dof2, 0)
+    Lexer.go(src, n, nt, i, cap, ks, os, ls, t, m, dc2, dof2, d, scap, st, sp, depth, pos)
+  else if sp >= scap then
+    val m = scap * 2
+    val st2 = Array.fill(m, U32.of(0))
+    Lexer.cp32(scap, st, m, st2, 0)
+    Lexer.go(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, m, st2, sp, depth, pos)
+  else if i >= n then Lexer.fin(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if depth == 0 && !Lexer.isMid(pos) then Lexer.lineStart(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else Lexer.mid(src, n, nt, i, Str.at(src, i), cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+

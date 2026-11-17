@@ -1,0 +1,8 @@
+// prompt: the kernel must reject a use of a type definition with a count of [] type args other than its [] binders, with
+// error[type-arity]; the param of that untyped type has no type entry (missingEntry).
+val NegTests.typeArity {NegTest}: Never =
+  type NtTa.Id [A: Type] = A
+  def NtTa.f(x: NtTa.Id[I64, I64]): I64 = 0
+  NegTest.expect("type-arity", "missingEntry", "NtTa.Id has one [] binder and the use gives two type args")
+
+

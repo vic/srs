@@ -1,0 +1,18 @@
+// the binder groups [] {} <> in written order, pushed on the open list
+def Parser.groups(g: Ast.G): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.lb()) then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    Ast.push(g, Ast.mk(g, Ast.kGTypes(), j, Parser.binders(g, Ast.mark(g), Token.rb(), 0), 0))
+    Parser.groups(g)
+  else if Parser.is(g, Token.lc()) then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    Ast.push(g, Ast.mk(g, Ast.kGEv(), j, Parser.binders(g, Ast.mark(g), Token.rc(), 1), 0))
+    Parser.groups(g)
+  else if Parser.is(g, Token.lt()) then
+    Ast.push(g, Parser.facts(g, Ast.kGFacts()))
+    Parser.groups(g)
+  else ()
+

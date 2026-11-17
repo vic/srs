@@ -1,0 +1,7 @@
+// index sites of a call node n with head token j: isite(u, n); iarr(u, n, a) for a bare local array; iarg(u, n, i) for a bare local index
+def Gate.idxRows(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, j: I64): Unit =
+  val l = Ast.b(g, n)
+  if 0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.kLocal() && Ast.len(g, l) == 1 then Gate.idxEmit(g, sel, u, rcap, rk, rf, n, Coll.Some(I64.of(rf(j))), Ast.item(g, l, 0))
+  else if 0 <= j && j < rcap && Gate.isIdxOp(Ast.text(g, j)) && Ast.len(g, l) >= 2 then Gate.idxEmit(g, sel, u, rcap, rk, rf, n, Gate.localOf(g, rcap, rk, rf, Ast.item(g, l, 0)), Ast.item(g, l, 1))
+  else ()
+

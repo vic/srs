@@ -1,0 +1,16 @@
+// one NegTest named n with text t: fail 0 when the kernel rejects its body with exactly the expected codes; out = its report
+// prompt: the body of NegTest n ends with NegTest.expect("code", .., "why"): every literal but the last is an expected error code,
+// the last is the human reason (at least one code and the reason, else error[negtest-form]). The body alone is judged
+// (Kernel.negRun1: cached or in a child process); the result is ok only when it is rejected with exactly the expected codes.
+def Kernel.negT(r: Kernel.NegRun, n: Str, t: Str): Kernel.NegR =
+  val b = Kernel.bodyStart(t)
+  val form = Kernel.msg2(n, " error[negtest-form] the last body line must be NegTest.expect(\"code\", .., \"why\")\n")
+  Kernel.expectAt(t, b) match
+    case Coll.None => Kernel.NegR(1, 0, form)
+    case Coll.Some(q) =>
+      Kernel.lits(t, q, Kernel.lineAfter(t, q), Os.End) match
+        case Os.End => Kernel.NegR(1, 0, form)
+        case Os.More(why, want) =>
+          if Kernel.wsLen(want, 0) == 0 then Kernel.NegR(1, 0, form) else Kernel.negRun1(r, n, t, b, q, why, want)
+
+

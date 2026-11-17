@@ -1,0 +1,8 @@
+def Parser.unary(g: Ast.G): I64 =
+  val c = Parser.cl(g)
+  val j = Parser.cur(g)
+  if Parser.ok(g) && (c == Token.minus() || c == Token.bang() || c == Token.tilde()) then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kUn(), j, Parser.unary(g), 0)
+  else Parser.primary(g)
+

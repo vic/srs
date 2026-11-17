@@ -1,0 +1,9 @@
+// prompt: write every unit of im selected by ps (K.sel) to its K.unitPath under d, making its dirs; returns bad plus the failed writes.
+def Kernel.storeUnits(d: Str, im: Kernel.Img, ps: Os.Strs, bad: I64): I64 = im match
+  case Kernel.Empty => bad
+  case Kernel.Unit(n, t, r) =>
+    if Kernel.sel(n, ps) then
+      Kernel.unitDirs(d, n, 0)
+      Kernel.storeUnits(d, r, ps, if Disk.put(Kernel.unitPath(d, n), t) == 0 then bad else bad + 1)
+    else Kernel.storeUnits(d, r, ps, bad)
+

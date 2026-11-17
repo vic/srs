@@ -1,0 +1,16 @@
+// the types of a type decl's parts: its groups and value binders, then its body (alias, type match, value match)
+def Resolve.typeParts(x: Resolve.X, parts: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    val k = Ast.kd(g, p)
+    if k == Ast.kGEv() || k == Ast.kParams() then Resolve.binderTys(x, Ast.a(g, p), 0)
+    else if k == Ast.kAlias() then Resolve.ty(x, Ast.a(g, p))
+    else if k == Ast.kTyMatch() then
+      Resolve.ty(x, Ast.a(g, p))
+      Resolve.tarms(x, Ast.b(g, p), 0)
+    else if k == Ast.kValMatch() then Resolve.varms(x, Ast.b(g, p), 0)
+    else ()
+    Resolve.typeParts(x, parts, i + 1)
+  else ()
+

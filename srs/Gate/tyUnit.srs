@@ -1,0 +1,6 @@
+// the unit that declares the type named by symbol s (capability, handler): the type table's file column
+def Gate.tyUnit(w: Resolve.W, s: I64): Coll.Option[I64] =
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(_, _, _, _, _, tcap, _, tyk, tyf, _) = gt
+  if 0 < s && s < tcap && I64.ofU8(tyk(s)) != 0 then Coll.Some(I64.of(tyf(s))) else Coll.None
+

@@ -1,0 +1,24 @@
+// s3c PARSE-1a: the decl-level skeleton parser, in s2 (vic/c/s3c-front.md F4). It splits one file's token stream (the lexer's
+// Lx.Out) into top-level decls WITHOUT parsing bodies: a body stays a token range, the unit of per-def parallel work (X5).
+// Decl keywords and header shapes learned from s2/parse.srs Parse.decl (dispatch at s2/parse.srs:171-188, Ast.Decl s2/ast.srs:226-235):
+// def, extern (extern ["libc"] def | struct | val), enum, capability, handler, trait, given, type, val.
+// A decl starts at a col-0 code token (a token whose byte before is a newline, or at offset 0): a keyword gives its kind, any other
+// word gives kind Other plus an unknownDecl diag. It ends at the next col-0 code token or at the end of the tokens; the trailing
+// Nl, Dedent and Doc tokens belong to no decl (the next decl's lead-in). The header is the first logical line (head up to its Nl);
+// the body is the tokens after that Nl up to bodyHi, so a one-line def has an empty body (lo == hi).
+// SoA, U32 token ids, no Option in the nodes: a missing name is a missingName diag and the name slot holds the head token.
+
+// the closed decl classes (Proto is the s2 name of capability; kept for the F4 enum, no keyword gives it)
+enum Split.Kind:
+  case Split.Def
+  case Split.Enum
+  case Split.Extern
+  case Split.Handler
+  case Split.Capability
+  case Split.Trait
+  case Split.Type
+  case Split.Val
+  case Split.Given
+  case Split.Proto
+  case Split.Other
+

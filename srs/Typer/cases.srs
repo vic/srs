@@ -1,0 +1,20 @@
+def Typer.cases(x: Typer.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kCase() || k == Ast.kCaseNP() then
+      val m = Typer.mark(s)
+      Typer.binderTys(x, if k == Ast.kCase() then Ast.a(g, n) else 0, 0)
+      val np = Typer.mark(s) - m
+      Typer.tpToks(x, parts, 0)
+      Typer.binderLens(x, if k == Ast.kCase() then Ast.a(g, n) else 0, 0)
+      // the evidence column of a case sig holds the case count of its enum (a case has no evidence): exhaustiveness reads it
+      Typer.sigStore(s, Typer.symOf(x, Ast.tok(g, n)), self, np, tps, Typer.caseCount(g, parts, 0, 0), m)
+      // the tag of the case (its position among the cases of its enum) + 1, by the case symbol
+      Typer.mxSet(s, Typer.moTg(s, Typer.symOf(x, Ast.tok(g, n))), Typer.caseBefore(g, parts, 0, i, 0) + 1)
+      Typer.cinc(s, Typer.cCases())
+    else ()
+    Typer.cases(x, parts, i + 1, self, tps)
+  else ()
+

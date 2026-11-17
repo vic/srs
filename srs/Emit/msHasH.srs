@@ -1,0 +1,6 @@
+// prompt: true when a node n.. below end is the handle of a multi-shot handler (the def owns its requests: it is no CPS def)
+def Emit.msHasH(e: Emit.E, n: I64, end: I64): Bool =
+  if n < end then
+    if Ast.kd(Emit.gOf(e), n) == Ast.kHandle() && Typer.isMulti(Emit.sOf(e), Emit.ce(e, n)) then true else Emit.msHasH(e, n + 1, end)
+  else false
+

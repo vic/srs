@@ -1,0 +1,12 @@
+// the clauses of a def (scope 2): requires / ensures / returns / invariant are Bool, decreases is a measure; `result` is the def result
+def Typer.clauses(x: Typer.X, parts: I64, i: I64, ret: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kClause() then
+      Typer.ltSet(s, Ast.tok(g, p), ret)
+      Typer.clauseExpr(x, Ast.tok(g, p), Ast.a(g, p))
+    else ()
+    Typer.clauses(x, parts, i + 1, ret)
+  else ()
+

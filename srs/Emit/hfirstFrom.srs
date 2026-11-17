@@ -1,0 +1,6 @@
+// prompt: true when a handle-table entry m.. is the first entry of a handler whose capability owns op sg (one more dispatch branch follows)
+def Emit.hfirstFrom(e: Emit.E, sg: I64, m: I64): Bool =
+  val k = Emit.kOf(e)
+  if m < Emit.hget(k, 0) then (Emit.capOwns(Emit.wOf(e), Emit.hget(k, 16 + 2 * m), sg) && !Emit.hseen(k, Emit.hget(k, 17 + 2 * m), 0, m)) || Emit.hfirstFrom(e, sg, m + 1)
+  else false
+

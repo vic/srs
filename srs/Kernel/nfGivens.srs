@@ -1,0 +1,7 @@
+// prompt: print "#" id " " of every given outside scc c, ordered by id: grk(a) = rank of gl(a), then print rank 0, 1, ...
+def Kernel.nfGivens(tj: Kernel.Tj, nf: Kernel.Nf, gn: I64, gl: Array[U32](gn), grk: Array[U32](gn), c: I64, a: I64): Unit =
+  if 0 <= a && a < gn then
+    Array.put(grk, a, U32.of(Kernel.nfGivLt(tj, nf, gn, gl, c, a, 0, 0)))
+    Kernel.nfGivens(tj, nf, gn, gl, grk, c, a + 1)
+  else Kernel.nfGivPr(tj, nf, gn, gl, grk, c, 0, 0)
+

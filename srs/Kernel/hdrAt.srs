@@ -1,0 +1,8 @@
+// the index after the keyword of the first line at or after i that starts with def, val or extern def
+def Kernel.hdrAt(t: Str, i: I64): Coll.Option[I64] =
+  if i >= Str.len(t) then Coll.None
+  else if Kernel.startsAt(t, i, "def ") then Coll.Some(i + Str.len("def "))
+  else if Kernel.startsAt(t, i, "val ") then Coll.Some(i + Str.len("val "))
+  else if Kernel.startsAt(t, i, "extern def ") then Coll.Some(i + Str.len("extern def "))
+  else Kernel.hdrAt(t, Kernel.lineAfter(t, i))
+

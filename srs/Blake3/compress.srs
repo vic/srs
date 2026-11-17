@@ -1,0 +1,11 @@
+def Blake3.compress(cn: I64, cv: Array[U32](cn), mn: I64, m: Array[U32](mn), tn: I64, t: Array[U32](tn), vn: I64, v: Array[U32](vn), ctr: I64, blen: I64, flags: I64): Unit =
+  Blake3.init(cn, cv, vn, v, 0)
+  if 15 < vn then
+    Array.put(v, 12, U32.of(ctr % 4294967296))
+    Array.put(v, 13, U32.of(ctr / 4294967296))
+    Array.put(v, 14, U32.of(blen))
+    Array.put(v, 15, U32.of(flags))
+  else ()
+  Blake3.rounds(vn, v, mn, m, tn, t, 0)
+  Blake3.fin(cn, cv, vn, v, 0)
+

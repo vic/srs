@@ -1,0 +1,10 @@
+// prompt: the kernel must reject a call that needs trait evidence (Show[Bool]) that no given provides and the caller does not hold,
+// with error[no-given] (s2 neg given_none).
+val NegTests.noGiven {NegTest}: Never =
+  trait NtNg.Show [A: Type]:
+    def show(x: A): I64
+  def NtNg.print [A: Type] {s: NtNg.Show[A]} (x: A): I64 = s.show(x)
+  given NtNg.Show[I64]:
+    def show(x: I64): I64 = x
+  def NtNg.f(): I64 = NtNg.print(true)
+  NegTest.expect("no-given", "only Show[I64] has a given, so print(true) has no Show[Bool]")

@@ -1,0 +1,4 @@
+// prompt: the number of units of im without a prompt line, from acc.
+def Kernel.promptLess(im: Kernel.Img, acc: I64): I64 = im match
+  case Kernel.Empty => acc
+  case Kernel.Unit(_, t, r) => Kernel.promptLess(r, if Kernel.hasPrompt(t, 0) then acc else acc + 1)

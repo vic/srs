@@ -1,0 +1,12 @@
+def Resolve.declExtern(w: Resolve.W, g: Ast.G, lcap: I64, ln: Array[U32](lcap), fi: I64, inner: I64): Unit =
+  val k = Ast.kd(g, inner)
+  if k == Ast.kDef() then Resolve.declTok(w, g, lcap, ln, fi, Resolve.kGlobal(), Ast.a(g, inner))
+  else if k == Ast.kCVal() then Resolve.declTok(w, g, lcap, ln, fi, Resolve.kGlobal(), Ast.tok(g, inner))
+  else if k == Ast.kCStruct() then
+    // Libc.<name>.new, as s2 Names.decl 209
+    val s = Resolve.srcOf(g)
+    val t = Resolve.T(s, Ast.toff(g, Ast.tok(g, inner)), Ast.tlen(g, Ast.tok(g, inner)), "new", 0, 3)
+    Resolve.declare(w, Resolve.kGlobal(), fi, Resolve.lineAt(lcap, ln, Ast.tok(g, inner)), Resolve.sym(w, t, true))
+    Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tDecl(), Ast.tok(g, inner))
+  else ()
+

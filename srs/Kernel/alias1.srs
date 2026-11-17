@@ -1,0 +1,11 @@
+// prompt: acc plus the alias of the line t[i, e) in the form `SHORT = LONG` (spaces around `=` allowed): SHORT and LONG are its
+// first and second words; a line not of that form adds none.
+def Kernel.alias1(t: Str, i: I64, e: I64, acc: Kernel.Al): Kernel.Al =
+  val a = Kernel.skipSp(t, i)
+  val b = Gate.tokEnd(t, a)
+  val q = Kernel.skipSp(t, b)
+  val c = Kernel.skipSp(t, q + 1)
+  val d = Gate.tokEnd(t, c)
+  if a < b && q < e && Str.at(t, q) == 61 && c < d && d <= e then Kernel.AlMore(Str.slice(t, a, b), Str.slice(t, c, d), acc) else acc
+
+

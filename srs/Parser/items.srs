@@ -1,0 +1,10 @@
+def Parser.items(g: Ast.G): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.items(g)
+  else if Parser.atEnd(g) then Parser.endBlock(g)
+  else
+    Ast.push(g, Parser.item(g))
+    Parser.items(g)
+

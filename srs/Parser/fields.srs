@@ -1,0 +1,15 @@
+def Parser.fields(g: Ast.G): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.fields(g)
+  else if Parser.atEnd(g) then Parser.endBlock(g)
+  else
+    val f = Parser.cur(g)
+    Parser.ident(g)
+    Parser.eat(g, Token.colon())
+    val t = Parser.ty(g)
+    Parser.stopIf(g, Parser.ok(g) && !Parser.cTy(g, t, true), f)
+    Ast.push(g, Ast.mk(g, Ast.kField(), f, t, 0))
+    Parser.fields(g)
+

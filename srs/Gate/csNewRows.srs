@@ -1,0 +1,9 @@
+// prompt: csNew rows of every unit u.. (file index) of rs (Gate.csNewNodes over all nodes of the file)
+def Gate.csNewRows(rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, _) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Gate.csNewNodes(g, rcap, rk, u, 1, Ast.cget(g, Ast.sNodes()))
+    Gate.csNewRows(rest, u + 1)
+

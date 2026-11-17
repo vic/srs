@@ -1,0 +1,9 @@
+def Blake3.hexw(cn: I64, cv: Array[U32](cn), i: I64): Unit =
+  if 0 <= i && i < 8 && i < cn then
+    val w = I64.of(cv(i))
+    Kernel.hex(w % 256, 2)
+    Kernel.hex(w / 256 % 256, 2)
+    Kernel.hex(w / 65536 % 256, 2)
+    Kernel.hex(w / 16777216 % 256, 2)
+    Blake3.hexw(cn, cv, i + 1)
+  else ()

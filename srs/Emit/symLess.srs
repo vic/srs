@@ -1,0 +1,6 @@
+// the name of symbol a sorts before the name of symbol b (bytes)
+def Emit.symLess(w: Resolve.W, a: I64, b: I64): Bool =
+  val Resolve.W(sy, _, _, _) = w
+  val Resolve.Sy(_, _, scap, so, sl, pcap, pool) = sy
+  if 0 <= a && a < scap && 0 <= b && b < scap then Emit.bytesLess(pcap, pool, I64.of(so(a)), I64.of(sl(a)), I64.of(so(b)), I64.of(sl(b)), 0) else false
+

@@ -1,0 +1,9 @@
+// prompt: the report of NegTest n from judgement j: ok when the verdict is a rejection and the code sets of want and of the
+// diags are equal; ran = 1 when a child process judged it, 0 for a cache hit.
+def Kernel.negJudge(n: Str, j: Kernel.Judged, why: Str, want: Os.Strs, ran: I64): Kernel.NegR = j match
+  case Kernel.Judged(v, diags) =>
+    val got = Kernel.codes(diags, 0, Os.End)
+    val ok = Kernel.isReject(v) && Kernel.allIn(want, got) && Kernel.allIn(got, want)
+    Kernel.NegR(if ok then 0 else 1, ran, Kernel.negLine(n, ok, Kernel.vName(v), want, got, why, diags))
+
+

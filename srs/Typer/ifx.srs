@@ -1,0 +1,12 @@
+def Typer.ifx(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val tb = Typer.cget(s, Typer.tBool())
+  val c = Ast.a(g, n)
+  val pair = Ast.b(g, n)
+  val r = Typer.resultOf(s, want)
+  Typer.tyRec(s, pair, r)
+  Typer.expect(x, Ast.tok(g, c), Typer.expr(x, c, tb), tb)
+  val d1 = Typer.expectArm(x, Ast.tok(g, Ast.a(g, pair)), Typer.expr(x, Ast.a(g, pair), r), r, want == 0)
+  val d2 = Typer.expectArm(x, Ast.tok(g, Ast.b(g, pair)), Typer.expr(x, Ast.b(g, pair), r), r, want == 0)
+  Typer.joined(s, r, d1 + d2 > 0)
+

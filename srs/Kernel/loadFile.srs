@@ -1,0 +1,9 @@
+// prompt: read file p as unit nm into lr when nm is selected by ps: its text must declare nm (K.textName), else bad + 1; an unreadable file is bad + 1.
+def Kernel.loadFile(p: Str, nm: Str, ps: Os.Strs, lr: Kernel.Lr): Kernel.Lr =
+  val Kernel.Lr(im, bad) = lr
+  if Kernel.sel(nm, ps) then
+    Files.bytes(p) match
+      case Os.Ok(t) => if Str.eq(Kernel.textName(t), nm) then Kernel.Lr(Kernel.snoc(Kernel.drop(im, nm), nm, t), bad) else Kernel.Lr(im, bad + 1)
+      case Os.Fail(_) => Kernel.Lr(im, bad + 1)
+  else lr
+

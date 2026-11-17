@@ -1,0 +1,9 @@
+def Planner.ruleV(rule: Planner.Rule, st: Planner.Ints, est: Planner.Ints, nr: I64, ars: Planner.Ints, acc: Planner.Acc): Planner.Acc =
+  val Planner.Rule(h, hts, b, cs) = rule
+  val s = Planner.nth(st, h)
+  if Planner.recCount(b, st, s, 0) == 0 then
+    Planner.minEst(b, 1, est, Kernel.Missing, 1000000000000000000) match
+      case Kernel.Missing => Planner.accErr(acc, "rule without positive atom")
+      case Kernel.Found(d) => Planner.addV(acc, s, Planner.variant(rule, d, 0, Planner.accXs(acc), nr, ars))
+  else Planner.recV(rule, b, 1, s, st, nr, ars, acc)
+

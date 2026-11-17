@@ -1,0 +1,11 @@
+// the scratch stack: push, mark (the height), close (the items above a mark become a list in xs; returns its ref)
+def Ast.push(g: Ast.G, v: I64): Unit =
+  val Ast.G(_, _, ls, _) = g
+  val Ast.Ls(_, _, scap, stk) = ls
+  val sp = Ast.cget(g, Ast.sSp())
+  if 0 <= sp && sp < scap then
+    Array.put(stk, sp, U32.of(v))
+    Ast.cset(g, Ast.sSp(), sp + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Ast.cinc(g, Ast.sOver())
+

@@ -1,0 +1,14 @@
+// prompt: the call h_<H>_<op>(rp_<ref>->st, args) of op node n for handler h with the state of the dropped {} binder param ref
+def Emit.hcallSt(e: Emit.E, n: I64, h: I64, r: I64, ref: I64): Unit =
+  val w = Emit.wOf(e)
+  val sg = Emit.ce(e, n)
+  Emit.po(e,"h_")
+  Emit.id(e,h)
+  Emit.po(e,"_")
+  Emit.symTail(e, w, sg, Emit.lastDot(w, sg, 0, 0 - 1) + 1)
+  Emit.po(e,"(rp_")
+  Emit.pi(e, ref)
+  Emit.po(e,"->st")
+  Emit.args(e, r, 0, true)
+  Emit.po(e,")")
+

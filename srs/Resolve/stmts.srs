@@ -1,0 +1,22 @@
+// a block: each statement in turn; a val, var, handle or val-pattern binds for the statements after it, not for its own value
+def Resolve.stmts(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val s = Ast.item(g, r, i)
+    val k = Ast.kd(g, s)
+    if k == Ast.kVal() || k == Ast.kVar() then
+      Resolve.ty(x, Ast.a(g, s))
+      Resolve.expr(x, Ast.b(g, s))
+      Resolve.bind(x, Ast.tok(g, s))
+    else if k == Ast.kHandle() then
+      Resolve.tuse(x, Ast.a(g, s))
+      Resolve.exprs(x, Ast.b(g, s), 0)
+      Resolve.bind(x, Ast.tok(g, s))
+    else if k == Ast.kPatVal() then
+      Resolve.use(x, Ast.tok(g, s))
+      Resolve.expr(x, Ast.b(g, s))
+      Resolve.bindList(x, Ast.a(g, s), 0)
+    else Resolve.expr(x, Ast.a(g, s))
+    Resolve.stmts(x, r, i + 1)
+  else ()
+

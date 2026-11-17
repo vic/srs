@@ -1,0 +1,31 @@
+def Printer.capItem(g: Ast.G, n: I64): Unit =
+  val k = Ast.kd(g, n)
+  Printer.line(2)
+  if k == Ast.kStateL() then
+    Printer.s("state ")
+    Printer.toks(g, Ast.a(g, n), 0)
+  else if k == Ast.kStart() then
+    Printer.s("start ")
+    Printer.tok(g, Ast.a(g, n))
+  else if k == Ast.kStop() then
+    Printer.s("stop ")
+    Printer.toks(g, Ast.a(g, n), 0)
+  else if k == Ast.kDrop() then
+    Printer.s("drop ")
+    Printer.tok(g, Ast.a(g, n))
+  else if k == Ast.kTrans() then
+    Printer.s("transition ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s(" ")
+    Printer.pairs(g, Ast.b(g, n), 0)
+  else if k == Ast.kRule() then
+    val p = Ast.b(g, n)
+    Printer.s("rule def ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s("(")
+    Printer.toks(g, Ast.a(g, p), 0)
+    Printer.s(") = ")
+    Printer.atoms(g, Ast.b(g, p), 0)
+  else if k == Ast.kCapDef() then Printer.defN(g, n, 2)
+  else ()
+

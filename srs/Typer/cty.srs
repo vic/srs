@@ -1,0 +1,20 @@
+// Emit.ctype
+// prompt: print the C type of t: builtin scalars, a pointer to the element of an array, a pointer to the enum struct, srs_cap* for a
+// capability, int64_t for a param, the body's C type for a nominal type (Typer.unfold).
+def Typer.cty(w: Resolve.W, s: Typer.S, t: I64): Unit =
+  val k = Typer.kind(s, t)
+  if k == Typer.bBuiltin() then Typer.po(s, Typer.bcty(Typer.cls(s, t)))
+  else if k == Typer.bArray() then
+    if Typer.nargs(s, t) > 0 then
+      Typer.cty(w, s, Typer.arg(s, t, 0))
+      Typer.po(s, "*")
+    else Typer.po(s, "void*")
+  else if k == Typer.bEnum() then
+    Typer.enumTag(w, s, t)
+    Typer.po(s, "*")
+  else if k == Typer.bCap() then Typer.po(s, "srs_cap*")
+  else if k == Typer.bParam() then Typer.po(s, "int64_t")
+  else if k == Typer.bNominal() then Typer.cty(w, s, Typer.unfold(s, t))
+  else Typer.po(s, "?other")
+
+

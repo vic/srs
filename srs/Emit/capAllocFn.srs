@@ -1,0 +1,6 @@
+// prompt: srs_cap_alloc(c, size): a cap (a handle: handler id, state, live flag) allocates in its own handler; no cap allocates where srs_alloc does (a C extern given a cap, s2 cap_alloc)
+def Emit.capAllocFn(w: Resolve.W, s: Typer.S, k: Emit.K): Unit =
+  Typer.po(s, "void* srs_cap_alloc(srs_cap* c, int64_t size) { if (c) { ")
+  Emit.capArms(w, s, k, Coll.None)
+  Typer.po(s, "abort(); } return srs_alloc(size); }\n")
+

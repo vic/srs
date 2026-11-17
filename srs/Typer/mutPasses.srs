@@ -1,0 +1,13 @@
+// prompt: per file of rs: the mutability pass (the type definitions of all files come after, in Typer.tdefAll).
+def Typer.mutPasses(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R], fi: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Typer.cset(s, Typer.cFile(), fi)
+    Typer.cset(s, Typer.cTyBase(), Typer.mxGet(s, Typer.moFb(s, fi)))
+    Typer.mutPass(Typer.X(w, g, s, rcap, rk, rf), 1, Ast.cget(g, Ast.sNodes()))
+    Typer.mutPasses(w, s, rest, fi + 1)
+
+
+

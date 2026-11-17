@@ -1,0 +1,13 @@
+// bind the pattern names (tokens, list a) to the instantiated field types of case sym
+def Typer.bindFields(x: Typer.X, a: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, a) then
+    val pt = if i < np then Typer.inst(s, Typer.poolAt(s, start + i), tp0, ntp, v0) else 0
+    // R1: the case binder lengths of a field type become the pattern binders of the fields (--types-nopatsub, mode 9: the mutant, they stay)
+    Typer.cset(s, Typer.cPat(), 1)
+    val pt2 = if pt != 0 && Typer.cget(s, Typer.cNoPat()) == 0 then Typer.lsubTop(x, pt, a, tp0 + ntp, np, false) else pt
+    Typer.cset(s, Typer.cPat(), 0)
+    Typer.ltLoc(s, Ast.item(g, a, i), pt2)
+    Typer.bindFields(x, a, i + 1, np, start, tp0, ntp, v0)
+  else ()
+

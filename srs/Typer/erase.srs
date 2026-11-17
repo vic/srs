@@ -1,0 +1,9 @@
+def Typer.erase(s: Typer.S, t: I64): I64 =
+  val n = Typer.nargs(s, t)
+  if Typer.kind(s, t) == Typer.bLen() then Typer.lenErased(s)
+  else if n == 0 then t
+  else
+    val m = Typer.mark(s)
+    Typer.eraseArgs(s, t, 0, n)
+    Typer.mk(s, Typer.kind(s, t), Typer.cls(s, t), Typer.head(s, t), m)
+

@@ -1,0 +1,11 @@
+// ptr(u): unit u names the Ptr type; facts come from the name pass, never from raw tokens
+def Gate.ptrRows(sp: I64, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    if Gate.hasPtr(sp, rcap, rk, rf, 0) && !Gate.ptrDefOk(f, rcap, rk, rf, sp, 0) then Gate.row1(u) else ()
+// prompt: ptr(u) for each unit u that names the builtin Ptr type, except a constrained type definition whose body is Ptr[A](n)
+// (Gate.ptrDefOk): vic 2026-11-16, Ptr is named only on the RHS of a type with a constraint group, in any unit prefix; the
+// ptr-outside-srs rule then rejects every other use of Ptr outside Srs.* and extern units.
+    Gate.ptrRows(sp, rest, u + 1)
+

@@ -1,0 +1,19 @@
+def Planner.rule(l0: Str, j: I64, pg: Planner.Prog): Planner.Prog =
+  val Planner.Prog(names, ars, ins, rules, err) = pg
+  val l = Planner.chopDot(l0)
+  val h = Str.slice(l, 0, j)
+  val body = Str.slice(l, j + 4, Str.len(l))
+  val op = Kernel.chAt(h, 40)
+  Planner.sidx(names, Str.slice(h, 0, op), 0) match
+    case Kernel.Missing => Planner.withErr(pg, "undeclared head relation")
+    case Kernel.Found(hr) =>
+      val hts = Planner.splitc(Str.slice(h, op + 1, Planner.lastCh(h, 41)), 0)
+      if Planner.slen(hts, 0) != Planner.nth(ars, hr) then Planner.withErr(pg, "head arity")
+      else
+        val Planner.Cr(cs, ce) = Planner.cmpsOf(Planner.items(body, 0, 0, 0))
+        if Str.len(ce) > 0 then Planner.withErr(pg, ce)
+        else
+          val Planner.Bd(bd, e2) = Planner.atoms(body, 0, names, ars)
+          if Str.len(e2) > 0 then Planner.withErr(pg, e2)
+          else Planner.Prog(names, ars, ins, Planner.rsnoc(rules, Planner.Rule(hr, hts, bd, cs)), err)
+

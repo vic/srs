@@ -1,0 +1,9 @@
+def Typer.cpArgs(s: Typer.S, m: I64, i: I64, n: I64, dst: I64): Unit =
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, ap, _, _) = pl
+  val d = dst + i
+  if i < n && 0 <= d && d < acap then
+    Array.put(ap, d, U32.of(Typer.stkAt(s, m + i)))
+    Typer.cpArgs(s, m, i + 1, n, dst)
+  else ()
+

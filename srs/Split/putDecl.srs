@@ -1,0 +1,13 @@
+def Split.putDecl(cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, k: Split.Kind, n0: I64, h0: I64, l0: I64, h1: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): I64 =
+  if 0 <= c && c < cap then
+    Array.put(kd, c, U8.of(Split.kindByte(k)))
+    Array.put(nm, c, U32.of(n0))
+    Array.put(hd, c, U32.of(h0))
+    Array.put(lo, c, U32.of(l0))
+    Array.put(hi, c, U32.of(h1))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Split.putDiag(dcap, dw, dt, d, Split.Overflow, h0)
+    1
+

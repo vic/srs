@@ -1,0 +1,13 @@
+// statements until a Dedent or the end of the range; an Nl between them is optional
+def Parser.stmts(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.stmts(g, m)
+  else if Parser.atEnd(g) then
+    Parser.endBlock(g)
+    Ast.close(g, m)
+  else
+    Ast.push(g, Parser.stmt(g))
+    Parser.stmts(g, m)
+

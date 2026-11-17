@@ -1,0 +1,9 @@
+// prompt: the cut kind of statement st: a val's rhs, an expression statement (do or bare), 0 for any other binder
+def Emit.msStmtCut(e: Emit.E, st: I64): I64 =
+  val g = Emit.gOf(e)
+  val k = Ast.kd(g, st)
+  if k == Ast.kVal() then Emit.msCut(e, Ast.b(g, st))
+  else if Emit.isBinder(k) then 0
+  else if k == Ast.kDo() then Emit.msCut(e, Ast.a(g, st))
+  else Emit.msCut(e, st)
+

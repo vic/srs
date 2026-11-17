@@ -1,0 +1,10 @@
+// the value args of the types of a binder list
+def Resolve.binderTys(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    val k = Ast.kd(g, b)
+    if k == Ast.kBind() || k == Ast.kBindAnon() then Resolve.ty(x, Ast.a(g, b)) else ()
+    Resolve.binderTys(x, r, i + 1)
+  else ()
+

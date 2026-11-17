@@ -1,0 +1,6 @@
+def Kernel.cycleRun(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, d: Str, c: Str, b: Str): Kernel.Res =
+  if Kernel.store(d, im) != 0 then Kernel.Res(1, "store failed")
+  else
+    val Kernel.Res(code, out) = Kernel.build(bp, bt, im, c)
+    if code != 0 then Kernel.Res(code, out) else Kernel.ccAct(Os.More(c, Os.More(b, Os.End)))
+

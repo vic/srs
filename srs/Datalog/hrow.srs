@@ -1,0 +1,6 @@
+// the hash of a stored row over the columns of mask
+def Datalog.hrow(rn: I64, xs: Array[U32](rn), a: I64, row: I64, mask: I64, c: I64, pw: I64, h: U32): U32 =
+  if c >= a then h
+  else if mask / pw % 2 == 1 then Datalog.hrow(rn, xs, a, row, mask, c + 1, pw * 2, Datalog.mix(h, Datalog.u(rn, xs, row * a + c)))
+  else Datalog.hrow(rn, xs, a, row, mask, c + 1, pw * 2, h)
+

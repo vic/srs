@@ -1,0 +1,19 @@
+// ── report ──
+// the shown unresolved uses: n of them, files at slot fb + i, tokens at slot tb + i; pre starts each line
+def Resolve.showUnres(w: Resolve.W, fs: Coll.List[Resolve.F], i: I64, n: I64, fb: I64, tb: I64, pre: Str): Unit =
+  if i < n then
+    Resolve.nth(fs, Resolve.cget(w, fb + i)) match
+      case Coll.Some(f) =>
+        val Resolve.F(path, g, lcap, ln, _, _, _, _) = f
+        val j = Resolve.cget(w, tb + i)
+        Console.print(pre)
+        Console.print(path)
+        Console.print(":")
+        Console.printI64(Resolve.lineAt(lcap, ln, j))
+        Console.print(" ")
+        Console.print(Ast.text(g, j))
+        Console.print("\n")
+      case Coll.None => Console.print("badfile\n")
+    Resolve.showUnres(w, fs, i + 1, n, fb, tb, pre)
+  else ()
+

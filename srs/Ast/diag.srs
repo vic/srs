@@ -1,0 +1,11 @@
+// a parse diag at token tok
+def Ast.diag(g: Ast.G, why: I64, tok: I64): Unit =
+  val Ast.G(_, _, _, c) = g
+  val Ast.Cn(_, _, dcap, dk, dt) = c
+  val d = Ast.cget(g, Ast.sDiag())
+  if 0 <= d && d < dcap then
+    Array.put(dk, d, U8.of(why))
+    Array.put(dt, d, U32.of(tok))
+    Ast.cset(g, Ast.sDiag(), d + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Ast.cinc(g, Ast.sOver())

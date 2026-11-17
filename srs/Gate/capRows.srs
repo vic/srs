@@ -1,0 +1,8 @@
+def Gate.capRows(w: Resolve.W, sel: Gate.Ck, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, _, _, _) = r
+    val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+    Gate.capRoots(w, g, sel, u, rc, dk, dr, 0)
+    Gate.capRows(w, sel, rest, u + 1)
+

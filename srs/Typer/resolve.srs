@@ -1,0 +1,12 @@
+// ── driver ──
+// resolve every file with the names pass, keeping the per-token results
+def Typer.resolve(w: Resolve.W, fs: Coll.List[Resolve.F], fi: I64): Coll.List[Typer.R] = fs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(f, rest) =>
+    val Resolve.F(path, g, lcap, ln, rc, rk, rr, _) = f
+    val rcap = Resolve.tcapOf(g)
+    val ks = Array.fill(rcap, U8.of(0))
+    val rf = Array.fill(rcap, U32.of(0))
+    Resolve.rootsOf(Resolve.X(w, g, fi, path, false, lcap, ln, rcap, ks, rf), rc, rk, rr, 0)
+    Coll.Cons(Typer.R(f, rcap, ks, rf), Typer.resolve(w, rest, fi + 1))
+

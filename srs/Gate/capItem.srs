@@ -1,0 +1,15 @@
+def Gate.capItem(w: Resolve.W, g: Ast.G, sel: Gate.Ck, c: I64, it: I64): Unit =
+  val k = Ast.kd(g, it)
+  if k == Ast.kStateL() then
+    if Gate.ckIs(sel, Gate.CState) then Gate.symList(w, g, c, Ast.a(g, it), 0) else ()
+  else if k == Ast.kStart() then
+    if Gate.ckIs(sel, Gate.CStart) then Gate.row2(c, Gate.tsym(w, g, Ast.a(g, it))) else ()
+  else if k == Ast.kStop() then
+    if Gate.ckIs(sel, Gate.CStop) then Gate.symList(w, g, c, Ast.a(g, it), 0) else ()
+  else if k == Ast.kDrop() then
+    if Gate.ckIs(sel, Gate.CDrop) then Gate.row2(c, Gate.tsym(w, g, Ast.a(g, it))) else ()
+  else if k == Ast.kTrans() then
+    if Gate.ckIs(sel, Gate.CTrans) then Gate.transRows(w, g, c, Gate.tsym(w, g, Ast.a(g, it)), Ast.b(g, it), 0) else ()
+  else if k == Ast.kCapDef() then Gate.capDefRow(w, g, sel, c, it)
+  else ()
+

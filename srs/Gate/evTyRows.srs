@@ -1,0 +1,13 @@
+// evTy(u, x, c, a): the {..} binder x (token) has a type headed by unit c with first arg (or head) symbol a
+def Gate.evTyRows(w: Resolve.W, g: Ast.G, u: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    if Ast.kd(g, n) == Ast.kBind() then
+      Gate.headUnit(w, g, Ast.a(g, n)) match
+        case Coll.Some(c) => Gate.row4(u, Ast.tok(g, n), c, Gate.arg0Sym(w, g, Ast.a(g, n)))
+        case Coll.None => ()
+    else ()
+    Gate.evTyRows(w, g, u, l, i + 1)
+  else ()
+
+

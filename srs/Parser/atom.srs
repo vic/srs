@@ -1,0 +1,18 @@
+// rel(terms) | x: T | a r b | a r
+def Parser.atom(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.ident(g)
+  if Parser.is(g, Token.lp()) then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kAtomCall(), j, Parser.terms(g, Ast.mark(g)), 0)
+  else if Parser.is(g, Token.colon()) then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kAtomAt(), j, Parser.ident(g), 0)
+  else
+    val r = Parser.ident(g)
+    if Token.isName(Parser.cl(g)) then
+      val b = Parser.cur(g)
+      Parser.adv(g)
+      Ast.mk(g, Ast.kAtomInf(), j, r, b)
+    else Ast.mk(g, Ast.kAtomUn(), j, r, 0)
+

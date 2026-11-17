@@ -1,0 +1,9 @@
+// the [] type binders of the groups among the parts (types in scope of every type, clause and body below)
+def Resolve.bindTps(x: Resolve.X, parts: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kGTypes() then Resolve.bindTpList(x, Ast.a(g, p), 0) else ()
+    Resolve.bindTps(x, parts, i + 1)
+  else ()
+

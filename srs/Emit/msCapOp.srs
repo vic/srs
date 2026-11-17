@@ -1,0 +1,7 @@
+// prompt: true when a handle-table entry i.. has a multi-shot handler (Typer.isMulti) whose capability owns op sg: a request of sg is a cut
+def Emit.msCapOp(e: Emit.E, sg: I64, i: I64): Bool =
+  val k = Emit.kOf(e)
+  if i < Emit.hget(k, 0) then
+    if Typer.isMulti(Emit.sOf(e), Emit.hget(k, 17 + 2 * i)) && Emit.capOwns(Emit.wOf(e), Emit.hget(k, 16 + 2 * i), sg) then true else Emit.msCapOp(e, sg, i + 1)
+  else false
+

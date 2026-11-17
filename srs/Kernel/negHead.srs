@@ -1,0 +1,7 @@
+// prompt: the judgement in cache entry text e[0, end) when it starts with the header line of verdict v (its name and a newline).
+def Kernel.negHead(e: Str, end: I64, v: Kernel.Verdict): Coll.Option[Kernel.Judged] =
+  val h = Kernel.msg2(Kernel.vName(v), "\n")
+  val m = Str.len(h)
+  if end >= m && Str.eq(Str.slice(e, 0, m), h) then Coll.Some(Kernel.Judged(v, Str.slice(e, m, end))) else Coll.None
+
+

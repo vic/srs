@@ -1,0 +1,6 @@
+def Emit.kset(k: Emit.K, sym: I64, v: I64): Unit =
+  val Emit.K(kn, kc, _, _, _, _, _) = k
+  if 0 <= sym && sym < kn then Array.put(kc, sym, U8.of(v))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Emit.over(k)
+

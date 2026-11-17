@@ -1,0 +1,44 @@
+// prompt: the interned type of the type use node t with length ln: builtins, enums, params, capabilities, type decls (Typer.tdefUse),
+// pending in type definition mode (Typer.cTdMode: an unset type decl, counted in Typer.cTdPend, no Diag), else untyped.
+def Typer.tyUse(x: Typer.X, t: I64, ln: I64): I64 =
+  val Typer.X(_, g, s, rcap, rk, rf) = x
+  val j = Ast.tok(g, t)
+  val tk = if 0 <= j && j < rcap then I64.ofU8(rk(j)) - Resolve.tBase() else Resolve.tUnres()
+  val m = Typer.mark(s)
+  Typer.tyList(x, Ast.a(g, t), 0)
+  if tk == Resolve.tBuiltin() then
+    Typer.bclass(Ast.text(g, j)) match
+      case Coll.Some(c) =>
+        if c == 12 && Str.eq(Ast.text(g, j), "Array") then Typer.push(s, if ln != 0 then ln else Typer.lenNone(s))
+        else if c == Typer.clsPtr() && Typer.cget(s, Typer.cSp()) > m then Typer.push(s, if ln != 0 then ln else Typer.lenNone(s))
+        // value args on a builtin that takes none (I64(3)): error[value-args]
+        else if ln != 0 then Typer.diag(s, Typer.dValArgs(), j)
+        else ()
+        Typer.mk(s, if c == 12 then Typer.bArray() else Typer.bBuiltin(), c, Typer.symOf(x, j), m)
+      case Coll.None =>
+        Typer.un(s, Typer.uTypeOther())
+        Typer.mk(s, Typer.bOther(), 0, Typer.symOf(x, j), m)
+  else if tk == Resolve.tEnum() then Typer.mk(s, Typer.bEnum(), 0, Typer.symOf(x, j), m)
+  else if tk == Resolve.tParam() then Typer.mk(s, Typer.bParam(), 0, if 0 <= j && j < rcap then I64.of(rf(j)) else 0, m)
+  else if tk == Resolve.tCap() || tk == Resolve.tHandler() || tk == Resolve.tTrait() then Typer.mk(s, Typer.bCap(), 0, Typer.symOf(x, j), m)
+  else if tk == Resolve.tDecl() && Typer.isCStruct(s, Typer.symIns(x, j)) then Typer.mk(s, Typer.bBuiltin(), Typer.clsPtr(), Typer.symIns(x, j), m)
+  else if tk == Resolve.tDecl() && Typer.declTyGet(s, Typer.symOf(x, j)) != 0 then Typer.tdefUse(s, Typer.symOf(x, j), j, m)
+  else if tk == Resolve.tDecl() && Typer.cget(s, Typer.cTdMode()) == 1 then
+    Typer.cinc(s, Typer.cTdPend())
+    Typer.cset(s, Typer.cSp(), m)
+    0
+  else if tk == Resolve.tUnres() then
+    Typer.un(s, Typer.uTypeUnres())
+    Typer.cset(s, Typer.cSp(), m)
+    0
+  else
+    Typer.un(s, Typer.uTypeOther())
+    Typer.mk(s, Typer.bOther(), 0, Typer.symOf(x, j), m)
+
+
+
+
+// a named Diag (annotate, nonexhaustive): counted, the first few kept as (kind, file, token)
+
+
+

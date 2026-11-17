@@ -1,0 +1,10 @@
+// prompt: push the code (Typer.ctComp with value binders pr) of each value arg of list r from i and type its nodes I64 (Typer.tySub); an arg that compiles to no code is the Diag no-compile-time-value; false when any arg failed
+def Typer.ctCodes(x: Typer.X, r: I64, i: I64, pr: I64): Bool =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val ok = Typer.ctComp(x, Ast.item(g, r, i), pr, 0, 0)
+    Typer.tySub(x, Ast.item(g, r, i))
+    if !ok then Typer.diag(s, Typer.dNoCt(), Ast.tok(g, Ast.item(g, r, i))) else ()
+    ok && Typer.ctCodes(x, r, i + 1, pr)
+  else true
+

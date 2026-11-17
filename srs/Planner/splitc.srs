@@ -1,0 +1,8 @@
+def Planner.splitc(s: Str, i: I64): Os.Strs =
+  if i > Str.len(s) then Os.End
+  else
+    val e = Kernel.findCh(s, 44, i) match
+      case Kernel.Found(j) => j
+      case Kernel.Missing => Str.len(s)
+    Os.More(Planner.nm(Str.slice(s, i, e)), Planner.splitc(s, e + 1))
+

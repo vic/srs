@@ -1,0 +1,12 @@
+// the subnodes of a rejected length expression are typed I64 and not reported (one Diag lengthNotName for the whole expression)
+def Typer.tySub(x: Typer.X, e: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, e)
+  Typer.tyPut(s, e, Typer.cget(s, Typer.tI64()))
+  if k == Ast.kBin() then
+    Typer.tySub(x, Ast.a(g, e))
+    Typer.tySub(x, Ast.b(g, e))
+  else if k == Ast.kUn() || k == Ast.kParen() then Typer.tySub(x, Ast.a(g, e))
+  else if k == Ast.kCall() || k == Ast.kMethod() then Typer.tyLensArgs(x, Ast.b(g, e), 0)
+  else ()
+

@@ -1,0 +1,9 @@
+// prompt: the binding of type var i, 0 when unbound.
+def Typer.varB(s: Typer.S, i: I64): I64 =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, _, _, sv, _, _, _, _) = sg
+  if 0 <= i && i < gcap then I64.of(sv(i))
+  // shortcut: a var index is below the var count, below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+

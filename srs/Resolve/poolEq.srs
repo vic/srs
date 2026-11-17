@@ -1,0 +1,7 @@
+def Resolve.poolEq(pcap: I64, pool: Array[U8](pcap), p: I64, t: Resolve.T, i: I64, n: I64): Bool =
+  val q = p + i
+  if i >= n then true
+  else if 0 <= q && q < pcap then
+    if I64.ofU8(pool(q)) == Resolve.tAt(t, i) then Resolve.poolEq(pcap, pool, p, t, i + 1, n) else false
+  else false
+

@@ -1,0 +1,10 @@
+// prompt: push (binder token tk, handler hs) of a `handle` statement on the handle-binder stack; a full stack counts overflow (hc 1, the emit fails)
+def Emit.hpush(e: Emit.E, tk: I64, hs: I64): Unit =
+  val k = Emit.kOf(e)
+  val c = Emit.hget(k, Emit.hsBase())
+  if c < Emit.hsCap() then
+    Emit.hset(k, Emit.hsBase() + 1 + 2 * c, tk)
+    Emit.hset(k, Emit.hsBase() + 2 + 2 * c, hs)
+    Emit.hset(k, Emit.hsBase(), c + 1)
+  else Emit.hinc(k, 1)
+

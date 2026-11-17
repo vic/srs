@@ -1,0 +1,12 @@
+// case ty => ty and case value => ty arms
+def Printer.tarms(g: Ast.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    Printer.line(ind + 2)
+    Printer.s("case ")
+    if Ast.kd(g, n) == Ast.kTArm() then Printer.ty(g, Ast.a(g, n)) else Printer.tok(g, Ast.a(g, n))
+    Printer.s(" => ")
+    Printer.ty(g, Ast.b(g, n))
+    Printer.tarms(g, r, i + 1, ind)
+  else ()
+

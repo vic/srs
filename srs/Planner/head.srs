@@ -1,0 +1,14 @@
+def Planner.head(ts: Os.Strs, sl: Planner.Slots): Bool = ts match
+  case Os.End => true
+  case Os.More(t, r) =>
+    if Planner.isNum(t) then
+      Console.print(" 0 ")
+      Console.print(t)
+      Planner.head(r, sl)
+    else Planner.slotOf(sl, t) match
+      case Kernel.Found(k) =>
+        Console.print(" 1 ")
+        Console.printI64(k)
+        Planner.head(r, sl)
+      case Kernel.Missing => false
+

@@ -1,0 +1,11 @@
+def Typer.inst(s: Typer.S, t: I64, tp0: I64, ntp: I64, v0: I64): I64 =
+  val k = Typer.kind(s, t)
+  if k == Typer.bParam() then
+    val i = Typer.tpIndex(s, tp0, ntp, 0, Typer.head(s, t))
+    if i < ntp then Typer.varT(s, v0 + i) else t
+  else if Typer.nargs(s, t) == 0 then t
+  else
+    val m = Typer.mark(s)
+    Typer.instArgs(s, t, tp0, ntp, v0, 0, Typer.nargs(s, t))
+    Typer.mk(s, k, Typer.cls(s, t), Typer.head(s, t), m)
+

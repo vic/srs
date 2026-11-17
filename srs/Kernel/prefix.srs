@@ -1,0 +1,10 @@
+// off(i) += off(i-1) from i, then cur = off
+def Kernel.prefix(dg: Kernel.Dg, i: I64): Unit =
+  val Kernel.Dg(n, n1, off, cur, gv) = dg
+  val p = i - 1
+  if 0 <= p && p < n1 && 0 <= i && i < n1 then
+    Array.put(off, i, U32.of(I64.of(off(i)) + I64.of(off(p))))
+    Array.put(cur, p, off(p))
+    Kernel.prefix(dg, i + 1)
+  else ()
+

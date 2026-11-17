@@ -1,0 +1,10 @@
+// prompt: rawPtr(u) for each unit u (file index from u) that names the type Ptr (Gate.hasPtr) outside a constrained type definition
+// with body Ptr[A](n) (Gate.ptrDefOk): the units the raw-ptr rule rejects.
+def Gate.rawPtrRows(sp: I64, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    if Gate.hasPtr(sp, rcap, rk, rf, 0) && !Gate.ptrDefOk(f, rcap, rk, rf, sp, 0) then Gate.row1(u) else ()
+    Gate.rawPtrRows(sp, rest, u + 1)
+
+

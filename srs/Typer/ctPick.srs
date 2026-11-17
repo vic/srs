@@ -1,0 +1,8 @@
+// prompt: the result type of the first case (4 words at pool at, n cases) of a value match type that value v hits (Typer.ctHit); none is the Diag no-type-case at token j and the untyped type 0
+def Typer.ctPick(s: Typer.S, v: Typer.Ct, at: I64, n: I64, j: I64): I64 =
+  if n > 0 then
+    if Typer.ctHit(Typer.poolAt(s, at), Typer.poolAt(s, at + 1) * 4294967296 + Typer.poolAt(s, at + 2), v) then Typer.poolAt(s, at + 3) else Typer.ctPick(s, v, at + 4, n - 1, j)
+  else
+    Typer.diag(s, Typer.dTyNoCase(), j)
+    0
+

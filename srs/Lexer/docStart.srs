@@ -1,0 +1,7 @@
+// the slot where the run of Doc tokens that ends at slot j starts (j itself when no Doc ends there)
+def Lexer.docStart(cap: I64, ks: Array[U8](cap), j: I64): I64 =
+  val q = j - 1
+  if 0 <= q && q < cap then
+    if I64.ofU8(ks(q)) == Lexer.kindByte(Lexer.KDoc) then Lexer.docStart(cap, ks, q) else j
+  else j
+

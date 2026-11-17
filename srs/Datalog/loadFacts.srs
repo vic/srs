@@ -1,0 +1,6 @@
+def Datalog.loadFacts {g: Srs.Region} (st: Datalog.St, s: Str, i: I64, r: I64): I64 =
+  if r >= Datalog.nr(st) then i else
+    val Datalog.N(n, i1) = Datalog.num(s, i)
+    if n > 0 then Datalog.resize(st, r, n) else ()
+    Datalog.loadFacts(st, s, Datalog.loadRows(st, s, i1, r, n, Datalog.p(st, r)), r + 1)
+

@@ -1,0 +1,11 @@
+// prompt: Gate.kOpRows over the parts i.. of one handler: a def whose params start with a binder that is no typed kBind
+def Gate.kOpFns(w: Resolve.W, g: Ast.G, u: I64, parts: I64, i: I64): Unit =
+  if i < Ast.len(g, parts) then
+    val d = Ast.item(g, parts, i)
+    if Ast.kd(g, d) == Ast.kDef() then
+      val pr = Ast.a(g, Typer.part(g, Ast.b(g, d), 0, Ast.kParams()))
+      if Ast.len(g, pr) > 0 && Ast.kd(g, Ast.item(g, pr, 0)) != Ast.kBind() then Gate.row2(u, Gate.tsym(w, g, Ast.a(g, d))) else ()
+    else ()
+    Gate.kOpFns(w, g, u, parts, i + 1)
+  else ()
+

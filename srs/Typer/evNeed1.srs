@@ -1,0 +1,12 @@
+// prompt: each trait evidence type k.. (c of them, at pool b) of a callee, with its [] binders (pool tp0, ntp) replaced by the call's
+// type vars from v0 and zonked, must be held by the caller (Typer.evHeld of the owner) or covered by a given (Typer.givenAny); else
+// the Diag no-given at the call token. A type that still holds a type var is not judged here.
+def Typer.evNeed1(x: Typer.X, n: I64, tp0: I64, ntp: I64, v0: I64, b: I64, k: I64, c: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if k < c then
+    val z = Typer.zonk(s, Typer.inst(s, Typer.poolAt(s, b + k), tp0, ntp, v0))
+    if !Typer.noVar(s, z) || Typer.evHeld(s, Typer.cget(s, Typer.cOwner()), z) || Typer.givenAny(s, z, 1, Typer.cget(s, Typer.cTypes())) then () else Typer.diag(s, Typer.dNoGiven(), Ast.tok(g, n))
+    Typer.evNeed1(x, n, tp0, ntp, v0, b, k + 1, c)
+  else ()
+
+

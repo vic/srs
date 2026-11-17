@@ -1,0 +1,12 @@
+def Gate.effRows(w: Resolve.W, e: Gate.Er, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+    e match
+      case Gate.EReq => Gate.reqU(w, e, u, rcap, rk, rf)
+      case Gate.ECall => Gate.reqU(w, e, u, rcap, rk, rf)
+      case Gate.EHtop => Gate.effRoots(w, e, g, u, rc, dk, dr, 0)
+      case Gate.EHfor => Gate.effRoots(w, e, g, u, rc, dk, dr, 0)
+    Gate.effRows(w, e, rest, u + 1)
+

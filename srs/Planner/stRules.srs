@@ -1,0 +1,7 @@
+def Planner.stRules(st: Planner.Ints, rs: Planner.Rules, ch: Bool): Planner.StR = rs match
+  case Planner.RNil => Planner.StR(st, ch)
+  case Planner.RCons(r, rest) =>
+    val Planner.Rule(h, hts, b, cs) = r
+    val Planner.StR(st2, ch2) = Planner.stAtoms(st, h, b, ch)
+    Planner.stRules(st2, rest, ch2)
+

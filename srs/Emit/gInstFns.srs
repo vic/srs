@@ -1,0 +1,10 @@
+// prompt: the method defs i.. of given root `root` as fns of the instance for goal z (Emit.gFn)
+def Emit.gInstFns(e: Emit.E, root: I64, z: I64, i: I64): Unit =
+  val g = Emit.gOf(e)
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val d = Ast.item(g, parts, i)
+    if Ast.kd(g, d) == Ast.kDef() then Emit.gFn(e, d, z) else ()
+    Emit.gInstFns(e, root, z, i + 1)
+  else ()
+

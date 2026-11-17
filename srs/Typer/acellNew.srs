@@ -1,0 +1,10 @@
+// prompt: the type of ACell.new(v) (args r, token j): ACell of the arg type; an arg type that is known and is no word
+// (Typer.isWordTy) is a mismatch at j.
+def Typer.acellNew(x: Typer.X, r: I64, j: I64, want: I64): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  val a = Typer.argT(x, r, 0, Typer.elemOf(s, want))
+  val z = Typer.zonk(s, a)
+  if Typer.noVar(s, z) && !Typer.isWordTy(s, z) then Typer.mis(s, j) else ()
+  Typer.wrapT(x, "ACell", a, 0)
+
+

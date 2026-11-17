@@ -1,0 +1,15 @@
+// the arms; the result: the number of arms whose length differs from the result (join: without a want)
+def Typer.arms(x: Typer.X, r: I64, i: I64, ts: I64, res: I64, join: Bool): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val arm = Ast.item(g, r, i)
+    val p = Ast.a(g, arm)
+    val pk = Ast.kd(g, p)
+    if pk == Ast.kPCase() then Typer.pattern(x, p, Ast.tok(g, p), Ast.a(g, p), ts)
+    else if pk == Ast.kPCaseNP() then Typer.pattern(x, p, Ast.tok(g, p), 0, ts)
+    else Typer.tyRec(s, p, ts)
+    Typer.tyRec(s, arm, res)
+    val d = Typer.expectArm(x, Ast.tok(g, arm), Typer.expr(x, Ast.b(g, arm), res), res, join)
+    d + Typer.arms(x, r, i + 1, ts, res, join)
+  else 0
+

@@ -1,0 +1,49 @@
+// prompt: recv.op(args) / Cap.op(args) (recv = the use token of the local, -1 for a plain request): an op of a handled capability calls a handler fn h_<H>_<op>(hs_<H>, args). H is the handler of the receiver's own handle when the receiver is a handle binder of this fn (Emit.hlook); else, when the capability has one handler in the program, that one; when it has several, the innermost at run time (Emit.hdisp on hc_<cap>, E1 vic 2026-11-09: a request takes the innermost handler in scope). With several handlers the op body runs under the handler outside H (Emit.hcallM). A drop op whose handler is not fixed by its receiver while another handler also owns it is unsupported (the emit fails): freeing the wrong handle is a double free. An op on trait evidence covered by a given calls the given instance g_<goal>_<op> (queued, Emit.gqAdd); else no handle reaches it and the C aborts (hc 11 noHandler, never run).
+def Emit.capCall(e: Emit.E, n: I64, r: I64, recv: I64): Unit =
+  val g = Emit.gOf(e)
+  val s = Emit.sOf(e)
+  val k = Emit.kOf(e)
+  val sg = Emit.ce(e, n)
+  val rt = if recv >= 0 then Emit.rv(e, n) else 0
+  val hr = if recv >= 0 then Emit.hlook(k, Typer.useRef(Emit.xOf(e), recv), Emit.hget(k, Emit.hsBase()) - 1) else 0
+  val h0 = Emit.hfind(e, sg, 0)
+  val h = if hr != 0 then hr else h0
+  val z = if rt != 0 then Emit.sub(e, rt) else 0
+  val ends = Emit.isDrop(k, sg, 0) && recv >= 0
+  val multi = h0 != 0 && Emit.hother(e, sg, h0, 0)
+  if h == 0 && z != 0 && Typer.givenAny(s, z, 0, Typer.cget(s, Typer.cTypes())) then
+    // the instance for goal z is emitted after all bodies (Emit.gqAdd, Emit.gdrain): a block-scope prototype declares it here
+    Emit.gqAdd(e, z)
+    Emit.po(e,"({ ")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e," ")
+    Emit.gName(e, z, Ast.text(g, Ast.a(g, n)))
+    Emit.po(e,"(")
+    if Ast.len(g, r) == 0 then Emit.po(e,"void") else Emit.argTys(e, r, 0)
+    Emit.po(e,"); ")
+    Emit.gName(e, z, Ast.text(g, Ast.a(g, n)))
+    Emit.po(e,"(")
+    Emit.args(e, r, 0, false)
+    Emit.po(e,"); })")
+  else if h == 0 then
+    Emit.hinc(k, 11)
+    Emit.po(e,"(abort(), (")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e,"){0})")
+  else if ends && hr == 0 && Emit.pdIs(k, Typer.useRef(Emit.xOf(e), recv), 0) then
+    // a drop op on a dropped {} binder param: clear the caller's live flag through the cap, dispatch on its handler
+    Emit.po(e,"(*rp_")
+    Emit.pi(e, Typer.useRef(Emit.xOf(e), recv))
+    Emit.po(e,"->live = 0, ")
+    Emit.pdDisp(e, n, r, sg, Typer.useRef(Emit.xOf(e), recv), 0)
+    Emit.po(e,")")
+  else if ends && hr == 0 && multi then Emit.unsup(e, Ast.kMethod())
+  else if ends then
+    Emit.po(e,"(hl_")
+    Emit.pi(e,Typer.useRef(Emit.xOf(e), recv))
+    Emit.po(e," = 0, ")
+    Emit.hcallRaw(e, n, h, r)
+    Emit.po(e,")")
+  else if multi && hr != 0 then Emit.hcallRaw(e, n, hr, r)
+  else if multi then Emit.hdisp(e, n, r, sg, 0)
+  else Emit.hcallRaw(e, n, h, r)

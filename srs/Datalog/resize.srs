@@ -1,0 +1,10 @@
+def Datalog.resize {g: Srs.Region} (st: Datalog.St, r: I64, cap2: I64): Unit =
+  val a = Datalog.p(st, r)
+  val n = Datalog.cnt(st, r)
+  val rn2 = cap2 * a
+  val xs2 = Array.fill(rn2, U32.of(0))
+  Datalog.relOf(st, r) match
+    case Datalog.Rel.Mk(_, rn, xs) => Datalog.copy(rn, xs, rn2, xs2, 0, n * a)
+  Datalog.putRel(st, r, Datalog.Rel.Mk(cap2, rn2, xs2))
+  Datalog.reix(st, r, cap2, a, n, Datalog.rst(st, r), Datalog.rst(st, r + 1))
+

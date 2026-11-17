@@ -1,0 +1,9 @@
+def Datalog.link(st: Datalog.St, r: I64, x: I64, a: I64, row: I64): Unit =
+  val mask = Datalog.p(st, Datalog.nr(st) + 2 * x + 1)
+  Datalog.relOf(st, r) match
+    case Datalog.Rel.Mk(_, rn, xs) => Datalog.ixOf(st, x) match
+      case Datalog.Ix.Mk(hc, hs, nc, nx) =>
+        val slot = Datalog.fin(Datalog.hrow(rn, xs, a, row, mask, 0, 1, Datalog.h0()), hc)
+        Datalog.w(nc, nx, row, Datalog.u(hc, hs, slot))
+        Datalog.w(hc, hs, slot, row + 1)
+

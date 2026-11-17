@@ -1,0 +1,17 @@
+# Fixpoint: the kernel built from bootstrap/srs_seed.c loads the image ./srs, admits it through its own gate (typer, Datalog
+# families, every NegTest) and emits C byte-identical to the seed it was built from.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  fixpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: build the kernel from the seed
+        run: nix build --print-build-logs
+      - name: the image rebuilds the seed
+        run: nix develop -c just fixpoint

@@ -1,0 +1,8 @@
+def Datalog.printAll(st: Datalog.St, r: I64): Unit =
+  if r >= Datalog.nr(st) then () else
+    Console.print("@")
+    Console.printI64(r)
+    Console.print("\n")
+    Datalog.relOf(st, r) match
+      case Datalog.Rel.Mk(_, rn, xs) => Datalog.printRows(rn, xs, Datalog.p(st, r), 0, Datalog.cnt(st, r))
+    Datalog.printAll(st, r + 1)

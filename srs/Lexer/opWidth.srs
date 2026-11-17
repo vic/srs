@@ -1,0 +1,6 @@
+// the width of the operator at i, byte c: >>> is the one three-byte operator (s2/lex.srs:62-66)
+def Lexer.opWidth(src: Str, n: I64, i: I64, c: I64): I64 =
+  if c == 62 && Lexer.is(src, n, i + 1, 62) && Lexer.is(src, n, i + 2, 62) then 3
+  else if i + 1 < n && Lexer.isTwo(c, Str.at(src, i + 1)) then 2
+  else 1
+

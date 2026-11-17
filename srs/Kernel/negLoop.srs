@@ -1,0 +1,30 @@
+def Kernel.negLoop(self: Str, pre: Str, lst: Str, i: I64, a: I64, r: I64, u: I64, c: I64): Unit =
+  if i >= Str.len(lst) then
+    Console.print("accepted=")
+    Console.printI64(a)
+    Console.print(" rejected=")
+    Console.printI64(r)
+    Console.print(" unreadable=")
+    Console.printI64(u)
+    Console.print(" crashed=")
+    Console.printI64(c)
+  else
+    val e = Kernel.eol(lst, i)
+    if e <= i then Kernel.negLoop(self, pre, lst, e + 1, a, r, u, c)
+    else
+      val p = Str.slice(lst, i, e)
+      val v = Kernel.verdict(Process.run(Kernel.negArgv(self, pre, p)))
+      v match
+        case Kernel.VAccept =>
+          Console.print("ACCEPT ")
+          Console.print(p)
+          Console.print("\n")
+          Kernel.negLoop(self, pre, lst, e + 1, a + 1, r, u, c)
+        case Kernel.VReject => Kernel.negLoop(self, pre, lst, e + 1, a, r + 1, u, c)
+        case Kernel.VUnread => Kernel.negLoop(self, pre, lst, e + 1, a, r, u + 1, c)
+        case Kernel.VCrash =>
+          Console.print("CRASH ")
+          Console.print(p)
+          Console.print("\n")
+          Kernel.negLoop(self, pre, lst, e + 1, a, r, u, c + 1)
+

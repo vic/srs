@@ -1,0 +1,10 @@
+def Typer.tyLens(x: Typer.X, r: I64, i: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val e = Ast.item(g, r, i)
+    val lt = Typer.lenOf(x, e, Typer.tyAt(s, Typer.cget(s, Typer.cTyBase()), e) == 0)
+    Typer.tySub(x, e)
+    Typer.tyLens(x, r, i + 1)
+    lt
+  else 0
+

@@ -1,0 +1,34 @@
+// prompt: parse one statement: `val Ctor(a, ..) = e`, `val|var x [: T] = e`, `handle x = H(args)` or `handle H(args)` (no binder
+// name: the handle keyword token stands for the binder, a name no code can write), `invariant|decreases e`, or an expression.
+def Parser.stmt(g: Ast.G): I64 =
+  val c = Parser.cl(g)
+  val j = Parser.cur(g)
+  if c == Token.kval() && Ast.upperAt(g, j + 1) && Parser.cl2(g) == Token.lp() then
+    // val Ctor(a, b) = rhs
+    Parser.adv(g)
+    val ct = Parser.ident(g)
+    Parser.adv(g)
+    val bs = Parser.names(g, Ast.mark(g), Token.rp())
+    Parser.eat(g, Token.eq())
+    Ast.mk(g, Ast.kPatVal(), ct, bs, Parser.rhs(g))
+  else if c == Token.kval() || c == Token.kvar() then
+    Parser.adv(g)
+    val x = Parser.ident(g)
+    val ann = if Parser.is(g, Token.colon()) then Parser.annTy(g) else 0
+    Parser.eat(g, Token.eq())
+    Ast.mk(g, if c == Token.kval() then Ast.kVal() else Ast.kVar(), x, ann, Parser.rhs(g))
+  else if c == Token.khandle() && Parser.cl2(g) == Token.lp() then
+    Parser.adv(g)
+    val h = Parser.ident(g)
+    Ast.mk(g, Ast.kHandle(), j, h, Parser.args(g))
+  else if c == Token.khandle() then
+    Parser.adv(g)
+    val x = Parser.ident(g)
+    Parser.eat(g, Token.eq())
+    val h = Parser.ident(g)
+    Ast.mk(g, Ast.kHandle(), x, h, Parser.args(g))
+  else if c == Token.kinvariant() || c == Token.kdecreases() then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kCheck(), j, Parser.expr(g), 0)
+  else Ast.mk(g, Ast.kDo(), j, Parser.expr(g), 0)
+

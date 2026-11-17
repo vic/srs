@@ -1,0 +1,8 @@
+// prompt: the kernel must reject a value arg of a type use whose kind is not the binder's, with error[value-arg-type] (the param of the untyped type has no type entry: missingEntry)
+val NegTests.valArgType {NegTest}: Never =
+  type NtVa.B (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def NtVa.f(x: NtVa.B(true)): I64 = 0
+  NegTest.expect("value-arg-type", "missingEntry", "B takes an I64 value, the arg true is a Bool")
+

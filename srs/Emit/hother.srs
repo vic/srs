@@ -1,0 +1,6 @@
+// prompt: true when a handle-table entry i.. has a capability that owns op sg and a handler other than h (the op is ambiguous by name alone)
+def Emit.hother(e: Emit.E, sg: I64, h: I64, i: I64): Bool =
+  val k = Emit.kOf(e)
+  if i < Emit.hget(k, 0) then (Emit.hget(k, 17 + 2 * i) != h && Emit.capOwns(Emit.wOf(e), Emit.hget(k, 16 + 2 * i), sg)) || Emit.hother(e, sg, h, i + 1)
+  else false
+

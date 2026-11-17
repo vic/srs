@@ -1,0 +1,7 @@
+// `val C(a, b) = e` takes only the one case of a single-case enum
+def Typer.patVal(x: Typer.X, st: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, st)
+  Typer.pattern(x, st, j, Ast.a(g, st), Typer.expr(x, Ast.b(g, st), 0))
+  if Typer.useKind(x, j) == Resolve.kCase() && Typer.sigAt(s, Typer.declSym(x, Typer.useRef(x, j)), 4) != 1 then Typer.diag(s, Typer.dNonEx(), j) else ()
+

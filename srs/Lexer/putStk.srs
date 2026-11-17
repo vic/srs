@@ -1,0 +1,9 @@
+def Lexer.putStk(scap: I64, st: Array[U32](scap), sp: I64, col: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, o: I64): I64 =
+  if 0 <= sp && sp < scap then
+    Array.put(st, sp, U32.of(col))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Lexer.putDiag(dcap, dc, dof, d, Lexer.Overflow, o)
+    1
+

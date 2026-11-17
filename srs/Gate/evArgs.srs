@@ -1,0 +1,10 @@
+// evarg(u, n, x, i): the call node n passes the local x as its evidence at position i over all its {..} groups
+def Gate.evArgs(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, l: I64, i: I64, off: I64): Unit =
+  if i < Ast.len(g, l) then
+    val grp = Ast.item(g, l, i)
+    if Ast.kd(g, grp) == Ast.kCGEv() then
+      Gate.evArgToks(g, u, rcap, rk, rf, n, Ast.a(g, grp), 0, off)
+      Gate.evArgs(g, u, rcap, rk, rf, n, l, i + 1, off + Ast.len(g, Ast.a(g, grp)))
+    else Gate.evArgs(g, u, rcap, rk, rf, n, l, i + 1, off)
+  else ()
+

@@ -1,0 +1,11 @@
+// prompt: each type arg i.. (ntp of them: the type vars from v0) of a generic extern call n, zonked, must be a pointer type
+// (Typer.isPtrTy); else the Diag extern-slot at the call token. An arg that still holds a type var is not judged here.
+def Typer.extSlots(x: Typer.X, n: I64, v0: I64, i: I64, ntp: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < ntp then
+    val t = Typer.zonk(s, Typer.varT(s, v0 + i))
+    if !Typer.noVar(s, t) || Typer.isPtrTy(s, t) then () else Typer.diag(s, Typer.dExtSlot(), Ast.tok(g, n))
+    Typer.extSlots(x, n, v0, i + 1, ntp)
+  else ()
+
+

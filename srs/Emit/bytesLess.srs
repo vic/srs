@@ -1,0 +1,11 @@
+def Emit.bytesLess(pcap: I64, pool: Array[U8](pcap), oa: I64, la: I64, ob: I64, lb: I64, i: I64): Bool =
+  if i >= la then i < lb
+  else if i >= lb then false
+  else
+    val ia = oa + i
+    val ib = ob + i
+    if 0 <= ia && ia < pcap && 0 <= ib && ib < pcap then
+      val x = I64.ofU8(pool(ia))
+      val y = I64.ofU8(pool(ib))
+      if x < y then true else if x > y then false else Emit.bytesLess(pcap, pool, oa, la, ob, lb, i + 1)
+    else false

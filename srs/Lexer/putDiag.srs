@@ -1,0 +1,10 @@
+// the append primitives. go guarantees room for one token, one diag and one stack slot before every step.
+// putTok and putStk return how many diags they added: 0, or 1 when the room was not there (an Overflow diag, unreachable).
+// putDiag cannot report its own overflow.
+def Lexer.putDiag(dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, w: Lexer.Why, o: I64): Unit =
+  if 0 <= d && d < dcap then
+    Array.put(dc, d, U8.of(Lexer.whyByte(w)))
+    Array.put(dof, d, U32.of(o))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else ()
+

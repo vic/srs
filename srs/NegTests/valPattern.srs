@@ -1,0 +1,7 @@
+// prompt: the kernel must reject a case pattern of a value match type whose literal kind is not the binder's, with error[value-pattern-type]
+val NegTests.valPattern {NegTest}: Never =
+  type NtVp.Q (n: I64) = n match
+    case true => Bool
+    case _ => I64
+  NegTest.expect("value-pattern-type", "the scrutinee n is an I64, so the pattern true can never match it")
+

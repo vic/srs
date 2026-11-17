@@ -1,0 +1,18 @@
+// a call of a signature (def, ctor, request): fresh vars for its type params, args checked left to right against the instantiated params; explicit type args are bound only when there are exactly ntp of them (else a mismatch: a var past the fresh range is never written)
+def Typer.callSig(x: Typer.X, n: I64, sym: I64, groups: I64, args: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val np = Typer.sigAt(s, sym, 2)
+  val ntp = Typer.sigAt(s, sym, 3)
+  val start = Typer.sigAt(s, sym, 1)
+  val v0 = Typer.cget(s, Typer.cNVar())
+  Typer.freshN(s, ntp)
+  Typer.siteMark(s, v0, 0, ntp, Ast.tok(g, n))
+  val nt = Typer.targN(g, groups, 0, 0)
+  if nt == ntp then Typer.targs(x, groups, 0, v0, 0)
+  else if nt != 0 then Typer.mis(s, Ast.tok(g, n))
+  else ()
+  val ret = Typer.lsubTop(x, Typer.inst(s, Typer.sigAt(s, sym, 0), start + np, ntp, v0), args, start + np + ntp, np, false)
+  if ntp > 0 && want != 0 then Typer.unify(s, ret, want) else true
+  if Ast.len(g, args) != np then Typer.mis(s, Ast.tok(g, n)) else ()
+  Typer.callArgs(x, args, 0, np, start, start + np, ntp, v0, start + np + ntp)
+  ret

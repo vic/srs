@@ -1,0 +1,10 @@
+def Blake3.rounds(vn: I64, v: Array[U32](vn), mn: I64, m: Array[U32](mn), tn: I64, t: Array[U32](tn), r: I64): Unit =
+  if r < 7 then
+    Blake3.round(vn, v, mn, m)
+    if r < 6 then
+      Blake3.copy(mn, m, tn, t, 0)
+      Blake3.perm1(mn, m, tn, t, 0)
+    else ()
+    Blake3.rounds(vn, v, mn, m, tn, t, r + 1)
+  else ()
+

@@ -1,0 +1,16 @@
+def Typer.pdig(s: Typer.S, v: I64): Unit =
+  val Typer.S(_, _, _, c, _) = s
+  val Typer.Cn(cnn, cn, _, _, _, _, obc, ob) = c
+  val o = Typer.cOut()
+  val nd = Typer.ndig(v, 1)
+  if 0 <= o && o < cnn then
+    val n = cn(o)
+    if 0 <= n && n <= obc - nd then
+      Typer.wdig(obc, ob, n + nd - 1, v)
+      Array.put(cn, o, n + nd)
+    else if n > 0 then
+      Typer.pflush(s)
+      Typer.pdig(s, v)
+    else Console.printI64(v)
+  else Console.printI64(v)
+

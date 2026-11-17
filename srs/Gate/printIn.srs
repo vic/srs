@@ -1,0 +1,11 @@
+def Gate.printIn(ns: Os.Strs, rs: Os.Strs, lo: I64): Unit = ns match
+  case Os.End => ()
+  case Os.More(n, nr) => rs match
+    case Os.End => ()
+    case Os.More(r, rr) =>
+      Console.print("## ")
+      Console.print(n)
+      Console.print("\n")
+      if Str.eq(n, "worldH") then Console.print(r) else Gate.rowsFrom(r, lo, 0)
+      Gate.printIn(nr, rr, lo)
+

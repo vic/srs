@@ -1,0 +1,14 @@
+def Datalog.runVar {g: Srs.Region} (st: Datalog.St, off: I64): Unit =
+  val kind = Datalog.p(st, off)
+  val hv = off + 1
+  val ha = Datalog.p(st, Datalog.p(st, hv))
+  val na = Datalog.p(st, off + 2 + 2 * ha)
+  val a0 = off + 3 + 2 * ha
+  val r0 = Datalog.p(st, a0 + 1)
+  val ar0 = Datalog.p(st, r0)
+  val lo = if kind == 0 then 0 else Datalog.ds(st, r0)
+  val hi = if kind == 0 then Datalog.cnt(st, r0) else Datalog.de(st, r0)
+  if lo < hi then
+    Datalog.relOf(st, r0) match
+      case Datalog.Rel.Mk(_, rn, xs) => Datalog.drive(st, hv, a0 + 3, a0 + 3 + 2 * ar0, na, ar0, rn, xs, lo, hi)
+  else ()

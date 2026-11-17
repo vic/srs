@@ -1,0 +1,43 @@
+// prompt: type check the files fs (the --types modes by mode), print the summary and the Diags; exit 1 when any Diag was counted
+// or fewer than want files loaded.
+def Typer.runFs(fs: Coll.List[Resolve.F], want: I64, mode: I64): I64 =
+  val ntok = Resolve.sumTok(fs, 0)
+  val w = Resolve.world(ntok, Resolve.sumBytes(fs, 0))
+  Resolve.builtins(w)
+  Resolve.btypes(w)
+  Resolve.declFiles(w, fs, 0)
+  val s = Typer.store(ntok, Typer.sumNodes(fs, 0), Typer.maxNodes(fs, 0), Coll.length(fs))
+  Typer.fileBases(s, fs, 0, 0)
+  val rs = Typer.resolve(w, fs, 0)
+  Typer.mutPasses(w, s, rs, 0)
+  Typer.initTys(w, s)
+  Typer.tdefAll(w, s, rs)
+  Typer.cset(s, Typer.cMode(), mode)
+  // mode 6 = --types-nolen (the length slot is ignored), mode 7 = --types-nosubst (no binder substitution at calls), mode 9 = --types-nopatsub
+  Typer.cset(s, Typer.cNoLen(), if mode == 6 then 1 else 0)
+  Typer.cset(s, Typer.cNoSub(), if mode == 7 then 1 else 0)
+  Typer.cset(s, Typer.cNoPat(), if mode == 9 then 1 else 0)
+  Typer.headers(w, s, rs, mode == 1, 0)
+  if mode == 3 then Typer.cPrelude(s) else ()
+  Typer.bodies(w, s, rs, 0)
+  Typer.nodeFiles(w, s, fs, 0, mode == 4)
+  if mode == 5 then Typer.kindRows(s, 0, 0) else ()
+  Typer.mono(s)
+  if mode == 1 then Typer.insts(w, s, rs, false)
+  else if mode == 2 then Typer.insts(w, s, rs, true)
+  else if mode == 3 then
+    Typer.po(s,"// forward declarations\n")
+    Typer.fwds(w, s, 1)
+    Typer.localsSummary(s)
+  else ()
+  if mode == 1 || mode == 3 then ()
+  else
+    Typer.summary(s)
+    Typer.showMis(s, fs, 0)
+    Typer.showUn(s, fs, 0)
+    Typer.showDg(s, fs, 0)
+  Typer.pflush(s)
+  // exit 1 when any diag line was counted (mismatch of any scope, untyped, annotate, nonexhaustive, lengthNotName, type-arity, type-fuel, missingEntry) or a file did not load
+  val nd = Typer.cget(s, Typer.cMis()) + Typer.cget(s, Typer.cHMis()) + Typer.cget(s, Typer.cCMis()) + Typer.cget(s, Typer.cUnTot()) + Typer.cget(s, Typer.cHUn()) + Typer.cget(s, Typer.cCUn()) + Typer.cget(s, Typer.cAnn()) + Typer.cget(s, Typer.cNonEx()) + Typer.cget(s, Typer.cLenNN()) + Typer.cget(s, Typer.cTyArity()) + Typer.cget(s, Typer.cTyFuel()) + Typer.cget(s, Typer.cTyNoCase()) + Typer.cget(s, Typer.cTyNoGiven()) + Typer.cget(s, Typer.cTyExtSlot()) + Typer.cget(s, Typer.cTyVal()) + Typer.cget(s, Typer.cMissE()) + Typer.cget(s, Typer.cUn()) + Typer.cget(s, Typer.cUn() + Typer.uTypeUnres()) + Typer.cget(s, Typer.cUn() + Typer.uTypeOther())
+  if Coll.length(fs) < want || nd > 0 then 1 else 0
+

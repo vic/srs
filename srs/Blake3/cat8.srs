@@ -1,0 +1,10 @@
+def Blake3.cat8(ln: I64, l: Array[U32](ln), rn: I64, r: Array[U32](rn), mn: I64, m: Array[U32](mn), i: I64): Unit =
+  if 0 <= i && i < 8 && i < ln && i < rn then
+    val k = i + 8
+    if 0 <= i && i < mn && 0 <= k && k < mn then
+      Array.put(m, i, l(i))
+      Array.put(m, k, r(i))
+    else ()
+    Blake3.cat8(ln, l, rn, r, mn, m, i + 1)
+  else ()
+

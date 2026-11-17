@@ -1,0 +1,7 @@
+// prompt: the index of the field whose name symbol is f in the signature of struct ss (Typer.cstructSig), from i; None when the struct has no such field
+def Typer.fieldIx(s: Typer.S, ss: I64, f: I64, i: I64): Coll.Option[I64] =
+  val np = Typer.sigAt(s, ss, 2)
+  if i < np then
+    if Typer.poolAt(s, Typer.sigAt(s, ss, 1) + np + i) == f then Coll.Some(i) else Typer.fieldIx(s, ss, f, i + 1)
+  else Coll.None
+

@@ -1,0 +1,12 @@
+// e match NL IND (case pat => rhs)* DED: match is postfix on a whole binary expression
+def Parser.matchOf(g: Ast.G, e: I64): I64 =
+  if Parser.ok(g) && Parser.is(g, Token.kmatch()) then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    if Parser.is(g, Token.nl()) && Parser.cl1(g) == Token.indent() then
+      Parser.adv(g)
+      Parser.adv(g)
+      Ast.mk(g, Ast.kMatch(), j, e, Parser.arms(g, Ast.mark(g)))
+    else Parser.fail(g)
+  else e
+

@@ -1,0 +1,15 @@
+// prompt: true when every decl root i.. of file f is a type definition with a constraint group ({} or <>) whose body is exactly
+// Ptr[A](n) (head token resolves to the builtin Ptr, symbol sp; at least one type arg and one length): the only legal place to name
+// Ptr (vic 2026-11-16: Ptr has a type and a size bound and is named only in type definitions that restrict it). A node-0 root is
+// the parser's end sentinel (kind byte 0, node 0; measured session 8), not a decl, and is skipped.
+def Gate.ptrDefOk(f: Resolve.F, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), sp: I64, i: I64): Bool =
+  val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(dr(i))
+    val al = if I64.ofU8(dk(i)) == Split.kindByte(Split.Type) && root != 0 then Typer.part(g, Ast.b(g, root), 0, Ast.kAlias()) else 0
+    val t = if al != 0 then Ast.a(g, al) else 0
+    val j = if t != 0 then Ast.tok(g, t) else 0 - 1
+    val isPtr = 0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tBuiltin() && I64.of(rf(j)) == sp
+    val ok = root == 0 || (al != 0 && Typer.consN(g, Ast.b(g, root), 0) > 0 && Ast.kd(g, t) == Ast.kTy() && isPtr && Ast.len(g, Ast.a(g, t)) > 0 && Ast.len(g, Ast.b(g, t)) > 0)
+    ok && Gate.ptrDefOk(f, rcap, rk, rf, sp, i + 1)
+  else true

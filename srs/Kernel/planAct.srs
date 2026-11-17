@@ -1,0 +1,15 @@
+// plan DL DIR OUT: the executor input; dlrun DL DIR OUT: the engine's relations. DIR "-" = no facts
+def Kernel.planAct(arg: Str, run: Bool): Kernel.Res = Kernel.words(arg, 0) match
+  case Os.End => Kernel.Res(1, "usage: plan|dlrun DL DIR OUT")
+  case Os.More(src, r) => r match
+    case Os.End => Kernel.Res(1, "usage: plan|dlrun DL DIR OUT")
+    case Os.More(dir, r2) => r2 match
+      case Os.End => Kernel.Res(1, "usage: plan|dlrun DL DIR OUT")
+      case Os.More(out, r3) => Files.bytes(src) match
+        case Os.Fail(_) => Kernel.Res(1, "unreadable")
+        case Os.Ok(t) =>
+          val Planner.Res2(err, txt) = Planner.textD(t, if Str.eq(dir, "-") then "" else dir)
+          if Str.len(err) > 0 then Kernel.Res(1, err)
+          else if Disk.put(out, if run then Planner.run(txt) else txt) == 0 then Kernel.Res(0, out)
+          else Kernel.Res(1, "write failed")
+

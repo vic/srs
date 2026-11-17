@@ -1,0 +1,20 @@
+def Printer.ty(g: Ast.G, n: I64): Unit =
+  val k = Ast.kd(g, n)
+  if k == Ast.kTyCaps() then
+    Printer.ty(g, Ast.a(g, n))
+    Printer.s("<")
+    Printer.toks(g, Ast.b(g, n), 0)
+    Printer.s(">")
+  else
+    Printer.tok(g, Ast.tok(g, n))
+    if Ast.a(g, n) != 0 then
+      Printer.s("[")
+      Printer.tys(g, Ast.a(g, n), 0)
+      Printer.s("]")
+    else ()
+    if Ast.b(g, n) != 0 then
+      Printer.s("(")
+      Printer.exprs(g, Ast.b(g, n), 0, 0)
+      Printer.s(")")
+    else ()
+

@@ -1,0 +1,8 @@
+// prompt: every handle statement among the nodes n.. below end (the nodes of main lie between the previous root and main's root, as Emit.instClose walks them): a handle inside a while body or an if branch counts too (s2 prog scope_loop_decl)
+def Emit.scanNodes(x: Typer.X, k: Emit.K, base: I64, n: I64, end: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  if n < end then
+    if Ast.kd(g, n) == Ast.kHandle() then Emit.hadd(x, k, base, n) else ()
+    Emit.scanNodes(x, k, base, n + 1, end)
+  else ()
+

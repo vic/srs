@@ -1,0 +1,47 @@
+// def name [<A> | <s r t>] groups (params) groups : ty [{names}] [<B>]
+def Parser.capDef(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  val en =
+    if Parser.ok(g) && Parser.is(g, Token.lt()) then
+      val ej = Parser.cur(g)
+      Parser.adv(g)
+      val em = Ast.mark(g)
+      Ast.push(g, Parser.ident(g))
+      if Parser.ok(g) && !Parser.is(g, Token.gt()) then
+        Ast.push(g, Parser.ident(g))
+        Ast.push(g, Parser.ident(g))
+      else ()
+      Parser.eat(g, Token.gt())
+      val e = Ast.mk(g, Ast.kEntry(), ej, Ast.close(g, em), 0)
+      Ast.push(g, e)
+      e
+    else 0
+  Parser.groups(g)
+  Ast.push(g, Parser.params(g, 0))
+  Parser.groups(g)
+  Parser.eat(g, Token.colon())
+  val rj = Parser.cur(g)
+  val t = Parser.ty(g)
+  val braces = Parser.ok(g) && Parser.is(g, Token.lc())
+  val ch =
+    if braces then
+      Parser.stopIf(g, Ast.kd(g, t) == Ast.kTyCaps(), Parser.cur(g))
+      Parser.adv(g)
+      Parser.names(g, Ast.mark(g), Token.rc())
+    else 0
+  Ast.push(g, Ast.mk(g, if braces then Ast.kOpRetC() else Ast.kOpRet(), rj, t, ch))
+  val xj = Parser.cur(g)
+  val ex =
+    if Parser.ok(g) && Parser.is(g, Token.lt()) then
+      Parser.adv(g)
+      val b = Parser.ident(g)
+      Parser.eat(g, Token.gt())
+      Ast.push(g, Ast.mk(g, Ast.kExitSt(), xj, b, 0))
+      b
+    else 0
+  Parser.moves(g, j, en, ex)
+  Ast.mk(g, Ast.kCapDef(), j, nm, Ast.close(g, m))
+

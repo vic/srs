@@ -1,0 +1,10 @@
+// the token where the name of the decl at head h is expected: right after the keyword; after extern also an optional
+// "abi" string and one of def, struct, val
+def Split.nameTok(src: Str, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, h: I64, k: Split.Kind): I64 =
+  if Split.isOther(k) then h
+  else if Split.isExtern(k) then
+    val j2 = if Split.isKind(tcap, tk, t, h + 1, Lexer.KStr) then h + 2 else h + 1
+    if Split.wordIs(src, tcap, tk, to, tl, t, j2, "def") || Split.wordIs(src, tcap, tk, to, tl, t, j2, "struct") || Split.wordIs(src, tcap, tk, to, tl, t, j2, "val") then j2 + 1
+    else j2
+  else h + 1
+

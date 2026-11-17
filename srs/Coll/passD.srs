@@ -1,0 +1,7 @@
+// one pass over descending runs, latest first: ascending runs, earliest first (a last odd run is reversed)
+def Coll.passD [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = runs match
+  case Coll.Nil => acc
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => Coll.Cons(Coll.rev(a), acc)
+    case Coll.Cons(b, t2) => Coll.passD(t2, Coll.Cons(Coll.mergeRevD(a, b, Coll.Nil), acc))
+

@@ -1,0 +1,6 @@
+def Kernel.ingest(ps: Os.Strs, im: Kernel.Img, bad: I64): Kernel.Lr = ps match
+  case Os.End => Kernel.Lr(im, bad)
+  case Os.More(p, r) => Files.bytes(p) match
+    case Os.Ok(t) => Kernel.ingest(r, Kernel.splitAdd(im, t), bad)
+    case Os.Fail(_) => Kernel.ingest(r, im, bad + 1)
+

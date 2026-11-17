@@ -1,0 +1,8 @@
+// prompt: retTp(u) for each unit u (file index from u) with a def whose result is one of its [] type params (Gate.retTpAny).
+def Gate.retTpRows(rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    if Gate.retTpAny(f, rcap, rk, rf, 0) then Gate.row1(u) else ()
+    Gate.retTpRows(rest, u + 1)
+

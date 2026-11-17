@@ -1,0 +1,6 @@
+// prompt: the kernel must reject a call of an extern whose telescope asks for a capability ({p: Process}, not pinned by a param) from
+// a def that does not hold it, with error[no-capability] (an extern telescope is the trusted guarantee of srs, vic 2026-11-16).
+val NegTests.externEvidence {NegTest}: Never =
+  extern def NtEx.raw {p: Process} (): I64
+  def NtEx.f(): I64 = NtEx.raw()
+  NegTest.expect("no-capability", "NtEx.raw asks for {p: Process}; NtEx.f holds no Process")

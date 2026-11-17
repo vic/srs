@@ -1,0 +1,6 @@
+// rule int-literal-default (s2/elab.srs:5-9): an integer literal is an I64, unless its `want` is a U32 or a U64. This is the ONLY default
+// of s3c typing: every other unsolved type var is an `annotate` Diag (Tp.unsolved), never a silent Unit or Ptr.
+def Typer.intLit(s: Typer.S, want: I64): I64 =
+  val w = Typer.walk(s, want)
+  if Typer.kind(s, w) == Typer.bBuiltin() && (Typer.cls(s, w) == 5 || Typer.cls(s, w) == 11) then w else Typer.cget(s, Typer.tI64())
+

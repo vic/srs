@@ -1,0 +1,23 @@
+def Planner.variant(rule: Planner.Rule, d: I64, kind: I64, xs: Planner.Ix, nr: I64, ars: Planner.Ints): Planner.V =
+  val Planner.Rule(h, hts, b, cs) = rule
+  val n = Planner.alen(b, 0)
+  Console.captureBegin()
+  val g = Planner.greedy(b, Planner.driverAt(b, d, 1, Planner.G(Planner.SNil, 0, 0, xs, Planner.zeros(n + 1), false)), nr, ars)
+  val Planner.G(sl, ns, na, xs2, placed, bad) = g
+  val Planner.Cn(nc, cok) = Planner.cmpsTxt(cs, sl, 0)
+  val at = Console.captureEnd()
+  if bad then Planner.V("", xs2, ns, "wildcard unsupported")
+  else if Planner.not(Planner.allPlaced(placed, 1, n)) then Planner.V("", xs2, ns, "unsafe negation")
+  else if Planner.not(cok) then Planner.V("", xs2, ns, "unbound comparison operand")
+  else
+    Console.captureBegin()
+    Console.printI64(kind)
+    Console.print(" ")
+    Console.printI64(h)
+    val ok = Planner.head(hts, sl)
+    Console.print(" ")
+    Console.printI64(na + nc)
+    Console.print(at)
+    val txt = Console.captureEnd()
+    if ok then Planner.V(txt, xs2, ns, "") else Planner.V("", xs2, ns, "unbound head var")
+

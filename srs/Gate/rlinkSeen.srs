@@ -1,0 +1,7 @@
+// prompt: true when link token t (the end term of atom i) is the same name as the end term of an atom j.. below i (two links of a rule chain share a name: not a chain)
+def Gate.rlinkSeen(g: Ast.G, atoms: I64, j: I64, i: I64, t: Str): Bool =
+  if j < i then
+    val ts = Ast.a(g, Ast.item(g, atoms, j))
+    Str.eq(Ast.text(g, Ast.item(g, ts, Ast.len(g, ts) - 1)), t) || Gate.rlinkSeen(g, atoms, j + 1, i, t)
+  else false
+

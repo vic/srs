@@ -1,0 +1,6 @@
+// the unindexed scan from `from` to the type count; counts the range it may walk (hc 135 = sum over all calls of the range size)
+def Emit.tailScan(s: Typer.S, k: Emit.K, esym: I64, from: I64): I64 =
+  val n = Typer.cget(s, Typer.cTypes())
+  if from < n then Emit.hset(k, 135, Emit.hget(k, 135) + (n - from)) else ()
+  Typer.nextEnum(s, esym, from)
+

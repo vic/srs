@@ -1,0 +1,10 @@
+// intern the type (kind, head) whose args are the stack items above mark m; the stack goes back to m
+def Typer.mk(s: Typer.S, kind: I64, cls: I64, head: I64, m: I64): I64 =
+  val Typer.S(_, hh, _, _, _) = s
+  val Typer.Hh(hcap, _) = hh
+  val n = Typer.cget(s, Typer.cSp()) - m
+  val h = Typer.hashArgs(s, m, 0, n, (kind * 1000003 + head) % 4294967291)
+  val id = if hcap > 0 then Typer.probe(s, kind, cls, head, m, n, h % hcap, 0) else 0
+  Typer.cset(s, Typer.cSp(), m)
+  id
+

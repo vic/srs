@@ -1,0 +1,11 @@
+// value params of one op or handler fn (params l, from i; k counted so far; a param named self is the handler state, not an op param): sigP(u, o, k, t) rows when emit; answers the count
+def Gate.sigPar(w: Resolve.W, g: Ast.G, u: I64, self: I64, o: I64, l: I64, i: I64, k: I64, emit: Bool): I64 =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    if Ast.kd(g, n) == Ast.kBind() && Gate.tsym(w, g, Ast.tok(g, n)) != self then
+      if emit then Gate.row4(u, o, k, Gate.tsym(w, g, Ast.tok(g, Ast.a(g, n)))) else ()
+      Gate.sigPar(w, g, u, self, o, l, i + 1, k + 1, emit)
+    else Gate.sigPar(w, g, u, self, o, l, i + 1, k, emit)
+  else k
+
+

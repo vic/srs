@@ -1,0 +1,13 @@
+def Emit.enumTypes(e: Emit.E, root: I64, esym: I64, t: I64, pr: Bool): Unit =
+  val s = Emit.sOf(e)
+  val Emit.E(_, k, _, _, _, _, _, _) = e
+  val u = Emit.nextEnum(s, k, esym, t)
+  if u < Typer.cget(s, Typer.cTypes()) then
+    if Typer.closedT(s, u) then
+      if pr then Emit.enumType(e, root, u, true)
+      else
+        Emit.cases(e, Ast.b(Emit.gOf(e), root), 0, u, false)
+    else ()
+    Emit.enumTypes(e, root, esym, u + 1, pr)
+  else ()
+

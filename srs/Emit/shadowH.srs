@@ -1,0 +1,7 @@
+// prompt: the handler of the innermost entry i.. (downwards) of the handle-binder stack whose binder token is before token j and has the text nm, 0 when none: a val or var named nm at token j shadows that handle, so it is out of reach by name (s2 prog eff_shadow). shortcut: entries of blocks that already ended stay on the stack; Emit.stmt guards with `hc == H`, so such an entry changes nothing unless H is innermost again
+def Emit.shadowH(e: Emit.E, nm: Str, j: I64, i: I64): I64 =
+  val k = Emit.kOf(e)
+  if i < 0 then 0
+  else
+    val t = Emit.hget(k, Emit.hsBase() + 1 + 2 * i)
+    if t < j && Str.eq(Ast.text(Emit.gOf(e), t), nm) then Emit.hget(k, Emit.hsBase() + 2 + 2 * i) else Emit.shadowH(e, nm, j, i - 1)

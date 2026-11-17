@@ -1,0 +1,88 @@
+// prompt: the type of the builtin call n (Array, Cell and ACell ops) against want: arity checked, args typed against the op's param
+// types; ACell.new holds a word only (Typer.acellNew); an unknown builtin is untyped.
+def Typer.builtin(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, n)
+  val nm = Ast.text(g, j)
+  val r = Ast.b(g, n)
+  val ti = Typer.cget(s, Typer.tI64())
+  val ar = Typer.builtinArity(nm)
+  if ar < 0 then
+    Typer.args(x, r, 0)
+    Typer.untyped(x, j, 90)
+  else
+    Typer.ceRec(s, n, Typer.declSym(x, Typer.useRef(x, j)))
+    if Ast.len(g, r) != ar then Typer.mis(s, j) else ()
+    if Str.eq(nm, "Array.fill") then
+      Typer.argT(x, r, 0, ti)
+      Typer.wrapT(x, "Array", Typer.argT(x, r, 1, Typer.elemOf(s, want)), Typer.lenOfArg(x, r, 0))
+    else if Str.eq(nm, "Array.tabulate") then
+      Typer.argT(x, r, 0, ti)
+      Typer.tabF(x, n)
+      val we = Typer.elemOf(s, want)
+      // the element comes from the Array.Gen instance (a trait goal: not solved here): the want, else a var the annotate rule reports
+      val v0 = Typer.cget(s, Typer.cNVar())
+      val a = if we != 0 then we else Typer.fresh(s)
+      Typer.siteMark(s, v0, 0, Typer.cget(s, Typer.cNVar()) - v0, j)
+      Typer.wrapT(x, "Array", a, Typer.lenOfArg(x, r, 0))
+    else if Str.eq(nm, "Array.slice") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, ti)
+      // the gate proves 0 <= off, 0 <= m, off + m <= n at the slice site (provedR / badSlice), so the result has length m: the
+      // count arg's key (a bare immutable local or a literal, Typer.lenOfArg, as for Array.fill; s2 prog array Ar.mid)
+      Typer.wrapT(x, "Array", a, Typer.lenOfArg(x, r, 2))
+    else if Str.eq(nm, "Array.put") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, a)
+      Typer.cget(s, Typer.tUnit())
+    else if Str.eq(nm, "Array.blit") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.expect(x, j, a, Typer.u8T(x))
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, Typer.cget(s, Typer.tStr()))
+      Typer.argT(x, r, 3, ti)
+      Typer.cget(s, Typer.tUnit())
+    else if Str.eq(nm, "Array.aload") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      a
+    else if Str.eq(nm, "Array.astore") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, a)
+      Typer.cget(s, Typer.tUnit())
+    else if Str.eq(nm, "Array.cas") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, a)
+      Typer.argT(x, r, 3, a)
+      Typer.cget(s, Typer.tBool())
+    else if Str.eq(nm, "Array.fetchAdd") then
+      val a = Typer.recvT(x, r, "Array")
+      Typer.argT(x, r, 1, ti)
+      Typer.argT(x, r, 2, a)
+      a
+    else if Str.eq(nm, "Cell.new") then Typer.wrapT(x, "Cell", Typer.argT(x, r, 0, Typer.elemOf(s, want)), 0)
+    else if Str.eq(nm, "ACell.new") then Typer.acellNew(x, r, j, want)
+    else if Str.eq(nm, "Cell.get") then Typer.recvT(x, r, "Cell")
+    else if Str.eq(nm, "Cell.put") then
+      val a = Typer.recvT(x, r, "Cell")
+      Typer.argT(x, r, 1, a)
+      Typer.cget(s, Typer.tUnit())
+    else if Str.eq(nm, "ACell.load") then Typer.recvT(x, r, "ACell")
+    else if Str.eq(nm, "ACell.store") then
+      val a = Typer.recvT(x, r, "ACell")
+      Typer.argT(x, r, 1, a)
+      Typer.cget(s, Typer.tUnit())
+    else if Str.eq(nm, "ACell.cas") then
+      val a = Typer.recvT(x, r, "ACell")
+      Typer.argT(x, r, 1, a)
+      Typer.argT(x, r, 2, a)
+      Typer.cget(s, Typer.tBool())
+    else
+      // ACell.fetchAdd
+      val a = Typer.recvT(x, r, "ACell")
+      Typer.argT(x, r, 1, a)
+      a

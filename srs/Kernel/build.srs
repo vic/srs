@@ -1,0 +1,11 @@
+// negative tests are never emitted
+def Kernel.build(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, out: Str): Kernel.Res =
+  val ps = Kernel.cat(bp, Kernel.paths(Kernel.plain(im)))
+  val xs = Kernel.cat(bt, Kernel.texts(Kernel.plain(im)))
+  Console.captureBegin()
+  val code = Emit.runFs(Resolve.loadMem(ps, xs), Kernel.len(ps, 0))
+  val c = Console.captureEnd()
+  if code != 0 then Kernel.Res(code, "emit failed")
+  else if Disk.put(out, c) == 0 then Kernel.Res(0, "")
+  else Kernel.Res(1, "write failed")
+

@@ -1,0 +1,14 @@
+// prompt: the type of use node t of a value type (Typer.isValTy): [] type args are the Diag type-arity; the value args are evaluated at compile time (Typer.ctArgs) into env entries from the env top, then Typer.ctEnter; the outermost use (empty env) resets the fuel (Typer.ctFuel)
+def Typer.tyVal(x: Typer.X, t: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, t)
+  val args = Ast.b(g, t)
+  val k = if args != 0 then Ast.len(g, args) else 0
+  val nf = Typer.cget(s, Typer.cCtTop())
+  if nf == 0 then Typer.cset(s, Typer.cCtFuel(), Typer.ctFuel()) else ()
+  if Ast.a(g, t) != 0 && Ast.len(g, Ast.a(g, t)) > 0 then
+    Typer.diag(s, Typer.dTyArity(), j)
+    0
+  else if Typer.ctArgs(x, args, 0, k, nf) then Typer.ctEnter(s, Typer.symOf(x, j), nf, k, j)
+  else 0
+

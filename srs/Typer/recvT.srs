@@ -1,0 +1,7 @@
+// arg 0 is a Name[a]: its element type a (a fresh var that the receiver solves)
+def Typer.recvT(x: Typer.X, r: I64, name: Str): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  val a = Typer.fresh(s)
+  Typer.argT(x, r, 0, Typer.wrapT(x, name, a, if Str.eq(name, "Array") then Typer.freshL(s) else 0))
+  a
+

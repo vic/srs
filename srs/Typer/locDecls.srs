@@ -1,0 +1,17 @@
+def Typer.locDecls(x: Typer.X, i: I64, n: I64): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  if i < n then
+    val j = Typer.mxGet(s, Typer.moLoc(s, i))
+    val t = Typer.zonk(s, Typer.ltGet(s, j))
+    if Typer.ground(s, t) then
+      Typer.cty(w, s, t)
+      Typer.po(s, " v_")
+      Typer.idStr(s, Ast.text(g, j), 0)
+      Typer.po(s, "_")
+      Typer.pi(s, j)
+      Typer.po(s, " = {0};\n")
+      Typer.cinc(s, Typer.cLocOut())
+    else Typer.cinc(s, Typer.cLocBad())
+    Typer.locDecls(x, i + 1, n)
+  else ()
+

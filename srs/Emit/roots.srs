@@ -1,0 +1,38 @@
+// prompt: the roots of a file, by phase: 0 tables + closure, 1 structs, 2 prototypes, 3 bodies, 4 late closure; kinds: 0 def, 1 enum, 2 extern, 3 handler, 4 capability, 8 given (Emit.givenRoot); rs = every file (a multi-shot site reaches its handler and the CPS defs in other files: one unit is one file)
+def Emit.roots(x: Typer.X, k: Emit.K, f: Resolve.F, rs: Coll.List[Typer.R], base: I64, i: I64, prev: I64, ph: I64): Unit =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    val kb = I64.ofU8(rk(i))
+    if root == 0 then ()
+    else if kb == 0 then
+      if ph >= 2 && ph <= 3 then
+        // a CPS def (class 6) has no direct C fn: each multi-shot site emits its own copy (Emit.msCg)
+        if Emit.kget(k, Typer.symOf(x, Ast.a(g, root))) != 6 then
+          if ph == 3 then Emit.msSite(x, k, rs, base, root, true) else ()
+          Emit.defRoot(x, k, base, root, ph)
+          if ph == 3 then Emit.msSite(x, k, rs, base, root, false) else ()
+        else ()
+      else if ph == 5 then
+        Emit.msMark(x, k, base, root, prev)
+        Emit.pdScan(x, k, base, root, prev, 0, 0)
+      else if ph == 4 then Emit.defClose(x, k, base, root, prev)
+      else if ph == 0 then
+        if Str.eq(Ast.text(g, Ast.a(g, root)), "main") then Emit.hset(k, 6, 1) else ()
+        Emit.scanMain(x, k, base, root, prev)
+      else ()
+    else if kb == 4 then
+      if ph == 0 then Emit.capDrops(x, k, root, 0) else ()
+    else if kb == 1 then
+      if ph == 0 then
+        val cc = Typer.caseCount(g, Ast.b(g, root), 0, 0)
+        if cc > Emit.hget(k, 10) then Emit.hset(k, 10, cc) else ()
+      else if ph == 1 then Emit.enumTypes(Emit.E(x, k, 0, 0, 0, 0, 0, base), root, Typer.symOf(x, Ast.a(g, root)), 1, true)
+      else if ph == 4 then Emit.enumTypes(Emit.E(x, k, 0, 0, 0, 0, 0, base), root, Typer.symOf(x, Ast.a(g, root)), 1, false)
+      else ()
+    else if kb == 2 then Emit.externRoot(x, k, base, root, ph)
+    else if kb == 3 then Emit.handlerRoot(x, k, base, root, ph)
+    else ()
+    Emit.roots(x, k, f, rs, base, i + 1, if root == 0 then prev else root, ph)
+  else ()
+

@@ -1,0 +1,6 @@
+def Gate.erasedBinds(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    if Ast.kd(g, n) == Ast.kBind() && Gate.tyHasCap(g, rcap, rk, Ast.a(g, n)) then Gate.row1(u) else ()
+    Gate.erasedBinds(g, u, rcap, rk, l, i + 1)
+  else ()

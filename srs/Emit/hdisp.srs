@@ -1,0 +1,25 @@
+// prompt: the run-time dispatch of op node n over the handlers of its capability (handle-table entries i.., each handler once): `hc_<cap> == <h> ? call h : ...`; the last handler is the else branch (the gate proves a handler is installed)
+def Emit.hdisp(e: Emit.E, n: I64, r: I64, sg: I64, i: I64): Unit =
+  val k = Emit.kOf(e)
+  if i < Emit.hget(k, 0) then
+    val hi = Emit.hget(k, 17 + 2 * i)
+    val ci = Emit.hget(k, 16 + 2 * i)
+    if Emit.capOwns(Emit.wOf(e), ci, sg) && !Emit.hseen(k, hi, 0, i) then
+      if Emit.hfirstFrom(e, sg, i + 1) then
+        Emit.po(e,"(hc_")
+        Emit.id(e, ci)
+        Emit.po(e," == ")
+        Emit.pi(e, hi)
+        Emit.po(e," ? ")
+        Emit.hcallRaw(e, n, hi, r)
+        Emit.po(e," : ")
+        Emit.hdisp(e, n, r, sg, i + 1)
+        Emit.po(e,")")
+      else Emit.hcallRaw(e, n, hi, r)
+    else Emit.hdisp(e, n, r, sg, i + 1)
+  else
+    Emit.hinc(k, 11)
+    Emit.po(e,"(abort(), (")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e,"){0})")
+

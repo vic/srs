@@ -1,0 +1,56 @@
+// prompt: compile value expression or statement e of file x to prefix code on the stack: 1 LIT hi lo (a decimal literal below 2^60), 2 BOOL b, 3 SLOT i (a value binder of list pr, or a val/var of the def's nodes lo..hi: Typer.ctSlot), 4 UN op e (- !), 5 BIN op l r (Typer.ctOp), 6 CALL sym argc args (a def call by symbol, no [] args), 7 SET i e (val/var/assign of a local), 8 SEQ n items (a block), 9 WHILE c b, 10 IF c a b, 11 UNIT; false for any other node (no compile-time value; the caller resets the stack)
+def Typer.ctComp(x: Typer.X, e: I64, pr: I64, lo: I64, hi: I64): Bool =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, e)
+  val j = Ast.tok(g, e)
+  if k == Ast.kParen() || k == Ast.kDo() then Typer.ctComp(x, Ast.a(g, e), pr, lo, hi)
+  else if k == Ast.kInt() && Typer.litOk(Ast.text(g, j), 0) then
+    val v = Typer.dec(Ast.text(g, j), 0, 0)
+    Typer.push(s, 1)
+    Typer.push(s, v / 4294967296)
+    Typer.push(s, v % 4294967296)
+    true
+  else if k == Ast.kName() && Typer.useKind(x, j) == Resolve.kBuiltin() && (Str.eq(Ast.text(g, j), "true") || Str.eq(Ast.text(g, j), "false")) then
+    Typer.push(s, 2)
+    Typer.push(s, if Str.eq(Ast.text(g, j), "true") then 1 else 0)
+    true
+  else if k == Ast.kName() && Typer.useKind(x, j) == Resolve.kLocal() && Typer.ctSlot(x, Typer.useRef(x, j), pr, lo, hi) >= 0 then
+    Typer.push(s, 3)
+    Typer.push(s, Typer.ctSlot(x, Typer.useRef(x, j), pr, lo, hi))
+    true
+  else if k == Ast.kUn() && (Typer.clsTok(g, j) == Token.minus() || Typer.clsTok(g, j) == Token.bang()) then
+    Typer.push(s, 4)
+    Typer.push(s, Typer.clsTok(g, j))
+    Typer.ctComp(x, Ast.a(g, e), pr, lo, hi)
+  else if k == Ast.kBin() && Typer.ctOp(Typer.clsTok(g, j)) then
+    Typer.push(s, 5)
+    Typer.push(s, Typer.clsTok(g, j))
+    Typer.ctComp(x, Ast.a(g, e), pr, lo, hi) && Typer.ctComp(x, Ast.b(g, e), pr, lo, hi)
+  else if k == Ast.kCall() && Typer.useKind(x, j) == Resolve.kGlobal() && (Ast.a(g, e) == 0 || Ast.len(g, Ast.a(g, e)) == 0) then
+    Typer.push(s, 6)
+    Typer.push(s, Typer.declSym(x, Typer.useRef(x, j)))
+    Typer.push(s, if Ast.b(g, e) != 0 then Ast.len(g, Ast.b(g, e)) else 0)
+    Typer.ctList(x, Ast.b(g, e), 0, pr, lo, hi)
+  else if k == Ast.kBlock() then
+    Typer.push(s, 8)
+    Typer.push(s, if Ast.a(g, e) != 0 then Ast.len(g, Ast.a(g, e)) else 0)
+    Typer.ctList(x, Ast.a(g, e), 0, pr, lo, hi)
+  else if (k == Ast.kVal() || k == Ast.kVar()) && Typer.ctSlot(x, j, pr, lo, hi) >= 0 then
+    Typer.push(s, 7)
+    Typer.push(s, Typer.ctSlot(x, j, pr, lo, hi))
+    Typer.ctComp(x, Ast.b(g, e), pr, lo, hi)
+  else if k == Ast.kAssign() && Typer.useKind(x, j) == Resolve.kLocal() && Typer.ctSlot(x, Typer.useRef(x, j), pr, lo, hi) >= 0 then
+    Typer.push(s, 7)
+    Typer.push(s, Typer.ctSlot(x, Typer.useRef(x, j), pr, lo, hi))
+    Typer.ctComp(x, Ast.a(g, e), pr, lo, hi)
+  else if k == Ast.kWhile() then
+    Typer.push(s, 9)
+    Typer.ctComp(x, Ast.a(g, e), pr, lo, hi) && Typer.ctComp(x, Ast.b(g, e), pr, lo, hi)
+  else if (k == Ast.kIf() || k == Ast.kIfNl()) && Ast.b(g, e) != 0 && Ast.b(g, Ast.b(g, e)) != 0 then
+    Typer.push(s, 10)
+    Typer.ctComp(x, Ast.a(g, e), pr, lo, hi) && Typer.ctComp(x, Ast.a(g, Ast.b(g, e)), pr, lo, hi) && Typer.ctComp(x, Ast.b(g, Ast.b(g, e)), pr, lo, hi)
+  else if k == Ast.kUnit() then
+    Typer.push(s, 11)
+    true
+  else false
+

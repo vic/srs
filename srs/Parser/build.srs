@@ -1,0 +1,7 @@
+// the store of one file from its lexer output (Skip mode)
+def Parser.build(src: Str, lx: Lexer.Out): Ast.G =
+  val Lexer.Out(tcap, ks, os, ls, t, _, _, _, _) = lx
+  val cls = Array.fill(tcap, U8.of(0))
+  Parser.fillCls(src, Str.len(src), tcap, ks, os, ls, t, cls, 0)
+  Ast.make(src, tcap, cls, os, ls, t)
+

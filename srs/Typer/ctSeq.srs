@@ -1,0 +1,10 @@
+// prompt: SEQ: evaluate n codes from pc in frame fb; the value is the last one's (last is the value so far); a code with no value stops it (no value, position after the n codes)
+def Typer.ctSeq(s: Typer.S, pc: I64, n: I64, fb: I64, last: Typer.Ct): Typer.CtR =
+  if n > 0 then
+    val Typer.CtR(v, nx) = Typer.ctEval(s, pc, fb)
+    v match
+      case Typer.CtNo => Typer.CtR(Typer.CtNo, Typer.ctSkipN(s, nx, n - 1))
+      case Typer.CtInt(_) => Typer.ctSeq(s, nx, n - 1, fb, v)
+      case Typer.CtBool(_) => Typer.ctSeq(s, nx, n - 1, fb, v)
+  else Typer.CtR(last, pc)
+

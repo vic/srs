@@ -1,0 +1,11 @@
+// the chaining value of chunk ci (bytes ci*1024 .. at most 1024), the root output when root
+def Blake3.chunk(s: Str, ci: I64, len: I64, root: Bool, cn: I64, cv: Array[U32](cn)): Unit =
+  val cs = ci * 1024
+  val clen = if len - cs > 1024 then 1024 else len - cs
+  val nb = if clen <= 0 then 1 else (clen + 63) / 64
+  val m = Array.fill(16, U32.of(0))
+  val t = Array.fill(16, U32.of(0))
+  val v = Array.fill(16, U32.of(0))
+  Blake3.ivInto(cn, cv, 0)
+  Blake3.blocks(s, cs, clen, nb, 0, ci, root, cn, cv, 16, m, 16, t, 16, v)
+

@@ -1,0 +1,13 @@
+// the value args of a type (Array[A](n)) are expressions; its type args are types; <g> names binders
+def Resolve.ty(x: Resolve.X, t: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  val k = Ast.kd(g, t)
+  if k == Ast.kTy() then
+    Resolve.tuse(x, Ast.tok(g, t))
+    Resolve.tys(x, Ast.a(g, t), 0)
+    Resolve.exprs(x, Ast.b(g, t), 0)
+  else if k == Ast.kTyCaps() then
+    Resolve.ty(x, Ast.a(g, t))
+    if Resolve.capSig(x) then () else Resolve.useList(x, Ast.b(g, t), 0)
+  else ()
+

@@ -1,0 +1,14 @@
+// prompt: the kernel must reject a typed val whose constrained type is not proven there (vic 2026-11-16: a body value becomes the
+// nominal type only where the typer proves its constraints): SortedBox[Bool] needs Ord[Bool], and only Ord[I64] has a given.
+val NegTests.valConstraint {NegTest}: Never =
+  trait NtVc.Ord [A: Type]:
+    def lt(a: A, b: A): Bool
+  enum NtVc.Box [A: Type]:
+    case NtVc.Box(v: A)
+  given NtVc.Ord[I64]:
+    def lt(a: I64, b: I64): Bool = a < b
+  type NtVc.SortedBox [A: Type] {o: NtVc.Ord[A]} = NtVc.Box[A]
+  def main(): I64 =
+    val b: NtVc.SortedBox[Bool] = NtVc.Box(true)
+    0
+  NegTest.expect("no-given", "SortedBox[Bool] needs Ord[Bool] at the val, and no given or evidence holds it")

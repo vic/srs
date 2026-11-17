@@ -1,0 +1,6 @@
+// prompt: store DIR P..: the units of im under the prefixes ps (all when ps is empty) as a tree under d, and d/IDS (ids of the whole image); 0 when every write worked.
+def Kernel.storeSel(d: Str, im: Kernel.Img, ps: Os.Strs): I64 =
+  Disk.dir(d)
+  val b = Kernel.storeUnits(d, im, ps, 0)
+  if Disk.put(Kernel.path(d, "IDS", ""), Kernel.idsText(im)) == 0 then b else b + 1
+

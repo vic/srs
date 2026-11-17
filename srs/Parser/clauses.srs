@@ -1,0 +1,11 @@
+// the clauses of a def, one per line, after its Indent: pushed on the open list of the def
+def Parser.clauses(g: Ast.G): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.clauses(g)
+  else if Parser.atEnd(g) then Parser.endBlock(g)
+  else
+    Ast.push(g, Parser.clause(g))
+    Parser.clauses(g)
+

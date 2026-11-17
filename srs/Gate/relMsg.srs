@@ -1,0 +1,21 @@
+// one diag line per unit in the output section of relation rel; the @N tag comes from the decl order in the gate program t, never written by hand; a relation missing from t is a gate error (fail closed)
+def Gate.relMsg(code: Str, rel: Str, t: Str, ps: Os.Strs, out: Str): Unit =
+  Console.captureBegin()
+  Console.print(".decl ")
+  Console.print(rel)
+  Console.print("(")
+  val key = Console.captureEnd()
+  Kernel.findFrom(t, key, 0) match
+    case Coll.Some(p) =>
+      Console.captureBegin()
+      Console.print("@")
+      Console.printI64(Gate.declsBefore(t, p, 0, 0))
+      Console.print("\n")
+      val tag = Console.captureEnd()
+      Gate.listMsg(code, ps, Gate.section(out, tag), 0)
+    case Coll.None =>
+      Console.print("error[gate-relation-missing] ")
+      Console.print(rel)
+      Console.print("\n")
+
+

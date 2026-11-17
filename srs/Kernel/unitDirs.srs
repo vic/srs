@@ -1,0 +1,7 @@
+// prompt: make the dir of every proper name prefix of n that ends before a "." at byte i.. (an existing dir is fine).
+def Kernel.unitDirs(d: Str, n: Str, i: I64): Unit =
+  if 0 <= i && i < Str.len(n) then
+    if Str.at(n, i) == 46 then Disk.dir(Kernel.dirPath(d, Str.slice(n, 0, i))) else ()
+    Kernel.unitDirs(d, n, i + 1)
+  else ()
+

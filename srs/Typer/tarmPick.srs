@@ -1,0 +1,12 @@
+// prompt: the result of the first case (pattern, result pairs at pool ss + i.., np items) whose pattern, with the [] binders
+// (pool tp0, ntp) replaced by the args at pool base, is the type sc (interned: one id per type, so equal ids are equal types);
+// none is the Diag no-type-case at token j and the untyped type 0.
+def Typer.tarmPick(s: Typer.S, sc: I64, ss: I64, np: I64, tp0: I64, ntp: I64, base: I64, i: I64, j: I64): I64 =
+  if i + 1 < np then
+    if Typer.msub(s, Typer.poolAt(s, ss + i), tp0, ntp, base) == sc then Typer.msub(s, Typer.poolAt(s, ss + i + 1), tp0, ntp, base)
+    else Typer.tarmPick(s, sc, ss, np, tp0, ntp, base, i + 2, j)
+  else
+    Typer.diag(s, Typer.dTyNoCase(), j)
+    0
+
+

@@ -1,0 +1,9 @@
+// the append primitives. go guarantees room for one decl and four diags before every step.
+// putDecl returns how many diags it added: 0, or 1 when the room was not there (an Overflow diag, unreachable).
+def Split.putDiag(dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64, w: Split.Why, o: I64): Unit =
+  if 0 <= d && d < dcap then
+    Array.put(dw, d, U8.of(Split.whyByte(w)))
+    Array.put(dt, d, U32.of(o))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else ()
+

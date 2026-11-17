@@ -1,0 +1,12 @@
+// prompt: the gate of submit, edit and ingest: units without prompt docs (Kernel.noPrompt) reject the whole candidate (reply
+// "rejected: prompt docs" and the error lines, im stays); else Kernel.gate decides as before.
+def Kernel.gateP(from: Str, me: Str, id: I64, rid: Str, bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, cand: Kernel.Img, bad: I64): Kernel.Img =
+  val miss = Kernel.noPrompt(im, cand, Os.End)
+  miss match
+    case Os.End => Kernel.gate(from, me, id, rid, bp, bt, im, cand, bad)
+    case Os.More(_, _) =>
+      Console.captureBegin()
+      Kernel.joinRev(miss)
+      Kernel.reply(from, me, id, rid, "rejected: prompt docs\n", "", Console.captureEnd())
+      im
+

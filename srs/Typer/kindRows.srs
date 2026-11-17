@@ -1,0 +1,16 @@
+// `--types-kinds`: per node kind, the nodes, the nodes with a ty entry, whether the kind needs one; `required-gaps` = required kinds whose counts differ
+def Typer.kindRows(s: Typer.S, k: I64, gaps: I64): Unit =
+  if k < 100 then
+    val nn = Typer.cget(s, Typer.cKindN() + k)
+    val rr = Typer.cget(s, Typer.cKindR() + k)
+    if nn > 0 then
+      Typer.num(s,"kind ", k)
+      Typer.num(s," nodes=", nn)
+      Typer.num(s," records=", rr)
+      Typer.po(s,if Typer.reqKind(k) then " required=YES\n" else " required=NO\n")
+    else ()
+    Typer.kindRows(s, k + 1, if nn > 0 && Typer.reqKind(k) && nn != rr then gaps + 1 else gaps)
+  else
+    Typer.num(s,"required-gaps=", gaps)
+    Typer.po(s,"\n")
+

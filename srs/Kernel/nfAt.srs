@@ -1,0 +1,12 @@
+// prompt: print the full stream of the member of scc c with rank k; false when scc c has no member of rank k.
+def Kernel.nfAt(w: Resolve.W, tj: Kernel.Tj, nf: Kernel.Nf, c: I64, k: I64, rs: Coll.List[Typer.R], u: I64): Bool = rs match
+  case Coll.Nil => false
+  case Coll.Cons(r, rest) =>
+    val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+    val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+    if 0 <= u && u < tn && u < n && I64.of(comp(u)) == c && I64.of(rnk(u)) == k then
+      Kernel.nfStream(w, tj, nf, c, Kernel.MFull, r)
+      Console.print("\n")
+      true
+    else Kernel.nfAt(w, tj, nf, c, k, rest, u + 1)
+

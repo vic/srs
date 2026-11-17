@@ -1,0 +1,10 @@
+// an ascending level: t is the leftmost tree of the group, a its first entry
+def Coll.blPassA [V: Type] (t: Coll.BTree[V], a: Coll.BKT[V], rest: Coll.List[Coll.BKT[V]], acc: Coll.List[Coll.BTK[V]]): Coll.BLvlD[V] = rest match
+  case Coll.Nil => Coll.BLvlD(acc, Coll.blA2(t, a))
+  case Coll.Cons(b, r2) => r2 match
+    case Coll.Nil => Coll.BLvlD(acc, Coll.blA3(t, a, b))
+    case Coll.Cons(c, r3) => r3 match
+      case Coll.Nil => Coll.BLvlD(acc, Coll.blA4(t, a, b, c))
+      case Coll.Cons(d, r4) => c match
+        case Coll.BKT(kc, vc, tc) => Coll.blPassA(tc, d, r4, Coll.Cons(Coll.BTK(Coll.blA3(t, a, b), kc, vc), acc))
+

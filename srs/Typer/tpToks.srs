@@ -1,0 +1,9 @@
+// the tokens of the binders of every group of kind k among the parts (the [] type params), pushed on the stack
+def Typer.tpToks(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kGTypes() then Typer.pushToks(x, Ast.a(g, n), 0) else ()
+    Typer.tpToks(x, r, i + 1)
+  else ()
+

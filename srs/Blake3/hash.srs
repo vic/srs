@@ -1,0 +1,10 @@
+// the BLAKE3 hash of s as 64 hex digits
+def Blake3.hash(s: Str): Str =
+  val len = Str.len(s)
+  val nc = if len == 0 then 1 else (len + 1023) / 1024
+  val cv = Array.fill(8, U32.of(0))
+  Blake3.sub(s, len, 0, nc, true, 8, cv)
+  Console.captureBegin()
+  Blake3.hexw(8, cv, 0)
+  Console.captureEnd()
+

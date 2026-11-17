@@ -1,0 +1,13 @@
+// prompt: the better of candidate c and the best so far b (Scala3 rank, as the gate's gRank): the more specific head wins (one covers the other but not back); on a draw the given without a {} or <> group wins; else b stays
+def Emit.gbetter(s: Typer.S, c: Emit.GPick, b: Emit.GPick): Emit.GPick = c match
+  case Emit.GNone => b
+  case Emit.GAt(_, _, hc, ec) => b match
+    case Emit.GNone => c
+    case Emit.GAt(_, _, hb, eb) =>
+      val cb = Typer.gmatch(s, hb, hc)
+      val bc = Typer.gmatch(s, hc, hb)
+      if cb && !bc then c
+      else if bc && !cb then b
+      else if eb && !ec then c
+      else b
+

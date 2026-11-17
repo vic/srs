@@ -1,0 +1,10 @@
+def Planner.factsTxt(names: Os.Strs, ins: Os.Strs, src: Planner.Src): Unit = names match
+  case Os.End => ()
+  case Os.More(n, r) =>
+    val t = Planner.inFacts(ins, n, src)
+    Console.printI64(Planner.nLines(t, 0, 0))
+    Console.print("\n")
+    Planner.tabsOut(t, 0, Str.len(t))
+    if Str.len(t) > 0 && Str.at(t, Str.len(t) - 1) != 10 then Console.print("\n") else ()
+    Planner.factsTxt(r, ins, src)
+

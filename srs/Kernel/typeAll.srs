@@ -1,0 +1,13 @@
+// type: print the name of every def/val unit whose signature (telescope + result type) equals q; binder names and spaces do not count
+def Kernel.typeAll(im: Kernel.Img, q: Str): Unit = im match
+  case Kernel.Empty => ()
+  case Kernel.Unit(m, t, r) =>
+    Kernel.hdrAt(t, 0) match
+      case Coll.Some(h) =>
+        val s = Kernel.nmEnd(t, h)
+        if Kernel.sigEq(t, s, Kernel.hdrEnd(t, s, 0), q, 0, Str.len(q)) then
+          Console.print(m)
+          Console.print("\n")
+        else ()
+      case Coll.None => ()
+    Kernel.typeAll(r, q)

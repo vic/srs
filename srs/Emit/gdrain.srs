@@ -1,0 +1,10 @@
+// prompt: after all bodies: for each queued goal i.. (the queue grows while given bodies queue their own goals) emit the instance of the best given (Emit.gpick); a goal no given covers emits nothing, so its call fails at C link time, never silently
+def Emit.gdrain(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R], i: I64): Unit =
+  if i < Emit.hget(k, Emit.gqBase()) then
+    val z = Emit.hget(k, Emit.gqBase() + 1 + i)
+    Emit.gpick(w, s, rs, 0, z, Emit.GNone) match
+      case Emit.GAt(fi, root, _, _) => Emit.gAt(w, s, k, rs, 0, fi, root, z)
+      case Emit.GNone => ()
+    Emit.gdrain(w, s, k, rs, i + 1)
+  else ()
+

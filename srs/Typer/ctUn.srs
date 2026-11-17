@@ -1,0 +1,6 @@
+// prompt: unary operator c (- on I64, ! on Bool) applied to a; CtNo otherwise
+def Typer.ctUn(c: I64, a: Typer.Ct): Typer.Ct = a match
+  case Typer.CtInt(v) => if c == Token.minus() then Typer.CtInt(0 - v) else Typer.CtNo
+  case Typer.CtBool(b) => if c == Token.bang() then Typer.CtBool(!b) else Typer.CtNo
+  case Typer.CtNo => Typer.CtNo
+

@@ -1,0 +1,16 @@
+// kb = the skeleton's decl kind byte: 0 def, 1 enum, 2 extern, 3 handler, 4 capability, 5 trait, 6 type, 7 val, 8 given
+def Resolve.declRoot(w: Resolve.W, g: Ast.G, lcap: I64, ln: Array[U32](lcap), fi: I64, kb: I64, root: I64): Unit =
+  if kb == 0 then Resolve.declTok(w, g, lcap, ln, fi, Resolve.kGlobal(), Ast.a(g, root))
+  else if kb == 1 then
+    Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tEnum(), Ast.a(g, root))
+    Resolve.declCases(w, g, lcap, ln, fi, Ast.b(g, root), 0)
+  else if kb == 2 then Resolve.declExtern(w, g, lcap, ln, fi, Ast.b(g, root))
+  else if kb == 3 then Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tHandler(), Ast.a(g, root))
+  else if kb == 4 then
+    Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tCap(), Ast.a(g, root))
+    Resolve.declOps(w, g, lcap, ln, fi, Ast.a(g, root), Ast.b(g, root), 0)
+  else if kb == 5 then Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tTrait(), Ast.a(g, root))
+  else if kb == 6 then Resolve.declTyTok(w, g, lcap, ln, fi, Resolve.tDecl(), Ast.a(g, root))
+  else if kb == 7 then Resolve.declTok(w, g, lcap, ln, fi, Resolve.kGlobal(), Ast.tok(g, root))
+  else ()
+

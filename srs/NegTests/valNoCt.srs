@@ -1,0 +1,8 @@
+// prompt: the kernel must reject a value arg that is a runtime local, with error[no-compile-time-value] (missingEntry for the param of the untyped type)
+val NegTests.valNoCt {NegTest}: Never =
+  type NtVn.B (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def NtVn.h(n: I64, x: NtVn.B(n)): I64 = 0
+  NegTest.expect("no-compile-time-value", "missingEntry", "the param n has a value only at run time, a type needs it at compile time")
+

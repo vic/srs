@@ -1,0 +1,10 @@
+// body items split at depth-0 commas
+def Planner.items(s: Str, i: I64, b: I64, d: I64): Os.Strs =
+  if i >= Str.len(s) then Os.More(Str.slice(s, b, Str.len(s)), Os.End)
+  else
+    val c = Str.at(s, i)
+    if c == 40 then Planner.items(s, i + 1, b, d + 1)
+    else if c == 41 then Planner.items(s, i + 1, b, d - 1)
+    else if c == 44 && d == 0 then Os.More(Str.slice(s, b, i), Planner.items(s, i + 1, i + 1, d))
+    else Planner.items(s, i + 1, b, d)
+

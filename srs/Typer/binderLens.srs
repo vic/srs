@@ -1,0 +1,8 @@
+// the length binder types of the params (kBind: tok = name) of list r, pushed: the callee binders of a call
+def Typer.binderLens(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    Typer.push(s, Typer.lenBind(s, Ast.tok(g, Ast.item(g, r, i))))
+    Typer.binderLens(x, r, i + 1)
+  else ()
+

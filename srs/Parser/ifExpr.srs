@@ -1,0 +1,13 @@
+// if c then rhs [NL] else rhs
+def Parser.ifExpr(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val c = Parser.expr(g)
+  Parser.eat(g, Token.kthen())
+  val t = Parser.rhs(g)
+  val nlf = Parser.is(g, Token.nl()) && Parser.cl1(g) == Token.kelse()
+  if nlf then Parser.adv(g) else ()
+  Parser.eat(g, Token.kelse())
+  val e = Parser.rhs(g)
+  Ast.mk(g, if nlf then Ast.kIfNl() else Ast.kIf(), j, c, Ast.mk(g, Ast.kPair(), j, t, e))
+

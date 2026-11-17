@@ -1,0 +1,13 @@
+// the first byte c of a line, at j after col spaces
+def Lexer.lineAt(src: Str, n: I64, nt: Lexer.Notes, i: I64, j: I64, col: I64, c: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if c == 9 then Lexer.diag(src, n, nt, j, j + 1, Lexer.Tab, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Mid)
+  // a blank line: Keep adds one blank Doc per run of blank lines, none at the start (s2 Lex.blank)
+  else if c == 10 then
+    if Lexer.keep(nt) && t > 0 && !Lexer.lastBlank(cap, ks, ls, t) then
+      val inc = Lexer.putTok(cap, ks, os, ls, t, Lexer.KDoc, j, 0, dcap, dc, dof, d)
+      Lexer.go(src, n, nt, j, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, Lexer.Mid)
+    else Lexer.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Mid)
+  // a comment line has no indent
+  else if c == 47 && Lexer.is(src, n, j + 1, 47) then Lexer.go(src, n, nt, j, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Mid)
+  else Lexer.indent(src, n, nt, i, j, col, Lexer.top(scap, st, sp), cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+

@@ -1,0 +1,9 @@
+// the binders of the evidence groups `{r: Region}`: their types go to the ty column (they are no params of the C signature)
+def Typer.evBinders(x: Typer.X, parts: I64, i: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kGEv() then Typer.evPut(x, Ast.a(g, n), 0) else ()
+    Typer.evBinders(x, parts, i + 1)
+  else ()
+

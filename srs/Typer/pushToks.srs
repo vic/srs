@@ -1,0 +1,9 @@
+def Typer.pushToks(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    // the binder `[A: Type]` introduces the type param A: its ty entry is that Param type
+    Typer.tyPut(s, Ast.item(g, r, i), Typer.mk(s, Typer.bParam(), 0, Ast.tok(g, Ast.item(g, r, i)), Typer.mark(s)))
+    Typer.push(s, Ast.tok(g, Ast.item(g, r, i)))
+    Typer.pushToks(x, r, i + 1)
+  else ()
+

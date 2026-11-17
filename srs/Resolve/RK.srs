@@ -1,0 +1,21 @@
+// s3c NAMES-1: name resolution over the AST as a functional pass, in s2. Scope rules learned from s2/names.srs (Names.expr 342,
+// Names.arms 365, Names.block 380, Names.fn 302, Names.clauses 328, Names.decl 183): a use of a name or a call is a local (params and
+// {} evidence binders of its def, val/var/handle binders of the block before it, arm and val-pattern binders, quantifier binder, the
+// implicit `result` of a clause, the fields of a case in its own field types) or else a global by its FULL name (a def, an extern def or
+// val, a top-level val, an enum case, a capability op `Cap.op`, a builtin). Innermost binder wins; a val's own value is resolved before
+// its binder is in scope. `_` binds nothing. A dotted name is one token and is looked up whole: there is no module prefix rule.
+// Data shape new: symbols = an interned name table (flat open addressing, s3 hash over the bytes, a byte pool), globals = a table indexed
+// by symbol id (dense, so it is sorted by symbol) -> decl id with kind/file/line/name columns, locals = a scope stack of (symbol, binder
+// token, kind). The result is SoA per file indexed by the USE-SITE TOKEN (a use site is not always a node: pattern binders, evidence
+// names): ref U32 (Local: binder token; others: decl id) and refKind U8 (Nm.RK, closed: Global Local Case Builtin Cap Unresolved).
+// Overflow of a fixed table is counted in slot Nm.sOver (never silent); every unreachable-by-sizing else says so.
+
+// ── ref kinds ──
+enum Resolve.RK:
+  case Resolve.RGlobal
+  case Resolve.RLocal
+  case Resolve.RCase
+  case Resolve.RBuiltin
+  case Resolve.RCap
+  case Resolve.RUnres
+

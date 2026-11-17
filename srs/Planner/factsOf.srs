@@ -1,0 +1,7 @@
+// the facts file DIR/NAME.facts (numbers, tab separated); "" when dir is "" or the file is absent
+def Planner.factsOf(dir: Str, name: Str): Str =
+  if Str.len(dir) == 0 then ""
+  else Files.bytes(Kernel.path(dir, name, ".facts")) match
+    case Os.Ok(t) => t
+    case Os.Fail(_) => ""
+

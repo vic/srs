@@ -1,0 +1,35 @@
+// prompt: evaluate the prefix code (Typer.ctComp) at pool position pc, SLOT i read from env entry fb + i: the value and the position after the code; Unit is CtInt 0; CtNo for an unknown op or a CtNo operand
+def Typer.ctEval(s: Typer.S, pc: I64, fb: I64): Typer.CtR =
+  val op = Typer.poolAt(s, pc)
+  if op == 1 then Typer.CtR(Typer.CtInt(Typer.poolAt(s, pc + 1) * 4294967296 + Typer.poolAt(s, pc + 2)), pc + 3)
+  else if op == 2 then Typer.CtR(Typer.CtBool(Typer.poolAt(s, pc + 1) != 0), pc + 2)
+  else if op == 3 then Typer.CtR(Typer.ctAt(s, fb + Typer.poolAt(s, pc + 1)), pc + 2)
+  else if op == 4 then
+    val Typer.CtR(a, na) = Typer.ctEval(s, pc + 2, fb)
+    Typer.CtR(Typer.ctUn(Typer.poolAt(s, pc + 1), a), na)
+  else if op == 5 then
+    val Typer.CtR(l, nl) = Typer.ctEval(s, pc + 2, fb)
+    val Typer.CtR(r, nr) = Typer.ctEval(s, nl, fb)
+    Typer.CtR(Typer.ctBin(Typer.poolAt(s, pc + 1), l, r), nr)
+  else if op == 6 then Typer.ctCall(s, pc, fb)
+  else if op == 7 then
+    val Typer.CtR(v, nx) = Typer.ctEval(s, pc + 2, fb)
+    Typer.ctPut(s, fb + Typer.poolAt(s, pc + 1), v)
+    v match
+      case Typer.CtNo => Typer.CtR(Typer.CtNo, nx)
+      case Typer.CtInt(_) => Typer.CtR(Typer.CtInt(0), nx)
+      case Typer.CtBool(_) => Typer.CtR(Typer.CtInt(0), nx)
+  else if op == 8 then Typer.ctSeq(s, pc + 2, Typer.poolAt(s, pc + 1), fb, Typer.CtInt(0))
+  else if op == 9 then Typer.ctLoop(s, pc, fb)
+  else if op == 10 then
+    val Typer.CtR(c, na) = Typer.ctEval(s, pc + 1, fb)
+    val nb = Typer.ctSkip(s, na)
+    c match
+      case Typer.CtBool(b) =>
+        val Typer.CtR(v, _) = Typer.ctEval(s, if b then na else nb, fb)
+        Typer.CtR(v, Typer.ctSkip(s, nb))
+      case Typer.CtInt(_) => Typer.CtR(Typer.CtNo, Typer.ctSkip(s, nb))
+      case Typer.CtNo => Typer.CtR(Typer.CtNo, Typer.ctSkip(s, nb))
+  else if op == 11 then Typer.CtR(Typer.CtInt(0), pc + 1)
+  else Typer.CtR(Typer.CtNo, pc + 1)
+

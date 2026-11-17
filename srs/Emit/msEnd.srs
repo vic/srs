@@ -1,0 +1,10 @@
+// prompt: the end segment of a site chain whose last statement is a cut: it gives the rest's value to done (md_<site>) or returns it
+def Emit.msEnd(e: Emit.E, site: I64, ckey: I64, rT: I64, vT: I64, done: Bool, proto: Bool): Unit =
+  Emit.msSegHead(e, site, ckey, 0 - 1, rT, vT)
+  if proto then Emit.po(e,";\n")
+  else if done then
+    Emit.po(e," { return md_")
+    Emit.pi(e, site)
+    Emit.po(e,"(v_); }\n")
+  else Emit.po(e," { return v_; }\n")
+

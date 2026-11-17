@@ -1,0 +1,8 @@
+// prompt: topVal(u) for each unit u (file index from u) that is a plain top-level val (Gate.topValAny).
+def Gate.topValRows(rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, _, _, _) = r
+    if Gate.topValAny(f, 0) then Gate.row1(u) else ()
+    Gate.topValRows(rest, u + 1)
+

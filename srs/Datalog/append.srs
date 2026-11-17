@@ -1,0 +1,9 @@
+def Datalog.append {g: Srs.Region} (st: Datalog.St, r: I64, a: I64): Unit =
+  val n = Datalog.cnt(st, r)
+  Datalog.relOf(st, r) match
+    case Datalog.Rel.Mk(cap, _, _) => if n >= cap then Datalog.resize(st, r, if cap < 8 then 16 else cap * 2) else ()
+  Datalog.relOf(st, r) match
+    case Datalog.Rel.Mk(_, rn, xs) =>
+      Datalog.putRow(st, rn, xs, n * a, 0, a)
+      Datalog.setCnt(st, r, n + 1)
+      Datalog.linkAll(st, r, a, n, Datalog.rst(st, r), Datalog.rst(st, r + 1))

@@ -1,0 +1,21 @@
+// prompt: the kernel must reject a call that needs a capability (implicit evidence) before any handle of it is open, with error[no-capability]: the provider is checked at the call, not anywhere in the unit
+val NegTests.capBeforeHandle {NegTest}: Never =
+  capability NtCb.Door:
+    state Shut, Open1, Open2, Gone
+    start Shut
+    stop Gone
+    transition knock Shut -> Open1, Open1 -> Open2
+    def knock <s knock t> (): I64 <t>
+    transition leave Open1 -> Gone, Open2 -> Gone
+    def leave <s leave t> (): Unit <t>
+  handler NtCb.HDoor for NtCb.Door:
+    def knock(): I64 = 3
+    def leave(): Unit = ()
+  def NtCb.kn {d: NtCb.Door} <d: Shut> (): I64 <d: Open1> = d.knock()
+  def NtCb.go(): I64 =
+    val x = NtCb.kn()
+    handle d = NtCb.HDoor()
+    d.knock()
+    d.leave()
+    x
+  NegTest.expect("no-capability", "kn needs a Door, and no Door handle is open yet where kn is called")

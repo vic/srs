@@ -1,0 +1,14 @@
+def Typer.fileInsts(x: Typer.X, f: Resolve.F, i: I64, names: Bool): Unit =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  val Typer.X(_, _, s, _, _, _) = x
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 0 && root != 0 then
+      val sym = Typer.symOf(x, Ast.a(g, root))
+      if Typer.sigAt(s, sym, 3) > 0 && Typer.sigAt(s, sym, 4) == 0 && Typer.sigAt(s, sym, 0) != 0 then
+        Typer.instsOf(x, Ast.a(g, Typer.part(g, Ast.b(g, root), 0, Ast.kParams())), Typer.mxGet(s, Typer.moIhd(s, sym)), names)
+      else ()
+    else ()
+    Typer.fileInsts(x, f, i + 1, names)
+  else ()
+

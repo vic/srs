@@ -1,0 +1,6 @@
+// prompt: true when t (a nominal type: its body) is one machine word an atomic cell can hold: I64, U64 or Ptr (s2 atom_list).
+def Typer.isWordTy(s: Typer.S, t: I64): Bool =
+  val u = Typer.unfold(s, t)
+  u == Typer.cget(s, Typer.tI64()) || u == Typer.cget(s, Typer.tU64()) || (Typer.kind(s, u) == Typer.bBuiltin() && Typer.cls(s, u) == Typer.clsPtr())
+
+

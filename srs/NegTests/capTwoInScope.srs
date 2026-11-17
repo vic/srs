@@ -1,0 +1,23 @@
+// prompt: the kernel must reject a call with implicit evidence while two handles of its capability are open at the call, with error[no-capability] (two providers: the evidence is ambiguous)
+val NegTests.capTwoInScope {NegTest}: Never =
+  capability NtRp.Door:
+    state Shut, Open1, Open2, Gone
+    start Shut
+    stop Gone
+    transition knock Shut -> Open1, Open1 -> Open2
+    def knock <s knock t> (): I64 <t>
+    transition leave Open1 -> Gone, Open2 -> Gone
+    def leave <s leave t> (): Unit <t>
+  handler NtRp.HDoor for NtRp.Door:
+    def knock(): I64 = 3
+    def leave(): Unit = ()
+  def NtRp.kn {d: NtRp.Door} <d: Shut> (): I64 <d: Open1> = d.knock()
+  def NtRp.go(): I64 =
+    handle d = NtRp.HDoor()
+    handle e = NtRp.HDoor()
+    val x = NtRp.kn()
+    d.leave()
+    e.knock()
+    e.leave()
+    x
+  NegTest.expect("no-capability", "d and e are both open at the call, so kn's evidence has two providers")

@@ -1,0 +1,9 @@
+// the last token of the expression is a Dedent (a block or match arms close its lines), so a following else is on a new line
+def Printer.endsDed(g: Ast.G, n: I64): Bool =
+  val k = Ast.kd(g, n)
+  if k == Ast.kBlock() || k == Ast.kMatch() then true
+  else if k == Ast.kIf() || k == Ast.kIfNl() then Printer.endsDed(g, Ast.b(g, Ast.b(g, n)))
+  else if k == Ast.kWhile() then Printer.endsDed(g, Ast.b(g, n))
+  else if k == Ast.kAssign() then Printer.endsDed(g, Ast.a(g, n))
+  else false
+

@@ -1,0 +1,9 @@
+// prompt: the compile-time code of every def root (kind 0) among the roots i.. of file f; prev = the previous root (a def's nodes are prev + 1 .. root)
+def Typer.ctFile(x: Typer.X, f: Resolve.F, i: I64, prev: I64): Unit =
+  val Resolve.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 0 && root != 0 then Typer.ctDef(x, root, prev + 1) else ()
+    Typer.ctFile(x, f, i + 1, if root != 0 then root else prev)
+  else ()
+

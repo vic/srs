@@ -1,0 +1,7 @@
+// F2 (Ptr part): true when a type token of the unit resolves to the builtin type Ptr (symbol sp)
+def Gate.hasPtr(sp: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Bool =
+  if 0 <= j && j < rcap then
+    if I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tBuiltin() && I64.of(rf(j)) == sp then true
+    else Gate.hasPtr(sp, rcap, rk, rf, j + 1)
+  else false
+

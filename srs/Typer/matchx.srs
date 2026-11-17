@@ -1,0 +1,9 @@
+// prompt: type a match n against want: the scrutinee (a constrained, nominal type is seen through to its body type, vic 2026-11-16), the arms, exhaustiveness, the joined result.
+def Typer.matchx(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val ts = Typer.unfold(s, Typer.walk(s, Typer.expr(x, Ast.a(g, n), 0)))
+  val res = Typer.resultOf(s, want)
+  val d = Typer.arms(x, Ast.b(g, n), 0, ts, res, want == 0)
+  Typer.exhaustive(x, n, Ast.b(g, n))
+  Typer.joined(s, res, d > 0)
+

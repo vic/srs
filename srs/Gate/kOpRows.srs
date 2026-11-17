@@ -1,0 +1,9 @@
+// prompt: kOp(u, o) rows: in unit u (file index) a handler fn o whose first param is untyped (a multi-shot op clause with its continuation k)
+def Gate.kOpRows(rs: Coll.List[Typer.R], w: Resolve.W, u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, _, _, _) = r
+    val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+    Gate.kOpRoots(w, g, u, rc, rk, rr, 0)
+    Gate.kOpRows(rest, w, u + 1)
+

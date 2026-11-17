@@ -1,0 +1,13 @@
+// count mode: off(u+1) += 1; fill mode: adj(cur(u)) = v, cur(u) += 1
+def Kernel.edge(dg: Kernel.Dg, u: I64, v: I64, m: I64, adj: Array[U32](m), fill: Bool): Unit =
+  val Kernel.Dg(n, n1, off, cur, gv) = dg
+  val w = u + 1
+  if fill then
+    if 0 <= u && u < n1 then
+      val p = I64.of(cur(u))
+      if 0 <= p && p < m then Array.put(adj, p, U32.of(v)) else ()
+      Array.put(cur, u, U32.of(p + 1))
+    else ()
+  else if 0 <= w && w < n1 then Array.put(off, w, U32.of(I64.of(off(w)) + 1))
+  else ()
+

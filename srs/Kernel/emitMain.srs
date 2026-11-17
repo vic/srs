@@ -1,0 +1,17 @@
+// prompt: --emit child: checks BASE + FILE exactly as --neg does; when the gate accepts, emits the closure of main (+ implicit roots) as C to cp. VAccept = C written, VReject = gate rejected or emit failed (reason on stderr), VUnread = a file is unreadable. The run oracle of the corpus progs (compile cp, run, compare stdout with the s2 .out file).
+def Kernel.emitMain(pre: Str, p: Str, cp: Str): Kernel.Verdict = Files.bytes(pre) match
+  case Os.Fail(_) => Kernel.VUnread
+  case Os.Ok(bt) => Files.bytes(p) match
+    case Os.Fail(_) => Kernel.VUnread
+    case Os.Ok(pt) =>
+      val im = Kernel.splitAdd(Kernel.split(Kernel.Empty, bt), pt)
+      val Kernel.Res(code, _) = Kernel.check(Os.End, Os.End, im)
+      if code != 0 then Kernel.VReject
+      else
+        val Kernel.Res(c, why) = Kernel.build(Os.End, Os.End, Kernel.closure(im, Os.More("main", Kernel.implicitRoots())), cp)
+        if c == 0 then Kernel.VAccept
+        else
+          Console.eprint(why)
+          Console.eprint("\n")
+          Kernel.VReject
+

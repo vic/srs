@@ -1,0 +1,8 @@
+def Emit.kget(k: Emit.K, sym: I64): I64 =
+  val Emit.K(kn, kc, _, _, _, _, _) = k
+  if 0 <= sym && sym < kn then I64.ofU8(kc(sym))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Emit.over(k)
+    0
+

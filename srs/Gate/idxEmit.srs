@@ -1,0 +1,13 @@
+def Gate.idxEmit(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, arr: Coll.Option[I64], ix: I64): Unit =
+  if Gate.fkB(sel) == Gate.fkB(Gate.FIsite) then Gate.row2(u, n)
+  else if Gate.fkB(sel) == Gate.fkB(Gate.FIarr) then
+    arr match
+      case Coll.Some(a) => Gate.row3(u, n, a)
+      case Coll.None => ()
+  else if Gate.fkB(sel) == Gate.fkB(Gate.FIlit) then Gate.optRow3(u, n, Gate.intOf(g, ix))
+  else if Gate.fkB(sel) == Gate.fkB(Gate.FIarg) then
+    Gate.localOf(g, rcap, rk, rf, ix) match
+      case Coll.Some(i) => Gate.row3(u, n, i)
+      case Coll.None => ()
+  else ()
+

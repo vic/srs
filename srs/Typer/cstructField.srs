@@ -1,0 +1,15 @@
+// prompt: `s.f()` on a local of extern struct type (symbol ss): no args, result the declared type of field f (Typer.fieldIx); an unknown field or args is untyped (91)
+def Typer.cstructField(x: Typer.X, n: I64, ss: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  Typer.fieldIx(s, ss, Typer.symIns(x, Ast.a(g, n)), 0) match
+    case Coll.Some(i) =>
+      if Ast.len(g, Ast.b(g, n)) == 0 then
+        Typer.ceRec(s, n, ss)
+        Typer.poolAt(s, Typer.sigAt(s, ss, 1) + i)
+      else
+        Typer.args(x, Ast.b(g, n), 0)
+        Typer.untyped(x, Ast.tok(g, n), 91)
+    case Coll.None =>
+      Typer.args(x, Ast.b(g, n), 0)
+      Typer.untyped(x, Ast.tok(g, n), 91)
+
