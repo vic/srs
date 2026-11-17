@@ -1,5 +1,9 @@
 # srs
 
+
+[![Sponsor](https://img.shields.io/badge/sponsor-vic-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/vic)
+
+
 srs is a systems language with a Scala 3 surface that compiles to portable C. It has no garbage collector. Memory lives in regions, effects are capabilities that callers must handle, and the compiler proves memory safety before it emits code. A program that it cannot prove safe does not compile.
 
 ## Programs are named units
