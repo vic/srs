@@ -1,0 +1,6 @@
+// set byte k of the page at p to b (0..255): rewrite the word at offset k with its low byte replaced
+def Srs.Sk.setByte(p: Ptr, k: I64, b: I64): Unit =
+  val q = rt_ptr_add(p, k)
+  val w = rt_ptr_get(q, 0)
+  rt_ptr_set(q, 0, w - (w % 256 + 256) % 256 + b)
+

@@ -1,0 +1,22 @@
+def Emit.ixBuild(s: Typer.S, k: Emit.K): Unit =
+  val n = Typer.cget(s, Typer.cTypes())
+  if n == Emit.hget(k, 130) then ()
+  else
+    val Typer.S(tt, _, _, _, _) = s
+    val Typer.Tt(tcap, tk, _, th, _, _) = tt
+    val Emit.K(kn, _, _, _, xo, xn, xi) = k
+    Emit.hinc(k, 136)
+    Emit.ixClear(kn, xo, 0, Emit.hget(k, 132))
+    val mx = Emit.ixCount(tcap, tk, th, kn, xo, 1, n, 0)
+    Emit.ixPre(kn, xo, 1, mx + 2)
+    Emit.hset(k, 132, mx + 2)
+    // xi is an eighth of the type table: more enum ids than room = no index (the full scan answers), never a wrong list
+    if Emit.xg(kn, xo, mx + 2) <= xn then
+      Emit.ixFill(tcap, tk, th, kn, xo, xn, xi, 1, n)
+      Emit.hset(k, 131, mx)
+      Emit.hset(k, 130, n)
+    else
+      Emit.hinc(k, 134)
+      Emit.hset(k, 131, 0 - 1)
+      Emit.hset(k, 130, 0)
+

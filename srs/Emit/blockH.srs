@@ -1,0 +1,23 @@
+// a block that handles capabilities ends with their drops: its value is kept in a temp across them
+def Emit.blockH(e: Emit.E, n: I64, r: I64): Unit =
+  val g = Emit.gOf(e)
+  val len = Ast.len(g, r)
+  val last = Ast.item(g, r, len - 1)
+  Emit.po(e,"({ ")
+  if Emit.isBinder(Ast.kd(g, last)) then
+    Emit.stmtsTo(e, r, 0, len)
+    Emit.drops(e, r, 0)
+    Emit.po(e,"((int64_t)0); })")
+  else
+    Emit.stmtsTo(e, r, 0, len - 1)
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e," res")
+    Emit.pi(e,n)
+    Emit.po(e," = ")
+    Emit.expr(e, if Ast.kd(g, last) == Ast.kDo() then Ast.a(g, last) else last, false)
+    Emit.po(e,"; ")
+    Emit.drops(e, r, 0)
+    Emit.po(e,"res")
+    Emit.pi(e,n)
+    Emit.po(e,"; })")
+

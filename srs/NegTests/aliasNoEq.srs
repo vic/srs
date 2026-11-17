@@ -1,0 +1,7 @@
+// prompt: the kernel must reject a body with an alias line without `=` (`alias Q Al.Probe.Lib` is no alias line), with error[parse].
+val NegTests.aliasNoEq {NegTest}: Never =
+  alias Q Al.Probe.Lib
+  def NtAl.f(): I64 = Q.seven()
+  NegTest.expect("parse", "an alias line is `alias SHORT = LONG`; a line without `=` is no alias and does not parse")
+
+

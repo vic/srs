@@ -1,0 +1,11 @@
+def Emit.tailCall(e: Emit.E, n: I64, sym: I64): Unit =
+  val g = Emit.gOf(e)
+  val s = Emit.sOf(e)
+  val r = Ast.b(g, n)
+  Emit.po(e,"({ ")
+  Emit.tmps(e, r, sym, 0)
+  Emit.assigns(e, r, 0)
+  Emit.po(e,"goto srs_tail; (")
+  Emit.cty(e, Emit.sub(e, Typer.sigAt(s, sym, 0)))
+  Emit.po(e,"){0}; })")
+

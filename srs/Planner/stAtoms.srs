@@ -1,0 +1,7 @@
+def Planner.stAtoms(st: Planner.Ints, h: I64, b: Planner.Atoms, ch: Bool): Planner.StR = b match
+  case Planner.ANil => Planner.StR(st, ch)
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    val need = Planner.nth(st, r) + (if ng then 1 else 0)
+    if Planner.nth(st, h) < need then Planner.stAtoms(Planner.iput(st, h, need), h, rest, true) else Planner.stAtoms(st, h, rest, ch)
+

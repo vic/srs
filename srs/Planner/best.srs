@@ -1,0 +1,7 @@
+def Planner.best(b: Planner.Atoms, i: I64, sl: Planner.Slots, placed: Planner.Ints, bi: Kernel.At, bc: I64): Kernel.At = b match
+  case Planner.ANil => bi
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    if Planner.not(ng) && Planner.nth(placed, i) == 0 && Planner.bcount(ts, sl, 0) > bc then Planner.best(rest, i + 1, sl, placed, Kernel.Found(i), Planner.bcount(ts, sl, 0))
+    else Planner.best(rest, i + 1, sl, placed, bi, bc)
+

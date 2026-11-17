@@ -1,0 +1,7 @@
+// the number of type nodes in type t (head + args, recursively): the size of a type term (Paterson condition on givens)
+def Gate.tySize(g: Ast.G, t: I64): I64 =
+  if t == 0 then 0
+  else if Ast.kd(g, t) == Ast.kTyCaps() then Gate.tySize(g, Ast.a(g, t))
+  else 1 + Gate.tySizeL(g, Ast.a(g, t), 0)
+
+

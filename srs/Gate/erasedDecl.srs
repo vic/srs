@@ -1,0 +1,12 @@
+// erasedR(u) for an enum case field or an extern def result whose type names a capability
+def Gate.erasedDecl(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), n: I64): Unit =
+  val k = Ast.kd(g, n)
+  if k == Ast.kEnum() then Gate.erasedCases(g, u, rcap, rk, Ast.b(g, n), 0)
+  else if k == Ast.kExtern() then
+    val d = Ast.b(g, n)
+    if Ast.kd(g, d) == Ast.kDef() then
+      val kr = Typer.part(g, Ast.b(g, d), 0, Ast.kRet())
+      if kr != 0 && Gate.tyHasCap(g, rcap, rk, Ast.a(g, kr)) then Gate.row1(u) else ()
+    else ()
+  else ()
+

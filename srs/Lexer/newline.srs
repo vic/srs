@@ -1,0 +1,7 @@
+// a newline: an Nl unless the last token is a layout token or the newline is inside ( or [ (s2 Lex.go 135-137)
+def Lexer.newline(src: Str, n: I64, nt: Lexer.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if depth == 0 && !Lexer.layoutLast(cap, ks, t - 1) then
+    val inc = Lexer.layTok(cap, ks, os, ls, t, Lexer.KNl, i, dcap, dc, dof, d)
+    Lexer.go(src, n, nt, i + 1, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, Lexer.Bol)
+  else Lexer.go(src, n, nt, i + 1, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, Lexer.Bol)
+

@@ -1,0 +1,9 @@
+// the last token that is not a Doc (looking back from slot j) is a layout token, or there is none (s2 Lex.layoutLast)
+def Lexer.layoutLast(cap: I64, ks: Array[U8](cap), j: I64): Bool =
+  if 0 <= j && j < cap then
+    val b = I64.ofU8(ks(j))
+    if b == Lexer.kindByte(Lexer.KDoc) then Lexer.layoutLast(cap, ks, j - 1)
+    else b == Lexer.kindByte(Lexer.KNl) || b == Lexer.kindByte(Lexer.KIndent) || b == Lexer.kindByte(Lexer.KDedent)
+  // shortcut: j < 0 is "no token"; j >= cap cannot happen (j < t <= cap); s3 Vec will make it unrepresentable
+  else true
+

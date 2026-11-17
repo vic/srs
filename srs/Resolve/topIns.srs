@@ -1,0 +1,14 @@
+// insert (depth d, file f, line l) into the sorted top list at position i; the displaced entry moves down
+def Resolve.topIns(w: Resolve.W, i: I64, d: I64, f: I64, l: I64): Unit =
+  if i < Resolve.nTop() then
+    val cd = Resolve.cget(w, Resolve.sTop() + i)
+    if d > cd then
+      val cf = Resolve.cget(w, Resolve.sTop() + Resolve.nTop() + i)
+      val cl = Resolve.cget(w, Resolve.sTop() + 2 * Resolve.nTop() + i)
+      Resolve.cset(w, Resolve.sTop() + i, d)
+      Resolve.cset(w, Resolve.sTop() + Resolve.nTop() + i, f)
+      Resolve.cset(w, Resolve.sTop() + 2 * Resolve.nTop() + i, l)
+      Resolve.topIns(w, i + 1, cd, cf, cl)
+    else Resolve.topIns(w, i + 1, d, f, l)
+  else ()
+

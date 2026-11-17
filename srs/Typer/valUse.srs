@@ -1,0 +1,6 @@
+// prompt: true when type use node t names a type decl with value binders (Typer.isValTy); the use kind is read first, so other type uses cost no symbol lookup
+def Typer.valUse(x: Typer.X, t: I64): Bool =
+  val Typer.X(_, g, s, rcap, rk, _) = x
+  val j = Ast.tok(g, t)
+  0 <= j && j < rcap && I64.ofU8(rk(j)) - Resolve.tBase() == Resolve.tDecl() && Typer.isValTy(s, Typer.symOf(x, j))
+

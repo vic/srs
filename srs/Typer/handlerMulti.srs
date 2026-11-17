@@ -1,0 +1,13 @@
+// prompt: the header of a handler root: its [] binders get their Param type entries (as a given's); a handler with a continuation clause is multi-shot (Typer.multiSet) and its `done` fn's result is stored as the signature of H.done over the [] binder tokens (Q-M3: done(x: A): R turns the block value into the answer)
+def Typer.handlerMulti(x: Typer.X, root: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  val m = Typer.mark(s)
+  Typer.tpToks(x, parts, 0)
+  if Typer.hasKOp(g, parts, 0) then
+    Typer.multiSet(s, Typer.symOf(x, Ast.a(g, root)))
+    val d = Typer.partNamed(g, parts, 0, "done")
+    if d != 0 then Typer.sigStore(s, Typer.doneSym(x, Ast.a(g, root)), Typer.ty(x, Ast.a(g, Typer.part(g, Ast.b(g, d), 0, Ast.kRet()))), 0, Typer.cget(s, Typer.cSp()) - m, 0, m)
+    else Typer.cset(s, Typer.cSp(), m)
+  else Typer.cset(s, Typer.cSp(), m)
+

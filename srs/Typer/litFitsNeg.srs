@@ -1,0 +1,9 @@
+// rule int-range for -lit (an I64): the literal may be 2^63 (the I64 minimum)
+def Typer.litFitsNeg(t: Str): Bool =
+  val hex = Str.len(t) > 2 && Str.at(t, 0) == 48 && (Str.at(t, 1) == 120 || Str.at(t, 1) == 88)
+  val st = Typer.litSkip0(t, if hex then 2 else 0)
+  val nd = Typer.litDigits(t, st, 0)
+  if hex then nd <= 15 || (nd == 16 && Typer.digLe(t, st, "8000000000000000", 0))
+  else nd <= 18 || (nd == 19 && Typer.digLe(t, st, "9223372036854775808", 0))
+
+

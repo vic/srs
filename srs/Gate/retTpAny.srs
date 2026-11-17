@@ -1,0 +1,12 @@
+// prompt: true when a root i.. of file f is a def (a plain def, or the def inside an extern decl) whose result type head is one of
+// its own [] type params (token kind Resolve.tParam): the call result may be an arg, or made from one through a given.
+def Gate.retTpAny(f: Resolve.F, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), i: I64): Bool =
+  val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(dr(i))
+    val d = if I64.ofU8(dk(i)) == Split.kindByte(Split.Def) then root else if root != 0 && Ast.kd(g, root) == Ast.kExtern() && Ast.kd(g, Ast.b(g, root)) == Ast.kDef() then Ast.b(g, root) else 0
+    val kr = if d != 0 then Typer.part(g, Ast.b(g, d), 0, Ast.kRet()) else 0
+    val j = if kr != 0 then Ast.tok(g, Ast.a(g, kr)) else 0 - 1
+    (0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tParam()) || Gate.retTpAny(f, rcap, rk, rf, i + 1)
+  else false
+

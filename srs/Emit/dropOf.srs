@@ -1,0 +1,6 @@
+// the drop op symbol of capability cap, 0 when it has none
+def Emit.dropOf(k: Emit.K, cap: I64, i: I64): I64 =
+  if i < Emit.hget(k, 12) then
+    if Emit.hget(k, 100 + 2 * i) == cap then Emit.hget(k, 101 + 2 * i) else Emit.dropOf(k, cap, i + 1)
+  else 0
+

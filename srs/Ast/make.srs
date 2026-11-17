@@ -1,0 +1,22 @@
+// the store for a file whose tokens are (tcap, cls, to, tl, t): every column is sized from t once
+def Ast.make(src: Str, tcap: I64, cls: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64): Ast.G =
+  val ncap = 2 * tcap + 64
+  val xcap = 3 * tcap + 64
+  val scap = tcap + 64
+  val cnn = 16
+  val dcap = tcap + 16
+  val nk = Array.fill(ncap, U8.of(0))
+  val nt = Array.fill(ncap, U32.of(0))
+  val na = Array.fill(ncap, U32.of(0))
+  val nb = Array.fill(ncap, U32.of(0))
+  val xs = Array.fill(xcap, U32.of(0))
+  val stk = Array.fill(scap, U32.of(0))
+  val cn = Array.fill(cnn, 0)
+  val dk = Array.fill(dcap, U8.of(0))
+  val dt = Array.fill(dcap, U32.of(0))
+  val g = Ast.G(Ast.Tk(src, tcap, cls, to, tl, t), Ast.Nd(ncap, nk, nt, na, nb), Ast.Ls(xcap, xs, scap, stk), Ast.Cn(cnn, cn, dcap, dk, dt))
+  // node 0 is the absent node, list 0 is the empty list
+  Ast.cset(g, Ast.sNodes(), 1)
+  Ast.cset(g, Ast.sXs(), 1)
+  g
+

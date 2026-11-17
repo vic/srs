@@ -1,0 +1,15 @@
+def Parser.cases(g: Ast.G, m: I64): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.cases(g, m)
+  else if Parser.atEnd(g) then Parser.endBlock(g)
+  else
+    Parser.eat(g, Token.kcase())
+    val nm = Parser.ident(g)
+    if Parser.is(g, Token.lp()) then
+      Parser.adv(g)
+      Ast.push(g, Ast.mk(g, Ast.kCase(), nm, Parser.binders(g, Ast.mark(g), Token.rp(), 0), 0))
+    else Ast.push(g, Ast.mk(g, Ast.kCaseNP(), nm, 0, 0))
+    Parser.cases(g, m)
+

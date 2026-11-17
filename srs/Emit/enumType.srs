@@ -1,0 +1,11 @@
+def Emit.enumType(e: Emit.E, root: I64, t: I64, pr: Bool): Unit =
+  val g = Emit.gOf(e)
+  Emit.etag(e, t)
+  if pr then
+    Emit.po(e," { union { ")
+    Emit.po(e,Emit.tagTy(Typer.caseCount(g, Ast.b(g, root), 0, 0)))
+    Emit.po(e," tag; union {")
+  else ()
+  Emit.cases(e, Ast.b(g, root), 0, t, pr)
+  if pr then Emit.po(e," uint8_t none_; } u; }; };\n") else ()
+

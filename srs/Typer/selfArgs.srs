@@ -1,0 +1,9 @@
+// the Param type of every [] binder of the groups among the parts, pushed
+def Typer.selfArgs(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kGTypes() then Typer.selfBinders(x, Ast.a(g, n), 0) else ()
+    Typer.selfArgs(x, r, i + 1)
+  else ()
+

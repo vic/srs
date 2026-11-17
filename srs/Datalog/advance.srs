@@ -1,0 +1,10 @@
+// ds := de, de := cnt for every relation; true when any relation has new rows
+def Datalog.advance(st: Datalog.St, r: I64, any: Bool): Bool =
+  if r >= Datalog.nr(st) then any
+  else
+    val d = Datalog.de(st, r)
+    val c = Datalog.cnt(st, r)
+    Datalog.ms(st, Datalog.bDs(st), r, d)
+    Datalog.ms(st, Datalog.bDe(st), r, c)
+    Datalog.advance(st, r + 1, if c > d then true else any)
+

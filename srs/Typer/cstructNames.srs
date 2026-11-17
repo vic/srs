@@ -1,0 +1,8 @@
+// prompt: push the name symbols of the fields i.. of an extern struct (field list r)
+def Typer.cstructNames(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    Typer.push(s, Typer.symIns(x, Ast.tok(g, Ast.item(g, r, i))))
+    Typer.cstructNames(x, r, i + 1)
+  else ()
+

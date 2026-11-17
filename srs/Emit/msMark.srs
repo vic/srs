@@ -1,0 +1,10 @@
+// prompt: CPS fixpoint step for def root (nodes after prev up to root): a plain def (class 0) with no multi-shot handle and a cut becomes a CPS def (class 6, vic-hm63 C3.4: its row holds the multi-shot capability); each change is counted (Emit.msBase)
+def Emit.msMark(x: Typer.X, k: Emit.K, base: I64, root: I64, prev: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  val e = Emit.E(x, k, 0, 0, 0, 0, 0, base)
+  val sym = Typer.symOf(x, Ast.a(g, root))
+  if Emit.kget(k, sym) == 0 && !Emit.msHasH(e, prev + 1, root) && Emit.msHasCut(e, prev + 1, root) then
+    Emit.kset(k, sym, 6)
+    Emit.hinc(k, Emit.msBase())
+  else ()
+

@@ -1,0 +1,10 @@
+// operators of level >= lvl, left associative
+def Parser.binLoop(g: Ast.G, lhs: I64, lvl: I64): I64 =
+  val l = Parser.level(Parser.cl(g))
+  if !Parser.ok(g) || l == 0 || l < lvl then lhs
+  else
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    val rhs = Parser.binary(g, l + 1)
+    Parser.binLoop(g, Ast.mk(g, Ast.kBin(), j, lhs, rhs), lvl)
+

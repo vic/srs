@@ -1,0 +1,9 @@
+// prompt: the token of the node that made type var v, -1 when none.
+def Typer.siteGet(s: Typer.S, v: I64): I64 =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, _, _, _, sw, _, _, _) = sg
+  if 0 <= v && v < gcap then I64.of(sw(v)) - 1
+  // shortcut: a var index is below the var count, below gcap; s3 Vec will make it unrepresentable
+  else 0 - 1
+
+

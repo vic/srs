@@ -1,0 +1,5 @@
+def Coll.sFind [V: Type] (xs: Coll.List[Coll.SEntry[V]], s: Sym.Sym): Coll.Option[V] = xs match
+  case Coll.Nil => Coll.None
+  case Coll.Cons(e, t) => e match
+    case Coll.SEntry(s2, v) => if Sym.eq(s, s2) then Coll.Some(v) else Coll.sFind(t, s)
+

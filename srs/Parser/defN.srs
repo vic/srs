@@ -1,0 +1,29 @@
+// ── decls ──
+// def name groups (params) groups : ty [<atoms>] = rhs. the header parts and the body are one list
+// a def at the cursor (its `def` token): pm = the param mode (Pz.binders), sig = a signature only (a trait's, an extern's): no clauses, no body
+// a top-level val with a telescope (val name groups : ty = rhs) comes here too: it is a def with no (params); its () may not be written
+def Parser.defN(g: Ast.G, pm: I64, sig: Bool): I64 =
+  val j = Parser.cur(g)
+  val isVal = Parser.cl(g) == Token.kval()
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  Parser.groups(g)
+  if isVal then Ast.push(g, Ast.mk(g, Ast.kParams(), Parser.cur(g), 0, 0)) else Ast.push(g, Parser.params(g, pm))
+  Parser.groups(g)
+  Parser.eat(g, Token.colon())
+  val rj = Parser.cur(g)
+  Ast.push(g, Ast.mk(g, Ast.kRet(), rj, Parser.ty(g), 0))
+  if Parser.ok(g) && Parser.is(g, Token.lt()) then Ast.push(g, Parser.facts(g, Ast.kExit())) else ()
+  if !sig then
+    if Parser.ok(g) && Parser.is(g, Token.nl()) && Parser.cl1(g) == Token.indent() then
+      Parser.adv(g)
+      Parser.adv(g)
+      Parser.clauses(g)
+    else ()
+    val bj = Parser.cur(g)
+    Parser.eat(g, Token.eq())
+    Ast.push(g, Ast.mk(g, Ast.kBody(), bj, Parser.rhs(g), 0))
+  else ()
+  Ast.mk(g, Ast.kDef(), j, nm, Ast.close(g, m))
+

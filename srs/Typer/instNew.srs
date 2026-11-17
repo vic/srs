@@ -1,0 +1,12 @@
+def Typer.instNew(s: Typer.S, sym: I64, a: I64, n: I64, slot: I64): Unit =
+  val i = Typer.cget(s, Typer.cNInst())
+  if i < Typer.cget(s, Typer.cMoI()) then
+    Typer.mxSet(s, Typer.moInst(s, i, 0), sym)
+    Typer.mxSet(s, Typer.moInst(s, i, 1), a + 1)
+    Typer.mxSet(s, Typer.moInst(s, i, 2), n)
+    Typer.mxSet(s, Typer.moInst(s, i, 3), Typer.mxGet(s, Typer.moIhd(s, sym)))
+    Typer.mxSet(s, Typer.moIhd(s, sym), i + 1)
+    Typer.mxSet(s, Typer.moHash(s, slot), i + 1)
+    Typer.cset(s, Typer.cNInst(), i + 1)
+  else Typer.cinc(s, Typer.cSubOver())
+

@@ -1,0 +1,11 @@
+// an arm of an if / match against the result r. Without a want (join) the arm lengths may differ: the result is then a fresh rigid length.
+// Returns 1 when the arm type differs from r in a length, else 0
+def Typer.expectArm(x: Typer.X, tok: I64, got: I64, r: I64, join: Bool): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  if join then
+    if Typer.unifyJ(s, got, r) then () else Typer.mis(s, tok)
+    if Typer.hasLen(s, got) && Typer.zonk(s, got) != Typer.zonk(s, r) then 1 else 0
+  else
+    Typer.expect(x, tok, got, r)
+    0
+

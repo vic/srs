@@ -1,0 +1,13 @@
+// a trait method with no {} capabilities is pure: its given may not allocate
+// prompt: the kernel must reject a given method that allocates when its trait method declares no capability, with error[given-row].
+val NegTests.givenRowAlloc {NegTest}: Never =
+  enum Box:
+    case Box(v: I64)
+  trait Size [A: Type]:
+    def size(x: A): I64
+  given Size[I64]:
+    def size(x: I64): I64 =
+      val Box(v) = Box(x)
+      v
+  NegTest.expect("given-row", "an allocation needs Srs.Region, which a pure trait method does not declare")
+

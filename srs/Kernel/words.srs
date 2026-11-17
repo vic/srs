@@ -1,0 +1,7 @@
+def Kernel.words(s: Str, i: I64): Os.Strs =
+  if i >= Str.len(s) then Os.End
+  else if Str.at(s, i) == 32 then Kernel.words(s, i + 1)
+  else
+    val e = Kernel.wordEnd(s, i)
+    Os.More(Str.slice(s, i, e), Kernel.words(s, e))
+

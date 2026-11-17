@@ -1,0 +1,14 @@
+// prompt: the kernel must reject a def whose last expression is a match on data made in a Region handle of its body that returns a
+// pattern binder of a region-holding field type (a list tail), with error[region-escape] (s2 neg scalar_binder_list).
+val NegTests.scalarBinderList {NegTest}: Never =
+  enum NtSb.L:
+    case NtSb.Nil
+    case NtSb.Cons(h: I64, t: NtSb.L)
+  def NtSb.mk {r: Srs.Region} (n: I64): NtSb.L = if n == 0 then NtSb.Nil else NtSb.Cons(n, NtSb.mk(n - 1))
+  def NtSb.load(): NtSb.L =
+    handle tmp = Srs.Arena()
+    NtSb.mk{tmp}(3) match
+      case NtSb.Nil => NtSb.Nil
+      case NtSb.Cons(h, t) => t
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the tail t lives in the Arena tmp of the scrutinee, which dies at the end of load; only a scalar binder (h) holds nothing")

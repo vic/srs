@@ -1,0 +1,8 @@
+def Gate.retRows(w: Resolve.W, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, rc, dk, dr, _) = f
+    Gate.retRoots(w, g, u, rcap, rk, rf, rc, dk, dr, 0)
+    Gate.retRows(w, rest, u + 1)
+

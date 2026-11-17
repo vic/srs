@@ -1,0 +1,20 @@
+// tests action: emit, compile and run the runner; the report (one line per test) or the step that failed
+def Kernel.testsRun(self: Str, im: Kernel.Img): Kernel.Res =
+  val base = Kernel.negBase(Kernel.plain(im))
+  val cp = Kernel.msg2(Kernel.negDir(), "/tests.c")
+  val bin = Kernel.msg2(Kernel.negDir(), "/tests.bin")
+  val rp = Kernel.msg2(Kernel.negDir(), "/tests.out")
+  if Disk.put(rp, "") != 0 then Kernel.Res(1, "error[test-io] report reset failed\n")
+  else Kernel.verdict(Process.run(Kernel.capArgv(Os.More(self, Os.More("--tests", Os.More(base, Os.More(cp, Os.More(rp, Os.End)))))))) match
+    case Kernel.VReject =>
+      val Kernel.Res(cc, cout) = Kernel.ccAct(Os.More(cp, Os.More(bin, Os.End)))
+      if cc != 0 then Kernel.Res(1, Kernel.msg2("error[test-cc] ", cout))
+      else
+        val Kernel.Res(rc, rout) = Kernel.ranRes(Process.run(Kernel.capArgv(Os.More(bin, Os.End))))
+        Files.bytes(rp) match
+          case Os.Ok(o) => Kernel.Res(rc, o)
+          case Os.Fail(_) => Kernel.Res(1, Kernel.msg2("error[test-run] no report: ", rout))
+    case Kernel.VAccept => Kernel.Res(1, "error[test-emit] the runner did not emit\n")
+    case Kernel.VUnread => Kernel.Res(1, "error[test-emit] base unreadable\n")
+    case Kernel.VCrash => Kernel.Res(1, "error[test-emit] emit child crashed\n")
+

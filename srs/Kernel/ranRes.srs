@@ -1,0 +1,14 @@
+def Kernel.ranRes(r: Os.Ran): Kernel.Res = r match
+  case Os.Exited(c) =>
+    val code = if c == 0 then 0 else 1
+    Console.captureBegin()
+    Console.print("exit ")
+    Console.printI64(c)
+    Kernel.Res(code, Console.captureEnd())
+  case Os.Killed(s) =>
+    Console.captureBegin()
+    Console.print("killed by signal ")
+    Console.printI64(s)
+    Kernel.Res(1, Console.captureEnd())
+  case Os.NoStart(_) => Kernel.Res(1, "not started")
+

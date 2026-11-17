@@ -1,0 +1,13 @@
+// ── type: type Name groups [(value binders)] = body (s2 Parse.typeDecl 201) ──
+def Parser.typeDecl(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  Parser.groups(g)
+  val vp = if Parser.ok(g) && Parser.is(g, Token.lp()) then Parser.params(g, 0) else 0
+  if vp != 0 then Ast.push(g, vp) else ()
+  Parser.eat(g, Token.eq())
+  Ast.push(g, Parser.tbody(g, vp))
+  Ast.mk(g, Ast.kType(), j, nm, Ast.close(g, m))
+

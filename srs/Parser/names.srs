@@ -1,0 +1,11 @@
+// ── names, terms ──
+def Parser.names(g: Ast.G, m: I64, close: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, close) then
+    Parser.adv(g)
+    Ast.close(g, m)
+  else
+    Ast.push(g, Parser.ident(g))
+    Parser.comma(g)
+    Parser.names(g, m, close)
+

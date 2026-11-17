@@ -1,0 +1,10 @@
+def Emit.symAt(w: Resolve.W, sym: I64, i: I64): I64 =
+  val Resolve.W(sy, _, _, _) = w
+  val Resolve.Sy(_, _, scap, so, sl, pcap, pool) = sy
+  if 0 <= sym && sym < scap then
+    if 0 <= i && i < I64.of(sl(sym)) then
+      val q = I64.of(so(sym)) + i
+      if 0 <= q && q < pcap then I64.ofU8(pool(q)) else 0 - 1
+    else 0 - 1
+  else 0 - 1
+

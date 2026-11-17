@@ -1,0 +1,9 @@
+// the JSON string value that follows pat, up to the next double quote; "" when absent
+def Kernel.field(s: Str, pat: Str): Str = Kernel.find(s, pat, 0) match
+  case Kernel.Found(j) =>
+    val b = j + Str.len(pat)
+    Kernel.findCh(s, 34, b) match
+      case Kernel.Found(e) => Str.slice(s, b, e)
+      case Kernel.Missing => ""
+  case Kernel.Missing => ""
+

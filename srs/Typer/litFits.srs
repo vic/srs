@@ -1,0 +1,13 @@
+// rule int-range: an integer literal fits its type (cls 0 I64, 5 U32, 11 U64): no silent wrap
+def Typer.litFits(t: Str, cls: I64): Bool =
+  val hex = Str.len(t) > 2 && Str.at(t, 0) == 48 && (Str.at(t, 1) == 120 || Str.at(t, 1) == 88)
+  val st = Typer.litSkip0(t, if hex then 2 else 0)
+  val nd = Typer.litDigits(t, st, 0)
+  if hex then
+    if cls == 5 then nd <= 8
+    else if cls == 11 then nd <= 16
+    else nd <= 15 || (nd == 16 && Typer.digLe(t, st, "7", 0))
+  else
+    if cls == 5 then nd <= 9 || (nd == 10 && Typer.digLe(t, st, "4294967295", 0))
+    else if cls == 11 then nd <= 19 || (nd == 20 && Typer.digLe(t, st, "18446744073709551615", 0))
+    else nd <= 18 || (nd == 19 && Typer.digLe(t, st, "9223372036854775807", 0))

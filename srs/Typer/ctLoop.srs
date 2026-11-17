@@ -1,0 +1,19 @@
+// prompt: WHILE at pc (cond, body) in frame fb: 1 fuel per turn (out of fuel is no value); a Bool cond, the body run while it is true; value Unit (CtInt 0), position after the loop
+def Typer.ctLoop(s: Typer.S, pc: I64, fb: I64): Typer.CtR =
+  val bb = Typer.ctSkip(s, pc + 1)
+  val en = Typer.ctSkip(s, bb)
+  if !Typer.ctBurn(s) then Typer.CtR(Typer.CtNo, en)
+  else
+    val Typer.CtR(c, _) = Typer.ctEval(s, pc + 1, fb)
+    c match
+      case Typer.CtBool(b) =>
+        if b then
+          val Typer.CtR(v, _) = Typer.ctEval(s, bb, fb)
+          v match
+            case Typer.CtNo => Typer.CtR(Typer.CtNo, en)
+            case Typer.CtInt(_) => Typer.ctLoop(s, pc, fb)
+            case Typer.CtBool(_) => Typer.ctLoop(s, pc, fb)
+        else Typer.CtR(Typer.CtInt(0), en)
+      case Typer.CtInt(_) => Typer.CtR(Typer.CtNo, en)
+      case Typer.CtNo => Typer.CtR(Typer.CtNo, en)
+

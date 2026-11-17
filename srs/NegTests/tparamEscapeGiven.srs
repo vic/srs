@@ -1,0 +1,15 @@
+// prompt: the kernel must reject a def that returns, through a generic def that turns an A into a B with a given, a value made inside
+// a Region handle of its body, with error[region-escape] (s2 neg tparam_escape_given).
+val NegTests.tparamEscapeGiven {NegTest}: Never =
+  enum NtTg.Box:
+    case NtTg.Box(v: I64)
+  trait NtTg.Id [A: Type] [B: Type]:
+    def conv(x: A): B
+  given NtTg.Id[NtTg.Box, NtTg.Box]:
+    def conv(x: NtTg.Box): NtTg.Box = x
+  def NtTg.via [A: Type] [B: Type] {c: NtTg.Id[A, B]} (x: A): B = c.conv(x)
+  def NtTg.leak(): NtTg.Box =
+    handle r = Srs.Arena()
+    NtTg.via[NtTg.Box, NtTg.Box](NtTg.Box(2))
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "via may build its B from the arg: the result keeps the region r of the Box, which dies at the end of leak")

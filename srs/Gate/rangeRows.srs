@@ -1,0 +1,12 @@
+// range sites: Array.blit(xs, at, s, m) and Array.slice(xs, off, m): bsite / ssite(u, n) always; rargs(u, n, a, at, m) when array, start and count are bare locals
+def Gate.rangeRows(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, j: I64): Unit =
+  val l = Ast.b(g, n)
+  val t = if 0 <= j && j < rcap then Ast.text(g, j) else ""
+  if Str.eq(t, "Array.blit") && Ast.len(g, l) >= 4 then
+    if Gate.fkB(sel) == Gate.fkB(Gate.FBsite) then Gate.row2(u, n) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FRargs) then Gate.rargsRow(g, u, rcap, rk, rf, n, Ast.item(g, l, 0), Ast.item(g, l, 1), Ast.item(g, l, 3)) else ()
+  else if Str.eq(t, "Array.slice") && Ast.len(g, l) >= 3 then
+    if Gate.fkB(sel) == Gate.fkB(Gate.FSsite) then Gate.row2(u, n) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FRargs) then Gate.rargsRow(g, u, rcap, rk, rf, n, Ast.item(g, l, 0), Ast.item(g, l, 1), Ast.item(g, l, 2)) else ()
+  else ()
+

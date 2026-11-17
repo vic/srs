@@ -1,0 +1,15 @@
+// a B4 is only met at the root (children are split before they are entered)
+def Coll.bIns [V: Type] (t: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = t match
+  case Coll.BTip => Coll.B2(Coll.BTip, k, v, Coll.BTip)
+  case Coll.B2(a, k1, v1, b) =>
+    if k == k1 then Coll.B2(a, k1, v, b)
+    else if k < k1 then Coll.bInto2L(a, k1, v1, b, k, v)
+    else Coll.bInto2R(a, k1, v1, b, k, v)
+  case Coll.B3(a, k1, v1, b, k2, v2, c) =>
+    if k == k1 then Coll.B3(a, k1, v, b, k2, v2, c)
+    else if k == k2 then Coll.B3(a, k1, v1, b, k2, v, c)
+    else if k < k1 then Coll.bInto3A(a, k1, v1, b, k2, v2, c, k, v)
+    else if k < k2 then Coll.bInto3B(a, k1, v1, b, k2, v2, c, k, v)
+    else Coll.bInto3C(a, k1, v1, b, k2, v2, c, k, v)
+  case Coll.B4(a, k1, v1, b, k2, v2, c, k3, v3, d) => Coll.bRootIns(a, k1, v1, b, k2, v2, c, k3, v3, d, k, v)
+

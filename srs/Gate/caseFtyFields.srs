@@ -1,0 +1,9 @@
+// prompt: caseFty rows of the fields fl[i..] of the case with symbol s.
+def Gate.caseFtyFields(w: Resolve.W, g: Ast.G, s: I64, fl: I64, i: I64): Unit =
+  if i < Ast.len(g, fl) then
+    val n = Ast.item(g, fl, i)
+    val t0 = Ast.a(g, n)
+    val t = if Ast.kd(g, t0) == Ast.kTyCaps() then Ast.a(g, t0) else t0
+    if Ast.kd(g, n) == Ast.kBind() && Ast.kd(g, t) == Ast.kTy() then Gate.row3(s, i, Gate.tsym(w, g, Ast.tok(g, t))) else ()
+    Gate.caseFtyFields(w, g, s, fl, i + 1)
+  else ()

@@ -1,0 +1,9 @@
+// the cases of an enum are the items of kind kCase / kCaseNP of its part list
+def Resolve.declCases(w: Resolve.W, g: Ast.G, lcap: I64, ln: Array[U32](lcap), fi: I64, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kCase() || k == Ast.kCaseNP() then Resolve.declTok(w, g, lcap, ln, fi, Resolve.kCase(), Ast.tok(g, n)) else ()
+    Resolve.declCases(w, g, lcap, ln, fi, r, i + 1)
+  else ()
+

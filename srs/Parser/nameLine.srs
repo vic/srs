@@ -1,0 +1,8 @@
+// names separated by commas to the end of a line (at least one), as a list
+def Parser.nameLine(g: Ast.G, m: I64): I64 =
+  Ast.push(g, Parser.ident(g))
+  if Parser.ok(g) && Parser.is(g, Token.comma()) then
+    Parser.adv(g)
+    Parser.nameLine(g, m)
+  else Ast.close(g, m)
+

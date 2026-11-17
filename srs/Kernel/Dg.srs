@@ -1,0 +1,10 @@
+// ── unit identity (vic 2026-11-16: "yes to unit identity hashing") ──
+// id(u) = B3(hex scc hash of u, then the name of u). scc hash = B3(name and text of each member in name order, then the hex scc hash
+// of every other scc the members use, in name order of that scc's first member). A use = a resolved token of u that names a global,
+// a case, a capability op or a type of another unit, and every given (a given is chosen by type, never named).
+// Tarjan numbers an scc after every scc it uses, so scc hashes are made in number order.
+
+// the dependency graph in CSR: off(u)..off(u+1) index adj; cur = fill cursors; gv(u) = 1 when unit u is a given
+enum Kernel.Dg:
+  case Kernel.Dg(n: I64, n1: I64, off: Array[U32](n1), cur: Array[U32](n1), gv: Array[U8](n))
+

@@ -1,0 +1,13 @@
+def Resolve.load(i: I64): Coll.List[Resolve.F] =
+  if i >= Args.count() then Coll.Nil
+  else
+    val p = Args.at(i)
+    Files.bytes(p) match
+      case Os.Ok(src) =>
+        val f = Resolve.parseFile(p, src)
+        Coll.Cons(f, Resolve.load(i + 1))
+      case Os.Fail(_) =>
+        Console.print(p)
+        Console.print(" unreadable\n")
+        Resolve.load(i + 1)
+

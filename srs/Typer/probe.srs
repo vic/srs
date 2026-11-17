@@ -1,0 +1,13 @@
+def Typer.probe(s: Typer.S, kind: I64, cls: I64, head: I64, m: I64, n: I64, slot: I64, k: I64): I64 =
+  val Typer.S(_, hh, _, _, _) = s
+  val Typer.Hh(hcap, hs) = hh
+  if 0 <= slot && slot < hcap && k < hcap then
+    val id = I64.of(hs(slot))
+    if id == 0 then Typer.insert(s, kind, cls, head, m, n, slot)
+    else if Typer.same(s, id, kind, head, m, n) then id
+    else Typer.probe(s, kind, cls, head, m, n, (slot + 1) % hcap, k + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Typer.over(s)
+    0
+

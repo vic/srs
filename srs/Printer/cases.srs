@@ -1,0 +1,20 @@
+// ── decls ──
+def Printer.cases(g: Ast.G, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kCase() then
+      Printer.line(2)
+      Printer.s("case ")
+      Printer.tok(g, Ast.tok(g, n))
+      Printer.s("(")
+      Printer.binders(g, Ast.a(g, n), 0)
+      Printer.s(")")
+    else if k == Ast.kCaseNP() then
+      Printer.line(2)
+      Printer.s("case ")
+      Printer.tok(g, Ast.tok(g, n))
+    else ()
+    Printer.cases(g, r, i + 1)
+  else ()
+

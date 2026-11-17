@@ -1,0 +1,14 @@
+def Planner.negPass(b: Planner.Atoms, i: I64, g: Planner.G): Planner.G = b match
+  case Planner.ANil => g
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    val Planner.G(sl, ns, na, xs, placed, bad) = g
+    if ng && Planner.nth(placed, i) == 0 && Planner.ready(ts, sl) then
+      Console.print(" 1 ")
+      Console.printI64(r)
+      Console.print(" ")
+      Console.printI64(r)
+      val Planner.Pl(m, sl2, ns2, b2) = Planner.placeTs(ts, 1, sl, sl, ns, 0)
+      Planner.negPass(rest, i + 1, Planner.G(sl2, ns2, na + 1, xs, Planner.iput(placed, i, 1), bad || b2))
+    else Planner.negPass(rest, i + 1, g)
+

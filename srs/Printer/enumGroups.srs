@@ -1,0 +1,10 @@
+// the groups before the cases of an enum
+def Printer.enumGroups(g: Ast.G, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kCase() || k == Ast.kCaseNP() then ()
+    else
+      Printer.part(g, n, 0)
+      Printer.enumGroups(g, r, i + 1)
+  else ()

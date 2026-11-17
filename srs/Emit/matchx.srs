@@ -1,0 +1,13 @@
+def Emit.matchx(e: Emit.E, n: I64, tail: Bool): Unit =
+  val g = Emit.gOf(e)
+  val sc = Ast.a(g, n)
+  Emit.po(e,"({ ")
+  Emit.cty(e, Emit.tyS(e, sc))
+  Emit.po(e," s")
+  Emit.pi(e,n)
+  Emit.po(e," = ")
+  Emit.expr(e, sc, false)
+  Emit.po(e,"; ")
+  Emit.arms(e, Ast.b(g, n), 0, n, tail)
+  Emit.po(e,"; })")
+

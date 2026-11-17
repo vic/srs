@@ -1,0 +1,7 @@
+// true when t[i, e) and q[j, f) are the same signature
+def Kernel.sigEq(t: Str, i: I64, e: I64, q: Str, j: I64, f: I64): Bool =
+  val a = Kernel.sk(t, i, e)
+  val b = Kernel.sk(q, j, f)
+  if a >= e || b >= f then a >= e && b >= f
+  else Str.at(t, a) == Str.at(q, b) && Kernel.sigEq(t, a + 1, e, q, b + 1, f)
+

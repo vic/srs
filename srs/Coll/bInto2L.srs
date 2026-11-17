@@ -1,0 +1,8 @@
+// descend into the left child a of B2(a, k1, v1, b) with k < k1
+def Coll.bInto2L [V: Type] (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k: I64, v: V): Coll.BTree[V] = a match
+  case Coll.BTip => Coll.B3(Coll.BTip, k, v, Coll.BTip, k1, v1, Coll.BTip)
+  case Coll.B4(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4) =>
+    Coll.bLift2L(Coll.bSplitIns(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, k, v), k1, v1, b)
+  case Coll.B2(_, _, _, _) => Coll.B2(Coll.bIns(a, k, v), k1, v1, b)
+  case Coll.B3(_, _, _, _, _, _, _) => Coll.B2(Coll.bIns(a, k, v), k1, v1, b)
+

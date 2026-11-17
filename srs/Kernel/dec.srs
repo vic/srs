@@ -1,0 +1,19 @@
+def Kernel.dec(s: Str, i: I64, e: I64, n: I64, xs: Array[U8](n), o: I64): I64 =
+  if i >= e then o
+  else
+    val c = Str.at(s, i)
+    if c != 92 then Kernel.dec(s, i + 1, e, n, xs, Kernel.put(n, xs, o, c))
+    else
+      val d = Str.at(s, i + 1)
+      if d == 110 then Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, 10))
+      else if d == 116 then Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, 9))
+      else if d == 114 then Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, 13))
+      else if d == 98 then Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, 8))
+      else if d == 102 then Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, 12))
+      else if d == 117 then
+        val cp = Kernel.u4(s, i + 2)
+        if 55296 <= cp && cp < 56320 && Str.at(s, i + 6) == 92 && Str.at(s, i + 7) == 117 then
+          Kernel.dec(s, i + 12, e, n, xs, Kernel.utf8(n, xs, o, 65536 + (cp - 55296) * 1024 + (Kernel.u4(s, i + 8) - 56320)))
+        else Kernel.dec(s, i + 6, e, n, xs, Kernel.utf8(n, xs, o, cp))
+      else Kernel.dec(s, i + 2, e, n, xs, Kernel.put(n, xs, o, d))
+

@@ -1,0 +1,8 @@
+// m with s bound to v (a binding of s is replaced): one find, then one path copy
+def Coll.sInsert [V: Type] (m: Coll.SMap[V], s: Sym.Sym, v: V): Coll.SMap[V] = m match
+  case Coll.SMap(t) =>
+    val h = Sym.hash(s)
+    val n = Coll.bFind(t, h)
+    if Coll.bIsNode(n) then Coll.SMap(Coll.bRep(t, h, Coll.sSet(Coll.bValOr(n, h, Coll.Nil), s, v)))
+    else Coll.SMap(Coll.bIns(t, h, Coll.Cons(Coll.SEntry(s, v), Coll.Nil)))
+

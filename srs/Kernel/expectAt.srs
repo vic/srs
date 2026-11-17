@@ -1,0 +1,5 @@
+// the start of the NegTest.expect line of the body from b, when it is the last line that is not blank
+def Kernel.expectAt(t: Str, b: I64): Coll.Option[I64] = Kernel.findFrom(t, "  NegTest.expect(", b) match
+  case Coll.Some(q) => if q > 0 && Str.at(t, q - 1) == Kernel.ch("\n") && Kernel.blankFrom(t, Kernel.lineAfter(t, q)) then Coll.Some(q) else Coll.None
+  case Coll.None => Coll.None
+

@@ -1,0 +1,15 @@
+// prompt: the kernel must reject a call that names region r2 for a param whose array lives in r1, with error[capability-bound].
+val NegTests.putParamBound {NegTest}: Never =
+  def Pc.push {r: Srs.Region} (n: I64, xs: Array[Str](n)<r>, i: I64, s: Str<r>): Unit =
+    if 0 <= i && i < n then Array.put(xs, i, s) else ()
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r1 = Srs.Arena()
+    val n = 2
+    val xs = Array.fill(n, "")
+    handle r2 = Srs.Arena()
+    val bs = Array.fill(n, U8.of(104))
+    val s = Str.ofBytes{r2}(n, bs)
+    Pc.push{r2}(n, xs, 0, s)
+    0
+  NegTest.expect("capability-bound", "xs lives in r1 but the call binds the param region r to r2")

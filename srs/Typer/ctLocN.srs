@@ -1,0 +1,5 @@
+// prompt: the count n.. of val/var nodes among nodes i..hi (the local slots of a def)
+def Typer.ctLocN(x: Typer.X, i: I64, hi: I64, n: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < hi then Typer.ctLocN(x, i + 1, hi, if Ast.kd(g, i) == Ast.kVal() || Ast.kd(g, i) == Ast.kVar() then n + 1 else n) else n
+

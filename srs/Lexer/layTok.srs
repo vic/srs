@@ -1,0 +1,18 @@
+// a layout token of kind k, zero-width, goes before the Doc tokens just lexed (s2 Lex.under); its offset is o, or the
+// offset of the first of those Docs
+def Lexer.layTok(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, k: Lexer.Kind, o: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64): I64 =
+  val p = Lexer.docStart(cap, ks, t)
+  if p == t then Lexer.putTok(cap, ks, os, ls, t, k, o, 0, dcap, dc, dof, d)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else if 0 <= p && p < cap then
+    if p < t && t < cap then
+      val a = I64.of(os(p))
+      Lexer.shift(cap, ks, os, ls, t, p)
+      Lexer.putTok(cap, ks, os, ls, p, k, a, 0, dcap, dc, dof, d)
+    else
+      Lexer.putDiag(dcap, dc, dof, d, Lexer.Overflow, o)
+      1
+  else
+    Lexer.putDiag(dcap, dc, dof, d, Lexer.Overflow, o)
+    1
+

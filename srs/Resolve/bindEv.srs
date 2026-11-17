@@ -1,0 +1,10 @@
+// ── decls ──
+// the binders of the {} evidence groups of a def's parts, then its params: all are locals of its types, clauses and body
+def Resolve.bindEv(x: Resolve.X, parts: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kGEv() then Resolve.bindBinders(x, Ast.a(g, p), 0) else ()
+    Resolve.bindEv(x, parts, i + 1)
+  else ()
+

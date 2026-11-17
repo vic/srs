@@ -1,0 +1,14 @@
+// prompt: the kernel must reject a 2-term fact atom that names no rule of a capability the def holds, with error[unknown-relation] (its entry facts then have no solution: error[entry-facts-unsolvable])
+val NegTests.ruleUnknown {NegTest}: Never =
+  capability NtRu.Door:
+    state Shut, Open1, Open2, Gone
+    start Shut
+    stop Gone
+    transition knock Shut -> Open1, Open1 -> Open2
+    def knock <s knock t> (): I64 <t>
+    transition leave Open1 -> Gone, Open2 -> Gone
+    def leave <s leave t> (): Unit <t>
+    rule def reach(s, t) = next(s, knock, t)
+  def NtRu.un {d: NtRu.Door} <d: Shut, nope(Shut, t), next(Shut, knock, t)> (): I64 <d: t> = d.knock()
+  NegTest.expect("unknown-relation", "entry-facts-unsolvable", "Door has no rule nope")
+

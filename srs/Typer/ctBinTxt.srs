@@ -1,0 +1,7 @@
+// prompt: the index of the value binder of list pr (from i) whose name is text t, -1 when none (the scrutinee of a value match type)
+def Typer.ctBinTxt(x: Typer.X, pr: I64, t: Str, i: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, pr) then
+    if Str.eq(Ast.text(g, Ast.tok(g, Ast.item(g, pr, i))), t) then i else Typer.ctBinTxt(x, pr, t, i + 1)
+  else 0 - 1
+

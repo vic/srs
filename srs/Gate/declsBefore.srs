@@ -1,0 +1,6 @@
+// how many ".decl " lines of the gate program t start before position p (from i, counted n): the 0-based @N tag of the decl at p
+def Gate.declsBefore(t: Str, p: I64, i: I64, n: I64): I64 = Kernel.findFrom(t, ".decl ", i) match
+  case Coll.Some(q) => if q < p then Gate.declsBefore(t, p, q + 1, n + 1) else n
+  case Coll.None => n
+
+

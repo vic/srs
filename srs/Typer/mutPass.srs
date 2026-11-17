@@ -1,0 +1,11 @@
+// R3: the mutability pre-pass of one file (cFile set): every `var` binder and every assignment target is marked, before any length is read
+def Typer.mutPass(x: Typer.X, n: I64, nn: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if n < nn then
+    val k = Ast.kd(g, n)
+    if k == Ast.kVar() then Typer.muSet(s, Ast.tok(g, n))
+    else if k == Ast.kAssign() && Typer.useKind(x, Ast.tok(g, n)) == Resolve.kLocal() then Typer.muSet(s, Typer.useRef(x, Ast.tok(g, n)))
+    else ()
+    Typer.mutPass(x, n + 1, nn)
+  else ()
+

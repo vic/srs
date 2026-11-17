@@ -1,0 +1,9 @@
+// the defs among the parts of a handler, trait or given
+def Resolve.defsOf(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kDef() || Ast.kd(g, n) == Ast.kCapDef() then Resolve.defN(x, n) else ()
+    Resolve.defsOf(x, r, i + 1)
+  else ()
+

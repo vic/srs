@@ -1,0 +1,9 @@
+// reqOp(u, c, o, j): token j of unit u is a request on capability unit c; o = the symbol of the op name (the name after the last dot)
+def Gate.reqOpToks(w: Resolve.W, g: Ast.G, gcap: I64, gf: Array[U32](gcap), u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    val d = I64.of(rf(j))
+    if I64.ofU8(rk(j)) == Resolve.kCap() && 0 < d && d < gcap then Gate.row4(u, I64.of(gf(d)), Resolve.sym(w, Gate.opNameT(g, j), true), j) else ()
+    Gate.reqOpToks(w, g, gcap, gf, u, rcap, rk, rf, j + 1)
+  else ()
+
+

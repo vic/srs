@@ -1,0 +1,6 @@
+def Parser.relDeclared(g: Ast.G, r: I64, i: I64, rel: I64): Bool =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kTrans() && Str.eq(Ast.text(g, Ast.a(g, n)), Ast.text(g, rel)) then true else Parser.relDeclared(g, r, i + 1, rel)
+  else false
+

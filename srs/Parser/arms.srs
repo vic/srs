@@ -1,0 +1,14 @@
+def Parser.arms(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.atEnd(g) then
+    Parser.endBlock(g)
+    Ast.close(g, m)
+  else
+    val j = Parser.eat(g, Token.kcase())
+    val p = Parser.pat(g)
+    Parser.eat(g, Token.arrow())
+    val b = Parser.rhs(g)
+    Ast.push(g, Ast.mk(g, Ast.kArm(), j, p, b))
+    if Parser.is(g, Token.nl()) then Parser.adv(g) else ()
+    Parser.arms(g, m)
+

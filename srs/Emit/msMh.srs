@@ -1,0 +1,35 @@
+// prompt: the op fn of a continuation clause d at a site: `R mh_<site>_<op>(R (*k_)(void**, V), void** ke_, params)` (V = the capability op's result), its body with resume k(v) = k_(ke_, v) (resume mode in the emitter table)
+def Emit.msMh(eh: Emit.E, d: I64, hs: I64, site: I64, rT: I64, proto: Bool): Unit =
+  val Emit.E(x, k, tp0, ntp, pb, _, _, base) = eh
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, d)
+  val b = Typer.part(g, parts, 0, Ast.kBody())
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  val ed = Emit.E(x, k, tp0, ntp, pb, 0, pr, base)
+  val sg = Typer.opFind(s, Typer.head(s, Typer.declTyGet(s, hs)), Typer.symIns(x, Ast.a(g, d)), 0)
+  if sg == 0 || b == 0 then Emit.unsup(ed, Ast.kDef())
+  else
+    Emit.po(ed,"static ")
+    Emit.cty(ed, rT)
+    Emit.po(ed," mh_")
+    Emit.pi(ed, site)
+    Emit.po(ed,"_")
+    Emit.po(ed, Ast.text(g, Ast.a(g, d)))
+    Emit.po(ed,"(")
+    Emit.cty(ed, rT)
+    Emit.po(ed," (*k_)(void**, ")
+    Emit.cty(ed, Typer.sigAt(s, sg, 0))
+    Emit.po(ed,"), void** ke_")
+    if Emit.ntyped(ed, pr, 0) > 0 then
+      Emit.po(ed,", ")
+      Emit.hparams(ed, pr, 0, 0)
+    else ()
+    Emit.po(ed,")")
+    if proto then Emit.po(ed,";\n")
+    else
+      Emit.po(ed," { return ")
+      Emit.hset(k, Emit.msBase() + 1, 1)
+      Emit.expr(ed, Ast.a(g, b), false)
+      Emit.hset(k, Emit.msBase() + 1, 0)
+      Emit.po(ed,"; }\n")
+

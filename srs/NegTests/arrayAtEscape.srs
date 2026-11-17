@@ -1,0 +1,8 @@
+// prompt: the kernel must reject a def that returns xs.at(j) made inside a Region handle of its body, with error[region-escape]
+// (s2 neg array_at_escape): the Array.Index value lives in the innermost Region, which dies at the end of the def.
+val NegTests.arrayAtEscape {NegTest}: Never =
+  def NtAe.peek(n: I64, xs: Array[I64](n)): Array.Index[I64] =
+    handle r = Srs.Arena()
+    xs.at(0)
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "xs.at(0) builds its Array.Index in the Arena r, which closes when peek returns")

@@ -1,0 +1,8 @@
+// the number of explicit type args in the [T, ...] groups r of a call (from i, counted n)
+def Typer.targN(g: Ast.G, r: I64, i: I64, n: I64): I64 =
+  if i < Ast.len(g, r) then
+    val c = Ast.item(g, r, i)
+    Typer.targN(g, r, i + 1, if Ast.kd(g, c) == Ast.kCGTys() then n + Ast.len(g, Ast.a(g, c)) else n)
+  else n
+
+

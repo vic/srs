@@ -1,0 +1,7 @@
+// the next index at or after i in [i, e) whose char counts in a signature: spaces, newlines and binder names do not count
+def Kernel.sk(t: Str, i: I64, e: I64): I64 =
+  if i >= e || i >= Str.len(t) then e
+  else if Str.at(t, i) == Kernel.ch(" ") || Str.at(t, i) == Kernel.ch("\n") then Kernel.sk(t, i + 1, e)
+  else if Kernel.binder(t, i, e) then Kernel.sk(t, Kernel.spc(t, Kernel.idEnd(t, i, e), e) + 1, e)
+  else i
+

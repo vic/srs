@@ -1,0 +1,8 @@
+// cv(i..) = hs(b + i..)
+def Kernel.copyW(n8: I64, hs: Array[U32](n8), b: I64, cn: I64, cv: Array[U32](cn), i: I64): Unit =
+  val j = b + i
+  if 0 <= i && i < cn && 0 <= j && j < n8 then
+    Array.put(cv, i, hs(j))
+    Kernel.copyW(n8, hs, b, cn, cv, i + 1)
+  else ()
+

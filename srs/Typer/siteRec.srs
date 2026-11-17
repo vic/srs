@@ -1,0 +1,15 @@
+// the call node nd is site n: its type args are the zonked pool slice of the site (the instance targs of the call)
+def Typer.siteRec(s: Typer.S, nd: I64, owner: I64, callee: I64, v0: I64, ntp: I64): Unit =
+  val n = Typer.cget(s, Typer.cNSite())
+  val gcap = Typer.cget(s, Typer.cMoG())
+  if n < Typer.cget(s, Typer.cMoS()) && 0 < owner && owner < gcap && 0 < callee && callee < gcap then
+    Typer.axRec(s, nd, n + 1)
+    Typer.mxSet(s, Typer.moSite(n, 0), owner)
+    Typer.mxSet(s, Typer.moSite(n, 1), callee)
+    Typer.mxSet(s, Typer.moSite(n, 3), ntp)
+    Typer.mxSet(s, Typer.moSite(n, 4), v0)
+    Typer.mxSet(s, Typer.moSite(n, 5), Typer.mxGet(s, Typer.moShd(s, owner)))
+    Typer.mxSet(s, Typer.moShd(s, owner), n + 1)
+    Typer.cset(s, Typer.cNSite(), n + 1)
+  else Typer.cinc(s, Typer.cSubOver())
+

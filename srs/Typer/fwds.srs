@@ -1,0 +1,10 @@
+// `struct E_...;` for every enum type of the store (the C file needs them before the first def; the script puts them there)
+def Typer.fwds(w: Resolve.W, s: Typer.S, t: I64): Unit =
+  if t < Typer.cget(s, Typer.cTypes()) then
+    if Typer.kind(s, t) == Typer.bEnum() && Typer.closedT(s, t) then
+      Typer.enumTag(w, s, t)
+      Typer.po(s,";\n")
+    else ()
+    Typer.fwds(w, s, t + 1)
+  else ()
+

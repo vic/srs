@@ -1,0 +1,26 @@
+// prompt: the multi-shot site of def root (a multi-shot handle at the top level of its body block, s2 C3.3): the handler's done and op fns for this site (its root is looked up over all files rs: one unit is one file), the CPS copies of all files, the chain of the rest; proto prints prototypes (before the def), else bodies (after it). Unsupported: a generic def, a handler root in no file, a handle with nothing after it, a rest without a value
+def Emit.msSite(x: Typer.X, k: Emit.K, rs: Coll.List[Typer.R], base: I64, root: I64, proto: Bool): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  val sym = Typer.symOf(x, Ast.a(g, root))
+  val e = Emit.envOf(x, k, base, root, sym, 0 - 1)
+  val blk = Ast.a(g, Typer.part(g, Ast.b(g, root), 0, Ast.kBody()))
+  if Ast.kd(g, blk) == Ast.kBlock() then
+    val r = Ast.a(g, blk)
+    val h = Emit.msAt(e, r, 0)
+    if h >= 0 then
+      val len = Ast.len(g, r)
+      val hst = Ast.item(g, r, h)
+      val site = Ast.tok(g, hst)
+      val hs = Emit.ce(e, hst)
+      val last = Ast.item(g, r, len - 1)
+      if Typer.sigAt(s, sym, 3) > 0 || h + 1 >= len || Emit.isBinder(Ast.kd(g, last)) then Emit.unsup(e, Ast.kHandle())
+      else
+        val rT = Emit.tyS(e, blk)
+        val aT = Emit.tyS(e, if Ast.kd(g, last) == Ast.kDo() then Ast.a(g, last) else last)
+        Emit.msHSite(w, s, k, rs, 0, hs, site, rT, aT, proto) match
+          case Emit.MsNone => Emit.unsup(e, Ast.kHandle())
+          case Emit.MsAt(done) =>
+            Emit.msCgFiles(w, s, k, rs, 0, site, rT, done, proto)
+            Emit.msChain(e, r, h + 1, true, site, 0, false, rT, 0, done, proto)
+    else ()
+  else ()

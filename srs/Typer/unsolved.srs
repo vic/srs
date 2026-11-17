@@ -1,0 +1,9 @@
+// at the end of a def: every unsolved root of a site var is one annotate Diag, at the first node that carries it
+def Typer.unsolved(s: Typer.S, i: I64, n: I64): Unit =
+  if i < n then
+    val tok = Typer.siteGet(s, i)
+    val r = Typer.walk(s, Typer.varT(s, i))
+    if tok >= 0 && Typer.kind(s, r) == Typer.bVar() && !Typer.rootSeen(s, 0, i, r) then Typer.diag(s, Typer.dAnnotate(), tok) else ()
+    Typer.unsolved(s, i + 1, n)
+  else ()
+

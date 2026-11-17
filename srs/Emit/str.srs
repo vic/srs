@@ -1,0 +1,9 @@
+def Emit.str(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val t = Ast.text(g, Ast.tok(g, n))
+  Emit.po(e,"((srs_str){(const uint8_t*)")
+  Emit.po(e,t)
+  Emit.po(e,", ")
+  Emit.pi(e,Emit.strLen(t, 1, Str.len(t) - 1, 0))
+  Emit.po(e,"})")
+

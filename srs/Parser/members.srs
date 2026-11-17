@@ -1,0 +1,12 @@
+// defs until the end of the block: pm the param mode, sig = signatures only. each is pushed on the open list
+def Parser.members(g: Ast.G, pm: I64, sig: Bool): Unit =
+  if !Parser.ok(g) then ()
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.members(g, pm, sig)
+  else if Parser.atEnd(g) then Parser.endBlock(g)
+  else if Parser.is(g, Token.kdef()) then
+    Ast.push(g, Parser.defN(g, pm, sig))
+    Parser.members(g, pm, sig)
+  else Parser.stop(g)
+

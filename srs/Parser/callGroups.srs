@@ -1,0 +1,14 @@
+// f[T, ...]{a, ...}(args): the groups in written order, each one node in a list
+def Parser.callGroups(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.lb()) then
+    val j = Parser.cur(g)
+    Ast.push(g, Ast.mk(g, Ast.kCGTys(), j, Parser.tyArgs(g), 0))
+    Parser.callGroups(g, m)
+  else if Parser.is(g, Token.lc()) then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    Ast.push(g, Ast.mk(g, Ast.kCGEv(), j, Parser.names(g, Ast.mark(g), Token.rc()), 0))
+    Parser.callGroups(g, m)
+  else Ast.close(g, m)
+

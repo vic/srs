@@ -1,0 +1,7 @@
+def Kernel.givMark(dg: Kernel.Dg, im: Kernel.Img, u: I64): Unit = im match
+  case Kernel.Empty => ()
+  case Kernel.Unit(_, t, r) =>
+    val Kernel.Dg(n, n1, off, cur, gv) = dg
+    if 0 <= u && u < n && Kernel.isGiven(t) then Array.put(gv, u, U8.of(1)) else ()
+    Kernel.givMark(dg, r, u + 1)
+

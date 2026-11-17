@@ -1,0 +1,10 @@
+// srs_alloc: the first installed Srs.Region handler in handler-name order. It was the first Srs.Region handle in emit order, so the
+// order of the units chose the allocator (k99: main moved after P.run, srs_alloc took Srs.Heap, NULL outside P.run: SIGSEGV).
+// shortcut: a fixed preference by name, not the dynamic region of the call site; upgrade with the region design (outermost/innermost handle)
+// prompt: the cap struct (handler id, handler state, live flag of a handle), the current allocation cap srs_cur (set around a call that gets a Region handle as its one explicit evidence, Emit.callG) and srs_alloc: srs_cur when set, else the first installed Srs.Region handler in name order
+def Emit.allocFn(w: Resolve.W, s: Typer.S, k: Emit.K, i: I64): Unit =
+  Typer.po(s, "typedef struct srs_cap srs_cap; struct srs_cap { int64_t h; void* st; int* live; }; void* srs_cap_alloc(srs_cap* c, int64_t size); static srs_cap* srs_cur = 0;\n")
+  Typer.po(s, "static inline void* srs_alloc(int64_t n) { if (srs_cur) return srs_cap_alloc(srs_cur, n); ")
+  Emit.allocArms(w, s, k, Coll.None)
+  Typer.po(s, "(void)n; abort(); return 0; }\n")
+

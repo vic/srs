@@ -1,0 +1,19 @@
+// a new symbol for t at hash slot `slot`
+def Resolve.insert(w: Resolve.W, t: Resolve.T, n: I64, slot: I64): I64 =
+  val Resolve.W(sy, _, _, _) = w
+  val Resolve.Sy(hcap, hs, scap, so, sl, pcap, pool) = sy
+  val id = Resolve.cget(w, Resolve.sSyms())
+  val pp = Resolve.cget(w, Resolve.sPool())
+  if 0 <= id && id < scap && 0 <= slot && slot < hcap && 0 <= pp && pp + n <= pcap then
+    Array.put(hs, slot, U32.of(id))
+    Array.put(so, id, U32.of(pp))
+    Array.put(sl, id, U32.of(n))
+    Resolve.cpPool(pcap, pool, pp, t, 0, n)
+    Resolve.cset(w, Resolve.sSyms(), id + 1)
+    Resolve.cset(w, Resolve.sPool(), pp + n)
+    id
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Resolve.over(w)
+    0
+

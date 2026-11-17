@@ -1,0 +1,12 @@
+def Kernel.jfield(s: Str, pat: Str): Str = Kernel.find(s, pat, 0) match
+  case Kernel.Found(j) =>
+    val b = j + Str.len(pat)
+    val e = Kernel.strEnd(s, b)
+    val n = e - b
+    if n <= 0 then ""
+    else
+      val xs = Array.fill(n, U8.of(0))
+      val m = Kernel.dec(s, b, e, n, xs, 0)
+      Str.slice(Str.ofBytes(n, xs), 0, m)
+  case Kernel.Missing => ""
+

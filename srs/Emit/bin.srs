@@ -1,0 +1,20 @@
+def Emit.bin(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val s = Emit.sOf(e)
+  val c = Typer.clsTok(g, Ast.tok(g, n))
+  val l = Ast.a(g, n)
+  val r = Ast.b(g, n)
+  Emit.po(e,"(")
+  Emit.expr(e, l, false)
+  if c == Token.shl() || c == Token.shr() then
+    Emit.po(e,if c == Token.shl() then " << (" else " >> (")
+    Emit.expr(e, r, false)
+    val tl = Emit.tyS(e, l)
+    Emit.po(e,if Typer.kind(s, tl) == Typer.bBuiltin() && Typer.cls(s, tl) == 5 then " & 31))" else " & 63))")
+  else
+    Emit.po(e," ")
+    Emit.po(e,Emit.opStr(c))
+    Emit.po(e," ")
+    Emit.expr(e, r, false)
+    Emit.po(e,")")
+

@@ -1,0 +1,10 @@
+// prompt: the kernel must reject a value arg that calls a def with an effect (pure = no effects, comptime-eval ruling), with error[no-compile-time-value] (missingEntry for the param)
+val NegTests.valImpure {NegTest}: Never =
+  type NtVi.B (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def NtVi.noisy(): I64 =
+    Console.print("x")
+    8
+  def NtVi.f(x: NtVi.B(NtVi.noisy())): I64 = 0
+  NegTest.expect("no-compile-time-value", "missingEntry", "noisy prints, an effect, so it has no compile-time value")

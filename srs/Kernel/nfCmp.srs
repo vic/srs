@@ -1,0 +1,10 @@
+// prompt: compare the 8-word values x and y of a from word i: -1 less, 0 equal, 1 greater (unsigned word order).
+def Kernel.nfCmp(n8: I64, a: Array[U32](n8), x: I64, y: I64, i: I64): I64 =
+  val p = 8 * x + i
+  val q = 8 * y + i
+  if i < 8 && 0 <= p && p < n8 && 0 <= q && q < n8 then
+    val s = I64.of(a(p))
+    val t = I64.of(a(q))
+    if s < t then -1 else if s > t then 1 else Kernel.nfCmp(n8, a, x, y, i + 1)
+  else 0
+

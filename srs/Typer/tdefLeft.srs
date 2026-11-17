@@ -1,0 +1,21 @@
+// prompt: after Typer.tdefFix, the Diag type-fuel at the name of every type definition root i.. of file f (a plain or a match type)
+// that is still unset and whose body or cases still name an unset type definition.
+def Typer.tdefLeft(x: Typer.X, f: Resolve.F, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val Resolve.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 6 && root != 0 then
+      val al = Typer.part(g, Ast.b(g, root), 0, Ast.kAlias())
+      val tm = Typer.part(g, Ast.b(g, root), 0, Ast.kTyMatch())
+      if (al != 0 || tm != 0) && Typer.declTyGet(s, Typer.symOf(x, Ast.a(g, root))) == 0 then
+        val p0 = Typer.cget(s, Typer.cTdPend())
+        val m = Typer.mark(s)
+        if tm != 0 then Typer.tarmTys(x, Ast.b(g, tm), 0) else 0
+        Typer.ty(x, Ast.a(g, if tm != 0 then tm else al))
+        Typer.cset(s, Typer.cSp(), m)
+        if Typer.cget(s, Typer.cTdPend()) != p0 then Typer.diag(s, Typer.dTyFuel(), Ast.a(g, root)) else ()
+      else ()
+    else ()
+    Typer.tdefLeft(x, f, i + 1)
+  else ()

@@ -1,0 +1,11 @@
+// the groups of a call, in written order: [T] types, {a} evidence names
+def Resolve.callGroups(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCGTys() then Resolve.tys(x, Ast.a(g, n), 0)
+    else if Ast.kd(g, n) == Ast.kCGEv() then Resolve.useList(x, Ast.a(g, n), 0)
+    else ()
+    Resolve.callGroups(x, r, i + 1)
+  else ()
+

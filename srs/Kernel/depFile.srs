@@ -1,0 +1,10 @@
+def Kernel.depFile(gt: Resolve.Gt, lo: I64, dg: Kernel.Dg, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64, m: I64, adj: Array[U32](m), fill: Bool): Unit =
+  if 0 <= j && j < rcap then
+    val Resolve.Gt(gcap, gk, gf, gl, gs, tcap, tab, tyk, tyf, tyl) = gt
+    val Kernel.Dg(n, n1, off, cur, gv) = dg
+    Kernel.tokDep(gcap, gf, tcap, tyk, tyf, lo, n, I64.ofU8(rk(j)), I64.of(rf(j))) match
+      case Coll.Some(v) => if v != u then Kernel.edge(dg, u, v, m, adj, fill) else ()
+      case Coll.None => ()
+    Kernel.depFile(gt, lo, dg, u, rcap, rk, rf, j + 1, m, adj, fill)
+  else ()
+

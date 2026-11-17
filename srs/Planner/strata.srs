@@ -1,0 +1,5 @@
+// stratum of every relation: s[h] >= s[p], +1 across negation; stops once a stratum passes nr (a negation cycle)
+def Planner.strata(st: Planner.Ints, rs: Planner.Rules, nr: I64): Planner.Ints =
+  val Planner.StR(st2, ch) = Planner.stRules(st, rs, false)
+  if ch && Planner.imax(st2, 0) < nr then Planner.strata(st2, rs, nr) else st2
+

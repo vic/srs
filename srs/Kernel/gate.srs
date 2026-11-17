@@ -1,0 +1,14 @@
+// checks cand; accepted -> the new image, else the old one; replies either way
+def Kernel.gate(from: Str, me: Str, id: I64, rid: Str, bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, cand: Kernel.Img, bad: I64): Kernel.Img =
+  if bad > 0 then
+    Kernel.reply(from, me, id, rid, "rejected: unreadable inputs ", Kernel.num(bad), "")
+    im
+  else
+    val Kernel.Res(code, out) = Kernel.checkAll(bp, bt, cand)
+    if code == 0 then
+      Kernel.reply(from, me, id, rid, "accepted units=", Kernel.num(Kernel.count(cand, 0)), out)
+      cand
+    else
+      Kernel.reply(from, me, id, rid, "rejected units=", Kernel.num(Kernel.count(cand, 0)), out)
+      im
+

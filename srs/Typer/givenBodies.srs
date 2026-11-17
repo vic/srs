@@ -1,0 +1,15 @@
+// the member bodies of a given: emitted code like handler fns (scope 1); the given's [] binders are rigid params in them (Nm.root0 binds them)
+// prompt: type check each method of a given (scope 1) with the given head's {} evidence binders bound (Typer.checkDef outer).
+def Typer.givenBodies(x: Typer.X, root: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kDef() then
+      Typer.cset(s, Typer.cScope(), 1)
+      Typer.checkDef(x, n, 1, parts)
+      Typer.cset(s, Typer.cScope(), 0)
+    else ()
+    Typer.givenBodies(x, root, i + 1)
+  else ()
+

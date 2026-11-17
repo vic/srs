@@ -1,0 +1,9 @@
+// prompt: the env slot of local binder token ref: a value binder of list pr (Typer.ctBinIx), else a val/var binder among nodes lo..hi of the def (after the binders of pr); -1 when none
+def Typer.ctSlot(x: Typer.X, ref: I64, pr: I64, lo: I64, hi: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  val np = if pr != 0 then Ast.len(g, pr) else 0
+  val bi = if pr != 0 then Typer.ctBinIx(x, pr, ref, 0) else 0 - 1
+  if bi >= 0 then bi
+  else if lo < hi && Typer.ctLocIx(x, lo, hi, ref, 0) >= 0 then np + Typer.ctLocIx(x, lo, hi, ref, 0)
+  else 0 - 1
+

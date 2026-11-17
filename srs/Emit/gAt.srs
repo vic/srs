@@ -1,0 +1,10 @@
+// prompt: emit the instance of given root `root` of file fi (walking rs from file index j) for goal z
+def Emit.gAt(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R], j: I64, fi: I64, root: I64, z: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    if j == fi then
+      val Typer.R(f, rcap, rk, rf) = r
+      val Resolve.F(_, g, _, _, _, _, _, _) = f
+      Emit.gInst(Typer.X(w, g, s, rcap, rk, rf), k, Typer.mxGet(s, Typer.moFb(s, fi)), root, z)
+    else Emit.gAt(w, s, k, rest, j + 1, fi, root, z)
+

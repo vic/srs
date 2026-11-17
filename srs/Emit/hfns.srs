@@ -1,0 +1,9 @@
+def Emit.hfns(x: Typer.X, k: Emit.K, base: I64, root: I64, hsym: I64, i: I64, ph: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val d = Ast.item(g, parts, i)
+    if Ast.kd(g, d) == Ast.kDef() then Emit.hfn(x, k, base, hsym, d, ph) else ()
+    Emit.hfns(x, k, base, root, hsym, i + 1, ph)
+  else ()
+

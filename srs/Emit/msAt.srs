@@ -1,0 +1,8 @@
+// prompt: the index of the first statement i.. of r that is the handle of a multi-shot handler, -1 when none
+def Emit.msAt(e: Emit.E, r: I64, i: I64): I64 =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, r) then
+    val st = Ast.item(g, r, i)
+    if Ast.kd(g, st) == Ast.kHandle() && Typer.isMulti(Emit.sOf(e), Emit.ce(e, st)) then i else Emit.msAt(e, r, i + 1)
+  else 0 - 1
+

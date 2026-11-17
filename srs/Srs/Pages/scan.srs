@@ -1,0 +1,6 @@
+// the line "thp_fault_fallback N" (the space ends the name: thp_fault_fallback_charge is another line): N goes to seen
+def Srs.Pages.scan(g: Ptr, s: Str, i: I64): Bool =
+  if i + 19 > Str.len(s) then false
+  else if Str.eq(Str.slice(s, i, i + 19), "thp_fault_fallback ") then Srs.Pages.keep(g, Srs.Pages.num(s, i + 19, 0))
+  else Srs.Pages.scan(g, s, Srs.Pages.eol(s, i))
+

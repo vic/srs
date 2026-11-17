@@ -1,0 +1,15 @@
+// prompt: the shared inputs of one NegTest run for kernel binary self and plain image file base. The run key is
+// B3(schema, B3(kernel binary bytes), B3(plain image text)): a changed kernel (rules, checker) or a changed image re-runs every
+// NegTest. Makes the cache directory.
+def Kernel.negRunOf(self: Str, base: Str): Kernel.NegRun =
+  Disk.dir(Kernel.negCache())
+  Files.bytes(self) match
+    case Os.Fail(_) => Kernel.NegRun(self, base, Coll.None)
+    case Os.Ok(kb) => Files.bytes(base) match
+      case Os.Fail(_) => Kernel.NegRun(self, base, Coll.None)
+      case Os.Ok(bt) =>
+        val kh = Blake3.hash(kb)
+        val bh = Blake3.hash(bt)
+        Kernel.NegRun(self, base, Coll.Some(Blake3.hash(Kernel.msg2(Kernel.msg2(Kernel.negSchema(), kh), bh))))
+
+

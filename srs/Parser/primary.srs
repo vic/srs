@@ -1,0 +1,25 @@
+def Parser.primary(g: Ast.G): I64 =
+  val c = Parser.cl(g)
+  val j = Parser.cur(g)
+  if !Parser.ok(g) then 0
+  else if c == Token.int() then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kInt(), j, 0, 0)
+  else if c == Token.str() then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kStr(), j, 0, 0)
+  else if c == Token.char() then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kChar(), j, 0, 0)
+  else if Token.isName(c) then Parser.nameExpr(g, c, j, Parser.cl1(g))
+  else if c == Token.lp() then
+    Parser.adv(g)
+    if Parser.is(g, Token.rp()) then
+      Parser.adv(g)
+      Ast.mk(g, Ast.kUnit(), j, 0, 0)
+    else
+      val e = Parser.expr(g)
+      Parser.eat(g, Token.rp())
+      Ast.mk(g, Ast.kParen(), j, e, 0)
+  else Parser.fail(g)
+

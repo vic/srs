@@ -1,0 +1,21 @@
+// record the resolution of type use token j: ref = the binder token (TyParam) or the symbol (declared types)
+def Resolve.tset(x: Resolve.X, j: I64, tk: I64, ref: I64): Unit =
+  val Resolve.X(w, _, fi, _, dump, _, _, rcap, rk, rf) = x
+  if 0 <= j && j < rcap then
+    Array.put(rk, j, U8.of(Resolve.tBase() + tk))
+    Array.put(rf, j, U32.of(ref))
+  // shortcut: a use token is a token of its file, always below rcap; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+  Resolve.cinc(w, Resolve.sTK() + tk)
+  Resolve.cinc(w, Resolve.sTypes())
+  if tk == Resolve.tUnres() then
+    Resolve.cinc(w, Resolve.sTUnres())
+    val sh = Resolve.cget(w, Resolve.sTShown())
+    if sh < Resolve.maxShown() then
+      Resolve.cset(w, Resolve.sTUFile() + sh, fi)
+      Resolve.cset(w, Resolve.sTUTok() + sh, j)
+      Resolve.cset(w, Resolve.sTShown(), sh + 1)
+    else ()
+  else ()
+  if dump then Resolve.tdumpLine(x, j, tk, ref) else ()
+

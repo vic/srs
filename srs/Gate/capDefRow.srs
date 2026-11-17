@@ -1,0 +1,15 @@
+// an op: <A> .. <B> moves A to B; <s r t> .. <t> moves by transition r; no entry: every state stays (Pz.moves)
+def Gate.capDefRow(w: Resolve.W, g: Ast.G, sel: Gate.Ck, c: I64, it: I64): Unit =
+  val o = Gate.tsym(w, g, Ast.a(g, it))
+  val en = Typer.part(g, Ast.b(g, it), 0, Ast.kEntry())
+  if en == 0 then
+    if Gate.ckIs(sel, Gate.CFree) then Gate.row2(c, o) else ()
+  else
+    val el = Ast.a(g, en)
+    if Ast.len(g, el) == 1 then
+      val ex = Typer.part(g, Ast.b(g, it), 0, Ast.kExitSt())
+      if Gate.ckIs(sel, Gate.CArrow) && ex != 0 then Gate.row4(c, o, Gate.tsym(w, g, Ast.item(g, el, 0)), Gate.tsym(w, g, Ast.a(g, ex))) else ()
+    else if Ast.len(g, el) == 3 then
+      if Gate.ckIs(sel, Gate.CRel) then Gate.row3(c, o, Gate.tsym(w, g, Ast.item(g, el, 1))) else ()
+    else ()
+

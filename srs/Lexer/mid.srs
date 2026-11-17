@@ -1,0 +1,28 @@
+// the token or gap at i, c = the byte there (i < n); pos stays as it was unless a line starts
+def Lexer.mid(src: Str, n: I64, nt: Lexer.Notes, i: I64, c: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if c == 10 then Lexer.newline(src, n, nt, i, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 32 || c == 13 then Lexer.go(src, n, nt, i + 1, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 47 && Lexer.is(src, n, i + 1, 47) then
+    val e = Lexer.lineEnd(src, n, i)
+    if Lexer.keep(nt) then Lexer.emit(src, n, nt, i, e, Lexer.KDoc, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lexer.go(src, n, nt, e, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if Lexer.isAlpha(c) then
+    val e0 = Lexer.wordEnd(src, n, i + 1)
+    val e = if c >= 65 && c <= 90 then Lexer.dotted(src, n, e0) else e0
+    Lexer.emit(src, n, nt, i, e, Lexer.KIdent, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if Lexer.isDigit(c) then
+    if c == 48 && Lexer.is(src, n, i + 1, 120) && Lexer.hexAt(src, n, i + 2) then
+      val e = Lexer.hexEnd(src, n, i + 2)
+      if Lexer.hexBig(src, n, i + 2, 0) then Lexer.diag(src, n, nt, i, e, Lexer.BigHex, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+      else Lexer.emit(src, n, nt, i, e, Lexer.KInt, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lexer.emit(src, n, nt, i, Lexer.digitsEnd(src, n, i), Lexer.KInt, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else if c == 34 || c == 39 then
+    val e = Lexer.litEnd(src, n, i + 1, c)
+    if Lexer.is(src, n, e, c) then Lexer.emit(src, n, nt, i, e + 1, if c == 34 then Lexer.KStr else Lexer.KChar, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else Lexer.diag(src, n, nt, i, if e < n then e else n, Lexer.Unterminated, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+  else
+    val w = Lexer.opWidth(src, n, i, c)
+    if w == 1 && !Lexer.isPunct(c) then Lexer.diag(src, n, nt, i, i + 1, if c == 9 then Lexer.Tab else Lexer.BadChar, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, depth, pos)
+    else
+      val dp = if c == 40 || c == 91 then depth + 1 else if (c == 41 || c == 93) && depth > 0 then depth - 1 else depth
+      Lexer.emit(src, n, nt, i, i + w, if c == 60 && w == 1 && 0 < i && Lexer.gluedTo(Str.at(src, i - 1)) then Lexer.KLtGlued else Lexer.KOp, cap, ks, os, ls, t, dcap, dc, dof, d, scap, st, sp, dp, pos)

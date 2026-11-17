@@ -1,0 +1,25 @@
+// prompt: the run-time dispatch of drop op node n on the dropped {} binder param ref over the handlers of its capability (handle-table entries i.., each handler once): `rp_<ref>->h == <h> ? call h : ...`; the last handler is the else branch (the caller passed a handle of this capability)
+def Emit.pdDisp(e: Emit.E, n: I64, r: I64, sg: I64, ref: I64, i: I64): Unit =
+  val k = Emit.kOf(e)
+  if i < Emit.hget(k, 0) then
+    val hi = Emit.hget(k, 17 + 2 * i)
+    val ci = Emit.hget(k, 16 + 2 * i)
+    if Emit.capOwns(Emit.wOf(e), ci, sg) && !Emit.hseen(k, hi, 0, i) then
+      if Emit.hfirstFrom(e, sg, i + 1) then
+        Emit.po(e,"(rp_")
+        Emit.pi(e, ref)
+        Emit.po(e,"->h == ")
+        Emit.pi(e, hi)
+        Emit.po(e," ? ")
+        Emit.hcallSt(e, n, hi, r, ref)
+        Emit.po(e," : ")
+        Emit.pdDisp(e, n, r, sg, ref, i + 1)
+        Emit.po(e,")")
+      else Emit.hcallSt(e, n, hi, r, ref)
+    else Emit.pdDisp(e, n, r, sg, ref, i + 1)
+  else
+    Emit.hinc(k, 11)
+    Emit.po(e,"(abort(), (")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e,"){0})")
+

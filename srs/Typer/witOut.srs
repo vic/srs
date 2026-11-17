@@ -1,0 +1,20 @@
+def Typer.witOut(x: Typer.X, pr: I64, i: I64, n: I64): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  if i < n then
+    val j = Typer.mxGet(s, Typer.moWit(s, 2 * i))
+    val pt = Typer.zonk(s, Typer.mxGet(s, Typer.moWit(s, 2 * i + 1)))
+    val lt = Typer.zonk(s, Typer.ltGet(s, j))
+    if (Typer.locIdx(s, j, 0, Typer.cget(s, Typer.cNLoc())) || Typer.isParam(g, pr, j, 0)) && Typer.ground(s, lt) && Typer.ground(s, pt) then
+      Typer.cty(w, s, pt)
+      Typer.po(s, " w_")
+      Typer.pi(s, Typer.cget(s, Typer.cNDef()))
+      Typer.po(s, "_")
+      Typer.pi(s, i)
+      Typer.po(s, " = ")
+      Typer.cName(x, pr, j)
+      Typer.po(s, ";\n")
+      Typer.cinc(s, Typer.cWitOut())
+    else Typer.cinc(s, Typer.cWitSkip())
+    Typer.witOut(x, pr, i + 1, n)
+  else ()
+

@@ -1,0 +1,11 @@
+// prompt: store judgement j under entry key ek as header line (verdict name), diag lines, trailer line "end KEY"; only a final
+// verdict (Kernel.isFinal) and only when the run has a key. A failed write leaves a miss.
+def Kernel.negPut(ek: Coll.Option[Str], j: Kernel.Judged): Unit = ek match
+  case Coll.None => ()
+  case Coll.Some(k) => j match
+    case Kernel.Judged(v, d) =>
+      if Kernel.isFinal(v) then
+        if Disk.put(Kernel.negEntry(k), Kernel.msg2(Kernel.msg2(Kernel.msg2(Kernel.vName(v), "\n"), d), Kernel.negTrail(k))) == 0 then () else ()
+      else ()
+
+

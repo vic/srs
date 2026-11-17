@@ -1,0 +1,17 @@
+// prompt: record the named Diag kind at token tok: count it in its counter, keep the first Typer.nMisShown() as (kind, file, token).
+def Typer.diag(s: Typer.S, kind: I64, tok: I64): Unit =
+  val n = Typer.cget(s, Typer.cDg())
+  Typer.cinc(s, if kind == Typer.dAnnotate() then Typer.cAnn() else if kind == Typer.dMissing() then Typer.cMissE() else if kind == Typer.dLenNN() then Typer.cLenNN() else if kind == Typer.dTyArity() then Typer.cTyArity() else if kind == Typer.dTyFuel() then Typer.cTyFuel() else if kind == Typer.dTyNoCase() then Typer.cTyNoCase() else if kind == Typer.dNoGiven() then Typer.cTyNoGiven() else if kind == Typer.dExtSlot() then Typer.cTyExtSlot() else if Typer.isValDg(kind) then Typer.cTyVal() else Typer.cNonEx())
+  if n < Typer.nMisShown() then
+    Typer.cset(s, Typer.cDg() + 1 + 3 * n, kind)
+    Typer.cset(s, Typer.cDg() + 2 + 3 * n, Typer.cget(s, Typer.cFile()))
+    Typer.cset(s, Typer.cDg() + 3 + 3 * n, tok)
+    Typer.cset(s, Typer.cDg(), n + 1)
+  else ()
+
+
+
+
+// the named Diags: `annotate|nonexhaustive path:line text`
+
+

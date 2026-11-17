@@ -1,0 +1,22 @@
+// the decl on tokens [head, hi): its root node, 0 with the error flag set when it does not parse
+// kb = the skeleton's decl kind byte (s3/parse.srs Ps.kindByte): 0 def, 1 enum, 2 extern, 3 handler, 4 capability, 5 trait, 6 type, 7 val, 8 given
+def Parser.decl(g: Ast.G, head: I64, hi: I64, kb: I64): I64 =
+  Ast.cset(g, Ast.sCur(), head)
+  Ast.cset(g, Ast.sHi(), hi)
+  Ast.cset(g, Ast.sSp(), 0)
+  Ast.cset(g, Ast.sErr(), 0)
+  val r =
+    if kb == 0 then Parser.defDecl(g)
+    else if kb == 1 then Parser.enumDecl(g)
+    else if kb == 2 then Parser.externDecl(g)
+    else if kb == 3 then Parser.handlerDecl(g)
+    else if kb == 4 then Parser.capDecl(g)
+    else if kb == 5 then Parser.traitDecl(g)
+    else if kb == 6 then Parser.typeDecl(g)
+    else if kb == 7 then Parser.topVal(g)
+    else if kb == 8 then Parser.givenDecl(g)
+    else Parser.fail(g)
+  if Parser.ok(g) && Parser.cur(g) != hi then
+    Ast.diag(g, 2, Parser.cur(g))
+    Parser.fail(g)
+  else r

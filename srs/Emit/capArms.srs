@@ -1,0 +1,11 @@
+// prompt: one arm `if (c->h == <h>) return h_<H>_alloc(c->st, size);` per Srs.Region handler, in name order (as Emit.allocArms)
+def Emit.capArms(w: Resolve.W, s: Typer.S, k: Emit.K, last: Coll.Option[I64]): Unit = Emit.allocMin(w, k, last, 0, Coll.None) match
+  case Coll.Some(h) =>
+    Typer.po(s, "if (c->h == ")
+    Typer.pi(s, h)
+    Typer.po(s, ") return h_")
+    Typer.id(s, w, h)
+    Typer.po(s, "_alloc(c->st, size); ")
+    Emit.capArms(w, s, k, Coll.Some(h))
+  case Coll.None => ()
+

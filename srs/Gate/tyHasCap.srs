@@ -1,0 +1,9 @@
+// a type node names a capability type at its head or in any type argument (a capability is erased at run time)
+def Gate.tyHasCap(g: Ast.G, rcap: I64, rk: Array[U8](rcap), t: I64): Bool =
+  val k = Ast.kd(g, t)
+  if k == Ast.kTyCaps() then Gate.tyHasCap(g, rcap, rk, Ast.a(g, t))
+  else if k == Ast.kTy() then
+    val j = Ast.tok(g, t)
+    (0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tCap()) || Gate.tyArgsCap(g, rcap, rk, Ast.a(g, t), 0)
+  else false
+

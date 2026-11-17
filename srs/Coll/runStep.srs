@@ -1,0 +1,17 @@
+// h is the last element taken into the current run Cons(h, rt)
+def Coll.runStep [V: Type] (xs: Coll.List[Coll.KV[V]], d: Coll.Dir, h: Coll.KV[V], rt: Coll.List[Coll.KV[V]], acc: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.List[Coll.KV[V]]] = xs match
+  case Coll.Nil => Coll.Cons(Coll.closeRun(d, h, rt), acc)
+  case Coll.Cons(y, t) =>
+    val ky = Coll.kvKey(y)
+    val kh = Coll.kvKey(h)
+    d match
+      case Coll.Up =>
+        if ky > kh then Coll.runStep(t, d, y, Coll.Cons(h, rt), acc)
+        else if ky == kh then Coll.runStep(t, d, y, rt, acc)
+        else rt match
+          case Coll.Nil => Coll.runStep(t, Coll.Down, y, Coll.Cons(h, rt), acc)
+          case Coll.Cons(_, _) => Coll.runStep(t, Coll.Up, y, Coll.Nil, Coll.Cons(Coll.Cons(h, rt), acc))
+      case Coll.Down =>
+        if ky < kh then Coll.runStep(t, d, y, Coll.Cons(h, rt), acc)
+        else Coll.runStep(t, Coll.Up, y, Coll.Nil, Coll.Cons(Coll.closeRun(d, h, rt), acc))
+

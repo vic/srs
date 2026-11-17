@@ -1,0 +1,9 @@
+// s3c PARSE-1b: the AST store, in s2 (vic/c/s3c-front.md F4). Node = struct of arrays: kind U8, tok U32 (first token; the name
+// token of a node that has one), a U32, b U32 (child node ids, list refs into xs, or token ids). A list is [count, items...] in xs;
+// a list ref is the index of its count, and ref 0 is the shared empty list. Absence is a node kind (Na.kNone, node 0), never -1.
+// Lists are collected on a scratch stack and copied to xs when closed, so every list is contiguous.
+// Every column is sized from the token count once (Na.make): no doubling. Counters live in one named-length I64 array.
+// The parser walks one cursor (counter slot sCur); an error sets the flag sErr and every loop of the parser stops on it.
+
+// token classes: a byte per token, computed once from the lexer's kind and the token text
+def Token.ident(): I64 = 0

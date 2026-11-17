@@ -1,0 +1,18 @@
+def Gate.binRows(w: Resolve.W, g: Ast.G, ev: Bool, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    val t = Ast.tok(g, Ast.a(g, n))
+    if Ast.kd(g, n) == Ast.kBind() && 0 <= t && t < rcap then
+      val k = I64.ofU8(rk(t))
+      if ev then
+        if k == Resolve.tBase() + Resolve.tCap() then
+          Gate.tyUnit(w, I64.of(rf(t))) match
+            case Coll.Some(c) => Gate.row3(u, Ast.tok(g, n), c)
+            case Coll.None => ()
+        else ()
+      else if Gate.isDataTok(w, rcap, rk, rf, t) || k == Resolve.tBase() + Resolve.tParam() then Gate.row3(u, Ast.tok(g, n), Ast.tok(g, n))
+      else ()
+    else ()
+    Gate.binRows(w, g, ev, u, rcap, rk, rf, l, i + 1)
+  else ()
+

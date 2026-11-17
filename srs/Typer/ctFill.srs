@@ -1,0 +1,16 @@
+// prompt: evaluate the arg codes i..k at pool pc with env frame fb into env entries nf + i (the env top follows each stored arg); a code with no value is the Diag no-compile-time-value at token j; false then
+def Typer.ctFill(s: Typer.S, pc: I64, fb: I64, nf: I64, i: I64, k: I64, j: I64): Bool =
+  if i < k then
+    val Typer.CtR(v, nx) = Typer.ctEval(s, pc, fb)
+    Typer.cset(s, Typer.cCtTop(), nf + i + 1)
+    v match
+      case Typer.CtNo =>
+        Typer.diag(s, Typer.dNoCt(), j)
+        false
+      case Typer.CtInt(_) =>
+        Typer.ctPut(s, nf + i, v)
+        Typer.ctFill(s, nx, fb, nf, i + 1, k, j)
+      case Typer.CtBool(_) =>
+        Typer.ctPut(s, nf + i, v)
+        Typer.ctFill(s, nx, fb, nf, i + 1, k, j)
+  else true

@@ -1,0 +1,12 @@
+def Kernel.depAll(gt: Resolve.Gt, lo: I64, dg: Kernel.Dg, rs: Coll.List[Typer.R], f: I64, m: I64, adj: Array[U32](m), fill: Bool): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(_, rcap, rk, rf) = r
+    val Kernel.Dg(n, n1, off, cur, gv) = dg
+    val u = f - lo
+    if 0 <= u && u < n then
+      Kernel.depFile(gt, lo, dg, u, rcap, rk, rf, 0, m, adj, fill)
+      Kernel.givEdges(dg, u, 0, m, adj, fill)
+    else ()
+    Kernel.depAll(gt, lo, dg, rest, f + 1, m, adj, fill)
+

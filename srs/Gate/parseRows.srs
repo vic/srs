@@ -1,0 +1,11 @@
+// perr(u): unit u has a parser diag or a decl parse error (Nm.F perr)
+def Gate.parseRows(rs: Coll.List[Typer.R], xs: Os.Strs, u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) => xs match
+    case Os.End => ()
+    case Os.More(x, xr) =>
+      val Typer.R(f, _, _, _) = r
+      val Resolve.F(_, _, _, _, _, _, _, pe) = f
+      if pe > 0 || Gate.pdiag(x) > 0 then Gate.row1(u) else ()
+      Gate.parseRows(rest, xr, u + 1)
+

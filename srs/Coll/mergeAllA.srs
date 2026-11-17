@@ -1,0 +1,7 @@
+// the run order is in the function: mergeAllA gets ascending runs earliest first, mergeAllD descending runs latest first
+def Coll.mergeAllA [V: Type] (runs: Coll.List[Coll.List[Coll.KV[V]]]): Coll.List[Coll.KV[V]] = runs match
+  case Coll.Nil => Coll.Nil
+  case Coll.Cons(a, t) => t match
+    case Coll.Nil => a
+    case Coll.Cons(_, _) => Coll.mergeAllD(Coll.passA(runs, Coll.Nil))
+

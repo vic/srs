@@ -1,0 +1,18 @@
+// instance i, site j of its def (args at pool a): the callee instance with the owner's params replaced
+def Typer.monoSub(s: Typer.S, i: I64, j: I64, a: I64): Unit =
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  val sym = Typer.mxGet(s, Typer.moInst(s, i, 0))
+  val nc = Typer.mxGet(s, Typer.moSite(j, 3))
+  val m = Typer.mark(s)
+  Typer.subArgs(s, a, 0, nc, Typer.sigAt(s, sym, 1) + Typer.sigAt(s, sym, 2), Typer.sigAt(s, sym, 3), Typer.mxGet(s, Typer.moInst(s, i, 1)) - 1)
+  val top = Typer.cget(s, Typer.cATop())
+  if top + nc <= acap then
+    Typer.cpArgs(s, m, 0, nc, top)
+    Typer.cset(s, Typer.cATop(), top + nc)
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.instAdd(s, Typer.mxGet(s, Typer.moSite(j, 1)), top, nc)
+  else
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.cinc(s, Typer.cSubOver())
+

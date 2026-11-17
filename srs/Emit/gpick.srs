@@ -1,0 +1,8 @@
+// prompt: the best given for goal z over all files rs (file index fi..)
+def Emit.gpick(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R], fi: I64, z: I64, best: Emit.GPick): Emit.GPick = rs match
+  case Coll.Nil => best
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Emit.gpick(w, s, rest, fi + 1, z, Emit.gpickRoots(Typer.X(w, g, s, rcap, rk, rf), f, 0, fi, z, best))
+

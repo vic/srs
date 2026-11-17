@@ -1,0 +1,7 @@
+def Datalog.fillHb(st: Datalog.St, sp: I64, c: I64, a: I64): Unit =
+  if c >= a then () else
+    val tag = Datalog.p(st, sp + 2 * c)
+    val v = Datalog.p(st, sp + 2 * c + 1)
+    Datalog.setHb(st, c, if tag == 0 then v else Datalog.env(st, v))
+    Datalog.fillHb(st, sp, c + 1, a)
+

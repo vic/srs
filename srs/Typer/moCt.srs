@@ -1,0 +1,6 @@
+// prompt: the mono-table word of symbol sym in the compile-time code table (the last gcap words of the mono tables, Typer.store): the pool position + 1 of its def's code, 0 = no code; a symbol outside the table maps past the tables (read 0, write counted overflow)
+def Typer.moCt(s: Typer.S, sym: I64): I64 =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, _, _, _, _, mcap, _, _) = sg
+  if 0 <= sym && sym < gcap then mcap - gcap + sym else mcap
+

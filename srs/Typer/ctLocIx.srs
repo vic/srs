@@ -1,0 +1,9 @@
+// prompt: the rank n.. of the val/var node with binder token ref among nodes i..hi (in node order), -1 when none
+def Typer.ctLocIx(x: Typer.X, i: I64, hi: I64, ref: I64, n: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < hi then
+    val k = Ast.kd(g, i)
+    val b = k == Ast.kVal() || k == Ast.kVar()
+    if b && Ast.tok(g, i) == ref then n else Typer.ctLocIx(x, i + 1, hi, ref, if b then n + 1 else n)
+  else 0 - 1
+

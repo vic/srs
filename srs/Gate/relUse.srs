@@ -1,0 +1,8 @@
+// prompt: relU(u, r, a, b) rows: the 2-term atoms r(a, b) of the fact groups (<..> and exit) among parts i.. of def unit u (rule atoms; 3-term atoms are relA, Gate.relRows)
+def Gate.relUse(w: Resolve.W, g: Ast.G, u: I64, parts: I64, i: I64): Unit =
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kGFacts() || Ast.kd(g, p) == Ast.kExit() then Gate.relUseAt(w, g, u, Ast.a(g, p), 0) else ()
+    Gate.relUse(w, g, u, parts, i + 1)
+  else ()
+

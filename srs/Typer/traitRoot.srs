@@ -1,0 +1,13 @@
+// a trait: its [] binders are the signature of the trait symbol (ntp, tokens), its methods are signatures `Trait.method` found by (trait, method)
+// prompt: a trait root: its [] binders are the type params of the trait symbol (signature stored by Typer.sigStore), its {} binders
+// get their types (Typer.evBinders, like a given or a type def: s2 prog cap_region_traitg `trait Rg.Mk [A: Type] {r: Srs.Region}`),
+// and each method is stored as the signature `Trait.method`.
+def Typer.traitRoot(x: Typer.X, root: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  val ts = Typer.symOf(x, Ast.a(g, root))
+  val m = Typer.mark(s)
+  Typer.tpToks(x, parts, 0)
+  Typer.sigStore(s, ts, Typer.mk(s, Typer.bCap(), 0, ts, Typer.mark(s)), 0, Typer.groupN(g, parts, 0, Ast.kGTypes(), 0), 0, m)
+  Typer.evBinders(x, parts, 0)
+  Typer.traitMethods(x, root, ts, 0)

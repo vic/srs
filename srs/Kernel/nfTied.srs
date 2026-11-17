@@ -1,0 +1,9 @@
+// prompt: the names (each after a space) of the units whose local stream hash equals another member's of the same scc (ties),
+// in reverse image order (print with K.joinRev).
+def Kernel.nfTied(tj: Kernel.Tj, nf: Kernel.Nf, im: Kernel.Img, u: I64, acc: Os.Strs): Os.Strs = im match
+  case Kernel.Empty => acc
+  case Kernel.Unit(nm, _, r) =>
+    val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+    val c = if 0 <= u && u < tn then I64.of(comp(u)) else -1
+    val tie = c >= 0 && Kernel.nfLt(tj, nf, c, u, 0, true, 0) > 0
+    Kernel.nfTied(tj, nf, r, u + 1, if tie then Os.More(Kernel.msg2(" ", nm), acc) else acc)

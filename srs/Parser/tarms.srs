@@ -1,0 +1,16 @@
+// case ty => ty lines
+def Parser.tarms(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.tarms(g, m)
+  else if Parser.atEnd(g) then
+    Parser.endBlock(g)
+    Ast.close(g, m)
+  else
+    val j = Parser.eat(g, Token.kcase())
+    val p = Parser.ty(g)
+    Parser.eat(g, Token.arrow())
+    Ast.push(g, Ast.mk(g, Ast.kTArm(), j, p, Parser.ty(g)))
+    Parser.tarms(g, m)
+

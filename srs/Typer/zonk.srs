@@ -1,0 +1,11 @@
+// an unsolved length var (class 1) is a fresh rigid length
+def Typer.zonk(s: Typer.S, t: I64): I64 =
+  val w = Typer.walk(s, t)
+  val n = Typer.nargs(s, w)
+  if Typer.kind(s, w) == Typer.bVar() && Typer.cls(s, w) == 1 then Typer.lenFresh(s)
+  else if n == 0 then w
+  else
+    val m = Typer.mark(s)
+    Typer.zonkArgs(s, w, 0, n)
+    Typer.mk(s, Typer.kind(s, w), Typer.cls(s, w), Typer.head(s, w), m)
+

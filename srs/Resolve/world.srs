@@ -1,0 +1,29 @@
+def Resolve.world(ntok: I64, nbytes: I64): Resolve.W =
+  val hcap = 2 * ntok + 1024
+  val scap = ntok + 1024
+  val pcap = nbytes + 8192
+  val gcap = ntok + 1024
+  val ccap = ntok + 1024
+  val cnn = 96
+  val hs = Array.fill(hcap, U32.of(0))
+  val so = Array.fill(scap, U32.of(0))
+  val sl = Array.fill(scap, U32.of(0))
+  val pool = Array.fill(pcap, U8.of(0))
+  val gk = Array.fill(gcap, U8.of(0))
+  val gf = Array.fill(gcap, U32.of(0))
+  val gl = Array.fill(gcap, U32.of(0))
+  val gs = Array.fill(gcap, U32.of(0))
+  val tab = Array.fill(scap, U32.of(0))
+  val tyk = Array.fill(scap, U8.of(0))
+  val tyf = Array.fill(scap, U32.of(0))
+  val tyl = Array.fill(scap, U32.of(0))
+  val ss = Array.fill(ccap, U32.of(0))
+  val st = Array.fill(ccap, U32.of(0))
+  val sk = Array.fill(ccap, U8.of(0))
+  val cn = Array.fill(cnn, 0)
+  val w = Resolve.W(Resolve.Sy(hcap, hs, scap, so, sl, pcap, pool), Resolve.Gt(gcap, gk, gf, gl, gs, scap, tab, tyk, tyf, tyl), Resolve.Sc(ccap, ss, st, sk), Resolve.Cn(cnn, cn))
+  // symbol 0 and decl 0 are the absent ones
+  Resolve.cset(w, Resolve.sSyms(), 1)
+  Resolve.cset(w, Resolve.sDecl(), 1)
+  w
+

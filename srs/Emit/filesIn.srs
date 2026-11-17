@@ -1,0 +1,9 @@
+// prompt: run Emit.roots phase ph over every file of rs from file index fi (base Typer.moFb(s, fi)); all = every file (a multi-shot site looks its handler and the CPS defs up there)
+def Emit.filesIn(w: Resolve.W, s: Typer.S, k: Emit.K, all: Coll.List[Typer.R], rs: Coll.List[Typer.R], fi: I64, ph: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Emit.roots(Typer.X(w, g, s, rcap, rk, rf), k, f, all, Typer.mxGet(s, Typer.moFb(s, fi)), 0, 0, ph)
+    Emit.filesIn(w, s, k, all, rest, fi + 1, ph)
+

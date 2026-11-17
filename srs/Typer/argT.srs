@@ -1,0 +1,10 @@
+// arg i of list r checked against want (0 = none); its type, 0 when the call has fewer args
+def Typer.argT(x: Typer.X, r: I64, i: I64, want: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val a = Ast.item(g, r, i)
+    val t = Typer.expr(x, a, want)
+    Typer.expect(x, Ast.tok(g, a), t, want)
+    t
+  else 0
+

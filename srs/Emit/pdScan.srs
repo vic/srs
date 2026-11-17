@@ -1,0 +1,10 @@
+// prompt: set the param-drop mask of def root (nodes prev + 1 .. root): bit idx.. set when the def drops its idx-th {} binder (s2 param_region_ok: such a binder becomes a srs_cap* param, the caller passes the handle, Emit.pdArgs); at most 60 binders
+def Emit.pdScan(x: Typer.X, k: Emit.K, base: I64, root: I64, prev: I64, idx: I64, acc: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  val b = Emit.evBinderAt(g, Ast.b(g, root), 0, idx)
+  if b != 0 && idx < 60 then Emit.pdScan(x, k, base, root, prev, idx + 1, if Emit.pdDropped(x, k, base, prev + 1, root, Ast.tok(g, b)) then acc + Emit.pdPow(idx) else acc)
+  else
+    val sym = Typer.symOf(x, Ast.a(g, root))
+    val Emit.K(kn, _, _, _, _, _, _) = k
+    if 0 <= sym && sym < kn then Emit.hset(k, Emit.pdBase() + sym, acc) else ()
+

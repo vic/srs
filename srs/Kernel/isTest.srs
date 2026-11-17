@@ -1,0 +1,7 @@
+def Kernel.isTest(t: Str): Bool = Kernel.hdrAt(t, 0) match
+  case Coll.Some(h) =>
+    val s = Kernel.nmEnd(t, h)
+    val e = Kernel.hdrEnd(t, s, 0)
+    Kernel.startsAt(t, h - Str.len("val "), "val ") && Kernel.sigEq(t, s, e, Kernel.testSig(), 0, Str.len(Kernel.testSig()))
+  case Coll.None => false
+

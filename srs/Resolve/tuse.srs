@@ -1,0 +1,12 @@
+// a type name: the innermost [] binder, else a declared type; else Unresolved
+def Resolve.tuse(x: Resolve.X, j: I64): Unit =
+  val Resolve.X(w, g, _, _, _, _, _, _, _, _) = x
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(_, _, _, _, _, tcap, _, tyk, _, _) = gt
+  val sym = Resolve.sym(w, Resolve.tokT(g, j), false)
+  Resolve.look(w, sym, Resolve.cget(w, Resolve.sSp()) - 1, true) match
+    case Coll.Some(i) => Resolve.tparamAt(x, j, i)
+    case Coll.None =>
+      val k = if 0 < sym && 0 <= sym && sym < tcap then I64.ofU8(tyk(sym)) else 0
+      if k > 0 then Resolve.tset(x, j, k - 1, sym) else Resolve.tset(x, j, Resolve.tUnres(), 0)
+

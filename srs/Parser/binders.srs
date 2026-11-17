@@ -1,0 +1,29 @@
+// ── binder groups, params, facts ──
+// mode 0 plain, 1 in {} (a binder without a name is `_ : T`, s2 Parse.binders 554), 2 a handler def's params (a first binder that is
+// only a name is the op's continuation k, s2 Parse.kParam 986), 3 a libc extern's params (a trailing `...` is three dots)
+def Parser.binders(g: Ast.G, m: I64, close: I64, mode: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, close) then
+    Parser.adv(g)
+    Ast.close(g, m)
+  else
+    val j = Parser.cur(g)
+    if mode == 1 && Parser.cl1(g) != Token.colon() then
+      val t = Parser.ty(g)
+      Ast.push(g, Ast.mk(g, Ast.kBindAnon(), j, t, 0))
+    else if mode == 2 && Ast.mark(g) == m && Token.isName(Parser.cl(g)) && (Parser.cl1(g) == Token.comma() || Parser.cl1(g) == Token.rp()) then
+      Parser.adv(g)
+      Ast.push(g, Ast.mk(g, Ast.kBare(), j, 0, 0))
+    else if mode == 3 && Parser.is(g, Token.dot()) then
+      Parser.eat(g, Token.dot())
+      Parser.eat(g, Token.dot())
+      Parser.eat(g, Token.dot())
+      Ast.push(g, Ast.mk(g, Ast.kDots(), j, 0, 0))
+    else
+      Parser.ident(g)
+      Parser.eat(g, Token.colon())
+      val t = Parser.ty(g)
+      Ast.push(g, Ast.mk(g, Ast.kBind(), j, t, 0))
+    Parser.comma(g)
+    Parser.binders(g, m, close, mode)
+

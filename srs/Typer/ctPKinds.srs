@@ -1,0 +1,8 @@
+// prompt: push the value kind (Typer.ctPKind) of every param binder of list pr from i
+def Typer.ctPKinds(x: Typer.X, pr: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if pr != 0 && i < Ast.len(g, pr) then
+    Typer.push(s, Typer.ctPKind(x, Ast.item(g, pr, i)))
+    Typer.ctPKinds(x, pr, i + 1)
+  else ()
+

@@ -1,0 +1,9 @@
+// prompt: Gate.ruleRoots over all files rs from file index u
+def Gate.ruleFiles(w: Resolve.W, rs: Coll.List[Typer.R], sel: Gate.Rk, u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, _, _, _) = r
+    val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+    Gate.ruleRoots(w, g, sel, u, rc, rk, rr, 0)
+    Gate.ruleFiles(w, rest, sel, u + 1)
+

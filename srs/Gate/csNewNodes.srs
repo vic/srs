@@ -1,0 +1,7 @@
+// prompt: csNew(u, n) rows of nodes n.. below end of unit u: a method node whose op is `new` on a receiver token that is no local (T.new() on an extern struct name, Typer.cstructNew)
+def Gate.csNewNodes(g: Ast.G, rcap: I64, rk: Array[U8](rcap), u: I64, n: I64, end: I64): Unit =
+  if n < end then
+    if Ast.kd(g, n) == Ast.kMethod() && Str.eq(Ast.text(g, Ast.a(g, n)), "new") && !Gate.isLocalTok(rcap, rk, Ast.tok(g, n)) then Gate.row2(u, n) else ()
+    Gate.csNewNodes(g, rcap, rk, u, n + 1, end)
+  else ()
+

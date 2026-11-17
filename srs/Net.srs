@@ -1,0 +1,14 @@
+// a client stream to a Unix socket. connect moves to Open even when it fails (its Os.Status says so): the ops of a
+// connection that did not open return Os.Closed, and close is due in both cases
+capability Net:
+  state Closed, Open
+  start Closed
+  stop Closed
+  def connect <Closed> (path: Str): Os.Status <Open>
+  def send <Open> (s: Str): Os.Status <Open>
+  // up to n bytes, fewer only at the end of the stream
+  def recv <Open> (n: I64): Os.Res[Str] <Open>
+  // every byte up to the end of the stream
+  def drain <Open> (): Os.Res[Str] <Open>
+  def close <Open> (): Unit <Closed>
+

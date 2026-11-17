@@ -1,0 +1,9 @@
+// k, v over l and r where one side grew or shrank by at most one element: rotate back into balance
+def Coll.balance [V: Type] (k: I64, v: V, l: Coll.IMap[V], r2: Coll.IMap[V]): Coll.IMap[V] =
+  val sl = Coll.size(l)
+  val sr = Coll.size(r2)
+  if sl + sr <= 1 then Coll.bin(k, v, l, r2)
+  else if sr > Coll.delta() * sl then Coll.rotateL(k, v, l, r2)
+  else if sl > Coll.delta() * sr then Coll.rotateR(k, v, l, r2)
+  else Coll.bin(k, v, l, r2)
+

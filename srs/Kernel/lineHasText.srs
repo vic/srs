@@ -1,0 +1,9 @@
+// ── prompt docs (vic 2026-11-16: every unit written by an agent must include prompt docs that explain to future agents what the
+// behaviour of the unit must be, so agents can verify semantics) ──
+// prompt: true when line text starts at byte i of t and holds a byte other than a space before the line end.
+def Kernel.lineHasText(t: Str, i: I64): Bool =
+  if 0 <= i && i < Str.len(t) then
+    val c = Str.at(t, i)
+    if c == 10 then false else if c == 32 then Kernel.lineHasText(t, i + 1) else true
+  else false
+

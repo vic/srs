@@ -1,0 +1,7 @@
+// the number of evidence binders in the {..} groups among the first i parts of a def header
+def Gate.evBefore(g: Ast.G, r: I64, i: I64, j: I64, acc: I64): I64 =
+  if j >= i then acc
+  else
+    val p = Ast.item(g, r, j)
+    Gate.evBefore(g, r, i, j + 1, if Ast.kd(g, p) == Ast.kGEv() then acc + Ast.len(g, Ast.a(g, p)) else acc)
+

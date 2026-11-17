@@ -1,0 +1,9 @@
+// a telescope: binder groups () [] {} <> in written order, each pushed on the open list (every decl kind takes one, vic 2026-11-16)
+def Parser.tele(g: Ast.G): Unit =
+  Parser.groups(g)
+  if Parser.ok(g) && Parser.is(g, Token.lp()) then
+    Ast.push(g, Parser.params(g, 0))
+    Parser.tele(g)
+  else ()
+
+

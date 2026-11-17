@@ -1,0 +1,8 @@
+def Typer.nargs(s: Typer.S, t: I64): I64 =
+  val Typer.S(tt, _, _, _, _) = s
+  val Typer.Tt(tcap, tk, _, _, _, tn) = tt
+  // the raw key words of a Len type are no type args: every walk over the args skips them
+  if 0 <= t && t < tcap then (if I64.ofU8(tk(t)) == 7 then 0 else I64.of(tn(t)))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+

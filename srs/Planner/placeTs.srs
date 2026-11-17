@@ -1,0 +1,24 @@
+// prints the column specs of one atom: 0 const, 1 bound slot, 5 slot seen earlier in this atom, 2 new slot
+def Planner.placeTs(ts: Os.Strs, bit: I64, before: Planner.Slots, sl: Planner.Slots, ns: I64, mask: I64): Planner.Pl = ts match
+  case Os.End => Planner.Pl(mask, sl, ns, false)
+  case Os.More(t, r) =>
+    if Planner.isNum(t) then
+      Console.print(" 0 ")
+      Console.print(t)
+      Planner.placeTs(r, bit * 2, before, sl, ns, mask + bit)
+    else if Str.eq(t, "_") then Planner.Pl(mask, sl, ns, true)
+    else Planner.slotOf(before, t) match
+      case Kernel.Found(k) =>
+        Console.print(" 1 ")
+        Console.printI64(k)
+        Planner.placeTs(r, bit * 2, before, sl, ns, mask + bit)
+      case Kernel.Missing => Planner.slotOf(sl, t) match
+        case Kernel.Found(k) =>
+          Console.print(" 5 ")
+          Console.printI64(k)
+          Planner.placeTs(r, bit * 2, before, sl, ns, mask)
+        case Kernel.Missing =>
+          Console.print(" 2 ")
+          Console.printI64(ns)
+          Planner.placeTs(r, bit * 2, before, Planner.SCons(t, ns, sl), ns + 1, mask)
+

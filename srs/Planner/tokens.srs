@@ -1,0 +1,8 @@
+def Planner.tokens(s: Str, i: I64, inTok: Bool, acc: I64): I64 =
+  if i >= Str.len(s) then acc
+  else
+    val c = Str.at(s, i)
+    if c == 32 || c == 10 then Planner.tokens(s, i + 1, false, acc)
+    else if inTok then Planner.tokens(s, i + 1, true, acc)
+    else Planner.tokens(s, i + 1, true, acc + 1)
+

@@ -1,0 +1,8 @@
+def Resolve.bindTpList(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    if Ast.kd(g, b) == Ast.kBind() then Resolve.bindT(x, Ast.tok(g, b)) else ()
+    Resolve.bindTpList(x, r, i + 1)
+  else ()
+

@@ -1,0 +1,19 @@
+def Planner.cmpsOf(its: Os.Strs): Planner.Cr = its match
+  case Os.End => Planner.Cr(Planner.CNil, "")
+  case Os.More(it, rest) =>
+    val t = Planner.nm(it)
+    if Str.len(t) == 0 || Planner.hasCh(t, 40) then Planner.cmpsOf(rest)
+    else
+      val n = Str.len(t)
+      val j = Planner.opAt(t, 0)
+      val c = Str.at(t, j)
+      val c2 = Str.at(t, j + 1)
+      val a = Str.slice(t, 0, j)
+      if j >= n then Planner.Cr(Planner.CNil, "bad body item")
+      else if c == 60 && c2 == 61 then Planner.ccons(3, a, Str.slice(t, j + 2, n), Planner.cmpsOf(rest))
+      else if c == 60 then Planner.ccons(2, a, Str.slice(t, j + 1, n), Planner.cmpsOf(rest))
+      else if c == 62 && c2 == 61 then Planner.ccons(3, Str.slice(t, j + 2, n), a, Planner.cmpsOf(rest))
+      else if c == 62 then Planner.ccons(2, Str.slice(t, j + 1, n), a, Planner.cmpsOf(rest))
+      else if c == 33 && c2 == 61 then Planner.ccons(4, a, Str.slice(t, j + 2, n), Planner.cmpsOf(rest))
+      else Planner.Cr(Planner.CNil, "unsupported comparison")
+

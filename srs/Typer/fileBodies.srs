@@ -1,0 +1,12 @@
+// prompt: type check the bodies of the roots i.. of file f: defs (scope 0), handler fns, given methods.
+def Typer.fileBodies(x: Typer.X, f: Resolve.F, i: I64): Unit =
+  val Resolve.F(_, _, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if I64.ofU8(rk(i)) == 0 && root != 0 then Typer.checkDef(x, root, 0, 0)
+    else if I64.ofU8(rk(i)) == 3 && root != 0 then Typer.handlerBodies(x, root, 0)
+    else if I64.ofU8(rk(i)) == Split.kindByte(Split.Given) && root != 0 then Typer.givenBodies(x, root, 0)
+    else ()
+    Typer.fileBodies(x, f, i + 1)
+  else ()
+

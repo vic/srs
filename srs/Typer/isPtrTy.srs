@@ -1,0 +1,7 @@
+// prompt: true when t (a nominal type: its body) is one pointer word in C: an enum, an array, a capability or the builtin Ptr.
+def Typer.isPtrTy(s: Typer.S, t: I64): Bool =
+  val u = Typer.unfold(s, t)
+  val k = Typer.kind(s, u)
+  k == Typer.bEnum() || k == Typer.bArray() || k == Typer.bCap() || (k == Typer.bBuiltin() && Typer.cls(s, u) == Typer.clsPtr())
+
+

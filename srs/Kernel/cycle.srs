@@ -1,0 +1,8 @@
+def Kernel.cycle(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, ws: Os.Strs): Kernel.Res = ws match
+  case Os.End => Kernel.Res(1, "usage: cycle DIR OUT.c BIN")
+  case Os.More(d, r1) => r1 match
+    case Os.End => Kernel.Res(1, "usage: cycle DIR OUT.c BIN")
+    case Os.More(c, r2) => r2 match
+      case Os.End => Kernel.Res(1, "usage: cycle DIR OUT.c BIN")
+      case Os.More(b, r3) => Kernel.cycleRun(bp, bt, im, d, c, b)
+

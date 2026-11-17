@@ -1,0 +1,10 @@
+def Kernel.body(c: Str): Str =
+  if Str.len(c) > 0 && Str.at(c, 0) == 60 then
+    Kernel.findCh(c, 10, 0) match
+      case Kernel.Found(a) =>
+        Kernel.lastFind(c, "</cross-session-message>", Str.len(c) - 24) match
+          case Kernel.Found(z) => if a + 1 <= z - 1 then Str.slice(c, a + 1, z - 1) else ""
+          case Kernel.Missing => Str.slice(c, a + 1, Str.len(c))
+      case Kernel.Missing => c
+  else c
+

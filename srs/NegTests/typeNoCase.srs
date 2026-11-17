@@ -1,0 +1,7 @@
+// prompt: the kernel must reject a use of a match type whose scrutinee equals no case pattern, with error[no-type-case]; the param
+// of that untyped type has no type entry (missingEntry).
+val NegTests.typeNoCase {NegTest}: Never =
+  type NtNc.Wide [A: Type] = A match
+    case Bool => I64
+  def NtNc.f(x: NtNc.Wide[Str]): I64 = 0
+  NegTest.expect("no-type-case", "missingEntry", "NtNc.Wide has a case for Bool only, so Wide[Str] reduces to no type")

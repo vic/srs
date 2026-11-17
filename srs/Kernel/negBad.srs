@@ -1,0 +1,7 @@
+// true when the header of t names NegTest but t is no negative test
+def Kernel.negBad(t: Str): Bool = Kernel.hdrAt(t, 0) match
+  case Coll.Some(h) =>
+    val s = Kernel.nmEnd(t, h)
+    !Kernel.isNegTest(t) && Kernel.hasIn(t, s, Kernel.hdrEnd(t, s, 0), "NegTest")
+  case Coll.None => false
+

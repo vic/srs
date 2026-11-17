@@ -1,0 +1,9 @@
+// prompt: the type that decl sym denotes (the body of a type definition `type X = T`, the capability of a handler), 0 when none.
+def Typer.declTyGet(s: Typer.S, sym: I64): I64 =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, sa, _, _, _, _, _, _) = sg
+  if 0 <= sym && sym < gcap then I64.of(sa(sym))
+  // shortcut: sym comes from the names table, always below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+

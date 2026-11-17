@@ -1,0 +1,7 @@
+// the case symbol an arm matches, 0 for `_`
+def Typer.armSym(x: Typer.X, arm: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  val p = Ast.a(g, arm)
+  val pk = Ast.kd(g, p)
+  if (pk == Ast.kPCase() || pk == Ast.kPCaseNP()) && Typer.useKind(x, Ast.tok(g, p)) == Resolve.kCase() then Typer.declSym(x, Typer.useRef(x, Ast.tok(g, p))) else 0
+

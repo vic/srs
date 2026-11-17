@@ -1,0 +1,13 @@
+// prompt: the kernel must reject an op of a multi-shot handler nested in an expression, with error[multishot-shape] (s2 neg ms_shape_nested, vic-hm63 C3 interim: only a whole val or a block's last expression is cut)
+val NegTests.msShape {NegTest}: Never =
+  capability NtMs.NonDet:
+    def choose(): Bool
+  handler NtMs.Count [A: Type] for NtMs.NonDet:
+    def done(x: A): I64 = 1
+    def choose(k): I64 = resume k(true) + resume k(false)
+  def main(): I64 =
+    handle nd = NtMs.Count()
+    val x = if NtMs.NonDet.choose() then 1 else 2
+    x
+  NegTest.expect("multishot-shape", "the choose sits inside an if condition, so the rest of the block cannot be cut there")
+

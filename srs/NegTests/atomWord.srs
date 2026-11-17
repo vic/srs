@@ -1,0 +1,12 @@
+// prompt: the kernel must reject an atomic cell of a non-word type (an enum), with error[mismatch]: an ACell holds I64, U64 or Ptr
+// (s2 neg atom_list).
+val NegTests.atomWord {NegTest}: Never =
+  enum NtAw.Xs:
+    case NtAw.XNil
+    case NtAw.XCons(h: I64, t: NtAw.Xs)
+  def main(): I64 =
+    handle r = Srs.Arena()
+    handle a = Srs.Atomic()
+    val c = ACell.new(NtAw.XNil)
+    0
+  NegTest.expect("mismatch", "an atomic cell holds one machine word (I64, U64, Ptr), not an enum")

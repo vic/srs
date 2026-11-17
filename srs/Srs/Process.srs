@@ -1,0 +1,12 @@
+handler Srs.Process for Process:
+  def run(argv: Os.Strs): Os.Ran =
+    val p = rt_proc_new()
+    var a = argv
+    var go = true
+    while go do a match
+      case Os.End => go = false
+      case Os.More(s, rest) =>
+        rt_proc_arg(p, s)
+        a = rest
+    Os.ran(rt_proc_run(p))
+

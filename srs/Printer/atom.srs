@@ -1,0 +1,19 @@
+def Printer.atom(g: Ast.G, n: I64): Unit =
+  val k = Ast.kd(g, n)
+  Printer.tok(g, Ast.tok(g, n))
+  if k == Ast.kAtomCall() then
+    Printer.s("(")
+    Printer.toks(g, Ast.a(g, n), 0)
+    Printer.s(")")
+  else if k == Ast.kAtomAt() then
+    Printer.s(": ")
+    Printer.tok(g, Ast.a(g, n))
+  else if k == Ast.kAtomInf() then
+    Printer.s(" ")
+    Printer.tok(g, Ast.a(g, n))
+    Printer.s(" ")
+    Printer.tok(g, Ast.b(g, n))
+  else
+    Printer.s(" ")
+    Printer.tok(g, Ast.a(g, n))
+

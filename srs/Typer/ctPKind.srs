@@ -1,0 +1,8 @@
+// prompt: the value kind of def param binder b from its written type: 1 for a plain `I64`, 2 for a plain `Bool`, 0 for any other (such a def gets no compile-time code)
+def Typer.ctPKind(x: Typer.X, b: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  val t = Ast.a(g, b)
+  if Ast.kd(g, b) == Ast.kBind() && t != 0 && Ast.kd(g, t) == Ast.kTy() && (Ast.a(g, t) == 0 || Ast.len(g, Ast.a(g, t)) == 0) && (Ast.b(g, t) == 0 || Ast.len(g, Ast.b(g, t)) == 0) then
+    if Str.eq(Ast.text(g, Ast.tok(g, t)), "I64") then 1 else if Str.eq(Ast.text(g, Ast.tok(g, t)), "Bool") then 2 else 0
+  else 0
+

@@ -1,0 +1,16 @@
+// handler Name telescope for Proto[args]: defs (s2 Parse.handler 918); the for part keeps the head token (a) and the whole type (b)
+def Parser.handlerDecl(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  Parser.tele(g)
+  val fj = Parser.cur(g)
+  if Parser.isW(g, "for") then Parser.adv(g) else Parser.stop(g)
+  val t = Parser.ty(g)
+  Ast.push(g, Ast.mk(g, Ast.kHFor(), fj, Ast.tok(g, t), t))
+  Parser.blockOpen(g)
+  Parser.members(g, 2, false)
+  Ast.mk(g, Ast.kHandler(), j, nm, Ast.close(g, m))
+
+

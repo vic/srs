@@ -1,0 +1,56 @@
+// one statement; a binder statement is Unit
+// prompt: type one statement st against want: val/var binders (with their annotation), handle, expressions; a binder statement is Unit.
+def Typer.stmt(x: Typer.X, st: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, st)
+  if k == Ast.kVal() || k == Ast.kVar() then
+    val ann = Ast.a(g, st)
+    val rhs = Ast.b(g, st)
+    if ann != 0 then
+      val ta = Typer.ty(x, ann)
+      // vic 2026-11-16: at a typed val, a value of the body type becomes the constrained (nominal) type when the typer proves its constraints here
+      // (a value that already has the nominal type, e.g. an extern result, is taken as it is)
+      val tw = Typer.unfold(s, ta)
+      val tr = Typer.walk(s, Typer.expr(x, rhs, tw))
+      if tr != ta then
+        Typer.expect(x, Ast.tok(g, st), tr, tw)
+        if tw != ta then Typer.consCheck(s, Typer.cget(s, Typer.cOwner()), ta, Ast.tok(g, st)) else ()
+      else ()
+      // the binder node carries its declared type (the spot oracle compares it with the type of the rhs node)
+      Typer.tyRec(s, st, ta)
+      Typer.ltLoc(s, Ast.tok(g, st), ta)
+    else
+      val tr = Typer.expr(x, rhs, 0)
+      Typer.ltLoc(s, Ast.tok(g, st), tr)
+      Typer.tyRec(s, st, tr)
+    Typer.cget(s, Typer.tUnit())
+  else if k == Ast.kPatVal() then
+    Typer.patVal(x, st)
+    Typer.cget(s, Typer.tUnit())
+  else if k == Ast.kDo() then
+    val td = Typer.expr(x, Ast.a(g, st), want)
+    Typer.tyRec(s, st, td)
+    td
+  else if k == Ast.kHandle() then
+    // handle x = H(args): the args against H's init, x is a value of the capability H is for
+    val hs = Typer.symOf(x, Ast.a(g, st))
+    val ct = Typer.declTyGet(s, hs)
+    // a handler without an `init` takes no args
+    if Typer.sigAt(s, hs, 0) != 0 then Typer.callSig(x, st, hs, 0, Ast.b(g, st), 0)
+    else
+      if Ast.len(g, Ast.b(g, st)) != 0 then Typer.mis(s, Ast.tok(g, st)) else ()
+      Typer.cget(s, Typer.tUnit())
+    Typer.ltLoc(s, Ast.tok(g, st), if ct != 0 then ct else Typer.untyped(x, Ast.tok(g, st), 98))
+    // the handle node carries the capability type and the handler symbol
+    Typer.tyRec(s, st, ct)
+    Typer.ceRec(s, st, hs)
+    Typer.cget(s, Typer.tUnit())
+  else
+    // invariant, decreases: typed as a clause; any other statement is counted
+    if k == Ast.kCheck() then Typer.clauseExpr(x, Ast.tok(g, st), Ast.a(g, st))
+    else
+      Typer.untyped(x, Ast.tok(g, st), k)
+      ()
+    Typer.cget(s, Typer.tUnit())
+
+

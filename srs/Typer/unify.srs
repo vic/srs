@@ -1,0 +1,14 @@
+// first-order unification; an absent type (0, an untyped node) unifies with anything
+def Typer.unify(s: Typer.S, a: I64, b: I64): Bool =
+  if a == 0 || b == 0 then true
+  else
+    val wa = Typer.walk(s, a)
+    val wb = Typer.walk(s, b)
+    if wa == wb then true
+    else if Typer.kind(s, wa) == Typer.bVar() then Typer.bindVar(s, wa, wb)
+    else if Typer.kind(s, wb) == Typer.bVar() then Typer.bindVar(s, wb, wa)
+    // a length index: two different ids are two different lengths (exact keys, no Any); only --types-nolen and the join of the arms of an if / match relax it
+    else if Typer.kind(s, wa) == Typer.bLen() && Typer.kind(s, wb) == Typer.bLen() then Typer.cget(s, Typer.cNoLen()) == 1 || Typer.cget(s, Typer.cJoin()) == 1 || Typer.head(s, wa) == Typer.tErr() || Typer.head(s, wb) == Typer.tErr()
+    else if Typer.kind(s, wa) == Typer.kind(s, wb) && Typer.head(s, wa) == Typer.head(s, wb) && Typer.nargs(s, wa) == Typer.nargs(s, wb) then Typer.unifyArgs(s, wa, wb, 0, Typer.nargs(s, wa))
+    else false
+

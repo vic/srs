@@ -1,0 +1,8 @@
+// true when the last char before j+1 that is not a space opens a binder group or follows a comma
+def Kernel.prevOpen(t: Str, j: I64): Bool =
+  if j < 0 || j >= Str.len(t) then false
+  else
+    val c = Str.at(t, j)
+    if c == Kernel.ch(" ") || c == Kernel.ch("\n") then Kernel.prevOpen(t, j - 1)
+    else c == Kernel.ch("(") || c == Kernel.ch("[") || c == Kernel.ch("{") || c == Kernel.ch("<") || c == Kernel.ch(",")
+

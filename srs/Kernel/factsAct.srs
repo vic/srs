@@ -1,0 +1,24 @@
+def Kernel.factsAct(ws: Os.Strs): Kernel.Res = ws match
+  case Os.End => Kernel.Res(1, "usage: facts BASE FILE")
+  case Os.More(pre, r) => r match
+    case Os.End => Kernel.Res(1, "usage: facts BASE FILE")
+    case Os.More(p, _) => Files.bytes(pre) match
+      case Os.Fail(_) => Kernel.Res(1, "base unreadable")
+      case Os.Ok(pt) => Files.bytes(p) match
+        case Os.Fail(_) => Kernel.Res(1, "file unreadable")
+        case Os.Ok(t) =>
+          val base = Kernel.split(Kernel.Empty, pt)
+          val lo = Kernel.count(base, 0)
+          val im = Kernel.splitAdd(base, t)
+          val ps = Kernel.paths(im)
+          val xs = Kernel.texts(im)
+          val Gate.In(ns, rs) = Gate.f2In(ps, xs)
+          val Gate.Rw(w, rr) = Gate.resolveAll(ps, xs)
+          Console.captureBegin()
+          Gate.unitsFrom(ps, lo, 0)
+          Gate.printIn(ns, rs, lo)
+          Console.print("## ref targets\n")
+          Gate.refTargets(Gate.inHead(rs), lo, ps, 0)
+          Console.print("## tokens (unit kind ref)\n")
+          Gate.tokRows(rr, lo, 0)
+          Kernel.Res(0, Console.captureEnd())

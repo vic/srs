@@ -1,0 +1,32 @@
+// ── type uses ──
+// a type use dump line: path:line text Type<kind> target; a TyParam target = bindline:text ut= tt=, a declared type = file:line:name
+def Resolve.tdumpLine(x: Resolve.X, j: I64, tk: I64, ref: I64): Unit =
+  val Resolve.X(w, g, _, path, _, lcap, ln, _, _, _) = x
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(_, _, _, _, _, tcap, _, _, tyf, tyl) = gt
+  Console.print(path)
+  Console.print(":")
+  Console.printI64(Resolve.lineAt(lcap, ln, j))
+  Console.print(" ")
+  Console.print(Ast.text(g, j))
+  Console.print(" ")
+  Console.print(Resolve.tkindStr(tk))
+  Console.print(" ")
+  if tk == Resolve.tParam() then
+    Console.printI64(Resolve.lineAt(lcap, ln, ref))
+    Console.print(":")
+    Console.print(Ast.text(g, ref))
+    Console.print(" ut=")
+    Console.printI64(j)
+    Console.print(" tt=")
+    Console.printI64(ref)
+  else if tk == Resolve.tUnres() || tk == Resolve.tBuiltin() then Console.print("-")
+  else if 0 < ref && 0 <= ref && ref < tcap then
+    Console.printI64(I64.of(tyf(ref)))
+    Console.print(":")
+    Console.printI64(I64.of(tyl(ref)))
+    Console.print(":")
+    Resolve.printSym(w, ref)
+  else Console.print("badref")
+  Console.print("\n")
+

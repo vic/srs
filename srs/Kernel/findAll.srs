@@ -1,0 +1,10 @@
+// find: print the name of every unit whose text contains s, one per line
+def Kernel.findAll(im: Kernel.Img, s: Str): Unit = im match
+  case Kernel.Empty => ()
+  case Kernel.Unit(m, t, r) =>
+    Kernel.findFrom(t, s, 0) match
+      case Coll.Some(_) =>
+        Console.print(m)
+        Console.print("\n")
+      case Coll.None => ()
+    Kernel.findAll(r, s)

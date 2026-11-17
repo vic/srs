@@ -1,0 +1,8 @@
+// prompt: true when a handler part i.. is a def whose first param is untyped (a continuation k: a multi-shot op clause)
+def Typer.hasKOp(g: Ast.G, parts: I64, i: I64): Bool =
+  if i < Ast.len(g, parts) then
+    val d = Ast.item(g, parts, i)
+    val pr = if Ast.kd(g, d) == Ast.kDef() then Ast.a(g, Typer.part(g, Ast.b(g, d), 0, Ast.kParams())) else 0
+    (pr != 0 && Ast.len(g, pr) > 0 && Ast.kd(g, Ast.item(g, pr, 0)) != Ast.kBind()) || Typer.hasKOp(g, parts, i + 1)
+  else false
+

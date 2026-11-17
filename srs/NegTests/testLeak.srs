@@ -1,0 +1,8 @@
+// a test may use no capability but Test
+// prompt: the kernel must reject a test val that uses Console with error[test-capability].
+val NegTests.testLeak {NegTest}: Never =
+  val Tests.leak {Test}: Test.Result =
+    Console.print("x")
+    Test.expect(1, 1, "same")
+  NegTest.expect("test-capability", "a test may use only the Test capability, so its value is deterministic")
+

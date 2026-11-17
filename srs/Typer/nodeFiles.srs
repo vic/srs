@@ -1,0 +1,8 @@
+def Typer.nodeFiles(w: Resolve.W, s: Typer.S, fs: Coll.List[Resolve.F], fi: I64, dump: Bool): Unit = fs match
+  case Coll.Nil => ()
+  case Coll.Cons(f, rest) =>
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Typer.cset(s, Typer.cFile(), fi)
+    Typer.nodePass(w, s, f, Typer.mxGet(s, Typer.moFb(s, fi)), 1, Ast.cget(g, Ast.sNodes()), dump)
+    Typer.nodeFiles(w, s, rest, fi + 1, dump)
+

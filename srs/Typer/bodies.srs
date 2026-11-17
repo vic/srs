@@ -1,0 +1,11 @@
+def Typer.bodies(w: Resolve.W, s: Typer.S, rs: Coll.List[Typer.R], fi: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Typer.cset(s, Typer.cFile(), fi)
+    Typer.cset(s, Typer.cTyBase(), Typer.mxGet(s, Typer.moFb(s, fi)))
+    Typer.mutPass(Typer.X(w, g, s, rcap, rk, rf), 1, Ast.cget(g, Ast.sNodes()))
+    Typer.fileBodies(Typer.X(w, g, s, rcap, rk, rf), f, 0)
+    Typer.bodies(w, s, rest, fi + 1)
+

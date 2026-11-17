@@ -1,0 +1,21 @@
+// prompt: the env of the multi-shot handler root hroot at a site whose rest has type aT: its one [] binder A := aT (vic Q-M3; the handler is specialized per site), as Emit.gInst puts a given's binders to the pool; another binder count is unsupported
+def Emit.msHE(x: Typer.X, k: Emit.K, base: I64, hroot: I64, aT: I64): Emit.E =
+  val Typer.X(_, g, s, _, _, _) = x
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  val m = Typer.mark(s)
+  Typer.tpToks(x, Ast.b(g, hroot), 0)
+  val n = Typer.cget(s, Typer.cSp()) - m
+  if n != 1 then Emit.hinc(k, 2) else ()
+  Typer.push(s, aT)
+  val top = Typer.cget(s, Typer.cATop())
+  if top + n + 1 <= acap then
+    Typer.cpArgs(s, m, 0, n + 1, top)
+    Typer.cset(s, Typer.cATop(), top + n + 1)
+    Typer.cset(s, Typer.cSp(), m)
+    Emit.E(x, k, top, n, top + n, 0, 0, base)
+  else
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.over(s)
+    Emit.E(x, k, 0, 0, 0, 0, 0, base)
+

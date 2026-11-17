@@ -1,0 +1,39 @@
+// one pass over the nodes of file f (base b): dump = print `path:line #id kind type [rhs=#id]` for every node with a type;
+// always count the expression-kind nodes without a type (cTyExMiss: an expression node no Tp.expr visit reached)
+def Typer.nodePass(w: Resolve.W, s: Typer.S, f: Resolve.F, b: I64, n: I64, nn: I64, dump: Bool): Unit =
+  val Resolve.F(path, g, lcap, ln, _, _, _, _) = f
+  if n < nn then
+    val t = Typer.tyAt(s, b, n)
+    val k = Ast.kd(g, n)
+    if k < 100 then
+      Typer.cinc(s, Typer.cKindN() + k)
+      if t != 0 then Typer.cinc(s, Typer.cKindR() + k) else ()
+    else ()
+    if t == 0 then
+      if Typer.reqKind(k) then
+        Typer.cinc(s, Typer.cTyExMiss())
+        Typer.diag(s, Typer.dMissing(), Ast.tok(g, n))
+        if dump then
+          Typer.po(s,"missing ")
+          Typer.po(s,path)
+          Typer.po(s,":")
+          Typer.pi(s,Resolve.lineAt(lcap, ln, Ast.tok(g, n)))
+          Typer.num(s," #", n)
+          Typer.num(s," ", k)
+          Typer.po(s,"\n")
+        else ()
+      else ()
+    else if dump then
+      Typer.po(s,path)
+      Typer.po(s,":")
+      Typer.pi(s,Resolve.lineAt(lcap, ln, Ast.tok(g, n)))
+      Typer.num(s," #", n)
+      Typer.num(s," ", k)
+      Typer.po(s," ")
+      Typer.tyText(w, s, t)
+      if k == Ast.kVal() || k == Ast.kVar() then Typer.num(s," rhs=#", Ast.b(g, n)) else ()
+      Typer.po(s,"\n")
+    else ()
+    Typer.nodePass(w, s, f, b, n + 1, nn, dump)
+  else ()
+

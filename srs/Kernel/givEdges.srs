@@ -1,0 +1,7 @@
+def Kernel.givEdges(dg: Kernel.Dg, u: I64, g: I64, m: I64, adj: Array[U32](m), fill: Bool): Unit =
+  val Kernel.Dg(n, n1, off, cur, gv) = dg
+  if 0 <= g && g < n then
+    if g != u && I64.ofU8(gv(g)) == 1 then Kernel.edge(dg, u, g, m, adj, fill) else ()
+    Kernel.givEdges(dg, u, g + 1, m, adj, fill)
+  else ()
+

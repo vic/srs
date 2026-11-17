@@ -1,0 +1,21 @@
+// the symbol of t (0 = absent; with ins the symbol is made when absent)
+def Resolve.probe(w: Resolve.W, t: Resolve.T, n: I64, ins: Bool, start: I64, k: I64): I64 =
+  val Resolve.W(sy, _, _, _) = w
+  val Resolve.Sy(hcap, hs, _, _, _, _, _) = sy
+  if 0 <= k && k < hcap then
+    val slot = (start + k) % hcap
+    if 0 <= slot && slot < hcap then
+      val id = I64.of(hs(slot))
+      if id == 0 then
+        if ins then Resolve.insert(w, t, n, slot) else 0
+      else if Resolve.symEq(w, id, t, n) then id
+      else Resolve.probe(w, t, n, ins, start, k + 1)
+    // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+    else
+      Resolve.over(w)
+      0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Resolve.over(w)
+    0
+

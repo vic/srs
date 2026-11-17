@@ -1,0 +1,10 @@
+// prompt: mark the extern struct names among the roots i.. of file f (before any header is typed, so a struct type used before its decl resolves)
+def Typer.cstructRoots(x: Typer.X, f: Resolve.F, i: I64): Unit =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  val Typer.X(_, _, s, _, _, _) = x
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 && I64.ofU8(rk(i)) == 2 && Ast.kd(g, Ast.b(g, root)) == Ast.kCStruct() then Typer.cstructSet(s, Typer.symIns(x, Ast.tok(g, Ast.b(g, root)))) else ()
+    Typer.cstructRoots(x, f, i + 1)
+  else ()
+

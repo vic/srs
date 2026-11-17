@@ -1,0 +1,16 @@
+// prompt: a handler fn d of handler hs whose first param is untyped is a multi-shot op clause: its binder k gets the local type Srs.Cont[V, R] with V the op's declared result (the capability op of the same name) and R the clause's declared result (the answer, vic Q-M2/Q-M3). shortcut: V is read without the capability's [] args; upgrade when a multi-shot capability takes [] params
+def Typer.contBind(x: Typer.X, hs: I64, d: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, d)
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  if Ast.len(g, pr) > 0 && Ast.kd(g, Ast.item(g, pr, 0)) != Ast.kBind() then
+    val sg = Typer.opFind(s, Typer.head(s, Typer.declTyGet(s, hs)), Typer.symIns(x, Ast.a(g, d)), 0)
+    val r = Typer.ty(x, Ast.a(g, Typer.part(g, parts, 0, Ast.kRet())))
+    if sg != 0 && r != 0 then
+      val m = Typer.mark(s)
+      Typer.push(s, Typer.sigAt(s, sg, 0))
+      Typer.push(s, r)
+      Typer.ltSet(s, Ast.tok(g, Ast.item(g, pr, 0)), Typer.mk(s, Typer.bOther(), 0, Typer.contSym(x), m))
+    else ()
+  else ()
+

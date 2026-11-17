@@ -1,0 +1,12 @@
+// the parts of a def at indent ind; the `=` after clauses goes on a line of its own
+def Printer.parts(g: Ast.G, r: I64, i: I64, ind: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kBody() && i > 0 && Printer.isClause(Ast.kd(g, Ast.item(g, r, i - 1))) then
+      Printer.line(ind)
+      Printer.s("= ")
+      Printer.rhs(g, Ast.a(g, n), ind)
+    else Printer.part(g, n, ind)
+    Printer.parts(g, r, i + 1, ind)
+  else ()
+

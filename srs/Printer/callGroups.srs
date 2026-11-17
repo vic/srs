@@ -1,0 +1,14 @@
+def Printer.callGroups(g: Ast.G, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCGTys() then
+      Printer.s("[")
+      Printer.tys(g, Ast.a(g, n), 0)
+      Printer.s("]")
+    else
+      Printer.s("{")
+      Printer.toks(g, Ast.a(g, n), 0)
+      Printer.s("}")
+    Printer.callGroups(g, r, i + 1)
+  else ()
+

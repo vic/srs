@@ -1,0 +1,9 @@
+// a type node gives value args (T(n)) to a builtin scalar type, at its head or in any type argument
+def Gate.tyValBad(w: Resolve.W, g: Ast.G, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), t: I64): Bool =
+  val k = Ast.kd(g, t)
+  if k == Ast.kTyCaps() then Gate.tyValBad(w, g, rcap, rk, rf, Ast.a(g, t))
+  else if k == Ast.kTy() then
+    val j = Ast.tok(g, t)
+    (Ast.b(g, t) != 0 && 0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tBuiltin() && Gate.isScalarSym(w, I64.of(rf(j)))) || Gate.tyValArgs(w, g, rcap, rk, rf, Ast.a(g, t), 0)
+  else false
+

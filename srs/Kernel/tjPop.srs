@@ -1,0 +1,16 @@
+def Kernel.tjPop(t: Kernel.Tj, u: I64, c: I64): Unit =
+  val Kernel.Tj(n, idx, low, on, st, comp, c3, ctr) = t
+  val one = 1
+  if 0 <= one && one < c3 then
+    val sp = I64.of(ctr(one)) - 1
+    if 0 <= sp && sp < n then
+      val w = I64.of(st(sp))
+      Array.put(ctr, one, U32.of(sp))
+      if 0 <= w && w < n then
+        Array.put(on, w, U8.of(0))
+        Array.put(comp, w, U32.of(c))
+      else ()
+      if w != u then Kernel.tjPop(t, u, c) else ()
+    else ()
+  else ()
+

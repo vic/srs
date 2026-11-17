@@ -1,0 +1,7 @@
+def Typer.maxNodes(fs: Coll.List[Resolve.F], acc: I64): I64 = fs match
+  case Coll.Nil => acc
+  case Coll.Cons(f, rest) =>
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    val c = Ast.cget(g, Ast.sNodes())
+    Typer.maxNodes(rest, if c > acc then c else acc)
+

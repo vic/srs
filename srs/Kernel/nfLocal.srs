@@ -1,0 +1,17 @@
+// prompt: for every member u of scc c (u walks the units in image order with rs): lh(u) = B3 of its K.MAnon stream when md is
+// K.MAnon, else l2(u) = B3 of its K.MShape stream.
+def Kernel.nfLocal(w: Resolve.W, tj: Kernel.Tj, nf: Kernel.Nf, c: I64, md: Kernel.Md, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+    val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+    if 0 <= u && u < tn && I64.of(comp(u)) == c then
+      Console.captureBegin()
+      Kernel.nfStream(w, tj, nf, c, md, r)
+      val s = Console.captureEnd()
+      md match
+        case Kernel.MAnon => Kernel.nfPut(n8, lh, u, s)
+        case _ => Kernel.nfPut(n8, l2, u, s)
+    else ()
+    Kernel.nfLocal(w, tj, nf, c, md, rest, u + 1)
+

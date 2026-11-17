@@ -1,0 +1,8 @@
+// prompt: the count of constraint groups ({} evidence, <> facts) among the parts r[i..] of a decl.
+def Typer.consN(g: Ast.G, r: I64, i: I64): I64 =
+  if i < Ast.len(g, r) then
+    val k = Ast.kd(g, Ast.item(g, r, i))
+    (if k == Ast.kGEv() || k == Ast.kGFacts() then 1 else 0) + Typer.consN(g, r, i + 1)
+  else 0
+
+

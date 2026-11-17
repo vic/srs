@@ -1,0 +1,11 @@
+def Typer.callArgs(x: Typer.X, r: I64, i: I64, np: I64, start: I64, tp0: I64, ntp: I64, v0: I64, lb: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val a = Ast.item(g, r, i)
+    val pt = if i < np then Typer.lsubTop(x, Typer.inst(s, Typer.poolAt(s, start + i), tp0, ntp, v0), r, lb, np, true) else 0
+    Typer.expect(x, Ast.tok(g, a), Typer.expr(x, a, pt), pt)
+    // a local passed as an arg is a witness: the C of this arg is `T_param w = local;`, which only compiles when the local's C type fits
+    if pt != 0 && Ast.kd(g, a) == Ast.kName() && Typer.useKind(x, Ast.tok(g, a)) == Resolve.kLocal() then Typer.witRec(s, Typer.useRef(x, Ast.tok(g, a)), pt) else ()
+    Typer.callArgs(x, r, i + 1, np, start, tp0, ntp, v0, lb)
+  else ()
+

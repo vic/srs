@@ -1,0 +1,12 @@
+def Parser.classOf(src: Str, n: I64, kb: I64, o: I64, l: I64): I64 =
+  if kb == Lexer.kindByte(Lexer.KIdent) then Parser.kwClass(Str.slice(src, o, o + l), l)
+  else if kb == Lexer.kindByte(Lexer.KInt) then Token.int()
+  else if kb == Lexer.kindByte(Lexer.KStr) then Token.str()
+  else if kb == Lexer.kindByte(Lexer.KChar) then Token.char()
+  else if kb == Lexer.kindByte(Lexer.KOp) then Parser.opClass(src, n, o, l)
+  else if kb == Lexer.kindByte(Lexer.KLtGlued) then Token.ltg()
+  else if kb == Lexer.kindByte(Lexer.KNl) then Token.nl()
+  else if kb == Lexer.kindByte(Lexer.KIndent) then Token.indent()
+  else if kb == Lexer.kindByte(Lexer.KDedent) then Token.dedent()
+  else Token.doc()
+

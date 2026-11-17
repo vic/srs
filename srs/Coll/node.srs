@@ -1,0 +1,8 @@
+// the node of k, Coll.Tip when absent: a lookup that allocates nothing (Coll.lookup allocates its Some)
+def Coll.node [V: Type] (m: Coll.IMap[V], k: I64): Coll.IMap[V] = m match
+  case Coll.Tip => m
+  case Coll.Bin(_, k2, _, l, r2) =>
+    if k < k2 then Coll.node(l, k)
+    else if k > k2 then Coll.node(r2, k)
+    else m
+

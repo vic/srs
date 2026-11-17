@@ -1,0 +1,7 @@
+// prompt: copy byte i.. of s into xs[i..n) (n = Str.len(s) at the caller); each index is guarded, so the gate proves it.
+def Srs.Disk.copy(n: I64, xs: Array[U8](n), s: Str, i: I64): Unit =
+  if 0 <= i && i < n then
+    Array.put(xs, i, U8.of(Str.at(s, i)))
+    Srs.Disk.copy(n, xs, s, i + 1)
+  else ()
+

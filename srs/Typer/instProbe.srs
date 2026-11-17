@@ -1,0 +1,11 @@
+def Typer.instProbe(s: Typer.S, sym: I64, a: I64, n: I64, slot: I64, k: I64): Unit =
+  val hc = Typer.cget(s, Typer.cMoH())
+  if k < hc then
+    val e = Typer.mxGet(s, Typer.moHash(s, slot))
+    if e == 0 then Typer.instNew(s, sym, a, n, slot)
+    else
+      val i = e - 1
+      if Typer.mxGet(s, Typer.moInst(s, i, 0)) == sym && Typer.mxGet(s, Typer.moInst(s, i, 2)) == n && Typer.argsAt(s, Typer.mxGet(s, Typer.moInst(s, i, 1)) - 1, a, 0, n) then ()
+      else Typer.instProbe(s, sym, a, n, (slot + 1) % hc, k + 1)
+  else Typer.cinc(s, Typer.cSubOver())
+

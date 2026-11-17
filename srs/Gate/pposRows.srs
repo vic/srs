@@ -1,0 +1,7 @@
+// ppos(u, a, k): the param a of the def is its value param k
+def Gate.pposRows(g: Ast.G, u: I64, l: I64, k: I64): Unit =
+  if k < Ast.len(g, l) then
+    val n = Ast.item(g, l, k)
+    if Ast.kd(g, n) == Ast.kBind() then Gate.row3(u, Ast.tok(g, n), k) else ()
+    Gate.pposRows(g, u, l, k + 1)
+  else ()

@@ -1,0 +1,11 @@
+// prompt: one "error[prompt-missing] NAME\n" (reversed list, print with Kernel.joinRev) for every unit of cand that is new or whose
+// text differs from the unit of the same name in im, and that has no prompt line (Kernel.hasPrompt).
+def Kernel.noPrompt(im: Kernel.Img, cand: Kernel.Img, acc: Os.Strs): Os.Strs = cand match
+  case Kernel.Empty => acc
+  case Kernel.Unit(n, t, r) =>
+    val changed = Kernel.textOf(im, n) match
+      case Coll.Some(o) => Str.eq(o, t) == false
+      case Coll.None => true
+    val bad = changed && Kernel.hasPrompt(t, 0) == false
+    Kernel.noPrompt(im, r, if bad then Os.More(Kernel.msg2(Kernel.msg2("error[prompt-missing] ", n), "\n"), acc) else acc)
+

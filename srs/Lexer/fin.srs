@@ -1,0 +1,10 @@
+// the end (s2 Lex.finish): a last Nl if the last code line has none, then a Dedent for each open indent
+def Lexer.fin(src: Str, n: I64, nt: Lexer.Notes, i: I64, cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64, scap: I64, st: Array[U32](scap), sp: I64, depth: I64, pos: Lexer.Pos): Lexer.Out =
+  if !Lexer.lineDone(cap, ks, t - 1) then
+    val inc = Lexer.layTok(cap, ks, os, ls, t, Lexer.KNl, i, dcap, dc, dof, d)
+    Lexer.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp, depth, pos)
+  else if sp > 1 then
+    val inc = Lexer.layTok(cap, ks, os, ls, t, Lexer.KDedent, i, dcap, dc, dof, d)
+    Lexer.go(src, n, nt, i, cap, ks, os, ls, t + 1, dcap, dc, dof, d + inc, scap, st, sp - 1, depth, pos)
+  else Lexer.Out(cap, ks, os, ls, t, dcap, dc, dof, d)
+

@@ -1,0 +1,11 @@
+def Emit.assigns(e: Emit.E, r: I64, i: I64): Unit =
+  val g = Emit.gOf(e)
+  val Emit.E(_, _, _, _, _, _, pr, _) = e
+  if i < Ast.len(g, r) then
+    Emit.binder(e, Ast.tok(g, Ast.item(g, pr, i)))
+    Emit.po(e," = t")
+    Emit.pi(e,i)
+    Emit.po(e,"; ")
+    Emit.assigns(e, r, i + 1)
+  else ()
+

@@ -1,0 +1,18 @@
+// ── globals ──
+// a global of kind kb named by symbol sym, declared in file fi at line; the first declaration of a symbol wins, later ones are counted
+def Resolve.declare(w: Resolve.W, kb: I64, fi: I64, line: I64, sym: I64): Unit =
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(gcap, gk, gf, gl, gs, tcap, tab, _, _, _) = gt
+  val d = Resolve.cget(w, Resolve.sDecl())
+  if 0 < sym && 0 <= sym && sym < tcap && 0 <= d && d < gcap then
+    if I64.of(tab(sym)) != 0 then Resolve.cinc(w, Resolve.sDup())
+    else
+      Array.put(gk, d, U8.of(kb))
+      Array.put(gf, d, U32.of(fi))
+      Array.put(gl, d, U32.of(line))
+      Array.put(gs, d, U32.of(sym))
+      Array.put(tab, sym, U32.of(d))
+      Resolve.cset(w, Resolve.sDecl(), d + 1)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+

@@ -1,0 +1,10 @@
+// prompt: the rule rows of the roots i.. of file u: capability roots (kind 4) give rule def rows, def roots (kind 0) give relU rows (selector RUse)
+def Gate.ruleRoots(w: Resolve.W, g: Ast.G, sel: Gate.Rk, u: I64, rc: I64, rk: Array[U8](rc), rr: Array[U32](rc), i: I64): Unit =
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 && I64.ofU8(rk(i)) == 4 && Gate.rkB(sel) != Gate.rkB(Gate.RUse) then Gate.ruleItems(w, g, sel, u, Ast.b(g, root), 0)
+    else if root != 0 && I64.ofU8(rk(i)) == 0 && Gate.rkB(sel) == Gate.rkB(Gate.RUse) then Gate.relUse(w, g, u, Ast.b(g, root), 0)
+    else ()
+    Gate.ruleRoots(w, g, sel, u, rc, rk, rr, i + 1)
+  else ()
+

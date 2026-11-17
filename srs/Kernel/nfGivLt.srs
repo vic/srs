@@ -1,0 +1,8 @@
+// prompt: the number of givens b outside scc c whose id is less than the id of gl(a) (equal ids: b < a).
+def Kernel.nfGivLt(tj: Kernel.Tj, nf: Kernel.Nf, gn: I64, gl: Array[U32](gn), c: I64, a: I64, b: I64, acc: I64): I64 =
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if 0 <= b && b < gn && 0 <= a && a < gn then
+    val o = if b != a && Kernel.nfOut(tj, gn, gl, c, b) then Kernel.nfCmp(n8, ids, I64.of(gl(b)), I64.of(gl(a)), 0) else 2
+    Kernel.nfGivLt(tj, nf, gn, gl, c, a, b + 1, if o == -1 || (o == 0 && b < a) then acc + 1 else acc)
+  else acc
+

@@ -1,0 +1,6 @@
+// prompt: the unit name a chunk t declares, read from its alias-expanded text: its decl name, or for a given or a decl without a
+// name the name made from its header line (Kernel.anonName); "" for none.
+def Kernel.textName(t: Str): Str =
+  val u = Kernel.unalias(t)
+  val n = if Kernel.isGiven(u) then "" else Kernel.declName(u)
+  if Str.len(n) == 0 then Kernel.anonName(u) else n

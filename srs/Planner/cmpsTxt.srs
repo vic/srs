@@ -1,0 +1,8 @@
+// the comparison filters go after every atom: both operands are bound there or the rule is rejected
+def Planner.cmpsTxt(cs: Planner.Cmps, sl: Planner.Slots, n: I64): Planner.Cn = cs match
+  case Planner.CNil => Planner.Cn(n, true)
+  case Planner.CCons(op, a, b, rest) =>
+    Console.print(" ")
+    Console.printI64(op)
+    if Planner.opnd(a, sl) && Planner.opnd(b, sl) then Planner.cmpsTxt(rest, sl, n + 1) else Planner.Cn(n, false)
+

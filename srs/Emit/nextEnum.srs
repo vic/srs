@@ -1,0 +1,15 @@
+// = Tp.nextEnum(s, esym, t), through the index
+def Emit.nextEnum(s: Typer.S, k: Emit.K, esym: I64, t: I64): I64 =
+  val Emit.K(kn, _, _, _, xo, xn, xi) = k
+  val built = Emit.hget(k, 130)
+  if 0 <= esym && esym + 2 < kn then
+    val tail = if t > built then t else built
+    if esym <= Emit.hget(k, 131) then
+      val hi = Emit.xg(kn, xo, esym + 1)
+      val p = Emit.ixLb(xn, xi, Emit.xg(kn, xo, esym), hi, t)
+      if p < hi && 0 <= p && p < xn then Emit.xg(xn, xi, p) else Emit.tailScan(s, k, esym, tail)
+    else Emit.tailScan(s, k, esym, tail)
+  else
+    Emit.hinc(k, 133)
+    Emit.tailScan(s, k, esym, t)
+

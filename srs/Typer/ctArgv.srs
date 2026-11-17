@@ -1,0 +1,12 @@
+// prompt: evaluate the args i..k of a call at pc in frame fb into env entries nf + i (the env top follows each stored arg): CtInt(0) and the position after the args, or CtNo when an arg has no value
+def Typer.ctArgv(s: Typer.S, pc: I64, fb: I64, nf: I64, i: I64, k: I64): Typer.CtR =
+  if i < k then
+    val Typer.CtR(v, nx) = Typer.ctEval(s, pc, fb)
+    Typer.ctPut(s, nf + i, v)
+    Typer.cset(s, Typer.cCtTop(), nf + i + 1)
+    v match
+      case Typer.CtNo => Typer.CtR(Typer.CtNo, Typer.ctSkipN(s, nx, k - i - 1))
+      case Typer.CtInt(_) => Typer.ctArgv(s, nx, fb, nf, i + 1, k)
+      case Typer.CtBool(_) => Typer.ctArgv(s, nx, fb, nf, i + 1, k)
+  else Typer.CtR(Typer.CtInt(0), pc)
+

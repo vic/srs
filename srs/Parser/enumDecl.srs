@@ -1,0 +1,14 @@
+// enum name telescope: NL IND (case Name [(fields)])* DED
+def Parser.enumDecl(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  val m = Ast.mark(g)
+  Parser.tele(g)
+  Parser.eat(g, Token.colon())
+  Parser.eat(g, Token.nl())
+  Parser.eat(g, Token.indent())
+  Parser.cases(g, m)
+  Ast.mk(g, Ast.kEnum(), j, nm, Ast.close(g, m))
+
+

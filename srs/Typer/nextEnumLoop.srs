@@ -1,0 +1,6 @@
+// the first type id in [t, n) of kind enum and head esym, else n (the columns read once for the whole scan)
+def Typer.nextEnumLoop(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), ek: I64, esym: I64, t: I64, n: I64): I64 =
+  if t < n && 0 <= t && t < tcap then
+    if I64.ofU8(tk(t)) == ek && I64.of(th(t)) == esym then t else Typer.nextEnumLoop(tcap, tk, th, ek, esym, t + 1, n)
+  else n
+

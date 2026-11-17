@@ -1,0 +1,14 @@
+// every resolved token of the units at or above lo: unit, kind byte (Nm.RK below Nm.tBase, type kinds above), ref (decl id or symbol)
+def Gate.tokAll(u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    if I64.of(rf(j)) > 0 then
+      Console.printI64(u)
+      Console.print("\t")
+      Console.printI64(I64.ofU8(rk(j)))
+      Console.print("\t")
+      Console.printI64(I64.of(rf(j)))
+      Console.print("\n")
+    else ()
+    Gate.tokAll(u, rcap, rk, rf, j + 1)
+  else ()
+

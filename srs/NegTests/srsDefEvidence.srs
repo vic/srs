@@ -1,0 +1,6 @@
+// prompt: control: a def call under the Srs prefix that asks for {p: Process} from a def holding no Process is rejected with
+// error[no-capability].
+val NegTests.srsDefEvidence {NegTest}: Never =
+  def Srs.NtSd.g {p: Process} (): I64 = 1
+  def Srs.NtSd.f(): I64 = Srs.NtSd.g()
+  NegTest.expect("no-capability", "Srs.NtSd.g asks for {p: Process}; Srs.NtSd.f holds no Process")

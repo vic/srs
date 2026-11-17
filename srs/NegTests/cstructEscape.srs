@@ -1,0 +1,11 @@
+// prompt: the kernel must reject a def that returns T.new() of an extern struct made inside a Region handle of its body, with
+// error[region-escape] (s2 neg cstruct_escape): the struct lives in the innermost Region, which dies at the end of the def.
+// The struct name is bare: an extern struct decl takes the C struct name (no dots).
+val NegTests.cstructEscape {NegTest}: Never =
+  extern "libc" struct flock:
+    l_start: I64
+  def NtCs.leak(): flock =
+    handle r = Srs.Arena()
+    flock.new()
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "flock.new() allocates in the Arena r, which closes when leak returns")

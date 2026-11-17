@@ -1,0 +1,18 @@
+// push a binder: the symbol of text t, the binder token, its kind
+def Resolve.push(x: Resolve.X, t: Resolve.T, tok: I64, kb: I64): Unit =
+  val Resolve.X(w, _, _, _, _, _, _, _, _, _) = x
+  val Resolve.W(_, _, sc, _) = w
+  val Resolve.Sc(cap, ss, st, sk) = sc
+  val sym = Resolve.sym(w, t, true)
+  val sp = Resolve.cget(w, Resolve.sSp())
+  if 0 < sym && 0 <= sp && sp < cap then
+    Array.put(ss, sp, U32.of(sym))
+    Array.put(st, sp, U32.of(tok))
+    Array.put(sk, sp, U8.of(kb))
+    Resolve.cset(w, Resolve.sSp(), sp + 1)
+    if Resolve.cget(w, Resolve.sCapSig()) == 0 then Resolve.cinc(w, Resolve.sLocals()) else ()
+    if sp + 1 > Resolve.cget(w, Resolve.sMaxSp()) then Resolve.cset(w, Resolve.sMaxSp(), sp + 1) else ()
+    if sp + 1 > Resolve.cget(w, Resolve.sRootMax()) then Resolve.cset(w, Resolve.sRootMax(), sp + 1) else ()
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+

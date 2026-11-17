@@ -1,0 +1,13 @@
+// prompt: the call h_<H>_<op>(hs_<H>, args) of op node n (callee symbol sg = Emit.ce) for handler h
+def Emit.hcallRaw(e: Emit.E, n: I64, h: I64, r: I64): Unit =
+  val w = Emit.wOf(e)
+  val sg = Emit.ce(e, n)
+  Emit.po(e,"h_")
+  Emit.id(e,h)
+  Emit.po(e,"_")
+  Emit.symTail(e, w, sg, Emit.lastDot(w, sg, 0, 0 - 1) + 1)
+  Emit.po(e,"(hs_")
+  Emit.id(e,h)
+  Emit.args(e, r, 0, true)
+  Emit.po(e,")")
+

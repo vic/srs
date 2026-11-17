@@ -1,0 +1,6 @@
+def Kernel.ccAct(ws: Os.Strs): Kernel.Res = ws match
+  case Os.End => Kernel.Res(1, "usage: cc IN.c OUT")
+  case Os.More(inp, r) => r match
+    case Os.End => Kernel.Res(1, "usage: cc IN.c OUT")
+    case Os.More(out, _) => Kernel.ranRes(Process.run(Kernel.ccArgv(inp, out)))
+

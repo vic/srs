@@ -1,0 +1,38 @@
+// ids action: units, edges, sccs, ties (and the tied names); then name and identity of every unit. The identity holds no name.
+// prompt: renaming any unit (renamestore) must leave every id unchanged; a changed token, referenced id or given set changes it.
+def Kernel.idsText(im: Kernel.Img): Str =
+  val Kernel.Gw(gr, w, rs) = Kernel.graphW(im)
+  val Resolve.W(sy, gt, sc, cn) = w
+  val Kernel.Gr(dg, m, adj) = gr
+  val Kernel.Dg(dn, n1, off, cur, gv) = dg
+  val n = Kernel.count(im, 0)
+  val c3 = 3
+  val ctr = Array.fill(c3, U32.of(0))
+  val t = Kernel.Tj(n, Array.fill(n, U32.of(0)), Array.fill(n, U32.of(0)), Array.fill(n, U8.of(0)), Array.fill(n, U32.of(0)), Array.fill(n, U32.of(0)), c3, ctr)
+  Kernel.tjAll(t, dg, m, adj, 0)
+  val two = 2
+  val k = if 0 <= two && two < c3 then I64.of(ctr(two)) else 0
+  val Resolve.Gt(gcap, gk, gf, gl, gs, ycap, tab, tyk, tyf, tyl) = gt
+  val fd = Array.fill(n, U32.of(0))
+  Kernel.nfFirst(gcap, gf, n, fd, gcap - 1)
+  val n8 = 8 * n
+  val nf = Kernel.Nf(n, fd, Array.fill(n, U32.of(0)), n8, Array.fill(n8, U32.of(0)), Array.fill(n8, U32.of(0)), Array.fill(n8, U32.of(0)), Array.fill(n8, U32.of(0)))
+  val gn = Kernel.nfGivN(dn, gv, 0, 0)
+  val gvl = Array.fill(gn, U32.of(0))
+  Kernel.nfGivFill(dn, gv, gn, gvl, 0, 0)
+  val ties = Kernel.nfAll(w, t, nf, rs, gn, gvl, Array.fill(gn, U32.of(0)), 0, k, 0)
+  val lines = Kernel.nfLines(nf, im, 0, Os.End)
+  val tied = Kernel.nfTied(t, nf, im, 0, Os.End)
+  Console.captureBegin()
+  Console.print("units=")
+  Console.printI64(n)
+  Console.print(" edges=")
+  Console.printI64(m)
+  Console.print(" sccs=")
+  Console.printI64(k)
+  Console.print(" ties=")
+  Console.printI64(ties)
+  Kernel.joinRev(tied)
+  Console.print("\n")
+  Kernel.joinRev(lines)
+  Console.captureEnd()

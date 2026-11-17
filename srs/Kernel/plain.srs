@@ -1,0 +1,5 @@
+// the image without its negative tests: what is checked and emitted
+def Kernel.plain(im: Kernel.Img): Kernel.Img = im match
+  case Kernel.Empty => Kernel.Empty
+  case Kernel.Unit(n, t, r) => if Kernel.isNegTest(t) then Kernel.plain(r) else Kernel.Unit(n, t, Kernel.plain(r))
+

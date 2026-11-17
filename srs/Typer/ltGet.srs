@@ -1,0 +1,10 @@
+// locals (by binder token) and type vars (by index)
+// prompt: the local type of binder token j, 0 when none.
+def Typer.ltGet(s: Typer.S, j: I64): I64 =
+  val Typer.S(_, _, _, _, sg) = s
+  val Typer.Sg(gcap, _, _, _, _, _, _, sl, _, _, _, _, _) = sg
+  if 0 <= j && j < gcap then I64.of(sl(j))
+  // shortcut: a binder token is below the token count, below gcap; s3 Vec will make it unrepresentable
+  else 0
+
+

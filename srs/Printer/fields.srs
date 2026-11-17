@@ -1,0 +1,11 @@
+// the field lines of an extern struct
+def Printer.fields(g: Ast.G, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val f = Ast.item(g, r, i)
+    Printer.line(2)
+    Printer.tok(g, Ast.tok(g, f))
+    Printer.s(": ")
+    Printer.ty(g, Ast.a(g, f))
+    Printer.fields(g, r, i + 1)
+  else ()
+

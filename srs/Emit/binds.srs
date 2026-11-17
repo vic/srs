@@ -1,0 +1,17 @@
+// the binders of a pattern: field i of the case of node pat, read from the scrutinee temp s<sv>
+def Emit.binds(e: Emit.E, pat: I64, names: I64, i: I64, sv: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, names) then
+    Emit.cty(e, Emit.fieldTy(e, Emit.ce(e, pat), Emit.tyS(e, pat), i))
+    Emit.po(e," ")
+    Emit.binder(e, Ast.item(g, names, i))
+    Emit.po(e," = s")
+    Emit.pi(e,sv)
+    Emit.po(e,"->u.C_")
+    Emit.id(e,Emit.ce(e, pat))
+    Emit.po(e,".f")
+    Emit.pi(e,i)
+    Emit.po(e,"; ")
+    Emit.binds(e, pat, names, i + 1, sv)
+  else ()
+

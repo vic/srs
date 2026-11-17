@@ -1,0 +1,9 @@
+// the env of a def of file context x, instance inst (or -1): the substitution of the instance, the own symbol, the params list
+def Emit.envOf(x: Typer.X, k: Emit.K, base: I64, root: I64, sym: I64, inst: I64): Emit.E =
+  val Typer.X(_, g, s, _, _, _) = x
+  val pr = Ast.a(g, Typer.part(g, Ast.b(g, root), 0, Ast.kParams()))
+  val start = Typer.sigAt(s, sym, 1)
+  val tp0 = start + Typer.sigAt(s, sym, 2)
+  if inst >= 0 then Emit.E(x, k, tp0, Typer.sigAt(s, sym, 3), Typer.mxGet(s, Typer.moInst(s, inst, 1)) - 1, sym, pr, base)
+  else Emit.E(x, k, tp0, 0, 0, sym, pr, base)
+

@@ -1,0 +1,18 @@
+// prompt: print token j of class k that the resolver left unresolved: the unit's own name (own, e.g. a NegTest val, whose name the
+// names pass does not declare) as "@self"; a dotted identifier that is a declared name (Kernel.nfDecl) by Kernel.nfRef, except in
+// an extern unit (its name is the external symbol); any other token as class ":" text " ".
+def Kernel.nfOther(w: Resolve.W, tj: Kernel.Tj, nf: Kernel.Nf, c: I64, md: Kernel.Md, g: Ast.G, own: Str, n: I64, k: I64, j: I64): Unit =
+  val ext = Kernel.nfExt(g, 0)
+  val dr = if k == Token.ident() && Parser.dotted(g, j) && ext == false then Kernel.nfDecl(w, g, n, j) else Coll.None
+  dr match
+    case Coll.Some(rf) =>
+      val Kernel.Rf(v, e) = rf
+      Kernel.nfRef(tj, nf, c, md, v, e)
+    case Coll.None =>
+      if k == Token.ident() && ext == false && Str.eq(Ast.text(g, j), own) then Console.print("@self ")
+      else
+        Console.printI64(k)
+        Console.print(":")
+        Console.print(Ast.text(g, j))
+        Console.print(" ")
+

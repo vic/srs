@@ -1,0 +1,8 @@
+// prompt: the C types of the args i.. of list r, comma separated (a block-scope prototype of a given fn, Emit.capCall)
+def Emit.argTys(e: Emit.E, r: I64, i: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, r) then
+    if i > 0 then Emit.po(e,", ") else ()
+    Emit.cty(e, Emit.tyS(e, Ast.item(g, r, i)))
+    Emit.argTys(e, r, i + 1)
+  else ()

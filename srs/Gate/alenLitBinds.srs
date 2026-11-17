@@ -1,0 +1,10 @@
+// alenLit(u, a, L): a param a of type Array[..](L) with L a decimal literal
+def Gate.alenLitBinds(g: Ast.G, u: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    val t0 = Ast.a(g, n)
+    val t = if Ast.kd(g, t0) == Ast.kTyCaps() then Ast.a(g, t0) else t0
+    if Ast.kd(g, n) == Ast.kBind() && Ast.kd(g, t) == Ast.kTy() && Ast.len(g, Ast.b(g, t)) >= 1 then Gate.optRow3(u, Ast.tok(g, n), Gate.intOf(g, Ast.item(g, Ast.b(g, t), 0))) else ()
+    Gate.alenLitBinds(g, u, l, i + 1)
+  else ()
+

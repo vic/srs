@@ -1,0 +1,8 @@
+// node columns, guarded; an id outside the nodes reads as the absent node
+def Ast.kd(g: Ast.G, n: I64): I64 =
+  val Ast.G(_, nd, _, _) = g
+  val Ast.Nd(ncap, nk, _, _, _) = nd
+  if 0 <= n && n < ncap then I64.ofU8(nk(n))
+  // shortcut: ids come from Na.mk, always below ncap; s3 Vec will make it unrepresentable
+  else 0
+

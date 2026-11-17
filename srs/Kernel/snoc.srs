@@ -1,0 +1,6 @@
+// the image stays in name order (byte order), so the order of submits and loads never changes what is built
+// prompt: insert unit (nm, t) before the first unit whose name is greater than nm (callers drop an old nm first).
+def Kernel.snoc(im: Kernel.Img, nm: Str, t: Str): Kernel.Img = im match
+  case Kernel.Empty => Kernel.Unit(nm, t, Kernel.Empty)
+  case Kernel.Unit(n, x, r) => if Str.less(nm, n) then Kernel.Unit(nm, t, im) else Kernel.Unit(n, x, Kernel.snoc(r, nm, t))
+

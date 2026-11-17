@@ -1,0 +1,13 @@
+// a handler state is kept as a void*: init may not return a scalar or a Str
+// prompt: the kernel must reject a handler whose init returns a Str state, with error[handler-state-shape].
+val NegTests.hstateShape {NegTest}: Never =
+  capability Hs:
+    def len(): I64
+  handler Hh for Hs:
+    def init(): Str = "hi"
+    def len(self: Str): I64 = Str.len(self)
+  def main(): I64 =
+    handle h = Hh()
+    Hs.len()
+  NegTest.expect("handler-state-shape", "a handler state is a pointer: init may not return a scalar or a Str")
+

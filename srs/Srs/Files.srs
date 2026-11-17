@@ -1,0 +1,11 @@
+handler Srs.Files for Files:
+  def read(path: Str): Str = rt_read_file(path)
+  def bytes(path: Str): Os.Res[Str] = Os.res(rt_fs_bytes(path))
+  def readAll(path: Str): Os.Res[Str] = Os.res(rt_fs_read_all(path))
+  def kind(path: Str, l: Os.Links): Os.Kind = Os.kind(rt_fs_kind(path, Os.follow(l)))
+  def executable(path: Str): Bool = rt_fs_exec(path)
+  def list(path: Str): Os.Res[Os.Strs] = Os.listRes(rt_fs_list(path))
+  def readLink(path: Str): Os.Res[Str] = Os.res(rt_fs_readlink(path))
+  def realPath(path: Str): Os.Res[Str] = Os.res(rt_fs_realpath(path))
+  def cwd(): Os.Res[Str] = Os.res(rt_fs_cwd())
+

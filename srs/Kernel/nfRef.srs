@@ -1,0 +1,14 @@
+// prompt: print the ref of a token that names unit v: K.nfIn when v is in scc c, else "#" id(v); then "." and the decl offset
+// d - fd(v), or ".t" when d < 0 (a type).
+def Kernel.nfRef(tj: Kernel.Tj, nf: Kernel.Nf, c: I64, md: Kernel.Md, v: I64, d: I64): Unit =
+  val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  val cv = if 0 <= v && v < tn then I64.of(comp(v)) else -1
+  if cv == c then Kernel.nfIn(nf, md, v)
+  else
+    Console.print("#")
+    Kernel.nfHex(n8, ids, v)
+  Console.print(".")
+  if d < 0 then Console.print("t") else if 0 <= v && v < n then Console.printI64(d - I64.of(fd(v))) else ()
+  Console.print(" ")
+

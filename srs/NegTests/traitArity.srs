@@ -1,0 +1,9 @@
+// a given names more type args than its trait has binders
+// prompt: the kernel must reject a given with two type args for a trait with one binder, with error[trait-arity].
+val NegTests.traitArity {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64, Bool]:
+    def show(x: I64): I64 = x
+  NegTest.expect("trait-arity", "a given names as many type args as its trait has binders")
+

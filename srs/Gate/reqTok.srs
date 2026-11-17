@@ -1,0 +1,22 @@
+// req(u, c, j): a request on capability unit c at token j (a capability op, or an implicit Mut / Atomic builtin); call(u, v, j): a global use of unit v at token j
+def Gate.reqTok(w: Resolve.W, e: Gate.Er, gcap: I64, gf: Array[U32](gcap), gs: Array[U32](gcap), u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    val k = I64.ofU8(rk(j))
+    val d = I64.of(rf(j))
+    if 0 < d && d < gcap then
+      e match
+        case Gate.EReq =>
+          if k == Resolve.kCap() then Gate.row3(u, I64.of(gf(d)), j)
+          else if k == Resolve.kBuiltin() then
+            val s = I64.of(gs(d))
+            if Gate.isMutOp(w, s) then Gate.capRow(w, "Mut", u, j)
+            else if Gate.isAtomOp(w, s) then Gate.capRow(w, "Atomic", u, j)
+            else ()
+          else ()
+        case Gate.ECall => if k == Resolve.kGlobal() then Gate.row3(u, I64.of(gf(d)), j) else ()
+        case Gate.EHtop => ()
+        case Gate.EHfor => ()
+    else ()
+    Gate.reqTok(w, e, gcap, gf, gs, u, rcap, rk, rf, j + 1)
+  else ()
+

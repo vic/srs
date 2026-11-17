@@ -1,0 +1,7 @@
+def Gate.capNames(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val c = Ast.item(g, l, i)
+    if 0 <= c && c < rcap && I64.ofU8(rk(c)) == Resolve.kLocal() then Gate.row2(u, I64.of(rf(c))) else ()
+    Gate.capNames(g, u, rcap, rk, rf, l, i + 1)
+  else ()
+

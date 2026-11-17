@@ -1,0 +1,8 @@
+// the file bases: base of file i, then the running sum
+def Typer.fileBases(s: Typer.S, fs: Coll.List[Resolve.F], i: I64, acc: I64): Unit = fs match
+  case Coll.Nil => Typer.mxSet(s, Typer.moFb(s, i), acc)
+  case Coll.Cons(f, rest) =>
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    Typer.mxSet(s, Typer.moFb(s, i), acc)
+    Typer.fileBases(s, rest, i + 1, acc + Ast.cget(g, Ast.sNodes()))
+

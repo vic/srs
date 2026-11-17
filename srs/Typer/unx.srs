@@ -1,0 +1,11 @@
+def Typer.unx(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val c = Typer.clsTok(g, Ast.tok(g, n))
+  val a = Ast.a(g, n)
+  val t = if c == Token.bang() then Typer.cget(s, Typer.tBool()) else if c == Token.minus() then Typer.cget(s, Typer.tI64()) else Typer.intLit(s, want)
+  if c == Token.minus() && Ast.kd(g, a) == Ast.kInt() then
+    // -lit: the literal node is the I64 operand, checked with the negative bound
+    if !Typer.litFitsNeg(Ast.text(g, Ast.tok(g, a))) then Typer.mis(s, Ast.tok(g, a)) else ()
+    Typer.tyRec(s, a, t)
+  else Typer.expect(x, Ast.tok(g, a), Typer.expr(x, a, t), t)
+  t

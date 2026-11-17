@@ -1,0 +1,30 @@
+// prompt: the headers of the roots i.. of file f: def and extern signatures (an extern is marked, Typer.externSet), enum headers,
+// extern vals, capabilities, traits, handlers, top-level vals and givens.
+def Typer.fileDefs(x: Typer.X, f: Resolve.F, i: I64, dump: Bool): Unit =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  val Typer.X(_, _, s, _, _, _) = x
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    val kb = I64.ofU8(rk(i))
+    if root == 0 then ()
+    else if kb == 0 then Typer.sigOf(x, root, Typer.symOf(x, Ast.a(g, root)), dump)
+    else if kb == 1 then Typer.enumHeader(x, root)
+    else if kb == 2 then
+      val inner = Ast.b(g, root)
+      if Ast.kd(g, inner) == Ast.kDef() then
+        Typer.cinc(s, Typer.cExtern())
+        Typer.sigOf(x, inner, Typer.symOf(x, Ast.a(g, inner)), false)
+        Typer.externSet(s, Typer.symOf(x, Ast.a(g, inner)))
+      else if Ast.kd(g, inner) == Ast.kCVal() then Typer.valSig(x, Ast.tok(g, inner), Ast.a(g, inner))
+      else if Ast.kd(g, inner) == Ast.kCStruct() then Typer.cstructSig(x, inner)
+      else ()
+    else if kb == 4 then Typer.capRoot(x, root)
+    else if kb == 5 then Typer.traitRoot(x, root)
+    else if kb == 3 then Typer.handlerRoot(x, root, 0)
+    else if kb == 7 then Typer.valSig(x, Ast.tok(g, root), Ast.a(g, root))
+    else if kb == Split.kindByte(Split.Given) then Typer.givenRoot(x, root)
+    else ()
+    Typer.fileDefs(x, f, i + 1, dump)
+  else ()
+
+

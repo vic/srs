@@ -1,0 +1,8 @@
+// prompt: the Net capability over one Unix socket: its state is a Srs.Net.Sock made by rt_net_new; each op is one rt_net_* call.
+handler Srs.Net for Net:
+  def init(): Srs.Net.Sock = rt_net_new()
+  def connect(self: Srs.Net.Sock, path: Str): Os.Status = Os.status(rt_net_connect(self, path))
+  def send(self: Srs.Net.Sock, s: Str): Os.Status = Os.status(rt_net_send(self, s))
+  def recv(self: Srs.Net.Sock, n: I64): Os.Res[Str] = Os.res(rt_net_recv(self, n))
+  def drain(self: Srs.Net.Sock): Os.Res[Str] = Os.res(rt_net_drain(self))
+  def close(self: Srs.Net.Sock): Unit = rt_net_close(self)

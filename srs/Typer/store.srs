@@ -1,0 +1,54 @@
+// nnode = the nodes of all files (the ty column), maxn = the nodes of the biggest file (the per-def log), nfile + 1 file bases
+// prompt: the typer state for ntok tokens, nnode nodes, the biggest file of maxn nodes and nfile files: type table, hash, pool and
+// stack, counters, per-symbol tables (with the sx decl flags) and the mono tables (node columns ty ce ax rv: 4 * nnode words).
+def Typer.store(ntok: I64, nnode: I64, maxn: I64, nfile: I64): Typer.S =
+  val tcap = ntok + 1024
+  val hcap = 2 * tcap + 1
+  val acap = 2 * ntok + 1024
+  val scap = 4096
+  val gcap = ntok + 1024
+  // 2048 counters: slots 1024.. hold the compile-time env (Typer.ctEnv)
+  val cnn = 2048
+  val tk = Array.fill(tcap, U8.of(0))
+  val tc = Array.fill(tcap, U8.of(0))
+  val th = Array.fill(tcap, U32.of(0))
+  val ta = Array.fill(tcap, U32.of(0))
+  val tn = Array.fill(tcap, U32.of(0))
+  val hs = Array.fill(hcap, U32.of(0))
+  val ap = Array.fill(acap, U32.of(0))
+  val stk = Array.fill(scap, U32.of(0))
+  val cn = Array.fill(cnn, 0)
+  val sr = Array.fill(gcap, U32.of(0))
+  val ss = Array.fill(gcap, U32.of(0))
+  val sn = Array.fill(gcap, U32.of(0))
+  val st = Array.fill(gcap, U32.of(0))
+  val se = Array.fill(gcap, U32.of(0))
+  val ocap = 4096
+  val oo = Array.fill(ocap, U32.of(0))
+  val opp = Array.fill(ocap, U32.of(0))
+  val os = Array.fill(ocap, U32.of(0))
+  val sa = Array.fill(gcap, U32.of(0))
+  val sl =Array.fill(gcap, U32.of(0))
+  val sv = Array.fill(gcap, U32.of(0))
+  val sw = Array.fill(gcap, U32.of(0))
+  val sx = Array.fill(gcap, U8.of(0))
+  // the mono tables, one flat array (Tp.mo*): sites 6 words each, two per-symbol heads, instances 4 words each, the instance hash
+  val msc = ntok + 1024
+  val mic = 16384
+  val mhc = 2 * mic + 1
+  val mcap = 6 * msc + 2 * gcap + 4 * mic + mhc + Typer.lcap() + 2 * Typer.wcap() + 4 * nnode + maxn + nfile + 1 + gcap + gcap + gcap
+  val mx = Array.fill(mcap, U32.of(0))
+  val obc = Typer.obcap()
+  val ob = Array.fill(obc, U8.of(0))
+  val s =Typer.S(Typer.Tt(tcap, tk, tc, th, ta, tn), Typer.Hh(hcap, hs), Typer.Pl(acap, ap, scap, stk), Typer.Cn(cnn, cn, ocap, oo, opp, os, obc, ob), Typer.Sg(gcap, sr, ss, sn, st, se, sa, sl, sv, sw, mcap, mx, sx))
+  // type 0 is the absent type
+  Typer.cset(s, Typer.cTypes(), 1)
+  Typer.cset(s, Typer.cMoS(), msc)
+  Typer.cset(s, Typer.cMoG(), gcap)
+  Typer.cset(s, Typer.cMoI(), mic)
+  Typer.cset(s, Typer.cMoH(), mhc)
+  Typer.cset(s, Typer.cTyN(), nnode)
+  Typer.cset(s, Typer.cTyL(), maxn)
+  Typer.cset(s, Typer.cTyFiles(), nfile)
+  s
+

@@ -1,0 +1,13 @@
+// prompt: the kernel must reject a generic def that returns, through a trait method whose result is a [] binder of its trait
+// (`c.conv(x)` on an evidence binder), a value made inside a Region handle of its body, with error[region-escape] (s2 neg
+// tparam_escape_open).
+val NegTests.tparamEscapeOpen {NegTest}: Never =
+  enum NtTo.Box:
+    case NtTo.Box(v: I64)
+  trait NtTo.Id [A: Type] [B: Type]:
+    def conv(x: A): B
+  def NtTo.leak [A: Type] {c: NtTo.Id[NtTo.Box, A]} (): A =
+    handle r = Srs.Arena()
+    c.conv(NtTo.Box(3))
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "conv may build its B from the arg: the result keeps the region r of the Box, which dies at the end of leak")

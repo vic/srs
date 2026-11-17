@@ -1,0 +1,13 @@
+// ── types: name [ [ty, ...] ] [ (expr, ...) ] [<names>] ──
+def Parser.ty(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.ident(g)
+  val ta = if Parser.is(g, Token.lb()) then Parser.tyArgs(g) else 0
+  val va = if Parser.is(g, Token.lp()) then Parser.args(g) else 0
+  val t = Ast.mk(g, Ast.kTy(), j, ta, va)
+  if Parser.ok(g) && Parser.is(g, Token.ltg()) then
+    Parser.adv(g)
+    val cs = Parser.names(g, Ast.mark(g), Token.gt())
+    Ast.mk(g, Ast.kTyCaps(), j, t, cs)
+  else t
+

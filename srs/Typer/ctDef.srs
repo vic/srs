@@ -1,0 +1,23 @@
+// prompt: the compile-time code of def root (nodes lo..root) when it can be pure code (comptime-eval ruling pure = no effects, fail-closed): no [] {} <> groups, I64/Bool params, a body of whitelisted nodes (Typer.ctComp); the code [param count, slot count, param kinds, body] goes to the pool and its position + 1 to the code table of the def's symbol (Typer.moCt); any other def gets no code (its calls are no compile-time value)
+def Typer.ctDef(x: Typer.X, root: I64, lo: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  val prp = Typer.part(g, parts, 0, Ast.kParams())
+  val pr = if prp != 0 then Ast.a(g, prp) else 0
+  val np = if pr != 0 then Ast.len(g, pr) else 0
+  val bd = Typer.part(g, parts, 0, Ast.kBody())
+  if bd != 0 && Typer.part(g, parts, 0, Ast.kGTypes()) == 0 && Typer.part(g, parts, 0, Ast.kGEv()) == 0 && Typer.part(g, parts, 0, Ast.kGFacts()) == 0 && Typer.ctPKOk(x, pr, 0) then
+    val m = Typer.mark(s)
+    Typer.push(s, np)
+    Typer.push(s, np + Typer.ctLocN(x, lo, root, 0))
+    Typer.ctPKinds(x, pr, 0)
+    if Typer.ctComp(x, Ast.a(g, bd), pr, lo, root) then
+      val n = Typer.cget(s, Typer.cSp()) - m
+      val top = Typer.cget(s, Typer.cATop())
+      Typer.cpArgs(s, m, 0, n, top)
+      Typer.cset(s, Typer.cATop(), top + n)
+      Typer.mxSet(s, Typer.moCt(s, Typer.symOf(x, Ast.a(g, root))), top + 1)
+    else ()
+    Typer.cset(s, Typer.cSp(), m)
+  else ()
+

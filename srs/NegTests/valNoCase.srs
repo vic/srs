@@ -1,0 +1,7 @@
+// prompt: the kernel must reject a use of a value match type whose value hits no case, with error[no-type-case] (missingEntry for the param)
+val NegTests.valNoCase {NegTest}: Never =
+  type NtVc.One (n: I64) = n match
+    case 1 => Bool
+  def NtVc.k(x: NtVc.One(2)): I64 = 0
+  NegTest.expect("no-type-case", "missingEntry", "One has a case for 1 only, so One(2) reduces to no type")
+

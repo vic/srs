@@ -1,0 +1,5 @@
+// estimated rows per relation: 0 for an input (no facts at plan time, as mkplan with an empty facts dir), 1e6 for a derived one
+def Planner.ests(names: Os.Strs, ins: Os.Strs): Planner.Ints = names match
+  case Os.End => Planner.INil
+  case Os.More(n, r) => Planner.ICons(Planner.est1(ins, n), Planner.ests(r, ins))
+

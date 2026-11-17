@@ -1,0 +1,10 @@
+def Emit.instClose(x: Typer.X, k: Emit.K, base: I64, root: I64, prev: I64, sym: I64, c: I64): Unit =
+  val Typer.X(_, _, s, _, _, _) = x
+  if c > 0 then
+    val e = Emit.envOf(x, k, base, root, sym, c - 1)
+    Emit.instTys(e, prev, prev + 1, root)
+    Emit.sub(e, Typer.sigAt(s, sym, 0))
+    Emit.sigTys(e, sym, 0, Typer.sigAt(s, sym, 2))
+    Emit.instClose(x, k, base, root, prev, sym, Typer.mxGet(s, Typer.moInst(s, c - 1, 3)))
+  else ()
+

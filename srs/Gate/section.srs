@@ -1,0 +1,9 @@
+// the rows of section k ("@1\n") of the engine output
+def Gate.section(out: Str, k: Str): Str = Kernel.find(out, k, 0) match
+  case Kernel.Found(j) =>
+    val b = j + Str.len(k)
+    Kernel.findCh(out, 64, b) match
+      case Kernel.Found(e) => Str.slice(out, b, e)
+      case Kernel.Missing => Str.slice(out, b, Str.len(out))
+  case Kernel.Missing => ""
+

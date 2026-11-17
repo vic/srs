@@ -1,0 +1,12 @@
+// prompt: `T.new()` on the extern struct name T (symbol ss): no args, result the struct type (a zeroed struct in the caller's Region, Emit.cstructCall); another op or arity is untyped (91)
+def Typer.cstructNew(x: Typer.X, n: I64, ss: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val t = Typer.sigAt(s, ss, 0)
+  if Str.eq(Ast.text(g, Ast.a(g, n)), "new") && Ast.len(g, Ast.b(g, n)) == 0 && t != 0 then
+    Typer.ceRec(s, n, ss)
+    Typer.rvRec(s, n, t)
+    t
+  else
+    Typer.args(x, Ast.b(g, n), 0)
+    Typer.untyped(x, Ast.tok(g, n), 91)
+

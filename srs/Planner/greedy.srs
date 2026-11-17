@@ -1,0 +1,8 @@
+// greedy join order: ready negations first, then the positive atom with the most bound columns (first wins on ties)
+def Planner.greedy(b: Planner.Atoms, g: Planner.G, nr: I64, ars: Planner.Ints): Planner.G =
+  val g1 = Planner.negPass(b, 1, g)
+  val Planner.G(sl, ns, na, xs, placed, bad) = g1
+  Planner.best(b, 1, sl, placed, Kernel.Missing, 0 - 1) match
+    case Kernel.Missing => g1
+    case Kernel.Found(p) => Planner.greedy(b, Planner.posAt(b, p, 1, g1, nr, ars), nr, ars)
+

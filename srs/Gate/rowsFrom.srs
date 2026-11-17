@@ -1,0 +1,12 @@
+// the rows of a relation whose first column is a unit at or above lo (the units of the file under test)
+def Gate.rowsFrom(rows: Str, lo: I64, i: I64): Unit =
+  if i >= Str.len(rows) then ()
+  else
+    val e = Kernel.eol(rows, i)
+    val Datalog.N(u, j) = Datalog.num(rows, i)
+    if u >= lo then
+      Console.print(Str.slice(rows, i, e))
+      Console.print("\n")
+    else ()
+    Gate.rowsFrom(rows, lo, e + 1)
+

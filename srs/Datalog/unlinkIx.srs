@@ -1,0 +1,7 @@
+// ── clear: empty every relation for the next run of the same plan, keeping the stores (cost ~ rows held, never the capacity) ──
+def Datalog.unlinkIx(st: Datalog.St, r: I64, x: I64, a: I64, row: I64): Unit =
+  val mask = Datalog.p(st, Datalog.nr(st) + 2 * x + 1)
+  Datalog.relOf(st, r) match
+    case Datalog.Rel.Mk(_, rn, xs) => Datalog.ixOf(st, x) match
+      case Datalog.Ix.Mk(hc, hs, _, _) => Datalog.w(hc, hs, Datalog.fin(Datalog.hrow(rn, xs, a, row, mask, 0, 1, Datalog.h0()), hc), 0)
+

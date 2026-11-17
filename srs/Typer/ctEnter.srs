@@ -1,0 +1,15 @@
+// prompt: the type that value type sym denotes with its k values in env entries nf..: k other than its binder count is the Diag type-arity, a value of another kind than its binder the Diag value-arg-type (untyped 0 then); else the env top is nf + k while its body is elaborated (Typer.velab), then nf again
+def Typer.ctEnter(s: Typer.S, sym: I64, nf: I64, k: I64, j: I64): I64 =
+  val ss = Typer.sigAt(s, sym, 1)
+  if k != Typer.poolAt(s, ss) then
+    Typer.diag(s, Typer.dTyArity(), j)
+    0
+  else if !Typer.ctKinds(s, ss + 1, nf, 0, k) then
+    Typer.diag(s, Typer.dValArg(), j)
+    0
+  else
+    Typer.cset(s, Typer.cCtTop(), nf + k)
+    val r = Typer.velab(s, sym, nf, j)
+    Typer.cset(s, Typer.cCtTop(), nf)
+    r
+

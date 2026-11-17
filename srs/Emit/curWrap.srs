@@ -1,0 +1,8 @@
+// prompt: the binder token of the handle given as the one explicit evidence arg (a token) of call n when the callee sym has one {} binder and that handle's capability is Srs.Region (the call then allocates in it: srs_cur, Emit.callG); -1 otherwise
+def Emit.curWrap(e: Emit.E, n: I64, sym: I64): I64 =
+  val g = Emit.gOf(e)
+  val k = Emit.kOf(e)
+  val a = Emit.evArgAt(g, Ast.a(g, n), 0, 0)
+  val ref = if a >= 0 then Typer.useRef(Emit.xOf(e), a) else 0
+  val h = if a >= 0 then Emit.hlook(k, ref, Emit.hget(k, Emit.hsBase()) - 1) else 0
+  if Typer.sigAt(Emit.sOf(e), sym, 4) == 1 && h != 0 && Emit.symIs(Emit.wOf(e), Emit.capOfH(Emit.sOf(e), h), "Srs.Region") then ref else 0 - 1

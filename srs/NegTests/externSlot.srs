@@ -1,0 +1,10 @@
+// prompt: the kernel must reject a call of a generic extern at a non-pointer type arg (B = I64), with error[extern-slot]: an extern []
+// binder is a void* slot (s2 neg generic_ptr).
+val NegTests.externSlot {NegTest}: Never =
+  enum NtXs.E:
+    case NtXs.E0
+  extern def NtXs.same [A: Type] [B: Type] (x: A): B
+  def NtXs.f(): I64 =
+    val k: I64 = NtXs.same(NtXs.E0)
+    k
+  NegTest.expect("extern-slot", "B = I64 is not a pointer: an extern [] binder is a void* slot")

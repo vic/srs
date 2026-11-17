@@ -1,0 +1,16 @@
+// prompt: one resolve of im; edges u -> v for every token of u that names unit v != u, and u -> g for every given g != u.
+def Kernel.graphW(im: Kernel.Img): Kernel.Gw =
+  val n = Kernel.count(im, 0)
+  val Gate.Rw(w, rs) = Gate.resolveAll(Kernel.paths(im), Kernel.texts(im))
+  val Resolve.W(sy, gt, sc, cn) = w
+  val n1 = n + 1
+  val dg = Kernel.Dg(n, n1, Array.fill(n1, U32.of(0)), Array.fill(n1, U32.of(0)), Array.fill(n, U8.of(0)))
+  Kernel.givMark(dg, im, 0)
+  val z = 0
+  Kernel.depAll(gt, 0, dg, rs, 0, z, Array.fill(z, U32.of(0)), false)
+  Kernel.prefix(dg, 1)
+  val m = Kernel.edgeN(dg)
+  val adj = Array.fill(m, U32.of(0))
+  Kernel.depAll(gt, 0, dg, rs, 0, m, adj, true)
+  Kernel.Gw(Kernel.Gr(dg, m, adj), w, rs)
+

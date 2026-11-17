@@ -1,0 +1,15 @@
+// prompt: CALL at pc (sym, argc, arg codes) in frame fb: args into env entries from the env top, then the callee's code (Typer.moCt) runs if it has code, takes argc params, the depth is below Typer.ctDepthMax and fuel is left (1 per call); else no value; the env top is restored
+def Typer.ctCall(s: Typer.S, pc: I64, fb: I64): Typer.CtR =
+  val sym = Typer.poolAt(s, pc + 1)
+  val k = Typer.poolAt(s, pc + 2)
+  val nf = Typer.cget(s, Typer.cCtTop())
+  val Typer.CtR(ok, nx) = Typer.ctArgv(s, pc + 3, fb, nf, 0, k)
+  val code = Typer.mxGet(s, Typer.moCt(s, sym)) - 1
+  val d = Typer.cget(s, Typer.cCtDepth())
+  val r = ok match
+    case Typer.CtNo => Typer.CtNo
+    case Typer.CtBool(_) => Typer.CtNo
+    case Typer.CtInt(_) => if code >= 0 && Typer.poolAt(s, code) == k && d < Typer.ctDepthMax() && Typer.ctBurn(s) then Typer.ctRun(s, code, nf, d) else Typer.CtNo
+  Typer.cset(s, Typer.cCtTop(), nf)
+  Typer.CtR(r, nx)
+

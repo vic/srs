@@ -1,0 +1,38 @@
+// the operator class decides: comparison (Bool), logic (Bool), shift (word, I64 count), else both operands one int type
+def Typer.bin(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val c = Typer.clsTok(g, Ast.tok(g, n))
+  val l = Ast.a(g, n)
+  val r = Ast.b(g, n)
+  val tb = Typer.cget(s, Typer.tBool())
+  if c == Token.andand() || c == Token.oror() then
+    Typer.expect(x, Ast.tok(g, l), Typer.expr(x, l, tb), tb)
+    Typer.expect(x, Ast.tok(g, r), Typer.expr(x, r, tb), tb)
+    tb
+  else if c == Token.eqeq() || c == Token.ne() then
+    val tl = Typer.expr(x, l, 0)
+    Typer.expect(x, Ast.tok(g, r), Typer.expr(x, r, tl), tl)
+    tb
+  else if c == Token.shl() || c == Token.shr() then
+    val tl = Typer.expr(x, l, want)
+    Typer.expect(x, Ast.tok(g, r), Typer.expr(x, r, Typer.cget(s, Typer.tI64())), Typer.cget(s, Typer.tI64()))
+    if Typer.walk(s, tl) == Typer.cget(s, Typer.tI64()) then Typer.mis(s, Ast.tok(g, n)) else ()
+    tl
+  else
+    val cmp = c == Token.lt() || c == Token.ltg() || c == Token.le() || c == Token.gt() || c == Token.ge()
+    // one operand decides the type: the left, or the right when the left is a literal
+    val lit = Ast.kd(g, l) == Ast.kInt()
+    val d = if lit then r else l
+    val o = if lit then l else r
+    val t0 = Typer.expr(x, d, if cmp then 0 else want)
+    val w0 = Typer.walk(s, t0)
+    val t = if Typer.kind(s, w0) == Typer.bBuiltin() && (Typer.cls(s, w0) == 5 || Typer.cls(s, w0) == 11) then w0 else Typer.cget(s, Typer.tI64())
+    Typer.expect(x, Ast.tok(g, d), t0, t)
+    Typer.expect(x, Ast.tok(g, o), Typer.expr(x, o, t), t)
+    // s2 Ty.ints: & | ^ are on words (U32, U64) only, / and % on I64 only
+    val isWord = t != Typer.cget(s, Typer.tI64())
+    if (c == Token.caret() || c == Token.amp() || c == Token.bar()) && !isWord then Typer.mis(s, Ast.tok(g, n))
+    else if (c == Token.slash() || c == Token.pct()) && isWord then Typer.mis(s, Ast.tok(g, n))
+    else ()
+    if cmp then tb else t
+

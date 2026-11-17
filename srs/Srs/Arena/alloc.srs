@@ -1,0 +1,7 @@
+def Srs.Arena.alloc(self: Ptr, size: I64): Ptr =
+  val n = Srs.Arena.up(size, 8)
+  val head = rt_ptr_get(self, 0)
+  if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then
+    Srs.Arena.bump(Srs.Arena.at(head), n)
+  else Srs.Arena.bump(Srs.Arena.open(self, n), n)
+

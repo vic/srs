@@ -1,0 +1,8 @@
+def Resolve.declFile(w: Resolve.W, f: Resolve.F, fi: I64, i: I64): Unit =
+  val Resolve.F(_, g, lcap, ln, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 then Resolve.declRoot(w, g, lcap, ln, fi, I64.ofU8(rk(i)), root) else ()
+    Resolve.declFile(w, f, fi, i + 1)
+  else ()
+

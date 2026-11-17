@@ -1,0 +1,9 @@
+// Indent minus Dedent over [j, e)
+def Split.depth(tcap: I64, tk: Array[U8](tcap), t: I64, j: I64, e: I64, acc: I64): I64 =
+  if 0 <= j && j < e && j < t && j < tcap then
+    val b = I64.ofU8(tk(j))
+    if b == Lexer.kindByte(Lexer.KIndent) then Split.depth(tcap, tk, t, j + 1, e, acc + 1)
+    else if b == Lexer.kindByte(Lexer.KDedent) then Split.depth(tcap, tk, t, j + 1, e, acc - 1)
+    else Split.depth(tcap, tk, t, j + 1, e, acc)
+  else acc
+

@@ -1,0 +1,14 @@
+// a handler: its type is the capability type it is `for` (with its args); its `init` signature is stored under the handler symbol
+// prompt: the parts of handler root from i: its type is the capability type it is `for` (Typer.declTySet), its init signature is stored; at i = 0 its header (Typer.handlerMulti).
+def Typer.handlerRoot(x: Typer.X, root: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i == 0 then Typer.handlerMulti(x, root) else ()
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kHFor() then Typer.declTySet(s, Typer.symOf(x, Ast.a(g, root)), Typer.ty(x, Ast.b(g, n)))
+    else if k == Ast.kDef() && Str.eq(Ast.text(g, Ast.a(g, n)), "init") then Typer.sigOf(x, n, Typer.symOf(x, Ast.a(g, root)), false)
+    else ()
+    Typer.handlerRoot(x, root, i + 1)
+  else ()

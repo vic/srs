@@ -1,0 +1,10 @@
+def Blake3.init(cn: I64, cv: Array[U32](cn), vn: I64, v: Array[U32](vn), i: I64): Unit =
+  if 0 <= i && i < 8 && i < cn then
+    val k = i + 8
+    if 0 <= i && i < vn && 0 <= k && k < vn then
+      Array.put(v, i, cv(i))
+      Array.put(v, k, Blake3.iv(i))
+    else ()
+    Blake3.init(cn, cv, vn, v, i + 1)
+  else ()
+

@@ -1,0 +1,10 @@
+// prompt: push the types of the trait-typed binders of the {} groups among the parts r from i (in Typer.traitEvN order).
+def Typer.traitEvPush(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val p = Ast.item(g, r, i)
+    if Ast.kd(g, p) == Ast.kGEv() then Typer.traitEvPushB(x, Ast.a(g, p), 0) else ()
+    Typer.traitEvPush(x, r, i + 1)
+  else ()
+
+

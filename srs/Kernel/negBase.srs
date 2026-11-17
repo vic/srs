@@ -1,0 +1,9 @@
+// writes the plain image as one text for the NegTest children; its path
+def Kernel.negBase(pl: Kernel.Img): Str =
+  Disk.dir(Kernel.negDir())
+  Console.captureBegin()
+  Kernel.printTexts(pl)
+  val s = Console.captureEnd()
+  val p = Kernel.msg2(Kernel.negDir(), "/base.srs")
+  if Disk.put(p, s) == 0 then p else Kernel.msg2(p, ".unwritten")
+

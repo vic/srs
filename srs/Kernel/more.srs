@@ -1,0 +1,28 @@
+def Kernel.more(act: Str, arg: Str, text: Str, im: Kernel.Img): Kernel.Res =
+  if Str.eq(act, "plan") then Kernel.planAct(arg, false)
+  else if Str.eq(act, "dlrun") then Kernel.planAct(arg, true)
+  else if Str.eq(act, "hashfile") then
+    Console.captureBegin()
+    Kernel.hashFiles(Kernel.words(arg, 0))
+    Kernel.Res(0, Console.captureEnd())
+  else if Str.eq(act, "renamestore") then Kernel.renAct(Kernel.words(arg, 0))
+  else if Str.eq(act, "cc") then Kernel.ccAct(Kernel.words(arg, 0))
+  else if Str.eq(act, "facts") then Kernel.factsAct(Kernel.words(arg, 0))
+  else if Str.eq(act, "gate") then Kernel.gateAct(Kernel.words(arg, 0))
+  else if Str.eq(act, "actions") then Kernel.Res(0, Kernel.acts())
+  else if Str.eq(act, "find") then
+    Console.captureBegin()
+    Kernel.findAll(im, arg)
+    Kernel.Res(0, Console.captureEnd())
+  else if Str.eq(act, "ids") then Kernel.Res(0, Kernel.idsText(im))
+  else if Str.eq(act, "prompts") then Kernel.Res(0, Kernel.msg2(Kernel.msg2("units=", Kernel.num(Kernel.count(im, 0))), Kernel.msg2(" without-prompt=", Kernel.num(Kernel.promptLess(im, 0)))))
+  else if Str.eq(act, "type") then
+    Console.captureBegin()
+    Kernel.typeAll(im, arg)
+    Kernel.Res(0, Console.captureEnd())
+  else if Str.eq(act, "show") then
+    Console.captureBegin()
+    Kernel.showAll(Kernel.words(arg, 0), im)
+    Kernel.Res(0, Console.captureEnd())
+  else Kernel.Res(1, "unknown action; send: actions")
+

@@ -1,0 +1,11 @@
+// A -> B, ...: the tokens flat in pairs
+def Parser.trans(g: Ast.G, m: I64): I64 =
+  Ast.push(g, Parser.ident(g))
+  Parser.eat(g, Token.minus())
+  Parser.eat(g, Token.gt())
+  Ast.push(g, Parser.ident(g))
+  if Parser.ok(g) && Parser.is(g, Token.comma()) then
+    Parser.adv(g)
+    Parser.trans(g, m)
+  else Ast.close(g, m)
+

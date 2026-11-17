@@ -1,0 +1,7 @@
+// the closing quote q of a literal from i (a backslash skips the next byte), or the line end, or n
+def Lexer.litEnd(src: Str, n: I64, i: I64, q: I64): I64 =
+  if i >= n then i
+  else if Str.at(src, i) == q || Str.at(src, i) == 10 then i
+  else if Str.at(src, i) == 92 then Lexer.litEnd(src, n, i + 2, q)
+  else Lexer.litEnd(src, n, i + 1, q)
+

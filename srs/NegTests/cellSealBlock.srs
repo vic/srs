@@ -1,0 +1,13 @@
+// prompt: the kernel must reject a Cell.put on a param cell while an Arena opened in the writer is open, with error[cell-seal].
+val NegTests.cellSealBlock {NegTest}: Never =
+  def CS.fill(c: Cell[Str], s: Str): Unit =
+    handle q = Srs.Arena()
+    Cell.put(c, s)
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r = Srs.Arena()
+    val c = Cell.new("x")
+    CS.fill(c, "y")
+    0
+  NegTest.expect("cell-seal", "the cell is older than the Arena q that is open at the write")
+

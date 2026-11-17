@@ -1,0 +1,13 @@
+// prompt: the kernel must reject a rule def whose atoms are no chain from its first head term to its second (here atom 2 starts at s, not at the link u), with error[rule-shape]
+val NegTests.ruleShape {NegTest}: Never =
+  capability NtRs.Door:
+    state Shut, Open1, Open2, Gone
+    start Shut
+    stop Gone
+    transition knock Shut -> Open1, Open1 -> Open2
+    def knock <s knock t> (): I64 <t>
+    transition leave Open1 -> Gone, Open2 -> Gone
+    def leave <s leave t> (): Unit <t>
+    rule def bad(s, t) = next(s, knock, u), next(s, knock, t)
+  NegTest.expect("rule-shape", "a rule clause must chain its atoms: the second atom starts at s instead of the link u, so u would be unconstrained")
+

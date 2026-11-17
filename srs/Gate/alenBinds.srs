@@ -1,0 +1,9 @@
+// alenP(u, a, nb): a param a of type Array[..](nb) (nb a bare local name)
+def Gate.alenBinds(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    val t0 = Ast.a(g, n)
+    val t = if Ast.kd(g, t0) == Ast.kTyCaps() then Ast.a(g, t0) else t0
+    if Ast.kd(g, n) == Ast.kBind() && Ast.kd(g, t) == Ast.kTy() && Ast.len(g, Ast.b(g, t)) >= 1 then Gate.optRow3(u, Ast.tok(g, n), Gate.localOf(g, rcap, rk, rf, Ast.item(g, Ast.b(g, t), 0))) else ()
+    Gate.alenBinds(g, u, rcap, rk, rf, l, i + 1)
+  else ()

@@ -1,0 +1,8 @@
+// tpos rows of a capability (cap: its [] binders in order) or of a handler (the type args of its for type in order; its own [] binders are not for args)
+def Gate.tposRows(w: Resolve.W, g: Ast.G, u: I64, cap: Bool, parts: I64, i: I64, k: I64): Unit =
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if cap && Ast.kd(g, p) == Ast.kGTypes() then Gate.tposRows(w, g, u, cap, parts, i + 1, Gate.tposList(w, g, u, Ast.a(g, p), 0, k))
+    else if !cap && Ast.kd(g, p) == Ast.kHFor() && Ast.b(g, p) != 0 then Gate.tposRows(w, g, u, cap, parts, i + 1, Gate.tposList(w, g, u, Ast.a(g, Ast.b(g, p)), 0, k))
+    else Gate.tposRows(w, g, u, cap, parts, i + 1, k)
+  else ()

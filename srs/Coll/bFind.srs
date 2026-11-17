@@ -1,0 +1,22 @@
+// the node holding k, BTip when absent (no allocation)
+def Coll.bFind [V: Type] (t: Coll.BTree[V], k: I64): Coll.BTree[V] = t match
+  case Coll.BTip => t
+  case Coll.B2(a, k1, _, b) =>
+    if k < k1 then Coll.bFind(a, k)
+    else if k > k1 then Coll.bFind(b, k)
+    else t
+  case Coll.B3(a, k1, _, b, k2, _, c) =>
+    if k < k1 then Coll.bFind(a, k)
+    else if k == k1 then t
+    else if k < k2 then Coll.bFind(b, k)
+    else if k == k2 then t
+    else Coll.bFind(c, k)
+  case Coll.B4(a, k1, _, b, k2, _, c, k3, _, d) =>
+    if k < k1 then Coll.bFind(a, k)
+    else if k == k1 then t
+    else if k < k2 then Coll.bFind(b, k)
+    else if k == k2 then t
+    else if k < k3 then Coll.bFind(c, k)
+    else if k == k3 then t
+    else Coll.bFind(d, k)
+

@@ -1,0 +1,11 @@
+// prompt: run def code at pool position code ([param count, slot count, param kinds, body]) with its args in env entries nf..: args of other kinds are no value; the env top is nf + slots and the call depth d + 1 while the body runs
+def Typer.ctRun(s: Typer.S, code: I64, nf: I64, d: I64): Typer.Ct =
+  val np = Typer.poolAt(s, code)
+  if !Typer.ctKinds(s, code + 2, nf, 0, np) then Typer.CtNo
+  else
+    Typer.cset(s, Typer.cCtTop(), nf + Typer.poolAt(s, code + 1))
+    Typer.cset(s, Typer.cCtDepth(), d + 1)
+    val Typer.CtR(v, _) = Typer.ctEval(s, code + 2 + np, nf)
+    Typer.cset(s, Typer.cCtDepth(), d)
+    v
+

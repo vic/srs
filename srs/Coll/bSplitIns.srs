@@ -1,0 +1,7 @@
+// the halves of a full node (its fields, so no other shape can be passed), k inserted into the half it belongs to.
+// the halves are B2s, so bIns may enter them.
+def Coll.bSplitIns [V: Type] (a: Coll.BTree[V], k1: I64, v1: V, b: Coll.BTree[V], k2: I64, v2: V, c: Coll.BTree[V], k3: I64, v3: V, d: Coll.BTree[V], k: I64, v: V): Coll.Split[V] =
+  if k == k2 then Coll.Split(Coll.B2(a, k1, v1, b), k2, v, Coll.B2(c, k3, v3, d))
+  else if k < k2 then Coll.Split(Coll.bIns(Coll.B2(a, k1, v1, b), k, v), k2, v2, Coll.B2(c, k3, v3, d))
+  else Coll.Split(Coll.B2(a, k1, v1, b), k2, v2, Coll.bIns(Coll.B2(c, k3, v3, d), k, v))
+

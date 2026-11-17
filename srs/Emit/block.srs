@@ -1,0 +1,12 @@
+def Emit.block(e: Emit.E, n: I64, tail: Bool): Unit =
+  val g = Emit.gOf(e)
+  val r = Ast.a(g, n)
+  if Ast.len(g, r) == 0 then Emit.po(e,"((int64_t)0)")
+  else if Emit.msAt(e, r, 0) >= 0 then Emit.msBlock(e, n, r, Emit.msAt(e, r, 0))
+  else if Emit.hasHandle(g, r, 0) then Emit.blockH(e, n, r)
+// prompt: the C of block n: empty = 0; a multi-shot handle in it = Emit.msBlock; a handle = Emit.blockH (drops at the end); else a statement expression
+  else
+    Emit.po(e,"({ ")
+    Emit.stmts(e, r, 0, tail)
+    Emit.po(e,"})")
+

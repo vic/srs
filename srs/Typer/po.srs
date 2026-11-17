@@ -1,0 +1,16 @@
+def Typer.po(s: Typer.S, t: Str): Unit =
+  val Typer.S(_, _, _, c, _) = s
+  val Typer.Cn(cnn, cn, _, _, _, _, obc, ob) = c
+  val o = Typer.cOut()
+  val m = Str.len(t)
+  if 0 <= o && o < cnn then
+    val n = cn(o)
+    if 0 <= n && 0 <= m && m <= obc && n <= obc - m then
+      Array.blit(ob, n, t, m)
+      Array.put(cn, o, n + m)
+    else if n > 0 then
+      Typer.pflush(s)
+      Typer.po(s, t)
+    else Console.print(t)
+  else Console.print(t)
+

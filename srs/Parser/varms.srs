@@ -1,0 +1,17 @@
+// case value => ty lines; a value is an int, a string, true, false or _
+def Parser.varms(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.nl()) then
+    Parser.adv(g)
+    Parser.varms(g, m)
+  else if Parser.atEnd(g) then
+    Parser.endBlock(g)
+    Ast.close(g, m)
+  else
+    val j = Parser.eat(g, Token.kcase())
+    val p = Parser.cur(g)
+    if Parser.is(g, Token.int()) || Parser.is(g, Token.str()) || Parser.is(g, Token.under()) || Parser.isW(g, "true") || Parser.isW(g, "false") then Parser.adv(g) else Parser.stop(g)
+    Parser.eat(g, Token.arrow())
+    Ast.push(g, Ast.mk(g, Ast.kVArm(), j, p, Parser.ty(g)))
+    Parser.varms(g, m)
+

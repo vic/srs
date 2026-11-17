@@ -1,0 +1,8 @@
+// prompt: compile-time env entry i (Typer.ctPut); CtNo outside the env
+def Typer.ctAt(s: Typer.S, i: I64): Typer.Ct =
+  if 0 <= i && i < Typer.ctCap() then
+    val at = Typer.ctEnv() + 2 * i
+    val tag = Typer.cget(s, at)
+    if tag == 1 then Typer.CtInt(Typer.cget(s, at + 1)) else if tag == 2 then Typer.CtBool(Typer.cget(s, at + 1) != 0) else Typer.CtNo
+  else Typer.CtNo
+

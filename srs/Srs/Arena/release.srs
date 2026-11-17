@@ -1,0 +1,15 @@
+// every chunk of the arena: a chunk size goes on the spare list, a big block is unmapped; then the struct is kept for reuse
+def Srs.Arena.release(g: Ptr, c: I64): Unit =
+  if c == 0 then ()
+  else
+    val ch = Srs.Arena.at(c)
+    val next = rt_ptr_get(ch, Srs.Arena.hNext())
+    val cap = rt_ptr_get(ch, Srs.Arena.hCap())
+    if cap == Srs.Arena.chunk() then
+      rt_ptr_set(ch, Srs.Arena.hNext(), rt_ptr_get(g, Srs.Arena.gSpare()))
+      rt_ptr_set(g, Srs.Arena.gSpare(), c)
+    else
+      val un = munmap(ch, U64.ofI64(Srs.Arena.up(Srs.Arena.header() + cap, Srs.Arena.page())))
+      ()
+    Srs.Arena.release(g, next)
+

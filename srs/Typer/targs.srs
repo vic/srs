@@ -1,0 +1,11 @@
+// explicit [T, ...] groups of a call: the i-th type arg is the var v0 + i
+def Typer.targs(x: Typer.X, r: I64, i: I64, v0: I64, k: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kCGTys() then
+      Typer.targList(x, Ast.a(g, n), 0, v0, k)
+      Typer.targs(x, r, i + 1, v0, k + Ast.len(g, Ast.a(g, n)))
+    else Typer.targs(x, r, i + 1, v0, k)
+  else ()
+

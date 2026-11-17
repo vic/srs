@@ -1,0 +1,8 @@
+def Resolve.lineFill(g: Ast.G, lcap: I64, ln: Array[U32](lcap), j: I64, t: I64, prev: I64, line: I64): Unit =
+  if 0 <= j && j < t && j < lcap then
+    val o = Ast.toff(g, j)
+    val l2 = if o > prev then line + Resolve.nlCount(Resolve.srcOf(g), prev, o, 0) else line
+    Array.put(ln, j, U32.of(l2))
+    Resolve.lineFill(g, lcap, ln, j + 1, t, if o > prev then o else prev, l2)
+  else ()
+

@@ -1,0 +1,23 @@
+// prompt: a block whose statement h is a multi-shot handle (Emit.msAt): the statements up to the handle, then the rest runs as the site's chain (Emit.msChain, first segment with the env of the params and the vals before it); the block value is the answer; then the drops of the statements up to the handle
+def Emit.msBlock(e: Emit.E, n: I64, r: I64, h: I64): Unit =
+  val g = Emit.gOf(e)
+  val Emit.E(_, _, _, _, _, _, pr, _) = e
+  Emit.po(e,"({ ")
+  Emit.stmtsTo(e, r, 0, h + 1)
+  Emit.po(e,"void* mse")
+  Emit.nid(e, n)
+  Emit.po(e,"[] = { 0")
+  Emit.msPtrs(e, r, pr, 0, h + 1, 0)
+  Emit.po(e," }; ")
+  Emit.cty(e, Emit.tyS(e, n))
+  Emit.po(e," res")
+  Emit.pi(e, n)
+  Emit.po(e," = ")
+  Emit.msSegName(e, Ast.tok(g, Ast.item(g, r, h)), 0, h + 1)
+  Emit.po(e,"(mse")
+  Emit.nid(e, n)
+  Emit.po(e,", 0); ")
+  Emit.dropsTo(e, r, 0, h + 1)
+  Emit.po(e,"res")
+  Emit.pi(e, n)
+  Emit.po(e,"; })")

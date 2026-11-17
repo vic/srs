@@ -1,0 +1,8 @@
+// block words, little endian, zero past blen
+def Blake3.load(s: Str, off: I64, blen: I64, mn: I64, m: Array[U32](mn), j: I64): Unit =
+  if 0 <= j && j < 16 && j < mn then
+    val k = 4 * j
+    Array.put(m, j, U32.of(Blake3.byte(s, off, blen, k) + 256 * Blake3.byte(s, off, blen, k + 1) + 65536 * Blake3.byte(s, off, blen, k + 2) + 16777216 * Blake3.byte(s, off, blen, k + 3)))
+    Blake3.load(s, off, blen, mn, m, j + 1)
+  else ()
+

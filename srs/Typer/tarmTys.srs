@@ -1,0 +1,11 @@
+// prompt: push the types of the cases r[i..] of a match type, pattern then result per case; the count of pushed items.
+def Typer.tarmTys(x: Typer.X, r: I64, i: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val a = Ast.item(g, r, i)
+    Typer.push(s, Typer.ty(x, Ast.a(g, a)))
+    Typer.push(s, Typer.ty(x, Ast.b(g, a)))
+    Typer.tarmTys(x, r, i + 1)
+  else 2 * Ast.len(g, r)
+
+

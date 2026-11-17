@@ -1,0 +1,10 @@
+// prompt: the binder node with index idx among the binders of the {} groups (kGEv items of parts from item i, in order), 0 when there is none
+def Emit.evBinderAt(g: Ast.G, parts: I64, i: I64, idx: I64): I64 =
+  if parts != 0 && i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kGEv() then
+      val n = Ast.len(g, Ast.a(g, p))
+      if idx < n then Ast.item(g, Ast.a(g, p), idx) else Emit.evBinderAt(g, parts, i + 1, idx - n)
+    else Emit.evBinderAt(g, parts, i + 1, idx)
+  else 0
+

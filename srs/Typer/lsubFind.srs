@@ -1,0 +1,7 @@
+// the callee binder len t: the length of the argument of the param whose binder it is (pool slice base..base+np), else t
+def Typer.lsubFind(x: Typer.X, t: I64, r: I64, base: I64, np: I64, j: I64): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  if j < np then
+    if Typer.poolAt(s, base + j) == t then Typer.lenOfArg(x, r, j) else Typer.lsubFind(x, t, r, base, np, j + 1)
+  else t
+

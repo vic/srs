@@ -1,0 +1,11 @@
+// retData(v): a def of unit v (a plain def, or the def inside an extern decl) returns data
+def Gate.retRoots(w: Resolve.W, g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), rc: I64, dk: Array[U8](rc), dr: Array[U32](rc), i: I64): Unit =
+  if 0 <= i && i < rc then
+    val root = I64.of(dr(i))
+    val d = if I64.ofU8(dk(i)) == Split.kindByte(Split.Def) then root else if Ast.kd(g, root) == Ast.kExtern() && Ast.kd(g, Ast.b(g, root)) == Ast.kDef() then Ast.b(g, root) else 0
+    if d != 0 then
+      val kr = Typer.part(g, Ast.b(g, d), 0, Ast.kRet())
+      if kr != 0 && Gate.isDataTok(w, rcap, rk, rf, Ast.tok(g, Ast.a(g, kr))) then Gate.row1(u) else ()
+    else ()
+    Gate.retRoots(w, g, u, rcap, rk, rf, rc, dk, dr, i + 1)
+  else ()

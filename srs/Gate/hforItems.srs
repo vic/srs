@@ -1,0 +1,12 @@
+// hfor(hu, c): handler unit hu is for capability unit c (its `for C` node)
+def Gate.hforItems(w: Resolve.W, g: Ast.G, u: I64, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val it = Ast.item(g, r, i)
+    if Ast.kd(g, it) == Ast.kHFor() then
+      Gate.tyUnit(w, Resolve.sym(w, Resolve.tokT(g, Ast.a(g, it)), false)) match
+        case Coll.Some(c) => Gate.row2(u, c)
+        case Coll.None => ()
+    else ()
+    Gate.hforItems(w, g, u, r, i + 1)
+  else ()
+

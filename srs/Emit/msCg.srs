@@ -1,0 +1,36 @@
+// prompt: the site copy of CPS def groot: `R cg_<site>_<g>(R (*k_)(void**, Vg), void** ke_, params)` starts its chain (Emit.msChain, cps) with env {k_, ke_, params}; a generic CPS def or a body that is no block is unsupported
+def Emit.msCg(x: Typer.X, k: Emit.K, base: I64, groot: I64, site: I64, rT: I64, done: Bool, proto: Bool): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val gsym = Typer.symOf(x, Ast.a(g, groot))
+  val eg = Emit.envOf(x, k, base, groot, gsym, 0 - 1)
+  val Emit.E(_, _, _, _, _, _, pr, _) = eg
+  val blk = Ast.a(g, Typer.part(g, Ast.b(g, groot), 0, Ast.kBody()))
+  if Typer.sigAt(s, gsym, 3) > 0 || Ast.kd(g, blk) != Ast.kBlock() then Emit.unsup(eg, Ast.kDef())
+  else
+    val vg = Typer.sigAt(s, gsym, 0)
+    val n = Typer.sigAt(s, gsym, 2)
+    Emit.po(eg,"static ")
+    Emit.cty(eg, rT)
+    Emit.po(eg," cg_")
+    Emit.pi(eg, site)
+    Emit.po(eg,"_")
+    Emit.id(eg, gsym)
+    Emit.po(eg,"(")
+    Emit.cty(eg, rT)
+    Emit.po(eg," (*k_)(void**, ")
+    Emit.cty(eg, vg)
+    Emit.po(eg,"), void** ke_")
+    if n > 0 then
+      Emit.po(eg,", ")
+      Emit.params(eg, pr, gsym, 0, n)
+    else ()
+    Emit.po(eg,")")
+    if proto then Emit.po(eg,";\n")
+    else
+      Emit.po(eg," { void* en_[] = { 0, &k_, &ke_")
+      Emit.msPtrs(eg, Ast.a(g, blk), pr, 0, 0, 0)
+      Emit.po(eg," }; return ")
+      Emit.msSegName(eg, site, gsym, 0)
+      Emit.po(eg,"(en_, 0); }\n")
+    Emit.msChain(eg, Ast.a(g, blk), 0, true, site, gsym, true, rT, vg, done, proto)
+

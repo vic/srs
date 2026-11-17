@@ -1,0 +1,18 @@
+// family F1: a name declared by two units of the candidate image is error[duplicate]
+def Gate.dup(im: Kernel.Img): Kernel.Res =
+  val all = Kernel.paths(im)
+  Console.captureBegin()
+  Gate.unitRows(all, all, 0)
+  val rows = Console.captureEnd()
+  val Planner.Res2(err, txt) = Planner.textS(Gate.dupRules(), Planner.Mem(Os.More("unit", Os.End), Os.More(rows, Os.End)))
+  if Str.len(err) > 0 then Kernel.Res(1, err)
+  else
+    val ds = Gate.section(Planner.run(txt), "@1\n")
+    if Str.len(ds) == 0 then Kernel.Res(0, "")
+    else
+      Console.captureBegin()
+      Console.print("error[duplicate]")
+      Gate.namesOf(all, ds, 0)
+      Console.print("\n")
+      Kernel.Res(1, Console.captureEnd())
+

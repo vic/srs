@@ -1,0 +1,12 @@
+// prompt: the kernel must reject a def that returns, through a generic def whose result is its [] binder, a value made inside a
+// Region handle of its body, with error[region-escape] (s2 neg tparam_escape).
+val NegTests.tparamEscape {NegTest}: Never =
+  enum NtTe.Box:
+    case NtTe.Box(v: I64)
+  def NtTe.pick [A: Type] (x: A): A = x
+  def NtTe.leak(): NtTe.Box =
+    handle r = Srs.Arena()
+    NtTe.pick(NtTe.Box(1))
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "pick may return its arg: the result keeps the region r of the Box, which dies at the end of leak")
+

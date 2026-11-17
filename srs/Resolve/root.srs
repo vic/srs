@@ -1,0 +1,8 @@
+// one decl: the scope starts empty, the depth it reached is ranked, a scope left non-empty is counted as a leak
+def Resolve.root(x: Resolve.X, kb: I64, root: I64): Unit =
+  val Resolve.X(w, g, fi, _, _, _, _, _, _, _) = x
+  Resolve.cset(w, Resolve.sRootMax(), 0)
+  Resolve.root0(x, kb, root)
+  if Resolve.sp(x) != 0 then Resolve.cinc(w, Resolve.sLeak()) else ()
+  Resolve.topIns(w, 0, Resolve.cget(w, Resolve.sRootMax()), fi, Resolve.lineOfTok(x, Ast.tok(g, root)))
+

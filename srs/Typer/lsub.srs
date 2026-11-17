@@ -1,0 +1,14 @@
+// up = the type is a param of the call: its hidden binder is a length var (any length is accepted); else (a result, a pattern field) a fresh rigid
+def Typer.lsub(x: Typer.X, t: I64, r: I64, base: I64, np: I64, up: Bool): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  val k = Typer.kind(s, t)
+  if k == Typer.bLen() then
+    if Typer.head(s, t) == Typer.tBind() then (if Typer.cget(s, Typer.cNoSub()) == 1 then t else Typer.lsubFind(x, t, r, base, np, 0))
+    else if Typer.head(s, t) == Typer.tHidden() then (if up then Typer.freshL(s) else Typer.lenFresh(s))
+    else t
+  else if Typer.nargs(s, t) == 0 then t
+  else
+    val m = Typer.mark(s)
+    Typer.lsubArgs(x, t, r, base, np, up, 0, Typer.nargs(s, t))
+    Typer.mk(s, k, Typer.cls(s, t), Typer.head(s, t), m)
+

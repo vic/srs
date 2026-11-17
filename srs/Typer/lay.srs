@@ -1,0 +1,12 @@
+// the layout class of a type (X3e): the C scalar class of a builtin (Unit is an I64), every enum / array / capability is one pointer word
+// prompt: the layout class of t: the C scalar class of a builtin (Unit as I64), 100 for one pointer word (enum, array, capability),
+// 101 for a param, the class of the body for a nominal type, else 102.
+def Typer.lay(s: Typer.S, t: I64): I64 =
+  val k = Typer.kind(s, t)
+  if k == Typer.bBuiltin() then (if Typer.cls(s, t) == 1 then 0 else Typer.cls(s, t))
+  else if k == Typer.bArray() || k == Typer.bEnum() || k == Typer.bCap() then 100
+  else if k == Typer.bParam() then 101
+  else if k == Typer.bNominal() then Typer.lay(s, Typer.unfold(s, t))
+  else 102
+
+

@@ -1,0 +1,10 @@
+def Parser.exprs(g: Ast.G, m: I64): I64 =
+  if !Parser.ok(g) then Ast.close(g, m)
+  else if Parser.is(g, Token.rp()) then
+    Parser.adv(g)
+    Ast.close(g, m)
+  else
+    Ast.push(g, Parser.expr(g))
+    Parser.comma(g)
+    Parser.exprs(g, m)
+

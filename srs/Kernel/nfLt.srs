@@ -1,0 +1,10 @@
+// prompt: the number of members v of scc c that rank before u: l2(v) < l2(u), or l2(v) = l2(u) and v < u (eq counts equal v != u).
+def Kernel.nfLt(tj: Kernel.Tj, nf: Kernel.Nf, c: I64, u: I64, v: I64, eq: Bool, acc: I64): I64 =
+  val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if 0 <= v && v < tn then
+    val o = if v != u && I64.of(comp(v)) == c then Kernel.nfCmp(n8, l2, v, u, 0) else 2
+    val hit = if eq then o == 0 else o == -1 || (o == 0 && v < u)
+    Kernel.nfLt(tj, nf, c, u, v + 1, eq, if hit then acc + 1 else acc)
+  else acc
+

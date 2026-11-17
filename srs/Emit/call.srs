@@ -1,0 +1,14 @@
+def Emit.call(e: Emit.E, n: I64, tail: Bool): Unit =
+  val g = Emit.gOf(e)
+  val uk = Typer.useKind(Emit.xOf(e), Ast.tok(g, n))
+  if uk == Resolve.kGlobal() then Emit.callG(e, n, tail)
+  else if uk == Resolve.kCase() then Emit.ctor(e, n)
+  else if uk == Resolve.kCap() then Emit.capCall(e, n, Ast.b(g, n), 0 - 1)
+  else if uk == Resolve.kBuiltin() then Emit.builtin(e, n)
+  else if uk == Resolve.kLocal() then
+    Emit.local(e, Ast.tok(g, n))
+    Emit.po(e,"[")
+    Emit.expr(e, Ast.item(g, Ast.b(g, n), 0), false)
+    Emit.po(e,"]")
+  else Emit.unsup(e, 60)
+

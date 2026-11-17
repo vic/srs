@@ -1,0 +1,8 @@
+// a [] type binder (ty) is found only by a type use, any other binder only by a value use
+def Resolve.look(w: Resolve.W, sym: I64, i: I64, ty: Bool): Coll.Option[I64] =
+  val Resolve.W(_, _, sc, _) = w
+  val Resolve.Sc(cap, ss, _, sk) = sc
+  if 0 <= i && i < cap then
+    if I64.of(ss(i)) == sym && (I64.ofU8(sk(i)) == Resolve.bTParam()) == ty then Coll.Some(i) else Resolve.look(w, sym, i - 1, ty)
+  else Coll.None
+

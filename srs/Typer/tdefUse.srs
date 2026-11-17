@@ -1,0 +1,29 @@
+// prompt: the type of a use (token j) of type decl sym whose [] type args are the stack items above m: for a type with constraints
+// (evidence count > 0, vic 2026-11-16: constraints make a type nominal) the nominal type (sym, args); else its body with the []
+// binders (the type params of its signature, after its np case items) replaced by the args (Typer.msub), and for a match type
+// (np > 0) the result of the first case whose pattern is that scrutinee (Typer.tarmPick). A count of args other than the binders
+// is the Diag type-arity and the untyped type 0. The stack goes back to m.
+def Typer.tdefUse(s: Typer.S, sym: I64, j: I64, m: I64): I64 =
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  val n = Typer.cget(s, Typer.cSp()) - m
+  val body = Typer.declTyGet(s, sym)
+  val ss = Typer.sigAt(s, sym, 1)
+  val np = Typer.sigAt(s, sym, 2)
+  val ntp = Typer.sigAt(s, sym, 3)
+  val top = Typer.cget(s, Typer.cATop())
+  if n != ntp then
+    Typer.diag(s, Typer.dTyArity(), j)
+    Typer.cset(s, Typer.cSp(), m)
+    0
+  else if Typer.sigAt(s, sym, 4) > 0 then Typer.mk(s, Typer.bNominal(), 0, sym, m)
+  else if top + n <= acap then
+    Typer.cpArgs(s, m, 0, n, top)
+    Typer.cset(s, Typer.cATop(), top + n)
+    Typer.cset(s, Typer.cSp(), m)
+    val sc = Typer.msub(s, body, ss + np, ntp, top)
+    if np == 0 then sc else Typer.tarmPick(s, sc, ss, np, ss + np, ntp, top, 0, j)
+  else
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.over(s)
+    0

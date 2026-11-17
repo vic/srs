@@ -1,0 +1,12 @@
+def Typer.tyZonk(x: Typer.X, i: I64, n: I64): Unit =
+  val Typer.X(_, _, s, _, _, _) = x
+  if i < n then
+    val nd = Typer.mxGet(s, Typer.moTl(s, i))
+    val idx = Typer.cget(s, Typer.cTyBase()) + nd
+    val t = Typer.zonk(s, Typer.mxGet(s, Typer.moTy(s, idx)))
+    Typer.mxSet(s, Typer.moTy(s, idx), t)
+    Typer.cinc(s, Typer.cTyRec())
+    Typer.entryMiss(x, nd, t)
+    Typer.tyZonk(x, i + 1, n)
+  else ()
+

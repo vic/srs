@@ -1,0 +1,13 @@
+// a type of kind kb named by symbol sym, declared in file fi at line; the first declaration of a name wins, later ones are counted
+def Resolve.declareTy(w: Resolve.W, kb: I64, fi: I64, line: I64, sym: I64): Unit =
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(_, _, _, _, _, tcap, _, tyk, tyf, tyl) = gt
+  if 0 < sym && 0 <= sym && sym < tcap then
+    if I64.ofU8(tyk(sym)) != 0 then Resolve.cinc(w, Resolve.sTDup())
+    else
+      Array.put(tyk, sym, U8.of(kb + 1))
+      Array.put(tyf, sym, U32.of(fi))
+      Array.put(tyl, sym, U32.of(line))
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Resolve.over(w)
+

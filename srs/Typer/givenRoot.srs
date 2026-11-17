@@ -1,0 +1,15 @@
+// a given: its [] binder nodes get their Param type entries (like a def signature); the stack goes back to its mark
+// prompt: a given root: its [] binders get Param types, its {} binders their types, its head type is recorded and marked as a given
+// head (Typer.givenMark, read by Typer.givenAny).
+def Typer.givenRoot(x: Typer.X, root: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val m = Typer.mark(s)
+  Typer.tpToks(x, Ast.b(g, root), 0)
+  Typer.cset(s, Typer.cSp(), m)
+  Typer.evBinders(x, Ast.b(g, root), 0)
+  // the head must resolve (an unknown trait is an unresolved type, counted and rejected)
+  val t = Typer.ty(x, Ast.a(g, root))
+  Typer.tyPut(s, root, t)
+  Typer.givenMark(s, t)
+
+

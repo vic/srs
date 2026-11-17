@@ -1,0 +1,9 @@
+// prompt: the count of the trait-typed binders of the {} groups among the parts r from i.
+def Typer.traitEvN(x: Typer.X, r: I64, i: I64): I64 =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val p = Ast.item(g, r, i)
+    (if Ast.kd(g, p) == Ast.kGEv() then Typer.traitEvNB(x, Ast.a(g, p), 0) else 0) + Typer.traitEvN(x, r, i + 1)
+  else 0
+
+

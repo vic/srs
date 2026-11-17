@@ -1,0 +1,9 @@
+// ── calls ──
+def Emit.args(e: Emit.E, r: I64, i: I64, lead: Bool): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, r) then
+    if i > 0 || lead then Emit.po(e,", ") else ()
+    Emit.expr(e, Ast.item(g, r, i), false)
+    Emit.args(e, r, i + 1, lead)
+  else ()
+

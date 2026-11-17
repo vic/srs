@@ -1,0 +1,12 @@
+// caseDecl(s, u, t): unit u declares the enum case named s at token t (the cases of an enum are globals: s2 Names)
+def Gate.caseItems(w: Resolve.W, g: Ast.G, u: I64, r: I64, i: I64): Unit =
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    val k = Ast.kd(g, n)
+    if k == Ast.kCase() || k == Ast.kCaseNP() then
+      val t = Ast.tok(g, n)
+      Gate.row3(Resolve.sym(w, Resolve.tokT(g, t), false), u, t)
+    else ()
+    Gate.caseItems(w, g, u, r, i + 1)
+  else ()
+

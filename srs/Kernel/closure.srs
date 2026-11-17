@@ -1,0 +1,12 @@
+// the units of im that the roots use, transitively, roots included
+def Kernel.closure(im: Kernel.Img, roots: Os.Strs): Kernel.Img =
+  val gr = Kernel.graph(im)
+  val n = Kernel.count(im, 0)
+  val mk = Array.fill(n, U8.of(0))
+  Kernel.rootMark(gr, n, mk, im, 0, roots)
+  Kernel.pick(im, n, mk, 0)
+
+// ── NegTest (vic 2026-11-16): val NAME {NegTest}: Never = then an indented body of top-level decls and, as its last line,
+// NegTest.expect("code", ..). The kernel must reject the body, and the codes of its diags must be exactly the expected set.
+// The body runs in a child process (its memory dies with it), checked with the closure of the units it uses. ──
+

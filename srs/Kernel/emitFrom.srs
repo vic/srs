@@ -1,0 +1,15 @@
+// prints s with ' as ", ^ as \" and ~ as \n (two chars), for JSON text
+def Kernel.emitFrom(s: Str, i: I64, n: I64): Unit =
+  if i < n then
+    val c = Str.at(s, i)
+    if c == 39 then Console.printChar(34)
+    else if c == 94 then
+      Console.printChar(92)
+      Console.printChar(34)
+    else if c == 126 then
+      Console.printChar(92)
+      Console.printChar(110)
+    else Console.printChar(c)
+    Kernel.emitFrom(s, i + 1, n)
+  else ()
+

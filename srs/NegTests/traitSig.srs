@@ -1,0 +1,9 @@
+// a given method's param type differs from the trait's at the given's type args
+// prompt: the kernel must reject a given method whose param type differs from the trait's at the given's type args, with error[method-signature].
+val NegTests.traitSig {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def show(x: Bool): I64 = 1
+  NegTest.expect("method-signature", "at A = I64 the trait method takes an I64, not a Bool")
+

@@ -1,0 +1,13 @@
+// ── a def: params and {} binders are locals, the body is checked against the declared result ──
+def Typer.bindParams(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    if Ast.kd(g, b) == Ast.kBind() then
+      val bt = Typer.ty(x, Ast.a(g, b))
+      Typer.ltSet(s, Ast.tok(g, b), bt)
+      Typer.tyPut(s, b, bt)
+    else ()
+    Typer.bindParams(x, r, i + 1)
+  else ()
+

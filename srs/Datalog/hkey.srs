@@ -1,0 +1,10 @@
+// the hash of an atom's bound columns (tag 0 const, tag 1 env slot) at spec offset sp
+def Datalog.hkey(st: Datalog.St, sp: I64, c: I64, a: I64, h: U32): U32 =
+  if c >= a then h
+  else
+    val tag = Datalog.p(st, sp + 2 * c)
+    val v = Datalog.p(st, sp + 2 * c + 1)
+    if tag == 0 then Datalog.hkey(st, sp, c + 1, a, Datalog.mix(h, v))
+    else if tag == 1 then Datalog.hkey(st, sp, c + 1, a, Datalog.mix(h, Datalog.env(st, v)))
+    else Datalog.hkey(st, sp, c + 1, a, h)
+

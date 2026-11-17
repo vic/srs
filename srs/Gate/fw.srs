@@ -1,0 +1,112 @@
+// the flow walk: blocks in sequence, if/match branches join, while loops back, operands left to right; any other node passes through; loopb(u, s, e) spans a while body from its Indent token to its Dedent token; vbound(u, v, x) for a val/var whose annotation names x
+def Gate.fw(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), blk: I64, n: I64): Unit =
+  if n == 0 then ()
+  else
+    val k = Ast.kd(g, n)
+    if k == Ast.kBlock() then
+      if Gate.fkB(sel) == Gate.fkB(Gate.FBend) then Gate.row3(u, n, Ast.b(g, n)) else ()
+      Gate.fwStmts(w, g, sel, u, rcap, rk, rf, n, Ast.a(g, n), 0)
+    else if k == Ast.kIf() || k == Ast.kIfNl() then
+      val c = Ast.a(g, n)
+      val p = Ast.b(g, n)
+      val t = Ast.a(g, p)
+      val e = Ast.b(g, p)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FIthen) then Gate.row3(u, c, t) else ()
+      Gate.condRows(g, sel, u, rcap, rk, rf, c, c)
+      Gate.fe(sel, Gate.FEe, u, n, c)
+      Gate.fe(sel, Gate.FXe, u, c, t)
+      Gate.fe(sel, Gate.FXx, u, t, n)
+      if e != 0 then
+        Gate.fe(sel, Gate.FXe, u, c, e)
+        Gate.fe(sel, Gate.FXx, u, e, n)
+      else Gate.fe(sel, Gate.FXx, u, c, n)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, c)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, t)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, e)
+    else if k == Ast.kWhile() then
+      val c = Ast.a(g, n)
+      val b = Ast.b(g, n)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FIthen) then Gate.row3(u, c, b) else ()
+      Gate.condRows(g, sel, u, rcap, rk, rf, c, c)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FLoop) && Ast.kd(g, b) == Ast.kBlock() then Gate.row3(u, Ast.tok(g, b) - 1, Ast.b(g, b)) else ()
+      Gate.fe(sel, Gate.FEe, u, n, c)
+      Gate.fe(sel, Gate.FXe, u, c, b)
+      Gate.fe(sel, Gate.FXe, u, b, c)
+      Gate.fe(sel, Gate.FXx, u, c, n)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, c)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, b)
+    else if k == Ast.kMatch() then
+      val e = Ast.a(g, n)
+      Gate.fe(sel, Gate.FEe, u, n, e)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, e)
+      Gate.fwArms(w, g, sel, u, rcap, rk, rf, blk, n, e, Ast.b(g, n), 0)
+    else if k == Ast.kBin() then
+      val a = Ast.a(g, n)
+      val b = Ast.b(g, n)
+      if Str.eq(Ast.text(g, Ast.tok(g, n)), "&&") then
+        if Gate.fkB(sel) == Gate.fkB(Gate.FIthen) then Gate.row3(u, a, b) else ()
+        Gate.condRows(g, sel, u, rcap, rk, rf, a, a)
+      else ()
+      Gate.fe(sel, Gate.FEe, u, n, a)
+      Gate.fe(sel, Gate.FXe, u, a, b)
+      Gate.fe(sel, Gate.FXx, u, b, n)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, a)
+      Gate.fw(w, g, sel, u, rcap, rk, rf, blk, b)
+    else if k == Ast.kVal() || k == Ast.kVar() then
+      if Gate.fkB(sel) == Gate.fkB(Gate.FVb) then Gate.row6(u, n, Ast.tok(g, n), blk, Ast.b(g, n), Ast.tok(g, n)) else ()
+      if Gate.fkB(sel) == Gate.fkB(Gate.FMut) && k == Ast.kVar() then Gate.row2(u, Ast.tok(g, n)) else ()
+      if Gate.fkB(sel) == Gate.fkB(Gate.FAlenLit) && k == Ast.kVal() && Ast.kd(g, Ast.b(g, n)) == Ast.kCall() && Str.eq(Ast.text(g, Ast.tok(g, Ast.b(g, n))), "Array.fill") && Ast.len(g, Ast.b(g, Ast.b(g, n))) >= 1 then Gate.optRow3(u, Ast.tok(g, n), Gate.intOf(g, Ast.item(g, Ast.b(g, Ast.b(g, n)), 0))) else ()
+      if Gate.fkB(sel) == Gate.fkB(Gate.FAlias) then Gate.aliasRow(g, u, rcap, rk, rf, Ast.tok(g, n), Ast.b(g, n), Ast.tok(g, n)) else ()
+      if Gate.fkB(sel) == Gate.fkB(Gate.FVbound) && Ast.kd(g, Ast.a(g, n)) == Ast.kTyCaps() then Gate.pinNames(g, u, Ast.tok(g, n), rcap, rk, rf, Ast.b(g, Ast.a(g, n)), 0) else ()
+      Gate.fwInner(w, g, sel, u, rcap, rk, rf, blk, n, Ast.b(g, n))
+    else if k == Ast.kPatVal() then
+      if Gate.fkB(sel) == Gate.fkB(Gate.FPbind) then Gate.pbindRows(w, g, u, n, Ast.tok(g, n), Ast.a(g, n), 0) else ()
+      Gate.fwInner(w, g, sel, u, rcap, rk, rf, blk, n, Ast.b(g, n))
+    else if k == Ast.kAssign() then
+      val j = Ast.tok(g, n)
+      if 0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.kLocal() then
+        if Gate.fkB(sel) == Gate.fkB(Gate.FVb) then Gate.row6(u, n, I64.of(rf(j)), blk, Ast.a(g, n), j)
+        else if Gate.fkB(sel) == Gate.fkB(Gate.FAlias) then Gate.aliasRow(g, u, rcap, rk, rf, I64.of(rf(j)), Ast.a(g, n), j)
+        else if Gate.fkB(sel) == Gate.fkB(Gate.FMut) then Gate.row2(u, I64.of(rf(j)))
+        else ()
+      else ()
+      Gate.fwInner(w, g, sel, u, rcap, rk, rf, blk, n, Ast.a(g, n))
+    else if k == Ast.kDo() || k == Ast.kUn() || k == Ast.kParen() then Gate.fwInner(w, g, sel, u, rcap, rk, rf, blk, n, Ast.a(g, n))
+    else if k == Ast.kHandle() then
+      Gate.fx(sel, u, n)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FHst) then
+        Gate.tyUnit(w, Gate.tsym(w, g, Ast.a(g, n))) match
+          case Coll.Some(hu) => Gate.row5(u, n, Ast.tok(g, n), hu, blk)
+          case Coll.None => ()
+      else ()
+    else if k == Ast.kMethod() then
+      if Ast.len(g, Ast.b(g, n)) == 0 then Gate.fx(sel, u, n) else Gate.fwArgs(w, g, sel, u, rcap, rk, rf, blk, n, Ast.b(g, n), 0)
+      val j = Ast.tok(g, n)
+      if 0 <= j && j < rcap && I64.ofU8(rk(j)) == Resolve.kLocal() then
+        if Gate.fkB(sel) == Gate.fkB(Gate.FOp) then Gate.row5(u, n, I64.of(rf(j)), Gate.tsym(w, g, Ast.a(g, n)), j)
+        else if Gate.fkB(sel) == Gate.fkB(Gate.FOpT) then Gate.row2(u, Ast.a(g, n))
+        else ()
+      else ()
+    else if k == Ast.kCall() then
+      if Ast.len(g, Ast.b(g, n)) == 0 then Gate.fx(sel, u, n) else Gate.fwArgs(w, g, sel, u, rcap, rk, rf, blk, n, Ast.b(g, n), 0)
+      val j = Ast.tok(g, n)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FCname) then Gate.row3(u, n, Gate.tsym(w, g, j)) else ()
+      Gate.idxRows(g, sel, u, rcap, rk, rf, n, j)
+      Gate.rangeRows(g, sel, u, rcap, rk, rf, n, j)
+      if Gate.fkB(sel) == Gate.fkB(Gate.FEv) then Gate.evGroups(g, u, rcap, rk, rf, n, Ast.a(g, n), 0)
+      else if Gate.fkB(sel) == Gate.fkB(Gate.FEvarg) then Gate.evArgs(g, u, rcap, rk, rf, n, Ast.a(g, n), 0, 0)
+      else if Gate.fkB(sel) == Gate.fkB(Gate.FCarg) then Gate.cargRows(g, u, rcap, rk, rf, n, Ast.b(g, n), 0)
+      else if Gate.fkB(sel) == Gate.fkB(Gate.FCtok) then Gate.row3(u, n, j)
+      else if 0 <= j && j < rcap then
+        val kj = I64.ofU8(rk(j))
+        if Gate.fkB(sel) == Gate.fkB(Gate.FCallee) && kj == Resolve.kGlobal() then
+          Gate.declUnit(w, I64.of(rf(j))) match
+            case Coll.Some(v) => Gate.row3(u, n, v)
+            case Coll.None => ()
+        else if Gate.fkB(sel) == Gate.fkB(Gate.FCtor) && kj == Resolve.kCase() then Gate.row2(u, n)
+        else ()
+      else ()
+    else Gate.fx(sel, u, n)
+// prompt: the flow walk of one node n of unit u for selector sel: blocks in sequence, if/match branches join, while loops back,
+// operands and call or method args left to right, with the per-node fact rows of each kind (val/var, assign, handle, method, call).
+

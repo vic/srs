@@ -1,0 +1,17 @@
+// the drop op of a capability (`drop free`): (capability symbol, op symbol) pairs at hc 100 + 2i, the count at hc 12
+def Emit.capDrops(x: Typer.X, k: Emit.K, root: I64, i: I64): Unit =
+  val Typer.X(w, g, _, _, _, _) = x
+  val parts = Ast.b(g, root)
+  if i < Ast.len(g, parts) then
+    val n = Ast.item(g, parts, i)
+    if Ast.kd(g, n) == Ast.kDrop() then
+      val p = Ast.a(g, root)
+      val o = Ast.a(g, n)
+      val c = Emit.hget(k, 12)
+      Emit.hset(k, 100 + 2 * c, Typer.symOf(x, p))
+      Emit.hset(k, 101 + 2 * c, Resolve.sym(w, Resolve.T(Resolve.srcOf(g), Ast.toff(g, p), Ast.tlen(g, p), Resolve.srcOf(g), Ast.toff(g, o), Ast.tlen(g, o)), false))
+      Emit.hset(k, 12, c + 1)
+    else ()
+    Emit.capDrops(x, k, root, i + 1)
+  else ()
+

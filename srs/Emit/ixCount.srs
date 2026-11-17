@@ -1,0 +1,9 @@
+def Emit.ixCount(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), i: I64, n: I64, mx: I64): I64 =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Typer.bEnum() && 0 <= h && h + 2 < kn then
+      Emit.xp(kn, xo, h + 2, Emit.xg(kn, xo, h + 2) + 1)
+      Emit.ixCount(tcap, tk, th, kn, xo, i + 1, n, if h > mx then h else mx)
+    else Emit.ixCount(tcap, tk, th, kn, xo, i + 1, n, mx)
+  else mx
+

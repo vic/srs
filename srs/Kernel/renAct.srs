@@ -1,0 +1,14 @@
+// renamestore SRC DST OLD NEW: the stored image SRC with OLD renamed to NEW, stored as DST (load DST puts it through the gate)
+def Kernel.renAct(ws: Os.Strs): Kernel.Res =
+  val src = Planner.snth(ws, 0)
+  val dst = Planner.snth(ws, 1)
+  val old = Planner.snth(ws, 2)
+  val new = Planner.snth(ws, 3)
+  if Str.len(new) == 0 then Kernel.Res(1, "usage: renamestore SRC DST OLD NEW")
+  else
+    val Kernel.Lr(im, bad) = Kernel.loadTree(src, "", Os.End, Kernel.Lr(Kernel.Empty, 0))
+    if bad > 0 then Kernel.Res(1, "unreadable units")
+    else
+      val b = Kernel.store(dst, Kernel.renImg(im, Kernel.Empty, old, new))
+      if b == 0 then Kernel.Res(0, dst) else Kernel.Res(1, "store errors")
+

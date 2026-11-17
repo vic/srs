@@ -1,0 +1,14 @@
+// prompt: walk the entries xs of store dir d/rel in order: a dir is walked (K.loadTree), a regular file NAME.srs is loaded as a unit (K.loadFile), a symlink or special file is bad + 1, any other regular file (IDS) is skipped.
+def Kernel.loadEnts(d: Str, rel: Str, ps: Os.Strs, xs: Os.Strs, lr: Kernel.Lr): Kernel.Lr = xs match
+  case Os.End => lr
+  case Os.More(x, rest) =>
+    val sub = Kernel.relPath(rel, x)
+    val rx = if Str.len(rel) == 0 then x else sub
+    val p = Kernel.relPath(d, rx)
+    val Kernel.Lr(im, bad) = lr
+    val nx = Files.kind(p, Os.NoFollow) match
+      case Os.Dir => Kernel.loadTree(d, rx, ps, lr)
+      case Os.Regular => if Kernel.endsSrs(x) then Kernel.loadFile(p, Kernel.unitName(rel, x), ps, lr) else lr
+      case _ => Kernel.Lr(im, bad + 1)
+    Kernel.loadEnts(d, rel, ps, rest, nx)
+

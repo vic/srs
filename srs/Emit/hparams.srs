@@ -1,0 +1,15 @@
+// the params of a handler fn: `void* v_self_J` unless the fn names its own self
+// (an untyped binder is the continuation k of a resuming op: no C param)
+def Emit.hparams(e: Emit.E, pr: I64, i: I64, cnt: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, pr) then
+    val b = Ast.item(g, pr, i)
+    if Emit.ty(e, b) == 0 then Emit.hparams(e, pr, i + 1, cnt)
+    else
+      if cnt > 0 then Emit.po(e,", ") else ()
+      Emit.cty(e, Emit.tyS(e, b))
+      Emit.po(e," ")
+      Emit.binder(e, Ast.tok(g, b))
+      Emit.hparams(e, pr, i + 1, cnt + 1)
+  else ()
+

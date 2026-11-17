@@ -1,0 +1,11 @@
+// Memory region = effect. Open until free; values captured by a region die at free, alloc's memory too (<self>).
+capability Srs.Region:
+  state Open, Freed
+  start Open
+  stop Freed
+  def alloc <Open> (size: I64): Ptr<self> <Open>
+  def free <Open> (): Unit <Freed>
+  drop free
+
+// Allocators = handlers of Region.
+

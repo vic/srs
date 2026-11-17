@@ -1,0 +1,8 @@
+def Gate.resolveAll(ps: Os.Strs, xs: Os.Strs): Gate.Rw =
+  val fs = Resolve.loadMem(ps, xs)
+  val w = Resolve.world(Resolve.sumTok(fs, 0), Resolve.sumBytes(fs, 0))
+  Resolve.builtins(w)
+  Resolve.btypes(w)
+  Resolve.declFiles(w, fs, 0)
+  Gate.Rw(w, Typer.resolve(w, fs, 0))
+

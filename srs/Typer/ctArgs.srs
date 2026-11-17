@@ -1,0 +1,27 @@
+// prompt: evaluate the value args r[i..k] of a use in file x into env entries nf + i (the env top follows each stored arg): each compiles (Typer.ctComp, no binders) to code appended to the pool and runs (Typer.ctEval); its nodes are typed I64 (Typer.tySub); an arg with no value is the Diag no-compile-time-value; false then
+def Typer.ctArgs(x: Typer.X, r: I64, i: I64, k: I64, nf: I64): Bool =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < k then
+    val e = Ast.item(g, r, i)
+    val m = Typer.mark(s)
+    val ok = Typer.ctComp(x, e, 0, 0, 0)
+    Typer.tySub(x, e)
+    val n = Typer.cget(s, Typer.cSp()) - m
+    val top = Typer.cget(s, Typer.cATop())
+    Typer.cpArgs(s, m, 0, n, top)
+    Typer.cset(s, Typer.cATop(), top + n)
+    Typer.cset(s, Typer.cSp(), m)
+    val Typer.CtR(v, _) = if ok then Typer.ctEval(s, top, nf) else Typer.CtR(Typer.CtNo, top)
+    Typer.cset(s, Typer.cCtTop(), nf + i + 1)
+    v match
+      case Typer.CtNo =>
+        Typer.diag(s, Typer.dNoCt(), Ast.tok(g, e))
+        false
+      case Typer.CtInt(_) =>
+        Typer.ctPut(s, nf + i, v)
+        Typer.ctArgs(x, r, i + 1, k, nf)
+      case Typer.CtBool(_) =>
+        Typer.ctPut(s, nf + i, v)
+        Typer.ctArgs(x, r, i + 1, k, nf)
+  else true
+

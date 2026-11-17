@@ -1,0 +1,16 @@
+// parse every decl of the skeleton that has an AST (def .. given); a decl that does not parse keeps root 0 and is counted
+def Resolve.parseDecls(g: Ast.G, cap: I64, kd: Array[U8](cap), hd: Array[U32](cap), hi: Array[U32](cap), c: I64, rc: I64, rk: Array[U8](rc), rr: Array[U32](rc), i: I64, perr: I64): I64 =
+  if 0 <= i && i < c && i < cap && i < rc then
+    val kb = I64.ofU8(kd(i))
+    Array.put(rk, i, U8.of(kb))
+    if kb <= Split.kindByte(Split.Given) then
+      val root = Parser.decl(g, I64.of(hd(i)), I64.of(hi(i)), kb)
+      if Parser.ok(g) then
+        Array.put(rr, i, U32.of(root))
+        // a val with a telescope parses to a def (Pz.topVal): its kind byte follows its root
+        if kb == Split.kindByte(Split.Val) && Ast.kd(g, root) == Ast.kDef() then Array.put(rk, i, U8.of(Split.kindByte(Split.Def))) else ()
+        Resolve.parseDecls(g, cap, kd, hd, hi, c, rc, rk, rr, i + 1, perr)
+      else Resolve.parseDecls(g, cap, kd, hd, hi, c, rc, rk, rr, i + 1, perr + 1)
+    else Resolve.parseDecls(g, cap, kd, hd, hi, c, rc, rk, rr, i + 1, perr)
+  else perr
+

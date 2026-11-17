@@ -1,0 +1,9 @@
+// prompt: the site copies of every CPS def (class 6) among the roots i.. of file f (a CPS def of another file is not reached: its call would fail at C link time)
+def Emit.msCgAll(x: Typer.X, k: Emit.K, f: Resolve.F, base: I64, site: I64, rT: I64, done: Bool, proto: Bool, i: I64): Unit =
+  val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+  if 0 <= i && i < rc then
+    val root = I64.of(rr(i))
+    if root != 0 && I64.ofU8(rk(i)) == 0 && Emit.kget(k, Typer.symOf(x, Ast.a(g, root))) == 6 then Emit.msCg(x, k, base, root, site, rT, done, proto) else ()
+    Emit.msCgAll(x, k, f, base, site, rT, done, proto, i + 1)
+  else ()
+

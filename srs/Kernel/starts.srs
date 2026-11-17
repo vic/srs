@@ -1,0 +1,8 @@
+// decl starts: a head line starts at column 0 with a char above space that is not '/'; a decl starts at the first
+// line of the run of column-0 comment lines right above its head (cs = start of that run, -1 when none)
+// prompt: the decl starts of s from byte i: the run of column-0 comment and alias lines right above a head line belongs to that decl.
+def Kernel.starts(s: Str, i: I64, cs: I64): Kernel.Starts =
+  if i >= Str.len(s) then Kernel.SEnd
+  else if Kernel.isCom(s, i) || Kernel.isAliasAt(s, i) then Kernel.starts(s, Kernel.eol(s, i) + 1, if cs < 0 then i else cs)
+  else if Kernel.isHead(s, i) then Kernel.SAt(if cs < 0 then i else cs, Kernel.starts(s, Kernel.eol(s, i) + 1, 0 - 1))
+  else Kernel.starts(s, Kernel.eol(s, i) + 1, 0 - 1)

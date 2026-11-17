@@ -1,0 +1,6 @@
+// prompt: load DIR P..: every unit file of the tree d/rel (rel "" = d), dirs in byte order, the units under the prefixes ps (all when ps is empty) replace or join the units of lr; a dir that cannot be listed is bad + 1.
+def Kernel.loadTree(d: Str, rel: Str, ps: Os.Strs, lr: Kernel.Lr): Kernel.Lr =
+  val Kernel.Lr(im, bad) = lr
+  Files.list(Kernel.relPath(d, rel)) match
+    case Os.Ok(xs) => Kernel.loadEnts(d, rel, ps, xs, lr)
+    case Os.Fail(_) => Kernel.Lr(im, bad + 1)

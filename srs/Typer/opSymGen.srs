@@ -1,0 +1,11 @@
+// the symbol of an op of a capability with [] binders: only recv.op reaches it (opFind); a request Cap.op has no signature there, so it stays untyped (fail closed) until a request takes the binders from its handler
+def Typer.opSymGen(x: Typer.X, p: I64, o: I64): I64 =
+  val Typer.X(w, g, _, _, _, _) = x
+  Console.captureBegin()
+  Console.print(Ast.text(g, p))
+  Console.print(".")
+  Console.print(Ast.text(g, o))
+  Console.print("#recv")
+  Resolve.sym(w, Resolve.lit(Console.captureEnd()), true)
+
+

@@ -1,0 +1,15 @@
+// gle(u, c, a, b) for a <= b; gleSub(u, c, at, nb, m) for at <= nb - m (bare locals)
+def Gate.leRows(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), c: I64, a: I64, b: I64): Unit =
+  Gate.localOf(g, rcap, rk, rf, a) match
+    case Coll.Some(x) =>
+      if Gate.fkB(sel) == Gate.fkB(Gate.FGle) then Gate.optRow4(u, c, x, Gate.localOf(g, rcap, rk, rf, b))
+      else if Gate.fkB(sel) == Gate.fkB(Gate.FGleSub) && Ast.kd(g, b) == Ast.kBin() && Str.eq(Ast.text(g, Ast.tok(g, b)), "-") then
+        Gate.localOf(g, rcap, rk, rf, Ast.a(g, b)) match
+          case Coll.Some(nb) =>
+            Gate.localOf(g, rcap, rk, rf, Ast.b(g, b)) match
+              case Coll.Some(m) => Gate.row5(u, c, x, nb, m)
+              case Coll.None => ()
+          case Coll.None => ()
+      else ()
+    case Coll.None => ()
+

@@ -1,0 +1,9 @@
+// prompt: the kernel must reject a continuation clause of a multi-shot handler without done whose result is not its [] binder A, with error[answer-type] (s2 neg ms_answer, vic Q-M3: an op with k returns the answer)
+val NegTests.msAnswer {NegTest}: Never =
+  capability NtMa.NonDet:
+    def choose(): Bool
+  handler NtMa.AllAnswers [A: Type] for NtMa.NonDet:
+    def choose(k): Bool = true
+  def main(): I64 = 0
+  NegTest.expect("answer-type", "without done the answer is A, so choose(k) must return A, not Bool")
+

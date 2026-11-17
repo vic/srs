@@ -1,0 +1,11 @@
+// the flow facts of one def node d (a top-level def, or a def inside a handler)
+def Gate.defRoot(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), d: I64): Unit =
+  val parts = Ast.b(g, d)
+  Gate.parRows(w, g, sel, u, rcap, rk, rf, parts, 0)
+  val b = Typer.part(g, parts, 0, Ast.kBody())
+  if b != 0 then
+    val rhs = Ast.a(g, b)
+    if Gate.fkB(sel) == Gate.fkB(Gate.FLast) && Ast.kd(g, rhs) != Ast.kBlock() then Gate.row4(u, rhs, rhs, Ast.tok(g, rhs)) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FBody) then Gate.row2(u, rhs) else Gate.fw(w, g, sel, u, rcap, rk, rf, rhs, rhs)
+  else ()
+

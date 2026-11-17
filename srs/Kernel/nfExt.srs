@@ -1,0 +1,8 @@
+// prompt: true when the first token j.. that is not a comment is `extern` (the unit binds an external symbol by its name).
+def Kernel.nfExt(g: Ast.G, j: I64): Bool =
+  val Ast.G(tk, _, _, _) = g
+  val Ast.Tk(_, tcap, cls, _, _, t) = tk
+  if 0 <= j && j < t && j < tcap then
+    if I64.ofU8(cls(j)) == Token.doc() then Kernel.nfExt(g, j + 1) else Str.eq(Ast.text(g, j), "extern")
+  else false
+

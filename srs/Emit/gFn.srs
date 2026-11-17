@@ -1,0 +1,20 @@
+// prompt: one method def d of a given instance for goal z: `R g_<mangle z>_<op>(params) { return body; }`, not static (call sites declare it in a block, Emit.capCall); types under the env's substitution of the given params (Emit.tyS); starts a fn body (Emit.hreset)
+def Emit.gFn(e: Emit.E, d: I64, z: I64): Unit =
+  val g = Emit.gOf(e)
+  val Emit.E(x, k, tp0, ntp, pb, _, _, base) = e
+  val parts = Ast.b(g, d)
+  val b = Typer.part(g, parts, 0, Ast.kBody())
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  val ef = Emit.E(x, k, tp0, ntp, pb, 0, pr, base)
+  Emit.hreset(k)
+  if b == 0 then Emit.hinc(k, 7)
+  else
+    Emit.cty(ef, Emit.tyS(ef, Ast.a(g, b)))
+    Emit.po(ef," ")
+    Emit.gName(ef, z, Ast.text(g, Ast.a(g, d)))
+    Emit.po(ef,"(")
+    if Emit.ntyped(ef, pr, 0) == 0 then Emit.po(ef,"void") else Emit.hparams(ef, pr, 0, 0)
+    Emit.po(ef,") { return ")
+    Emit.expr(ef, Ast.a(g, b), true)
+    Emit.po(ef,"; }\n")
+

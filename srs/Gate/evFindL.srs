@@ -1,0 +1,6 @@
+def Gate.evFindL(w: Resolve.W, g: Ast.G, l: I64, k: I64, sym: I64, dflt: I64): I64 =
+  if k < Ast.len(g, l) then
+    val n = Ast.item(g, l, k)
+    if Ast.kd(g, n) == Ast.kBind() && Gate.tsym(w, g, Ast.tok(g, n)) == sym then Ast.tok(g, n) else Gate.evFindL(w, g, l, k + 1, sym, dflt)
+  else dflt
+

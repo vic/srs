@@ -1,0 +1,14 @@
+// the Srs.Region handler with the least name above last, among the handles i..
+def Emit.allocMin(w: Resolve.W, k: Emit.K, last: Coll.Option[I64], i: I64, best: Coll.Option[I64]): Coll.Option[I64] =
+  if i < Emit.hget(k, 0) then
+    val h = Emit.hget(k, 17 + 2 * i)
+    val above = last match
+      case Coll.Some(l) => Emit.symLess(w, l, h)
+      case Coll.None => true
+    val below = best match
+      case Coll.Some(b) => Emit.symLess(w, h, b)
+      case Coll.None => true
+    if Emit.symIs(w, Emit.hget(k, 16 + 2 * i), "Srs.Region") && above && below then Emit.allocMin(w, k, last, i + 1, Coll.Some(h))
+    else Emit.allocMin(w, k, last, i + 1, best)
+  else best
+

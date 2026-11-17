@@ -1,0 +1,15 @@
+// prompt: the kernel must reject entry facts that leave a state term with two values (reach(Shut, t) holds for t = Open1 and t = Open2 and nothing else fixes t), with error[fact-ambiguous] (the exit state is then unknown too: error[exit-state])
+val NegTests.factAmbiguous {NegTest}: Never =
+  capability NtRa.Door:
+    state Shut, Open1, Open2, Gone
+    start Shut
+    stop Gone
+    transition knock Shut -> Open1, Open1 -> Open2
+    def knock <s knock t> (): I64 <t>
+    transition leave Open1 -> Gone, Open2 -> Gone
+    def leave <s leave t> (): Unit <t>
+    rule def reach(s, t) = next(s, knock, t)
+    rule def reach(s, t) = next(s, knock, u), reach(u, t)
+  def NtRa.amb {d: NtRa.Door} <d: Shut, reach(Shut, t)> (): I64 <d: t> = d.knock()
+  NegTest.expect("fact-ambiguous", "exit-state", "reach(Shut, t) allows Open1 and Open2, so the exit state t of amb is not one state")
+

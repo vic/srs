@@ -1,0 +1,10 @@
+// prompt: push the types of the binders of list r from i whose type is a trait.
+def Typer.traitEvPushB(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    if Typer.isTraitTy(x, Ast.a(g, b)) then Typer.push(s, Typer.ty(x, Ast.a(g, b))) else ()
+    Typer.traitEvPushB(x, r, i + 1)
+  else ()
+
+

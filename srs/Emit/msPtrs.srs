@@ -1,0 +1,21 @@
+// prompt: the env entries `, &x` of a segment: phase 0 the params pr (from i), then phase 1 every val among statements i.. below upto of r (a var is unsupported: its value may change across a cut)
+def Emit.msPtrs(e: Emit.E, r: I64, pr: I64, i: I64, upto: I64, ph: I64): Unit =
+  val g = Emit.gOf(e)
+  if ph == 0 then
+    if pr != 0 && i < Ast.len(g, pr) then
+      if Ast.kd(g, Ast.item(g, pr, i)) == Ast.kBind() then
+        Emit.po(e,", &")
+        Emit.binder(e, Ast.tok(g, Ast.item(g, pr, i)))
+      else ()
+      Emit.msPtrs(e, r, pr, i + 1, upto, 0)
+    else Emit.msPtrs(e, r, pr, 0, upto, 1)
+  else if i < upto then
+    val st = Ast.item(g, r, i)
+    if Ast.kd(g, st) == Ast.kVal() then
+      Emit.po(e,", &")
+      Emit.binder(e, Ast.tok(g, st))
+    else if Ast.kd(g, st) == Ast.kVar() then Emit.unsup(e, Ast.kVar())
+    else ()
+    Emit.msPtrs(e, r, pr, i + 1, upto, 1)
+  else ()
+

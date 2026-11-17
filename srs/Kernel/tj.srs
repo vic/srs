@@ -1,0 +1,24 @@
+def Kernel.tj(t: Kernel.Tj, dg: Kernel.Dg, m: I64, adj: Array[U32](m), u: I64): Unit =
+  val Kernel.Tj(n, idx, low, on, st, comp, c3, ctr) = t
+  val Kernel.Dg(_, n1, off, _, _) = dg
+  val w = u + 1
+  val zero = 0
+  val one = 1
+  val two = 2
+  if 0 <= u && u < n && u < n1 && 0 <= w && w < n1 && 0 <= zero && zero < c3 && 0 <= one && one < c3 && 0 <= two && two < c3 then
+    val d = I64.of(ctr(zero)) + 1
+    Array.put(ctr, zero, U32.of(d))
+    Array.put(idx, u, U32.of(d))
+    Array.put(low, u, U32.of(d))
+    val sp = I64.of(ctr(one))
+    if 0 <= sp && sp < n then Array.put(st, sp, U32.of(u)) else ()
+    Array.put(ctr, one, U32.of(sp + 1))
+    Array.put(on, u, U8.of(1))
+    Kernel.tjE(t, dg, m, adj, u, I64.of(off(u)), I64.of(off(w)))
+    if I64.of(low(u)) == I64.of(idx(u)) then
+      val c = I64.of(ctr(two))
+      Kernel.tjPop(t, u, c)
+      Array.put(ctr, two, U32.of(c + 1))
+    else ()
+  else ()
+

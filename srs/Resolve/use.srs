@@ -1,0 +1,8 @@
+// the innermost local of this symbol, else a global; else Unresolved
+def Resolve.use(x: Resolve.X, j: I64): Unit =
+  val Resolve.X(w, g, _, _, _, _, _, _, _, _) = x
+  val sym = Resolve.sym(w, Resolve.tokT(g, j), false)
+  Resolve.look(w, sym, Resolve.cget(w, Resolve.sSp()) - 1, false) match
+    case Coll.Some(i) => Resolve.useLocal(x, j, i, sym)
+    case Coll.None => Resolve.useGlobal(x, j, sym)
+

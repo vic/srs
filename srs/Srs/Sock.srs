@@ -1,0 +1,29 @@
+// page layout: [0, 110) sockaddr_un; [128, 140) ucred; [144, 152) socklen; [4096, ...) read buffer
+handler Srs.Sock for Sock:
+  def init(): Ptr = mmap(rt_ptr_of(0), 1048576, I32.of(I64.ofI32(PROT_READ) + I64.ofI32(PROT_WRITE)), I32.of(I64.ofI32(MAP_PRIVATE) + I64.ofI32(MAP_ANONYMOUS)), I32.of(0 - 1), 0)
+  def open(self: Ptr, path: Str): I64 =
+    val n = Str.len(path)
+    if n <= 0 || n > 100 then 0 - 1
+    else
+      Srs.Sk.setByte(self, 0, I64.ofI32(AF_UNIX))
+      Srs.Sk.setByte(self, 1, 0)
+      Srs.Sk.fill(self, path, 0, n)
+      if I64.ofI32(unlink(rt_ptr_add(self, 2))) == 0 then () else ()
+      val fd = socket(AF_UNIX, SOCK_STREAM, I32.of(0))
+      if I64.ofI32(fd) < 0 then 0 - 2
+      else if I64.ofI32(bind(fd, self, I32.of(n + 3))) != 0 then 0 - 3
+      else if I64.ofI32(listen(fd, I32.of(16))) != 0 then 0 - 4
+      else I64.ofI32(fd)
+  def take(self: Ptr, lfd: I64): I64 = I64.ofI32(accept(I32.of(lfd), rt_ptr_of(0), rt_ptr_of(0)))
+  def peer(self: Ptr, fd: I64): I64 =
+    rt_ptr_set(rt_ptr_add(self, 144), 0, 12)
+    if I64.ofI32(getsockopt(I32.of(fd), SOL_SOCKET, SO_PEERCRED, rt_ptr_add(self, 128), rt_ptr_add(self, 144))) != 0 then 0 - 1
+    else (rt_ptr_get(rt_ptr_add(self, 132), 0) % 4294967296 + 4294967296) % 4294967296
+  def me(self: Ptr): I64 = I64.ofI32(getuid())
+  def slurp(self: Ptr, fd: I64): Str =
+    val n = Srs.Sk.readTo(self, fd, 0)
+    val xs = Array.fill(n, U8.of(0))
+    Srs.Sk.copy(n, xs, self, 0)
+    Str.ofBytes(n, xs)
+  def done(self: Ptr, fd: I64): Unit = if I64.ofI32(close(I32.of(fd))) == 0 then () else ()
+

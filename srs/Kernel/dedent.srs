@@ -1,0 +1,10 @@
+// print t[i, e) with the first two spaces of each line removed
+def Kernel.dedent(t: Str, i: I64, e: I64): Unit =
+  if i < e && i < Str.len(t) then
+    val le = Kernel.lineAfter(t, i)
+    val s = if Kernel.startsAt(t, i, "  ") then i + 2 else i
+    val z = if le < e then le else e
+    if s < z then Console.print(Str.slice(t, s, z)) else ()
+    Kernel.dedent(t, le, e)
+  else ()
+

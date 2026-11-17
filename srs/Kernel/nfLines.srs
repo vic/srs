@@ -1,0 +1,12 @@
+// prompt: one line per unit in image order: name, tab, id hex.
+def Kernel.nfLines(nf: Kernel.Nf, im: Kernel.Img, u: I64, acc: Os.Strs): Os.Strs = im match
+  case Kernel.Empty => acc
+  case Kernel.Unit(nm, _, r) =>
+    val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+    Console.captureBegin()
+    Console.print(nm)
+    Console.print("\t")
+    Kernel.nfHex(n8, ids, u)
+    Console.print("\n")
+    Kernel.nfLines(nf, r, u + 1, Os.More(Console.captureEnd(), acc))
+

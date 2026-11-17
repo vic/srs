@@ -1,0 +1,20 @@
+def Parser.externDecl(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  Parser.adv(g)
+  val aj = if Parser.is(g, Token.str()) then Parser.cur(g) else 0
+  if aj != 0 then
+    if Str.eq(Ast.text(g, aj), "\"libc\"") then Parser.adv(g) else Parser.stop(g)
+  else ()
+  val libc = aj != 0
+  val inner =
+    if Parser.isW(g, "struct") then
+      if libc then Parser.cstruct(g) else Parser.fail(g)
+    else if Parser.is(g, Token.kval()) then
+      if libc then Parser.cval(g) else Parser.fail(g)
+    else if Parser.is(g, Token.kdef()) then
+      val d = Parser.defN(g, if libc then 3 else 0, true)
+      Parser.stopIf(g, Parser.ok(g) && libc && Parser.dotted(g, Ast.a(g, d)), Ast.a(g, d))
+      d
+    else Parser.fail(g)
+  Ast.mk(g, Ast.kExtern(), j, aj, inner)
+

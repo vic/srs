@@ -1,0 +1,9 @@
+// a given lacks a method of its trait (and defines another)
+// prompt: the kernel must reject a given that lacks a trait method and defines another, with error[missing-method] and error[not-a-method].
+val NegTests.traitMiss {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def other(x: I64): I64 = x
+  NegTest.expect("missing-method", "not-a-method", "a given defines every method of its trait and no other")
+

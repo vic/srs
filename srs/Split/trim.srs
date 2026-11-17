@@ -1,0 +1,6 @@
+// back from e over trailing Nl, Dedent and Doc tokens, never to or before the head h
+def Split.trim(tcap: I64, tk: Array[U8](tcap), t: I64, e: I64, h: I64): I64 =
+  val q = e - 1
+  if q > h && (Split.isKind(tcap, tk, t, q, Lexer.KNl) || Split.isKind(tcap, tk, t, q, Lexer.KDedent) || Split.isKind(tcap, tk, t, q, Lexer.KDoc)) then Split.trim(tcap, tk, t, q, h)
+  else e
+

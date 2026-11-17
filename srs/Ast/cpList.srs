@@ -1,0 +1,10 @@
+def Ast.cpList(g: Ast.G, from: I64, i: I64, n: I64, dst: I64): Unit =
+  val Ast.G(_, _, ls, _) = g
+  val Ast.Ls(xcap, xs, scap, stk) = ls
+  val s = from + i
+  val d = dst + i
+  if i < n && 0 <= s && s < scap && 0 <= d && d < xcap then
+    Array.put(xs, d, stk(s))
+    Ast.cpList(g, from, i + 1, n, dst)
+  else ()
+

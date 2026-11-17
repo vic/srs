@@ -1,0 +1,89 @@
+// prompt: the s4-cc server loop: take one frame from listen socket lfd, run its action on image im (gated actions replace the
+// image only when accepted), reply to the sender, loop with the resulting image; stop ends the loop.
+def Kernel.serve(lfd: I64, me: Str, id: I64, bp: Os.Strs, bt: Os.Strs, im: Kernel.Img): I64 =
+  val fd = Sock.take(lfd)
+  if fd < 0 then 3
+  else
+    val pu = Sock.peer(fd)
+    val s = Sock.slurp(fd)
+    Sock.done(fd)
+    val from = Kernel.field(s, "'from':'uds:")
+    val rid = Kernel.field(s, "'msg_id':'")
+    if pu != Sock.me() then
+      Kernel.reply(from, me, id, rid, "refused: peer uid differs", "", "")
+      Kernel.serve(lfd, me, id + 1, bp, bt, im)
+    else
+      val body = Kernel.body(Kernel.jfield(s, "'content':'"))
+      val le = Kernel.chAt(body, 10)
+      val head = Str.slice(body, 0, le)
+      val text = if le + 1 <= Str.len(body) then Str.slice(body, le + 1, Str.len(body)) else ""
+      val sp = Kernel.chAt(head, 32)
+      val act = Str.slice(head, 0, sp)
+      val arg = if sp + 1 <= Str.len(head) then Str.slice(head, sp + 1, Str.len(head)) else ""
+      if Str.eq(act, "stop") then
+        Kernel.reply(from, me, id, rid, "stopped", "", "")
+        0
+      else if Str.eq(act, "relaunch") then
+        val Kernel.Res(rc, rout) = Kernel.ranRes(Process.run(Kernel.relArgv(arg, me)))
+        if rc == 0 then
+          Kernel.reply(from, me, id, rid, "relaunched ", arg, rout)
+          0
+        else
+          Kernel.reply(from, me, id, rid, "relaunch failed ", arg, rout)
+          Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "submit") then
+        Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gateP(from, me, id, rid, bp, bt, im, Kernel.split(im, text), 0))
+      else if Str.eq(act, "edit") then
+        Kernel.editText(im, arg, text) match
+          case Coll.Some(nt) => Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gateP(from, me, id, rid, bp, bt, im, Kernel.split(im, nt), 0))
+          case Coll.None =>
+            Kernel.reply(from, me, id, rid, "edit failed (no such unit, no ===, or OLD not found exactly once): ", arg, "")
+            Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "cycle") then
+        val Kernel.Res(code, out) = Kernel.cycle(bp, bt, im, Kernel.words(arg, 0))
+        Kernel.reply(from, me, id, rid, if code == 0 then "cycled " else "cycle failed ", arg, out)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "ingest") then
+        val Kernel.Lr(cand, bad) = Kernel.ingest(Kernel.words(arg, 0), im, 0)
+        Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gateP(from, me, id, rid, bp, bt, im, cand, bad))
+      else if Str.eq(act, "load") then
+        val lw = Kernel.words(arg, 0)
+        val Kernel.Lr(cand, bad) = Kernel.loadTree(Planner.snth(lw, 0), "", Kernel.tail(lw), Kernel.Lr(im, 0))
+        Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gate(from, me, id, rid, bp, bt, im, cand, bad))
+      else if Str.eq(act, "tests") then
+        val Kernel.Res(tc, tout) = Kernel.testsRun(Args.at(0), im)
+        Kernel.reply(from, me, id, rid, if tc == 0 then "tests\n" else "tests ERROR\n", "", tout)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "negtests") then
+        val Kernel.NegR(nc, _, nout) = Kernel.negRunT(Kernel.negRunOf(Args.at(0), Kernel.negBase(Kernel.plain(im))), im, Os.End, 0, 0)
+        Kernel.reply(from, me, id, rid, if nc == 0 then "negtests ok\n" else "negtests FAILED\n", "", nout)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "drop") then
+        val Kernel.Lr(cand, bad) = Kernel.dropNames(im, Kernel.words(arg, 0), 0)
+        Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gate(from, me, id, rid, bp, bt, im, cand, bad))
+      else if Str.eq(act, "check") then
+        val Kernel.Res(code, out) = Kernel.checkAll(bp, bt, Kernel.split(im, text))
+        Kernel.reply(from, me, id, rid, if code == 0 then "ok" else "fail", "", out)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "store") then
+        val sw = Kernel.words(arg, 0)
+        val b = Kernel.storeSel(Planner.snth(sw, 0), im, Kernel.tail(sw))
+        Kernel.reply(from, me, id, rid, if b == 0 then "stored units=" else "store errors, units=", Kernel.num(Kernel.count(im, 0)), "")
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "build") then
+        val Kernel.Res(code, out) = Kernel.build(bp, bt, im, arg)
+        Kernel.reply(from, me, id, rid, if code == 0 then "built " else "build failed ", arg, out)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "negrun") then
+        val ws = Kernel.words(arg, 0)
+        Kernel.reply(from, me, id, rid, "negrun ", "", Kernel.negrun(ws))
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else if Str.eq(act, "list") then
+        Console.captureBegin()
+        Kernel.names(im, 32)
+        Kernel.reply(from, me, id, rid, "units: ", "", Console.captureEnd())
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)
+      else
+        val Kernel.Res(code, out) = Kernel.more(act, arg, text, im)
+        Kernel.reply(from, me, id, rid, if code == 0 then "ok " else "error ", act, out)
+        Kernel.serve(lfd, me, id + 1, bp, bt, im)

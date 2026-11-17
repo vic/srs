@@ -1,0 +1,15 @@
+// the names of the units a row's second column points at (rows of units at or above lo)
+def Gate.refTargets(rows: Str, lo: I64, ps: Os.Strs, i: I64): Unit =
+  if i >= Str.len(rows) then ()
+  else
+    val e = Kernel.eol(rows, i)
+    val Datalog.N(u, j) = Datalog.num(rows, i)
+    val Datalog.N(v, k) = Datalog.num(rows, j + 1)
+    if u >= lo then
+      Console.printI64(v)
+      Console.print("\t")
+      Console.print(Planner.snth(ps, v))
+      Console.print("\n")
+    else ()
+    Gate.refTargets(rows, lo, ps, e + 1)
+

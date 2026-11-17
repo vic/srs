@@ -1,0 +1,11 @@
+def Emit.ixFill(tcap: I64, tk: Array[U8](tcap), th: Array[U32](tcap), kn: I64, xo: Array[U32](kn), xn: I64, xi: Array[U32](xn), i: I64, n: I64): Unit =
+  if i < n && 0 <= i && i < tcap then
+    val h = I64.of(th(i))
+    if I64.ofU8(tk(i)) == Typer.bEnum() && 0 <= h && h + 2 < kn then
+      val p = Emit.xg(kn, xo, h + 1)
+      Emit.xp(xn, xi, p, i)
+      Emit.xp(kn, xo, h + 1, p + 1)
+    else ()
+    Emit.ixFill(tcap, tk, th, kn, xo, xn, xi, i + 1, n)
+  else ()
+

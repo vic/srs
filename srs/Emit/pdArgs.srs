@@ -1,0 +1,11 @@
+// prompt: the cap args of a call n of a def with param-drop mask (bits from idx): for each dropped binder, the cap of the call's explicit evidence arg at that index (Emit.pdCap); lead = an arg was printed before
+def Emit.pdArgs(e: Emit.E, n: I64, mask: I64, idx: I64, lead: Bool): Unit =
+  val g = Emit.gOf(e)
+  if idx < 60 && mask >= Emit.pdPow(idx) then
+    if Emit.pdBit(mask, idx) then
+      if lead then Emit.po(e,", ") else ()
+      Emit.pdCap(e, Emit.evArgAt(g, Ast.a(g, n), 0, idx))
+      Emit.pdArgs(e, n, mask, idx + 1, true)
+    else Emit.pdArgs(e, n, mask, idx + 1, lead)
+  else ()
+

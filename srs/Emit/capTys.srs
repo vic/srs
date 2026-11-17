@@ -1,0 +1,8 @@
+// prompt: ev times `srs_cap*` (the leading capability params of a C extern with {} binders, rt/srs_cap.h), each followed by ", " when more params follow (more = true) or another cap follows
+def Emit.capTys(e: Emit.E, ev: I64, more: Bool): Unit =
+  if ev > 0 then
+    Emit.po(e,"srs_cap*")
+    if ev > 1 || more then Emit.po(e,", ") else ()
+    Emit.capTys(e, ev - 1, more)
+  else ()
+

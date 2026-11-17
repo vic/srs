@@ -1,0 +1,12 @@
+// kBind and kBare (a handler op's continuation) bind their token; kBindAnon and kDots bind nothing
+def Resolve.bindBinders(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    val k = Ast.kd(g, b)
+    if k == Ast.kBind() then Resolve.bind(x, Ast.tok(g, b))
+    else if k == Ast.kBare() then Resolve.push(x, Resolve.tokT(g, Ast.tok(g, b)), Ast.tok(g, b), Resolve.bCont())
+    else ()
+    Resolve.bindBinders(x, r, i + 1)
+  else ()
+

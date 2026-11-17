@@ -1,0 +1,15 @@
+// prompt: the kernel must reject main calling a def whose inferred row needs Srs.Region (from an op binder) when main has no Srs.Region handler, with error[unhandled-effect].
+val NegTests.opRegionRow {NegTest}: Never =
+  capability Rg:
+    def mk {r: Srs.Region} (n: I64): Str<r>
+  handler Hrg for Rg:
+    def mk {r: Srs.Region} (n: I64): Str<r> =
+      val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+      Str.ofBytes(n, xs)
+  def Rr.go(n: I64): Str = Rg.mk(n)
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle h = Hrg()
+    Console.print(Rr.go(3))
+    0
+  NegTest.expect("unhandled-effect", "Rr.go infers Srs.Region into its row from the op binder; main must handle it")

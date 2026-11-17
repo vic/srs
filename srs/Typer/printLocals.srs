@@ -1,0 +1,18 @@
+// one def: skipped when it is generic or has evidence (its C types are its instances')
+def Typer.printLocals(x: Typer.X, root: I64, parts: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val sym = Typer.symOf(x, Ast.a(g, root))
+  if Typer.sigAt(s, sym, 3) > 0 || Typer.sigAt(s, sym, 4) > 0 then Typer.cinc(s, Typer.cDefSkip())
+  else
+    val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+    val n = Typer.sigAt(s, sym, 2)
+    Typer.po(s, "static void d_")
+    Typer.pi(s, Typer.cget(s, Typer.cNDef()))
+    Typer.po(s, "(")
+    if n == 0 then Typer.po(s, "void") else Typer.pParams(x, pr, 0, Typer.sigAt(s, sym, 1), n)
+    Typer.po(s, ") {\n")
+    Typer.locDecls(x, 0, Typer.cget(s, Typer.cNLoc()))
+    Typer.witOut(x, pr, 0, Typer.cget(s, Typer.cNWit()))
+    Typer.po(s, "}\n")
+    Typer.cinc(s, Typer.cNDef())
+

@@ -1,0 +1,9 @@
+// the length indexes of a type `Array[A](n)` are I64 expressions of the type: typed at once; the length of the first one is the result
+// (Any when there is none). A length node is reported once: its ty entry is empty before this first visit
+def Typer.tyLensArgs(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    Typer.tySub(x, Ast.item(g, r, i))
+    Typer.tyLensArgs(x, r, i + 1)
+  else ()
+

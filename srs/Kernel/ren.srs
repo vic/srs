@@ -1,0 +1,31 @@
+// rename: identifier tokens equal to old (or starting with old + ".") and string literals whose whole text is old become new;
+// comments are kept as they are
+def Kernel.ren(s: Str, i: I64, n: I64, old: Str, new: Str): Unit =
+  if i >= n then ()
+  else
+    val c = Str.at(s, i)
+    if c == 47 && Str.at(s, i + 1) == 47 then
+      val e = Kernel.eol(s, i)
+      Console.print(Str.slice(s, i, e))
+      Kernel.ren(s, e, n, old, new)
+    else if c == 34 then
+      val e = Kernel.strEnd(s, i + 1)
+      val lit = Str.slice(s, i + 1, e)
+      Console.printChar(34)
+      Console.print(if Str.eq(lit, old) then new else lit)
+      Console.printChar(34)
+      Kernel.ren(s, e + 1, n, old, new)
+    else if Planner.isId0(c) then
+      val e = Gate.tokEnd(s, i)
+      val t = Str.slice(s, i, e)
+      val m = Str.len(old)
+      if Str.eq(t, old) then Console.print(new)
+      else if Str.len(t) > m && Str.eq(Str.slice(t, 0, m), old) && Str.at(t, m) == 46 then
+        Console.print(new)
+        Console.print(Str.slice(t, m, Str.len(t)))
+      else Console.print(t)
+      Kernel.ren(s, e, n, old, new)
+    else
+      Console.printChar(c)
+      Kernel.ren(s, i + 1, n, old, new)
+

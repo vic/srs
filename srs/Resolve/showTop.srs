@@ -1,0 +1,15 @@
+// the decls with the deepest scopes: "deepest depth=D file:line"
+def Resolve.showTop(w: Resolve.W, fs: Coll.List[Resolve.F], i: I64): Unit =
+  if i < Resolve.nTop() then
+    Resolve.nth(fs, Resolve.cget(w, Resolve.sTop() + Resolve.nTop() + i)) match
+      case Coll.Some(f) =>
+        val Resolve.F(path, _, _, _, _, _, _, _) = f
+        Resolve.num("deepest depth=", Resolve.cget(w, Resolve.sTop() + i))
+        Console.print(" ")
+        Console.print(path)
+        Resolve.num(":", Resolve.cget(w, Resolve.sTop() + 2 * Resolve.nTop() + i))
+        Console.print("\n")
+      case Coll.None => Console.print("badfile\n")
+    Resolve.showTop(w, fs, i + 1)
+  else ()
+

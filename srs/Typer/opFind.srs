@@ -1,0 +1,7 @@
+def Typer.opFind(s: Typer.S, owner: I64, op: I64, i: I64): I64 =
+  val Typer.S(_, _, _, c, _) = s
+  val Typer.Cn(_, _, ocap, oo, opp, os, _, _) = c
+  if 0 <= i && i < ocap && i < Typer.cget(s, 31) then
+    if I64.of(oo(i)) == owner && I64.of(opp(i)) == op then I64.of(os(i)) else Typer.opFind(s, owner, op, i + 1)
+  else 0
+

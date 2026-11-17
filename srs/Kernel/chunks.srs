@@ -1,0 +1,4 @@
+def Kernel.chunks(im: Kernel.Img, s: Str, b: I64, st: Kernel.Starts): Kernel.Img = st match
+  case Kernel.SEnd => if b < Str.len(s) then Kernel.add1(im, Str.slice(s, b, Str.len(s))) else im
+  case Kernel.SAt(i, rest) => if i <= b then Kernel.chunks(im, s, b, rest) else Kernel.chunks(Kernel.add1(im, Str.slice(s, b, i)), s, i, rest)
+

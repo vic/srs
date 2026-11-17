@@ -1,0 +1,7 @@
+// arg j of list r as a length (the substitute of a callee binder, or the length of Array.fill / tabulate). In a pattern (cPat = 1) the item is a binder token
+def Typer.lenOfArg(x: Typer.X, r: I64, j: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  if j < Ast.len(g, r) then
+    if Typer.cget(s, Typer.cPat()) == 1 then Typer.lenBind(s, Ast.item(g, r, j)) else Typer.lenVal(x, Ast.item(g, r, j))
+  else Typer.lenFresh(s)
+

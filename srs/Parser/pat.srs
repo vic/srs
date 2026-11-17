@@ -1,0 +1,13 @@
+// _ | Name [(names)]
+def Parser.pat(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  if Parser.ok(g) && Parser.is(g, Token.under()) then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kPAny(), j, 0, 0)
+  else
+    Parser.ident(g)
+    if Parser.is(g, Token.lp()) then
+      Parser.adv(g)
+      Ast.mk(g, Ast.kPCase(), j, Parser.names(g, Ast.mark(g), Token.rp()), 0)
+    else Ast.mk(g, Ast.kPCaseNP(), j, 0, 0)
+

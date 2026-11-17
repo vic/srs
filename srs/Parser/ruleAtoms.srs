@@ -1,0 +1,7 @@
+def Parser.ruleAtoms(g: Ast.G, m: I64): I64 =
+  Ast.push(g, Parser.atom(g))
+  if Parser.ok(g) && Parser.is(g, Token.comma()) then
+    Parser.adv(g)
+    Parser.ruleAtoms(g, m)
+  else Ast.close(g, m)
+

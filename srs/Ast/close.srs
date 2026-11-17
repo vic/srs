@@ -1,0 +1,18 @@
+def Ast.close(g: Ast.G, mark: I64): I64 =
+  val Ast.G(_, _, ls, _) = g
+  val Ast.Ls(xcap, xs, _, _) = ls
+  val n = Ast.cget(g, Ast.sSp()) - mark
+  Ast.cset(g, Ast.sSp(), mark)
+  if n <= 0 then 0
+  else
+    val x = Ast.cget(g, Ast.sXs())
+    if 0 <= x && x < xcap && x + n + 1 <= xcap then
+      Array.put(xs, x, U32.of(n))
+      Ast.cpList(g, mark, 0, n, x + 1)
+      Ast.cset(g, Ast.sXs(), x + n + 1)
+      x
+    // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+    else
+      Ast.cinc(g, Ast.sOver())
+      0
+

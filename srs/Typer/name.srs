@@ -1,0 +1,21 @@
+def Typer.name(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, n)
+  val kind = Typer.useKind(x, j)
+  if kind == Resolve.kLocal() then
+    val t = Typer.ltGet(s, Typer.useRef(x, j))
+    if t != 0 then t else Typer.untyped(x, j, 94)
+  else if kind == Resolve.kCase() then
+    val sym = Typer.declSym(x, Typer.useRef(x, j))
+    if Typer.sigAt(s, sym, 0) != 0 then
+      Typer.caseRec(s, n, sym)
+      Typer.callSig(x, n, sym, 0, 0, want)
+    else Typer.untyped(x, j, 92)
+  else if kind == Resolve.kGlobal() && Typer.sigAt(s, Typer.declSym(x, Typer.useRef(x, j)), 0) != 0 then
+    Typer.ceRec(s, n, Typer.declSym(x, Typer.useRef(x, j)))
+    Typer.sigAt(s, Typer.declSym(x, Typer.useRef(x, j)), 0)
+  else if kind == Resolve.kBuiltin() && (Str.eq(Ast.text(g, j), "true") || Str.eq(Ast.text(g, j), "false")) then Typer.cget(s, Typer.tBool())
+  // `result` in a clause: its ref is the clause token, whose local type is the def result
+  else if kind == Resolve.kBuiltin() && Str.eq(Ast.text(g, j), "result") && Typer.ltGet(s, Typer.useRef(x, j)) != 0 then Typer.ltGet(s, Typer.useRef(x, j))
+  else Typer.untyped(x, j, 95)
+

@@ -1,0 +1,11 @@
+def Lexer.putTok(cap: I64, ks: Array[U8](cap), os: Array[U32](cap), ls: Array[U32](cap), t: I64, k: Lexer.Kind, o: I64, l: I64, dcap: I64, dc: Array[U8](dcap), dof: Array[U32](dcap), d: I64): I64 =
+  if 0 <= t && t < cap then
+    Array.put(ks, t, U8.of(Lexer.kindByte(k)))
+    Array.put(os, t, U32.of(o))
+    Array.put(ls, t, U32.of(l))
+    0
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Lexer.putDiag(dcap, dc, dof, d, Lexer.Overflow, o)
+    1
+

@@ -1,0 +1,13 @@
+// prompt: the unit named by an unresolved dotted identifier token j (a declaration site such as the name in `def A.b(`): its global
+// decl (unit, decl id), else its type (unit, -1); None when the name declares nothing in the image.
+def Kernel.nfDecl(w: Resolve.W, g: Ast.G, n: I64, j: I64): Coll.Option[Kernel.Rf] =
+  val Resolve.W(sy, gt, sc, cn) = w
+  val Resolve.Gt(gcap, gk, gf, gl, gs, ycap, tab, tyk, tyf, tyl) = gt
+  val s = Resolve.sym(w, Resolve.tokT(g, j), false)
+  if 0 < s && s < ycap then
+    val d = I64.of(tab(s))
+    if 0 < d && d < gcap && I64.of(gf(d)) < n then Coll.Some(Kernel.Rf(I64.of(gf(d)), d))
+    else if I64.ofU8(tyk(s)) > 0 && I64.of(tyf(s)) < n then Coll.Some(Kernel.Rf(I64.of(tyf(s)), -1))
+    else Coll.None
+  else Coll.None
+

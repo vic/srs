@@ -1,0 +1,24 @@
+// prompt: print s[i, n) with the aliases al expanded in identifier tokens; comments and string literals stay as they are; a line that
+// starts (column 0) with "alias " prints empty, so the line count and the diagnostic lines stay.
+def Kernel.unal(s: Str, i: I64, n: I64, al: Kernel.Al): Unit =
+  if i >= n then ()
+  else
+    val c = Str.at(s, i)
+    if (i == 0 || Str.at(s, i - 1) == 10) && Kernel.isAliasAt(s, i) then Kernel.unal(s, Kernel.eol(s, i), n, al)
+    else if c == 47 && i + 1 < n && Str.at(s, i + 1) == 47 then
+      val e = Kernel.eol(s, i)
+      Console.print(Str.slice(s, i, e))
+      Kernel.unal(s, e, n, al)
+    else if c == 34 then
+      val e = Kernel.strEnd(s, i + 1)
+      val z = if e < n then e + 1 else n
+      Console.print(Str.slice(s, i, z))
+      Kernel.unal(s, z, n, al)
+    else if Planner.isId0(c) then
+      val e = Gate.tokEnd(s, i)
+      Kernel.alPrint(Str.slice(s, i, e), al)
+      Kernel.unal(s, e, n, al)
+    else
+      Console.printChar(c)
+      Kernel.unal(s, i + 1, n, al)
+

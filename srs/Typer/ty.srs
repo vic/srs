@@ -1,0 +1,13 @@
+// the interned type of type node t (T<caps> is T: the caps are regions, no part of the C type)
+// prompt: the interned type of type node t: T<caps> is T; a use of a value type is Typer.tyVal; a use of an unset type decl while type definitions are set is pending (Typer.tyPend, 0); else Typer.tyUse with the length of its () args
+def Typer.ty(x: Typer.X, t: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val k = Ast.kd(g, t)
+  if k == Ast.kTyCaps() then Typer.ty(x, Ast.a(g, t))
+  else if k == Ast.kTy() && Typer.valUse(x, t) then Typer.tyVal(x, t)
+  else if k == Ast.kTy() && Typer.tyPend(x, t) then 0
+  else if k == Ast.kTy() then Typer.tyUse(x, t, Typer.tyLens(x, Ast.b(g, t), 0))
+  else
+    Typer.un(s, Typer.uTypeNode())
+    0
+

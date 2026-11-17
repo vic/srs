@@ -1,0 +1,21 @@
+// body atoms, leftmost first: !?[A-Za-z_][A-Za-z0-9_]*\([^)]*\)
+def Planner.atoms(s: Str, i: I64, names: Os.Strs, ars: Planner.Ints): Planner.Bd =
+  if i >= Str.len(s) then Planner.Bd(Planner.ANil, "")
+  else
+    val ng = Str.at(s, i) == 33
+    val a = if ng then i + 1 else i
+    val e = Planner.idEnd(s, a)
+    if e > a && Planner.isId0(Str.at(s, a)) && Str.at(s, e) == 40 then
+      Kernel.findCh(s, 41, e) match
+        case Kernel.Missing => Planner.Bd(Planner.ANil, "")
+        case Kernel.Found(c) =>
+          Planner.sidx(names, Str.slice(s, a, e), 0) match
+            case Kernel.Missing => Planner.Bd(Planner.ANil, "undeclared body relation")
+            case Kernel.Found(r) =>
+              val ts = Planner.splitc(Str.slice(s, e + 1, c), 0)
+              if Planner.slen(ts, 0) != Planner.nth(ars, r) then Planner.Bd(Planner.ANil, "body arity")
+              else
+                val Planner.Bd(rest, err) = Planner.atoms(s, c + 1, names, ars)
+                Planner.Bd(Planner.ACons(Planner.Atom(r, ng, ts), rest), err)
+    else Planner.atoms(s, i + 1, names, ars)
+

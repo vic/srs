@@ -1,0 +1,11 @@
+// the end of the header part that starts at i: a newline or an = at bracket depth 0
+def Kernel.hdrEnd(t: Str, i: I64, d: I64): I64 =
+  if i >= Str.len(t) then i
+  else
+    val c = Str.at(t, i)
+    if d == 0 && (c == Kernel.ch("\n") || c == Kernel.ch("=")) then i
+    else if c == Kernel.ch("(") || c == Kernel.ch("[") || c == Kernel.ch("{") || c == Kernel.ch("<") then Kernel.hdrEnd(t, i + 1, d + 1)
+    else if c == Kernel.ch(")") || c == Kernel.ch("]") || c == Kernel.ch("}") then Kernel.hdrEnd(t, i + 1, d - 1)
+    else if c == Kernel.ch(">") && i > 0 && Str.at(t, i - 1) != Kernel.ch("-") then Kernel.hdrEnd(t, i + 1, d - 1)
+    else Kernel.hdrEnd(t, i + 1, d)
+

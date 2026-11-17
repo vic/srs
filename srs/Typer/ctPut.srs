@@ -1,0 +1,14 @@
+// prompt: write value v as compile-time env entry i (tag 1 I64, 2 Bool, 0 none, then the value); an entry at or past Typer.ctCap is counted overflow
+def Typer.ctPut(s: Typer.S, i: I64, v: Typer.Ct): Unit =
+  if 0 <= i && i < Typer.ctCap() then
+    val at = Typer.ctEnv() + 2 * i
+    v match
+      case Typer.CtInt(n) =>
+        Typer.cset(s, at, 1)
+        Typer.cset(s, at + 1, n)
+      case Typer.CtBool(b) =>
+        Typer.cset(s, at, 2)
+        Typer.cset(s, at + 1, if b then 1 else 0)
+      case Typer.CtNo => Typer.cset(s, at, 0)
+  else Typer.over(s)
+

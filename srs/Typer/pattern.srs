@@ -1,0 +1,19 @@
+// pattern: case token pj with names a, against the scrutinee type ts
+def Typer.pattern(x: Typer.X, nd: I64, pj: I64, a: I64, ts: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if Typer.useKind(x, pj) == Resolve.kCase() then
+    val sym = Typer.declSym(x, Typer.useRef(x, pj))
+    // the pattern node: the scrutinee type (the enum instance), the case symbol and its tag
+    Typer.tyRec(s, nd, ts)
+    Typer.caseRec(s, nd, sym)
+    val np = Typer.sigAt(s, sym, 2)
+    val ntp = Typer.sigAt(s, sym, 3)
+    val start = Typer.sigAt(s, sym, 1)
+    val v0 = Typer.cget(s, Typer.cNVar())
+    Typer.freshN(s, ntp)
+    Typer.expect(x, pj, Typer.inst(s, Typer.sigAt(s, sym, 0), start + np, ntp, v0), ts)
+    if Ast.len(g, a) != np then Typer.mis(s, pj) else ()
+    Typer.bindFields(x, a, 0, np, start, start + np, ntp, v0)
+  else
+    Typer.unCount(s, 96)
+

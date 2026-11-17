@@ -1,0 +1,7 @@
+def Gate.erasedCases(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val c = Ast.item(g, l, i)
+    if Ast.kd(g, c) == Ast.kCase() then Gate.erasedBinds(g, u, rcap, rk, Ast.a(g, c), 0) else ()
+    Gate.erasedCases(g, u, rcap, rk, l, i + 1)
+  else ()
+

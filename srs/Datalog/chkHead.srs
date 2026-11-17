@@ -1,0 +1,6 @@
+def Datalog.chkHead(st: Datalog.St, hv: I64, c: I64, a: I64): I64 =
+  if c >= a then 0 else
+    val tag = Datalog.p(st, hv + 1 + 2 * c)
+    val v = Datalog.p(st, hv + 2 + 2 * c)
+    (if tag == 0 then 0 else if tag == 1 then Datalog.slotIs(st, v, 1) else 1) + Datalog.chkHead(st, hv, c + 1, a)
+

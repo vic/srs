@@ -1,0 +1,7 @@
+// prompt: a handle among statements i.. below end of a multi-shot chain is unsupported (its drops would span segments)
+def Emit.msNoH(e: Emit.E, r: I64, i: I64, end: I64): Unit =
+  if i < end then
+    if Ast.kd(Emit.gOf(e), Ast.item(Emit.gOf(e), r, i)) == Ast.kHandle() then Emit.unsup(e, Ast.kHandle()) else ()
+    Emit.msNoH(e, r, i + 1, end)
+  else ()
+

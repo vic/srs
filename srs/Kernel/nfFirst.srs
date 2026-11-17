@@ -1,0 +1,8 @@
+// prompt: fd(u) = the least decl id d > 0 with gf(d) = u; walks d from the top down to 1.
+def Kernel.nfFirst(gcap: I64, gf: Array[U32](gcap), n: I64, fd: Array[U32](n), d: I64): Unit =
+  if 0 < d && d < gcap then
+    val u = I64.of(gf(d))
+    if 0 <= u && u < n then Array.put(fd, u, U32.of(d)) else ()
+    Kernel.nfFirst(gcap, gf, n, fd, d - 1)
+  else ()
+

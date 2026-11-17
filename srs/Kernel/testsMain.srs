@@ -1,0 +1,9 @@
+// child of a test run: BASE = the plain image text; emits the runner (closure of main) as C to cp; the runner writes its report to rp
+def Kernel.testsMain(bp: Str, cp: Str, rp: Str): I64 = Files.bytes(bp) match
+  case Os.Fail(_) => 2
+  case Os.Ok(bt) =>
+    val im = Kernel.split(Kernel.Empty, bt)
+    val sub = Kernel.closure(Kernel.split(im, Kernel.runnerText(im, rp)), Os.More("main", Kernel.implicitRoots()))
+    val Kernel.Res(c, _) = Kernel.build(Os.End, Os.End, sub, cp)
+    c
+

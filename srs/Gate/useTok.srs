@@ -1,0 +1,7 @@
+// luse(u, x, j): token j of unit u uses the local bound at token x
+def Gate.useTok(u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    if I64.ofU8(rk(j)) == Resolve.kLocal() && I64.of(rf(j)) > 0 then Gate.row3(u, I64.of(rf(j)), j) else ()
+    Gate.useTok(u, rcap, rk, rf, j + 1)
+  else ()
+

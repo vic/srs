@@ -1,0 +1,13 @@
+// one arm per Srs.Region handler, in name order, each name once
+def Emit.allocArms(w: Resolve.W, s: Typer.S, k: Emit.K, last: Coll.Option[I64]): Unit = Emit.allocMin(w, k, last, 0, Coll.None) match
+  case Coll.Some(h) =>
+    Typer.po(s, "if (hs_")
+    Typer.id(s, w, h)
+    Typer.po(s, ") return h_")
+    Typer.id(s, w, h)
+    Typer.po(s, "_alloc(hs_")
+    Typer.id(s, w, h)
+    Typer.po(s, ", n); ")
+    Emit.allocArms(w, s, k, Coll.Some(h))
+  case Coll.None => ()
+

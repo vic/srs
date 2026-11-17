@@ -1,0 +1,15 @@
+def Emit.name(e: Emit.E, n: I64): Unit =
+  val g = Emit.gOf(e)
+  val j = Ast.tok(g, n)
+  val uk = Typer.useKind(Emit.xOf(e), j)
+  if uk == Resolve.kLocal() then Emit.local(e, j)
+  else if uk == Resolve.kCase() then Emit.nullary(e, n)
+  else if uk == Resolve.kBuiltin() then Emit.po(e,Ast.text(g, j))
+  else if uk == Resolve.kGlobal() && Emit.kget(Emit.kOf(e), Emit.ce(e, n)) == 4 then
+    Emit.po(e,"((")
+    Emit.cty(e, Emit.tyS(e, n))
+    Emit.po(e,")")
+    Emit.id(e,Emit.ce(e, n))
+    Emit.po(e,")")
+  else Emit.unsup(e, Ast.kName())
+

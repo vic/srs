@@ -1,0 +1,13 @@
+// prompt: find the root of multi-shot handler hs among the files rs from file index fi (one unit is one file, Kernel.build); in its file emit its site fns (Emit.msHE env with A := aT, Emit.msMhAll) and answer MsAt(done); MsNone when no file holds it
+def Emit.msHSite(w: Resolve.W, s: Typer.S, k: Emit.K, rs: Coll.List[Typer.R], fi: I64, hs: I64, site: I64, rT: I64, aT: I64, proto: Bool): Emit.MsH = rs match
+  case Coll.Nil => Emit.MsNone
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    val Resolve.F(_, g, _, _, _, _, _, _) = f
+    val hx = Typer.X(w, g, s, rcap, rk, rf)
+    val hroot = Emit.msHRoot(hx, f, hs, 0)
+    if hroot == 0 then Emit.msHSite(w, s, k, rest, fi + 1, hs, site, rT, aT, proto)
+    else
+      Emit.msMhAll(Emit.msHE(hx, k, Typer.mxGet(s, Typer.moFb(s, fi)), hroot, aT), hroot, hs, site, rT, proto, 0)
+      Emit.MsAt(Typer.partNamed(g, Ast.b(g, hroot), 0, "done") != 0)
+

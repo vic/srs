@@ -1,0 +1,10 @@
+// prompt: the TOKEN (items of kCGEv groups are tokens, as Gate.evArgToks) of the evidence arg with index idx among the {..} groups of call groups list r from item i, -1 when there is none
+def Emit.evArgAt(g: Ast.G, r: I64, i: I64, idx: I64): I64 =
+  if r != 0 && i < Ast.len(g, r) then
+    val p = Ast.item(g, r, i)
+    if Ast.kd(g, p) == Ast.kCGEv() then
+      val n = Ast.len(g, Ast.a(g, p))
+      if idx < n then Ast.item(g, Ast.a(g, p), idx) else Emit.evArgAt(g, r, i + 1, idx - n)
+    else Emit.evArgAt(g, r, i + 1, idx)
+  else 0 - 1
+

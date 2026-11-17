@@ -1,0 +1,7 @@
+// prompt: true when a node n.. below end is a request of a multi-shot op or a CPS call (Emit.msCut 1 or 2)
+def Emit.msHasCut(e: Emit.E, n: I64, end: I64): Bool =
+  if n < end then
+    val c = Emit.msCut(e, n)
+    if c == 1 || c == 2 then true else Emit.msHasCut(e, n + 1, end)
+  else false
+

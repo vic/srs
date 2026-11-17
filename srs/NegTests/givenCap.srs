@@ -1,0 +1,7 @@
+// a given implements a trait; a capability is implemented only by a handler
+// prompt: the kernel must reject a given for a capability (Console) with error[not-a-trait].
+val NegTests.givenCap {NegTest}: Never =
+  given Console:
+    def print(s: Str): Unit = ()
+  NegTest.expect("not-a-trait", "only a handler implements a capability; a given implements a trait")
+

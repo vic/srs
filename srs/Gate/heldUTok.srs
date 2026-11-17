@@ -1,0 +1,10 @@
+// heldU(u, c): a type token of unit u names capability unit c (a binder {f: File} in its signature): a call to u hands c over
+def Gate.heldUTok(w: Resolve.W, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), j: I64): Unit =
+  if 0 <= j && j < rcap then
+    if I64.ofU8(rk(j)) == Resolve.tBase() + Resolve.tCap() then
+      Gate.tyUnit(w, I64.of(rf(j))) match
+        case Coll.Some(c) => Gate.row2(u, c)
+        case Coll.None => ()
+    else ()
+    Gate.heldUTok(w, u, rcap, rk, rf, j + 1)
+  else ()

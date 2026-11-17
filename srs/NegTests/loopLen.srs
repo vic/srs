@@ -1,0 +1,11 @@
+// prompt: the kernel must reject an Array.fill whose length local is bound inside a while body, with error[length-unnamed].
+val NegTests.loopLen {NegTest}: Never =
+  def main(): I64 =
+    handle r = Srs.Arena()
+    var k = 0
+    while k < 3 do
+      val n = k
+      val xs = Array.fill(n, 0)
+      k = k + 1
+    0
+  NegTest.expect("length-unnamed", "a val in a while body is a new value each run, so it cannot name an array length")

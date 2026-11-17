@@ -1,0 +1,15 @@
+// prompt: ids(u) = B3(hex sh(c) "@" rnk(u)) for every member u of scc c.
+def Kernel.nfIds(tj: Kernel.Tj, nf: Kernel.Nf, c: I64, u: I64): Unit =
+  val Kernel.Tj(tn, idx, low, on, st, comp, c3, ctr) = tj
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if 0 <= u && u < tn && u < n then
+    if I64.of(comp(u)) == c then
+      Console.captureBegin()
+      Kernel.nfHex(n8, sh, c)
+      Console.print("@")
+      Console.printI64(I64.of(rnk(u)))
+      Kernel.nfPut(n8, ids, u, Console.captureEnd())
+    else ()
+    Kernel.nfIds(tj, nf, c, u + 1)
+  else ()
+

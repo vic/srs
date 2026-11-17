@@ -1,0 +1,11 @@
+// prompt: the signature of an extern struct name (decl inner): result = its nominal type (kind builtin, class Ptr: C void*, head the struct symbol, no args), np = tps = the field count, pool = the field types then the field name symbols (Typer.fieldIx)
+def Typer.cstructSig(x: Typer.X, inner: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val ss = Typer.symIns(x, Ast.tok(g, inner))
+  val r = Ast.b(g, inner)
+  val t = Typer.mk(s, Typer.bBuiltin(), Typer.clsPtr(), ss, Typer.mark(s))
+  val m = Typer.mark(s)
+  Typer.cstructTys(x, r, 0)
+  Typer.cstructNames(x, r, 0)
+  Typer.sigStore(s, ss, t, Ast.len(g, r), Ast.len(g, r), 0, m)
+

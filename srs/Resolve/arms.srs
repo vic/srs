@@ -1,0 +1,18 @@
+// an arm: its case is a use; its binders are locals of its body
+def Resolve.arms(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val arm = Ast.item(g, r, i)
+    val p = Ast.a(g, arm)
+    val k = Ast.kd(g, p)
+    val sp = Resolve.sp(x)
+    if k == Ast.kPCase() then
+      Resolve.use(x, Ast.tok(g, p))
+      Resolve.bindList(x, Ast.a(g, p), 0)
+    else if k == Ast.kPCaseNP() then Resolve.use(x, Ast.tok(g, p))
+    else ()
+    Resolve.expr(x, Ast.b(g, arm))
+    Resolve.setSp(x, sp)
+    Resolve.arms(x, r, i + 1)
+  else ()
+

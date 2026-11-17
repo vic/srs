@@ -1,0 +1,8 @@
+def Gate.caseRows(w: Resolve.W, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, _, _, _) = r
+    val Resolve.F(_, g, _, _, rc, rk, rr, _) = f
+    Gate.caseRoots(w, g, u, rc, rk, rr, 0)
+    Gate.caseRows(w, rest, u + 1)
+

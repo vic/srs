@@ -1,0 +1,50 @@
+// prompt: one handler fn h_<H>_<op> (phase 2 prototype, 3 body): `void* p_self` first unless the fn names self or is init; untyped binders (a continuation) are no C params; starts a fn body (Emit.hreset)
+def Emit.hfn(x: Typer.X, k: Emit.K, base: I64, hsym: I64, d: I64, ph: I64): Unit =
+  val Typer.X(w, g, s, _, _, _) = x
+  val parts = Ast.b(g, d)
+  val b = Typer.part(g, parts, 0, Ast.kBody())
+  val pr = Ast.a(g, Typer.part(g, parts, 0, Ast.kParams()))
+  val e = Emit.E(x, k, 0, 0, 0, 0, pr, base)
+  val op = Ast.a(g, d)
+  val self = Ast.len(g, pr) > 0 && Str.eq(Ast.text(g, Ast.tok(g, Ast.item(g, pr, 0))), "self")
+  val init = Str.eq(Ast.text(g, op), "init")
+  Emit.hreset(k)
+  if b == 0 then Emit.hinc(k, 7)
+  else
+    Emit.po(e,"static ")
+    Emit.cty(e, Emit.ty(e, Ast.a(g, b)))
+    Emit.po(e," ")
+    Emit.hsName(e, hsym, op)
+    Emit.po(e,"(")
+    if self || init then
+      if Emit.ntyped(e, pr, 0) == 0 then Emit.po(e,"void") else Emit.hparams(e, pr, 0, 0)
+    else
+      Emit.po(e,"void* p_self")
+      if Emit.ntyped(e, pr, 0) > 0 then Emit.po(e,", ") else ()
+      Emit.hparams(e, pr, 0, 0)
+    Emit.po(e,")")
+    val cap = Emit.capOfH(s, hsym)
+    if ph == 2 then Emit.po(e,";\n")
+    else if !init && Emit.hmulti(k, cap, hsym, 0) then
+      // several handlers of cap: the body runs under the handler outside this one (deep handlers), after the args were evaluated by the caller under the innermost
+      Emit.po(e," { int64_t hk = hc_")
+      Emit.id(e, cap)
+      Emit.po(e,"; hc_")
+      Emit.id(e, cap)
+      Emit.po(e," = ho_")
+      Emit.id(e, hsym)
+      Emit.po(e,"; ")
+      Emit.cty(e, Emit.ty(e, Ast.a(g, b)))
+      Emit.po(e," hr = ")
+      Emit.expr(e, Ast.a(g, b), false)
+      Emit.po(e,"; hc_")
+      Emit.id(e, cap)
+      Emit.po(e," = hk; return hr; }\n")
+      Emit.hinc(k, 5)
+    else
+      Emit.po(e," { return ")
+      Emit.expr(e, Ast.a(g, b), true)
+      Emit.po(e,"; }\n")
+      Emit.hinc(k, 5)
+// prompt: one handler fn h_<H>_<op> (phase 2 prototype, 3 body): `void* p_self` first unless the fn names self or is init; untyped binders (a continuation) are no C params; starts a fn body (Emit.hreset). When its capability has several handlers (Emit.hmulti), the body (except init) runs with the innermost handler word hc_<cap> set to the handler outside this one (ho_<H>) and restored after.
+

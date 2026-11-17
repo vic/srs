@@ -1,0 +1,7 @@
+// the handler of the capability that owns the op symbol sg: the handle table of main
+def Emit.hfind(e: Emit.E, sg: I64, i: I64): I64 =
+  val k = Emit.kOf(e)
+  if i < Emit.hget(k, 0) then
+    if Emit.capOwns(Emit.wOf(e), Emit.hget(k, 16 + 2 * i), sg) then Emit.hget(k, 17 + 2 * i) else Emit.hfind(e, sg, i + 1)
+  else 0
+

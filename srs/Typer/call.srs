@@ -1,0 +1,29 @@
+// prompt: the type of call n: a global def or case call through its signature (a generic def call is a mono site; a def call's
+// trait evidence is checked, Typer.evNeeds; a generic extern call's type args must be pointer types, Typer.extSlots), a local array
+// call is its element, a builtin call its builtin type; else untyped.
+def Typer.call(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, g, s, _, _, _) = x
+  val j = Ast.tok(g, n)
+  val kind = Typer.useKind(x, j)
+  if kind == Resolve.kGlobal() || kind == Resolve.kCase() || kind == Resolve.kCap() then
+    val sym = Typer.declSym(x, Typer.useRef(x, j))
+    if Typer.sigAt(s, sym, 0) != 0 then
+      val v0 = Typer.cget(s, Typer.cNVar())
+      val t = Typer.callSig(x, n, sym, Ast.a(g, n), Ast.b(g, n), want)
+      // a call of a generic def is a mono site (a generic case is an enum instance, not a fn)
+      if kind == Resolve.kGlobal() && Typer.sigAt(s, sym, 3) > 0 then Typer.siteRec(s, n, Typer.cget(s, Typer.cOwner()), sym, v0, Typer.sigAt(s, sym, 3)) else ()
+      if kind == Resolve.kGlobal() then Typer.evNeeds(x, n, sym, v0) else ()
+      if kind == Resolve.kGlobal() && Typer.isExtern(s, sym) then Typer.extSlots(x, n, v0, 0, Typer.sigAt(s, sym, 3)) else ()
+      if kind == Resolve.kCase() then Typer.caseRec(s, n, sym) else Typer.ceRec(s, n, sym)
+      t
+    else
+      Typer.args(x, Ast.b(g, n), 0)
+      Typer.untyped(x, j, 92)
+  else if kind == Resolve.kLocal() then
+    Typer.args(x, Ast.b(g, n), 0)
+    val t = Typer.walk(s, Typer.ltGet(s, Typer.useRef(x, j)))
+    if Typer.kind(s, t) == Typer.bArray() && Typer.nargs(s, t) > 0 then Typer.arg(s, t, 0) else Typer.untyped(x, j, 94)
+  else if kind == Resolve.kBuiltin() then Typer.builtin(x, n, want)
+  else
+    Typer.args(x, Ast.b(g, n), 0)
+    Typer.untyped(x, j, 93)

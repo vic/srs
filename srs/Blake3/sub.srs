@@ -1,0 +1,10 @@
+def Blake3.sub(s: Str, len: I64, lo: I64, hi: I64, root: Bool, cn: I64, cv: Array[U32](cn)): Unit =
+  if hi - lo <= 1 then Blake3.chunk(s, lo, len, root, cn, cv)
+  else
+    val k = Blake3.pow2lt(hi - lo, 1)
+    val l = Array.fill(8, U32.of(0))
+    val r = Array.fill(8, U32.of(0))
+    Blake3.sub(s, len, lo, lo + k, false, 8, l)
+    Blake3.sub(s, len, lo + k, hi, false, 8, r)
+    Blake3.parent(8, l, 8, r, root, cn, cv)
+

@@ -1,0 +1,7 @@
+// ── top-level val x: T = e and val x {C}: T = e (s2 Parse.topVal 191): both are a def with no params ──
+// prompt: parse a top-level val decl as a def with no params (name, optional telescope groups, `: T`, `= e`), else fail. A plain
+// val (no {} or <> group) is a compile-time value: the gate (topVal, f5d) rejects a handle in it (comptime-handle), a call of an
+// impure def (impure-call), an effect it requests (unhandled-effect) and a run-time unit naming it (val-at-run-time).
+def Parser.topVal(g: Ast.G): I64 =
+  if Token.isName(Parser.cl1(g)) then Parser.defN(g, 0, false)
+  else Parser.fail(g)

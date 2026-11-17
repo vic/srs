@@ -1,0 +1,31 @@
+// state/start/stop/drop/transition/def/rule
+// prompt: a capability item: state/start/stop/drop/transition lines, a def, or `rule def r(h0, h1) = atoms` (body node kind Ast.kRuleBody: a = head tokens, b = atoms; never kPair, the if-arms kind that needs a type entry)
+def Parser.item(g: Ast.G): I64 =
+  val j = Parser.cur(g)
+  if Parser.is(g, Token.kdef()) then Parser.capDef(g)
+  else if Parser.isW(g, "state") then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kStateL(), j, Parser.nameLine(g, Ast.mark(g)), 0)
+  else if Parser.isW(g, "start") then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kStart(), j, Parser.ident(g), 0)
+  else if Parser.isW(g, "stop") then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kStop(), j, Parser.nameLine(g, Ast.mark(g)), 0)
+  else if Parser.isW(g, "drop") then
+    Parser.adv(g)
+    Ast.mk(g, Ast.kDrop(), j, Parser.ident(g), 0)
+  else if Parser.isW(g, "transition") then
+    Parser.adv(g)
+    val r = Parser.ident(g)
+    Ast.mk(g, Ast.kTrans(), j, r, Parser.trans(g, Ast.mark(g)))
+  else if Parser.isW(g, "rule") then
+    Parser.adv(g)
+    Parser.eat(g, Token.kdef())
+    val nm = Parser.ident(g)
+    Parser.eat(g, Token.lp())
+    val ps = Parser.names(g, Ast.mark(g), Token.rp())
+    Parser.eat(g, Token.eq())
+    val as = Parser.ruleAtoms(g, Ast.mark(g))
+    Ast.mk(g, Ast.kRule(), j, nm, Ast.mk(g, Ast.kRuleBody(), j, ps, as))
+  else Parser.fail(g)

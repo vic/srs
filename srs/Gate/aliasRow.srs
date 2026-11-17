@@ -1,0 +1,7 @@
+// alias(u, v, w, p): the binding of v at token p copies the local w (its rhs is the bare name w)
+def Gate.aliasRow(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), v: I64, r: I64, p: I64): Unit =
+  if Ast.kd(g, r) == Ast.kName() then
+    val t = Ast.tok(g, r)
+    if 0 <= t && t < rcap && I64.ofU8(rk(t)) == Resolve.kLocal() then Gate.row4(u, v, I64.of(rf(t)), p) else ()
+  else ()
+

@@ -1,0 +1,8 @@
+// ── extern (s2 Parse.decl 173, externAbi 316, cstruct 341, libcVal 375) ──
+// the token is a plain type (no args) named one of the listed C types
+def Parser.cTy(g: Ast.G, t: I64, wide: Bool): Bool =
+  if Ast.kd(g, t) == Ast.kTy() && Ast.a(g, t) == 0 && Ast.b(g, t) == 0 then
+    val s = Ast.text(g, Ast.tok(g, t))
+    Str.eq(s, "I32") || Str.eq(s, "I64") || Str.eq(s, "U64") || wide && Str.eq(s, "U32")
+  else false
+

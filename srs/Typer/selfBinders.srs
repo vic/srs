@@ -1,0 +1,8 @@
+def Typer.selfBinders(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val m = Typer.mark(s)
+    Typer.push(s, Typer.mk(s, Typer.bParam(), 0, Ast.tok(g, Ast.item(g, r, i)), m))
+    Typer.selfBinders(x, r, i + 1)
+  else ()
+

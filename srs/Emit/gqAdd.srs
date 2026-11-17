@@ -1,0 +1,10 @@
+// prompt: queue goal type z (a trait type with ground args) once: Emit.gdrain emits the chosen given's methods for it after all bodies; a full queue counts overflow (hc 1)
+def Emit.gqAdd(e: Emit.E, z: I64): Unit =
+  val k = Emit.kOf(e)
+  val c = Emit.hget(k, Emit.gqBase())
+  if Emit.gqHas(k, z, 0) then ()
+  else if c < Emit.gqCap() then
+    Emit.hset(k, Emit.gqBase() + 1 + c, z)
+    Emit.hset(k, Emit.gqBase(), c + 1)
+  else Emit.hinc(k, 1)
+

@@ -1,0 +1,34 @@
+// prompt: the kernel entry: handles the world capabilities (Console Args Mut Arena Files Sock Net Disk Process Env) and runs one mode:
+// --neg, --negt, --tests, --emit, --build (Kernel.buildMain), or the s4-cc server on the socket path argv[1] with the base files argv[2..].
+def main(): I64 =
+  handle io = Srs.Console()
+  handle a = Srs.Args()
+  handle m = Srs.Mut()
+  handle r = Srs.Arena()
+  handle fs = Srs.Files()
+  handle k = Srs.Sock()
+  handle n = Srs.Net()
+  handle d = Srs.Disk()
+  handle pr = Srs.Process()
+  handle e = Srs.Env()
+  if Args.count() < 2 then
+    Console.eprint("usage: k0img <sock path> [<base file>...] | k0img --neg <base file> <file> | k0img --negt <base> <probe> <out> | k0img --tests <base> <out.c> <report> | k0img --emit <base> <file> <out.c> | k0img --build <image dir> <out.c>\n")
+    2
+  else if Kernel.isNeg() then Kernel.vCode(Kernel.negMain(Args.at(2), Args.at(3)))
+  else if Kernel.isNegT() then Kernel.vCode(Kernel.negtMain(Args.at(2), Args.at(3), Args.at(4)))
+  else if Kernel.isTests() then Kernel.testsMain(Args.at(2), Args.at(3), Args.at(4))
+  else if Kernel.isEmit() then Kernel.vCode(Kernel.emitMain(Args.at(2), Args.at(3), Args.at(4)))
+  else if Kernel.isBuild() then Kernel.buildMain(Args.at(2), Args.at(3))
+  else
+    val Kernel.Base(bp, bt, bad) = Kernel.base(2)
+    if bad > 0 then
+      Console.eprint("base file unreadable\n")
+      1
+    else
+      val lfd = Sock.open(Args.at(1))
+      if lfd < 0 then
+        Console.eprint("open failed\n")
+        1
+      else
+        Console.eprint("listening\n")
+        Kernel.serve(lfd, Args.at(1), 1, bp, bt, Kernel.Empty)

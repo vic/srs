@@ -1,0 +1,10 @@
+// prompt: the kernel must reject a top-level val that calls a def which is impure through a callee requesting an effect, with
+// error[impure-call] (s2 neg cval_impure: a compile-time body calls only pure fns).
+val NegTests.impureCall {NegTest}: Never =
+  def NtIc.say(x: I64): Unit = Console.print("a")
+  def NtIc.f(x: I64): I64 =
+    NtIc.say(x)
+    x
+  val NtIc.g: I64 = NtIc.f(1)
+  def main(): I64 = 0
+  NegTest.expect("impure-call", "f is impure through say (Console.print is an effect), so the compile-time val g may not call it")

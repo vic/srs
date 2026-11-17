@@ -1,0 +1,6 @@
+// prompt: true when rule def node n (`rule def r(h0, h1) = atoms`) has two distinct head terms and its atoms form a chain (Gate.rchk); any other rule is a shape error (ruleBad)
+def Gate.ruleChain(g: Ast.G, n: I64): Bool =
+  val p = Ast.b(g, n)
+  val hd = Ast.a(g, p)
+  if Ast.len(g, hd) == 2 && !Str.eq(Ast.text(g, Ast.item(g, hd, 0)), Ast.text(g, Ast.item(g, hd, 1))) then Gate.rchk(g, Ast.b(g, p), 0, Ast.text(g, Ast.item(g, hd, 0)), Ast.text(g, Ast.item(g, hd, 1))) else false
+

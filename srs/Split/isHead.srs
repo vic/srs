@@ -1,0 +1,9 @@
+// a col-0 code token: at offset 0, or right after a newline byte
+def Split.isHead(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), t: I64, j: I64): Bool =
+  if 0 <= j && j < t && j < tcap then
+    if I64.ofU8(tk(j)) < Lexer.kindByte(Lexer.KNl) then
+      val o = I64.of(to(j))
+      o == 0 || Lexer.is(src, n, o - 1, 10)
+    else false
+  else false
+

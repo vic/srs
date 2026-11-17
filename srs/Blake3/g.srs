@@ -1,0 +1,12 @@
+def Blake3.g(n: I64, v: Array[U32](n), a: I64, b: I64, c: I64, d: I64, mx: U32, my: U32): Unit =
+  if 0 <= a && a < n && 0 <= b && b < n && 0 <= c && c < n && 0 <= d && d < n then
+    Array.put(v, a, v(a) + v(b) + mx)
+    Array.put(v, d, U32.rotr(v(d) ^ v(a), 16))
+    Array.put(v, c, v(c) + v(d))
+    Array.put(v, b, U32.rotr(v(b) ^ v(c), 12))
+    Array.put(v, a, v(a) + v(b) + my)
+    Array.put(v, d, U32.rotr(v(d) ^ v(a), 8))
+    Array.put(v, c, v(c) + v(d))
+    Array.put(v, b, U32.rotr(v(b) ^ v(c), 7))
+  else ()
+

@@ -1,0 +1,8 @@
+// the pool index of the args of type t (the base Tp.msub takes for the type's own args; EMIT-1 accessor)
+def Typer.argBase(s: Typer.S, t: I64): I64 =
+  val Typer.S(tt, _, _, _, _) = s
+  val Typer.Tt(tcap, _, _, _, ta, _) = tt
+  if 0 <= t && t < tcap then I64.of(ta(t))
+  // shortcut: ids come from Tp.mk, always below tcap; s3 Vec will make it unrepresentable
+  else 0
+

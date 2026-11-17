@@ -1,0 +1,8 @@
+def Emit.hget(k: Emit.K, i: I64): I64 =
+  val Emit.K(_, _, hn, hc, _, _, _) = k
+  if 0 <= i && i < hn then hc(i)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else
+    Emit.over(k)
+    0
+

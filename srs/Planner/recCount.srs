@@ -1,0 +1,6 @@
+def Planner.recCount(b: Planner.Atoms, st: Planner.Ints, s: I64, acc: I64): I64 = b match
+  case Planner.ANil => acc
+  case Planner.ACons(a, rest) =>
+    val Planner.Atom(r, ng, ts) = a
+    Planner.recCount(rest, st, s, if Planner.not(ng) && Planner.nth(st, r) == s then acc + 1 else acc)
+

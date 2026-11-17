@@ -1,0 +1,9 @@
+// val NAME: ty, a C constant of type I32, I64 or U64
+def Parser.cval(g: Ast.G): I64 =
+  Parser.adv(g)
+  val nm = Parser.ident(g)
+  Parser.eat(g, Token.colon())
+  val t = Parser.ty(g)
+  Parser.stopIf(g, Parser.ok(g) && (Parser.dotted(g, nm) || !Parser.cTy(g, t, false)), nm)
+  Ast.mk(g, Ast.kCVal(), nm, t, 0)
+

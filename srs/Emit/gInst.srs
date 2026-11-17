@@ -1,0 +1,20 @@
+// prompt: the instance of given root `root` (file context x, node base) for goal z: the given's [] param tokens and their bindings from matching its head against z go to the pool (tp0, then pb), so Emit.sub replaces each param by its binding; a pool overflow is counted (Typer.over)
+def Emit.gInst(x: Typer.X, k: Emit.K, base: I64, root: I64, z: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  val Typer.S(_, _, pl, _, _) = s
+  val Typer.Pl(acap, _, _, _) = pl
+  val h = Typer.ty(x, Ast.a(g, root))
+  val m = Typer.mark(s)
+  Typer.tpToks(x, Ast.b(g, root), 0)
+  val n = Typer.cget(s, Typer.cSp()) - m
+  Emit.gbinds(s, h, z, m, 0, n)
+  val top = Typer.cget(s, Typer.cATop())
+  if top + 2 * n <= acap then
+    Typer.cpArgs(s, m, 0, 2 * n, top)
+    Typer.cset(s, Typer.cATop(), top + 2 * n)
+    Typer.cset(s, Typer.cSp(), m)
+    Emit.gInstFns(Emit.E(x, k, top, n, top + n, 0, 0, base), root, z, 0)
+  else
+    Typer.cset(s, Typer.cSp(), m)
+    Typer.over(s)
+

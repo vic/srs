@@ -1,0 +1,6 @@
+def Emit.hset(k: Emit.K, i: I64, v: I64): Unit =
+  val Emit.K(_, _, hn, hc, _, _, _) = k
+  if 0 <= i && i < hn then Array.put(hc, i, v)
+  // shortcut: s2 cannot express room-guaranteed append; s3 Vec will make it unrepresentable
+  else Emit.over(k)
+

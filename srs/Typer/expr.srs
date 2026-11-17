@@ -1,0 +1,7 @@
+// every expression node's type is recorded in the ty column (zonked to ground at the end of the def, Tp.tyZonk)
+def Typer.expr(x: Typer.X, n: I64, want: I64): I64 =
+  val Typer.X(_, _, s, _, _, _) = x
+  val t = Typer.expr0(x, n, want)
+  Typer.tyRec(s, n, t)
+  t
+

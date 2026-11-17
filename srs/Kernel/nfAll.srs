@@ -1,0 +1,17 @@
+// prompt: hash sccs c..k-1 in Tarjan order (every scc after the sccs it uses): anon hashes, shape hashes, ranks by shape hash,
+// scc hash = B3(member K.MFull streams in rank order, then the givens outside the scc by id), member ids. Returns ties plus the
+// ties of every scc.
+def Kernel.nfAll(w: Resolve.W, tj: Kernel.Tj, nf: Kernel.Nf, rs: Coll.List[Typer.R], gn: I64, gl: Array[U32](gn), grk: Array[U32](gn), c: I64, k: I64, ties: I64): I64 =
+  val Kernel.Nf(n, fd, rnk, n8, lh, l2, ids, sh) = nf
+  if c < k then
+    Kernel.nfLocal(w, tj, nf, c, Kernel.MAnon, rs, 0)
+    Kernel.nfLocal(w, tj, nf, c, Kernel.MShape, rs, 0)
+    val tc = Kernel.nfRank(tj, nf, c, 0, 0)
+    Console.captureBegin()
+    Kernel.nfBody(w, tj, nf, c, 0, rs)
+    Kernel.nfGivens(tj, nf, gn, gl, grk, c, 0)
+    Kernel.nfPut(n8, sh, c, Console.captureEnd())
+    Kernel.nfIds(tj, nf, c, 0)
+    Kernel.nfAll(w, tj, nf, rs, gn, gl, grk, c + 1, k, ties + tc)
+  else ties
+

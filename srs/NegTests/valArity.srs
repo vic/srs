@@ -1,0 +1,7 @@
+// prompt: the kernel must reject a use of a value type with a count of value args other than its value binders, with error[type-arity] (missingEntry for the param)
+val NegTests.valArity {NegTest}: Never =
+  type NtVr.B (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def NtVr.f(x: NtVr.B(1, 2)): I64 = 0
+  NegTest.expect("type-arity", "missingEntry", "B has one value binder, the use gives two values")

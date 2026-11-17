@@ -1,0 +1,37 @@
+def Resolve.expr(x: Resolve.X, n: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  val k = Ast.kd(g, n)
+  if k == Ast.kName() then Resolve.use(x, Ast.tok(g, n))
+  else if k == Ast.kParen() || k == Ast.kUn() then Resolve.expr(x, Ast.a(g, n))
+  else if k == Ast.kCall() then
+    Resolve.use(x, Ast.tok(g, n))
+    Resolve.callGroups(x, Ast.a(g, n), 0)
+    Resolve.exprs(x, Ast.b(g, n), 0)
+  else if k == Ast.kMethod() then
+    Resolve.use(x, Ast.tok(g, n))
+    Resolve.exprs(x, Ast.b(g, n), 0)
+  else if k == Ast.kResume() then
+    Resolve.useK(x, Ast.a(g, n))
+    Resolve.expr(x, Ast.b(g, n))
+  else if k == Ast.kBin() || k == Ast.kWhile() || k == Ast.kPair() || k == Ast.kIf() || k == Ast.kIfNl() then
+    Resolve.expr(x, Ast.a(g, n))
+    Resolve.expr(x, Ast.b(g, n))
+  else if k == Ast.kMatch() then
+    Resolve.expr(x, Ast.a(g, n))
+    Resolve.arms(x, Ast.b(g, n), 0)
+  else if k == Ast.kBlock() then
+    val sp = Resolve.sp(x)
+    Resolve.stmts(x, Ast.a(g, n), 0)
+    Resolve.setSp(x, sp)
+  else if k == Ast.kAssign() then
+    Resolve.use(x, Ast.tok(g, n))
+    Resolve.expr(x, Ast.a(g, n))
+  else if k == Ast.kQuant() then
+    val sp = Resolve.sp(x)
+    val bd = Ast.a(g, n)
+    Resolve.ty(x, Ast.a(g, bd))
+    Resolve.bind(x, Ast.tok(g, bd))
+    Resolve.expr(x, Ast.b(g, n))
+    Resolve.setSp(x, sp)
+  else ()
+

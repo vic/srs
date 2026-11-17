@@ -1,0 +1,26 @@
+def Emit.cases(e: Emit.E, parts: I64, i: I64, et: I64, pr: Bool): Unit =
+  val g = Emit.gOf(e)
+  val x = Emit.xOf(e)
+  if i < Ast.len(g, parts) then
+    val c = Ast.item(g, parts, i)
+    val kd = Ast.kd(g, c)
+    if kd == Ast.kCase() || kd == Ast.kCaseNP() then
+      val sym = Typer.symOf(x, Ast.tok(g, c))
+      val np = Typer.sigAt(Emit.sOf(e), sym, 2)
+      if np > 0 then
+        if pr then
+          Emit.po(e," struct { ")
+          Emit.po(e,Emit.tagTy(Typer.caseCount(g, parts, 0, 0)))
+          Emit.po(e," t_;")
+        else ()
+        Emit.caseFields(e, sym, et, 0, np, pr)
+        if pr then
+          Emit.po(e," } C_")
+          Emit.id(e,sym)
+          Emit.po(e,";")
+        else ()
+      else ()
+    else ()
+    Emit.cases(e, parts, i + 1, et, pr)
+  else ()
+
