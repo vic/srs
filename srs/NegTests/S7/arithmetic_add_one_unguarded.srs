@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `a + U64.of(1)` with no guard: the sum can pass the largest U64.
+val NegTests.S7.arithmetic_add_one_unguarded {NegTest}: Never =
+  def Arithmetic.rejected(a: U64): U64 = a + U64.of(1)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a + 1 without a guard a < bound can pass the largest U64")
+

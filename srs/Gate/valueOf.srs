@@ -1,0 +1,6 @@
+// prompt: the value node of expression n: a paren, or an assertion e@<F> with a subject, is its inner expression, recursively; any other
+// node is itself. One place owns value identity: every gate row that names "the value of" an expression names Gate.valueOf of it.
+def Gate.valueOf(g: Ast.G, n: I64): I64 =
+  val k = Ast.kd(g, n)
+  if k == Ast.kParen() || (k == Ast.kAssert() && Ast.a(g, n) != 0) then Gate.valueOf(g, Ast.a(g, n)) else n
+

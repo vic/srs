@@ -1,0 +1,7 @@
+// a negative test: a negative guard literal
+// prompt: the kernel must reject a(i) under i < -1: the bound is a unary minus node, so no gltL fact exists.
+val NegTests.indexBoundNegative {NegTest}: Never =
+  def Probe.boundNegative(i: I64): U8 =
+    val a = Array.fill(5, U8.of(0))
+    if 0 <= i && i < -1 then a(i) else U8.of(0)
+  NegTest.expect("index-unproved", "-1 is a unary minus node: no gltL fact, so a(i) is unproved")

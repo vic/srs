@@ -1,5 +1,6 @@
 // prompt: parse one statement: `val Ctor(a, ..) = e`, `val|var x [: T] = e`, `handle x = H(args)` or `handle H(args)` (no binder
-// name: the handle keyword token stands for the binder, a name no code can write), `invariant|decreases e`, or an expression.
+// name: the handle keyword token stands for the binder, a name no code can write), `invariant|decreases e`, a bare assertion
+// `@<atoms>` (Ast.kAssert with no subject), or an expression.
 def Parser.stmt(g: Ast.G): I64 =
   val c = Parser.cl(g)
   val j = Parser.cur(g)
@@ -30,5 +31,8 @@ def Parser.stmt(g: Ast.G): I64 =
   else if c == Token.kinvariant() || c == Token.kdecreases() then
     Parser.adv(g)
     Ast.mk(g, Ast.kCheck(), j, Parser.expr(g), 0)
+  else if c == Token.at() then
+    Parser.adv(g)
+    if Parser.is(g, Token.lt()) then Ast.mk(g, Ast.kAssert(), j, 0, Parser.facts(g, Ast.kGFacts())) else Parser.fail(g)
   else Ast.mk(g, Ast.kDo(), j, Parser.expr(g), 0)
 

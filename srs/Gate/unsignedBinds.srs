@@ -1,0 +1,13 @@
+// prompt: unsignedB(u, b) for each param b of unit u whose declared type resolves (name pass) to the builtin U64 (vic 2026-11-17:
+// U64 is unsigned at machine level, never negative), keyed by the resolver binder id; an alias type or an unannotated binder gets
+// no row. The gate rules (Gate.f5eRules) credit nonNeg(u, c, b) at each guard atom b < nb, b < literal, b <= nb of condition c.
+def Gate.unsignedBinds(w: Resolve.W, g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    val t = Ast.tok(g, Ast.a(g, n))
+    if Ast.kd(g, n) == Ast.kBind() && 0 <= t && t < rcap then
+      if I64.ofU8(rk(t)) == Resolve.tBase() + Resolve.tBuiltin() && I64.of(rf(t)) == Resolve.sym(w, Resolve.lit("U64"), false) then Gate.row2(u, Ast.tok(g, n)) else ()
+    else ()
+    Gate.unsignedBinds(w, g, u, rcap, rk, rf, l, i + 1)
+  else ()
+

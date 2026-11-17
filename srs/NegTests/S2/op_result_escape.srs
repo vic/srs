@@ -1,4 +1,4 @@
-// prompt: s2 corpus neg op_result_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+// prompt: s2 corpus neg op_result_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape]); K3 part 2 (allocation needs a Region cover) adds unhandled-effect in main
 val NegTests.S2.op_result_escape {NegTest}: Never =
   capability Oe:
     def get(): Str
@@ -15,5 +15,4 @@ val NegTests.S2.op_result_escape {NegTest}: Never =
     handle h = Hoe()
     Console.print(Oe.get())
     0
-  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for op_result_escape")
-
+  NegTest.expect("region-escape", "arith-unproved", "unhandled-effect", "the s2 corpus expects error[region-escape] for op_result_escape")

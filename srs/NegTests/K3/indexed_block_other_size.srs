@@ -1,0 +1,7 @@
+// prompt: K3 NEG: a guard on another size does not bound the size-indexed block.
+val NegTests.K3.indexed_block_other_size {NegTest}: Never =
+  def K3.Neg.otherSize(size: U64, other: U64, result: K3.Probe.Allocation(size), index: U64, fallback: U8): U8 = result match
+    case K3.Probe.Allocated(block) => if index < other then block(index) else fallback
+    case K3.Probe.AllocationFailed => fallback
+  NegTest.expect("index-unproved", "the guard bound other is not the block length size")
+

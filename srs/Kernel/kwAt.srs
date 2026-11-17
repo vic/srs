@@ -1,8 +1,10 @@
-// offset of the keyword of the head line at h: after `extern` and an optional quoted ABI word
+// offset of the keyword of the head line at h: after a leading `pub`, after `extern` and an optional quoted ABI word
+// prompt: the byte offset of the decl keyword of the head line at h: a leading `pub ` is skipped, then after `extern` an optional quoted ABI word.
 def Kernel.kwAt(t: Str, h: I64): I64 =
-  val e = Kernel.wordEnd(t, h)
-  if Str.eq(Str.slice(t, h, e), "extern") then
+  val k = if Kernel.startsAt(t, h, "pub ") then Kernel.skipSp(t, h + Str.len("pub")) else h
+  val e = Kernel.wordEnd(t, k)
+  if Str.eq(Str.slice(t, k, e), "extern") then
     val b = Kernel.skipSp(t, e)
     if Str.at(t, b) == 34 then Kernel.skipSp(t, Kernel.wordEnd(t, b)) else b
-  else h
+  else k
 

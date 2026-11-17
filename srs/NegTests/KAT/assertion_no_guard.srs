@@ -1,0 +1,8 @@
+// prompt: K-AT neg: a bare `@<below(i, n)>` with no guard in scope must be rejected with assertion-unproved.
+val NegTests.KAT.assertion_no_guard {NegTest}: Never =
+  def G.pick(i: U64, n: U64): U64 =
+    @<below(i, n)>
+    i
+  def main(): I64 = 0
+  NegTest.expect("assertion-unproved", "no fact in scope proves below(i, n)")
+

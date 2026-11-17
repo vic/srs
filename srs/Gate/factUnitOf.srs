@@ -1,0 +1,7 @@
+// prompt: the unit that declares the global symbol sym (exact name, no interning by the caller), or None when no unit declares it.
+def Gate.factUnitOf(w: Resolve.W, sym: I64): Coll.Option[I64] =
+  val Resolve.W(_, gt, _, _) = w
+  val Resolve.Gt(gcap, _, _, _, _, tcap, tab, _, _, _) = gt
+  val d = if 0 < sym && sym < tcap then I64.of(tab(sym)) else 0
+  if 0 < d && d < gcap then Gate.declUnit(w, d) else Coll.None
+

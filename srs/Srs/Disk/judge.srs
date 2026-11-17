@@ -1,0 +1,11 @@
+// prompt: judge a struct stat block (st_mode = bytes 24..27, st_uid = bytes 28..31, little endian; offsets asserted by
+// k/layout/stat-layout.c) for user me: the file type (mode / 4096 % 16) must be 4 (S_IFDIR 0040000), the owner me, and the
+// permission bits (mode % 4096, all 07777 bits) exactly 448 (0700).
+def Srs.Disk.judge(buf: Array[U8](144), me: I64): Os.Private =
+  val mode = I64.ofU8(buf(24)) + I64.ofU8(buf(25)) * 256 + I64.ofU8(buf(26)) * 65536 + I64.ofU8(buf(27)) * 16777216
+  val owner = I64.ofU8(buf(28)) + I64.ofU8(buf(29)) * 256 + I64.ofU8(buf(30)) * 65536 + I64.ofU8(buf(31)) * 16777216
+  if mode / 4096 % 16 != 4 then Os.PrivateRefused(Os.NotDirectory)
+  else if owner != me then Os.PrivateRefused(Os.NotOwned)
+  else if mode % 4096 != 448 then Os.PrivateRefused(Os.NotPrivate)
+  else Os.PrivateReady
+

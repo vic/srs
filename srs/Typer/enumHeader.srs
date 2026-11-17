@@ -1,9 +1,14 @@
 // an enum: the self type E[P1..Pn] (Param types of its [] binders), and for every case its sig: result = self, params = the field types
+// prompt: an enum: the self type E[P1..Pn, V] (Param types of its [] binders, then of its one value param), and for every case its sig:
+// result = self, params = the field types, type params = the [] binders then the value param; more than one value param, or a value
+// param group before a [] group, is the Diag value-param-shape at the enum name.
 def Typer.enumHeader(x: Typer.X, root: I64): Unit =
   val Typer.X(_, g, s, _, _, _) = x
   val parts = Ast.b(g, root)
+  val nv = Typer.groupN(g, parts, 0, Ast.kParams(), 0)
+  if nv > 1 || Typer.valParamEarly(g, parts, 0, false) then Typer.diag(s, Typer.dValParamShape(), Ast.a(g, root)) else ()
   val m0 = Typer.mark(s)
   Typer.selfArgs(x, parts, 0)
+  Typer.selfValArgs(x, parts, 0)
   val self = Typer.mk(s, Typer.bEnum(), 0, Typer.symOf(x, Ast.a(g, root)), m0)
-  Typer.cases(x, parts, 0, self, Typer.groupN(g, parts, 0, Ast.kGTypes(), 0))
-
+  Typer.cases(x, parts, 0, self, Typer.groupN(g, parts, 0, Ast.kGTypes(), 0) + nv)

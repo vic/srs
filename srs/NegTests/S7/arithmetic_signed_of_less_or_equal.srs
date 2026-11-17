@@ -1,0 +1,6 @@
+// prompt: the kernel must reject I64.ofU64 under `value <= 9223372036854775808`: 2^63 itself has no I64.
+val NegTests.S7.arithmetic_signed_of_less_or_equal {NegTest}: Never =
+  def Arithmetic.rejected(value: U64, fallback: I64): I64 = if value <= 9223372036854775808 then I64.ofU64(value) else fallback
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "value <= 2^63 admits 2^63, which has no I64; the guard must be value < 2^63")
+

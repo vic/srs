@@ -1,0 +1,8 @@
+// prompt: K NEG 4: a U64 param index shadowed by an I64 local index with its own index < size guard is not proved; the U64
+// credit is keyed by the binder id, not by the spelling; the kernel must reject it with exactly these codes.
+val NegTests.S7.index_unsigned_shadowed {NegTest}: Never =
+  def Ix.bad(size: I64, bytes: Array[U8](size), index: U64, fallback: U8): U8 =
+    val index = I64.ofU8(fallback)
+    if index < size then bytes(index) else fallback
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "the local index is an I64 (it may be any I64 value), a new binder; the U64 param credit must not reach it")

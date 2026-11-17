@@ -1,5 +1,6 @@
 // prompt: the inputs that every NegTest of one run shares: the kernel binary path self, the plain image file base that the
-// children check, and the run key (Some only when the kernel binary and base are both readable; None = no result is cached).
+// children check, the run key (Some only when the kernel binary is readable and the scratch dir is ready; None = no result is
+// cached), the B3 and text of the base the run wrote (baseHash, baseText: a child must echo the same B3), and the scratch dir.
 enum Kernel.NegRun:
-  case Kernel.NegRun(self: Str, base: Str, key: Coll.Option[Str])
+  case Kernel.NegRun(self: Str, base: Str, key: Coll.Option[Str], baseHash: Str, baseText: Str, scratch: Kernel.Scratch)
 

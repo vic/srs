@@ -1,3 +1,5 @@
+// prompt: the actions not handled in Kernel.serve: plan, dlrun, hashfile, renamestore, cc, facts, gate (with the served image im),
+// actions, find, ids, prompts, type, show; any other action is unknown.
 def Kernel.more(act: Str, arg: Str, text: Str, im: Kernel.Img): Kernel.Res =
   if Str.eq(act, "plan") then Kernel.planAct(arg, false)
   else if Str.eq(act, "dlrun") then Kernel.planAct(arg, true)
@@ -8,7 +10,7 @@ def Kernel.more(act: Str, arg: Str, text: Str, im: Kernel.Img): Kernel.Res =
   else if Str.eq(act, "renamestore") then Kernel.renAct(Kernel.words(arg, 0))
   else if Str.eq(act, "cc") then Kernel.ccAct(Kernel.words(arg, 0))
   else if Str.eq(act, "facts") then Kernel.factsAct(Kernel.words(arg, 0))
-  else if Str.eq(act, "gate") then Kernel.gateAct(Kernel.words(arg, 0))
+  else if Str.eq(act, "gate") then Kernel.gateAct(Kernel.words(arg, 0), im)
   else if Str.eq(act, "actions") then Kernel.Res(0, Kernel.acts())
   else if Str.eq(act, "find") then
     Console.captureBegin()

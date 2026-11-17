@@ -1,5 +1,6 @@
 // prompt: the s4-cc server loop: take one frame from listen socket lfd, run its action on image im (gated actions replace the
-// image only when accepted), reply to the sender, loop with the resulting image; stop ends the loop.
+// image only when accepted), reply to the sender, loop with the resulting image; stop ends the loop; gc keeps only the units the
+// gc roots reach (Kernel.gcRoots, Kernel.closure) and gates that image like drop.
 def Kernel.serve(lfd: I64, me: Str, id: I64, bp: Os.Strs, bt: Os.Strs, im: Kernel.Img): I64 =
   val fd = Sock.take(lfd)
   if fd < 0 then 3
@@ -55,12 +56,15 @@ def Kernel.serve(lfd: I64, me: Str, id: I64, bp: Os.Strs, bt: Os.Strs, im: Kerne
         Kernel.reply(from, me, id, rid, if tc == 0 then "tests\n" else "tests ERROR\n", "", tout)
         Kernel.serve(lfd, me, id + 1, bp, bt, im)
       else if Str.eq(act, "negtests") then
-        val Kernel.NegR(nc, _, nout) = Kernel.negRunT(Kernel.negRunOf(Args.at(0), Kernel.negBase(Kernel.plain(im))), im, Os.End, 0, 0)
-        Kernel.reply(from, me, id, rid, if nc == 0 then "negtests ok\n" else "negtests FAILED\n", "", nout)
+        val Kernel.NegR(nc, _, _, nout) = Kernel.negRunT(Kernel.negRunWritten(Args.at(0), bt, Kernel.plain(im)), im, Os.End, 0, 0, 0)
+        if Str.len(arg) > 0 && Disk.put(arg, nout) != 0 then Kernel.reply(from, me, id, rid, "negtests report not written: ", arg, nout)
+        else Kernel.reply(from, me, id, rid, if nc == 0 then "negtests ok\n" else "negtests FAILED\n", "", nout)
         Kernel.serve(lfd, me, id + 1, bp, bt, im)
       else if Str.eq(act, "drop") then
         val Kernel.Lr(cand, bad) = Kernel.dropNames(im, Kernel.words(arg, 0), 0)
         Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gate(from, me, id, rid, bp, bt, im, cand, bad))
+      else if Str.eq(act, "gc") then
+        Kernel.serve(lfd, me, id + 1, bp, bt, Kernel.gate(from, me, id, rid, bp, bt, im, Kernel.closure(im, Kernel.gcRoots(im)), 0))
       else if Str.eq(act, "check") then
         val Kernel.Res(code, out) = Kernel.checkAll(bp, bt, Kernel.split(im, text))
         Kernel.reply(from, me, id, rid, if code == 0 then "ok" else "fail", "", out)

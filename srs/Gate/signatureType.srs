@@ -1,0 +1,6 @@
+// prompt: the signature row with tag t at position p for type node e of unit u: written only when the type token resolves (name
+// pass) to a builtin type, keyed by its symbol (the same test as Gate.unsignedBinds).
+def Gate.signatureType(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), t: Gate.ArithTag, p: I64, e: I64): Unit =
+  val k = Ast.tok(g, e)
+  if 0 <= k && k < rcap && I64.ofU8(rk(k)) == Resolve.tBase() + Resolve.tBuiltin() then Gate.arithRow(t, u, p, I64.of(rf(k)), 0) else ()
+

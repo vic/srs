@@ -1,0 +1,9 @@
+// prompt: push each kBind binder of list r as a Resolve.bVParam entry (`_` binds nothing).
+def Resolve.bindValList(x: Resolve.X, r: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val b = Ast.item(g, r, i)
+    if Ast.kd(g, b) == Ast.kBind() && !Resolve.isUnder(g, Ast.tok(g, b)) then Resolve.push(x, Resolve.tokT(g, Ast.tok(g, b)), Ast.tok(g, b), Resolve.bVParam()) else ()
+    Resolve.bindValList(x, r, i + 1)
+  else ()
+

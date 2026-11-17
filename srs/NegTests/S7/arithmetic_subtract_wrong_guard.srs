@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `a - b` under `a <= b`: the guard points the wrong way.
+val NegTests.S7.arithmetic_subtract_wrong_guard {NegTest}: Never =
+  def Arithmetic.rejected(a: U64, b: U64, fallback: U64): U64 = if a <= b then a - b else fallback
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a <= b allows a < b, so a - b can go below zero")
+

@@ -1,0 +1,16 @@
+// prompt: K2 rows of the binary node n (operator op, operands a and b) for selector FArith: a site row for every arithmetic
+// operator, and the operand rows the Datalog forms join on: leftNode / rightNode (the operand nodes), leftLocal / rightLocal (a bare
+// local operand's binder), rightLiteral (a literal right operand in the fact range).
+def Gate.arithBin(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, op: Str, a: I64, b: I64): Unit =
+  if Gate.fkB(sel) == Gate.fkB(Gate.FArith) then
+    Gate.arithOfOperator(op) match
+      case Coll.None => ()
+      case Coll.Some(kind) =>
+        Gate.arithSite(u, n, kind)
+        Gate.arithRow(Gate.TagLeftNode, u, n, a, 0)
+        Gate.arithRow(Gate.TagRightNode, u, n, b, 0)
+        Gate.arithOpt(Gate.TagLeftLocal, u, n, Gate.localOf(g, rcap, rk, rf, a))
+        Gate.arithOpt(Gate.TagRightLocal, u, n, Gate.localOf(g, rcap, rk, rf, b))
+        Gate.arithOpt(Gate.TagRightLiteral, u, n, Gate.intOf(g, b))
+  else ()
+

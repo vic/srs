@@ -1,0 +1,6 @@
+// prompt: the position of the binder with symbol x in the param list ps, or None.
+def Gate.paramIndex(w: Resolve.W, g: Ast.G, ps: I64, x: I64, i: I64): Coll.Option[I64] =
+  if i < Ast.len(g, ps) then
+    if Gate.tsym(w, g, Ast.tok(g, Ast.item(g, ps, i))) == x then Coll.Some(i) else Gate.paramIndex(w, g, ps, x, i + 1)
+  else Coll.None
+

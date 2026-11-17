@@ -3,7 +3,7 @@ def Emit.msCutX(e: Emit.E, n: I64, site: I64, ckey: I64, idx: I64): Unit =
   val g = Emit.gOf(e)
   val w = Emit.wOf(e)
   val c = Emit.msCut(e, n)
-  if Ast.kd(g, n) == Ast.kParen() then Emit.msCutX(e, Ast.a(g, n), site, ckey, idx)
+  if Ast.kd(g, n) == Ast.kParen() || (Ast.kd(g, n) == Ast.kAssert() && Ast.a(g, n) != 0) then Emit.msCutX(e, Ast.a(g, n), site, ckey, idx)
   else if c == 3 then
     Emit.po(e,"(")
     Emit.expr(e, Ast.a(g, n), false)

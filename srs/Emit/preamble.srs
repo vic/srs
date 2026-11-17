@@ -9,6 +9,8 @@
 // Counters (Em.K.hc) are named: nothing is skipped silently; `s3c --emit` prints them on stderr.
 
 // ── the C preamble: the prims the externs of the prelude stand for (static inline, the C of Emit.strPrims, wordPrims, f64Prims, ptrPrims) ──
+// prompt: the C preamble of every emitted program: the includes, then the static inline C of each prelude prim (Str, word, F64 and
+// Ptr prims), one Typer.po per prim, in a fixed order (the fixpoint compares the emitted C byte for byte).
 def Emit.preamble(s: Typer.S): Unit =
   Typer.po(s, "#define _GNU_SOURCE\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n#include <string.h>\n#include <errno.h>\n")
   Typer.po(s, "#include <sys/mman.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <math.h>\n#include <stdatomic.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n")
@@ -31,6 +33,9 @@ def Emit.preamble(s: Typer.S): Unit =
   Typer.po(s, "static inline int64_t I64__ofU64(uint64_t x) { return (int64_t)x; }\n")
   Typer.po(s, "static inline uint8_t U8__of(int64_t x) { return (uint8_t)x; }\n")
   Typer.po(s, "static inline int64_t I64__ofU8(uint8_t x) { return x; }\n")
+  Typer.po(s, "static inline uint64_t U64__ofU8(uint8_t x) { return x; }\n")
+  Typer.po(s, "static inline uint64_t U64__quotient(uint64_t x, uint32_t d) { return x / d; }\n")
+  Typer.po(s, "static inline uint64_t U64__remainder(uint64_t x, uint32_t d) { return x % d; }\n")
   Typer.po(s, "static inline int32_t I32__of(int64_t x) { return (int32_t)x; }\n")
   Typer.po(s, "static inline int64_t I64__ofI32(int32_t x) { return x; }\n")
   Typer.po(s, "static inline double F64__ofBits(int64_t b) { double x; memcpy(&x, &b, 8); return x; }\n")

@@ -9,6 +9,7 @@ def Emit.expr(e: Emit.E, n: I64, tail: Bool): Unit =
     Emit.po(e,"(")
     Emit.expr(e, Ast.a(g, n), tail)
     Emit.po(e,")")
+  else if k == Ast.kAssert() then (if Ast.a(g, n) != 0 then Emit.expr(e, Ast.a(g, n), tail) else Emit.po(e,"((int64_t)0)"))
   else if k == Ast.kName() then Emit.name(e, n)
   else if k == Ast.kCall() then Emit.call(e, n, tail)
   else if k == Ast.kMethod() && Typer.isArrayT(Emit.xOf(e), Emit.rv(e, n)) then Emit.atCall(e, n)

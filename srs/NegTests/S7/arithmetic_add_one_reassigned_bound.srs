@@ -1,0 +1,11 @@
+// prompt: the kernel must reject `a + U64.of(1)` under `a < bound` when bound is a var reassigned before the site.
+val NegTests.S7.arithmetic_add_one_reassigned_bound {NegTest}: Never =
+  def Arithmetic.rejected(a: U64, limit: U64): U64 =
+    var bound = limit
+    if a < bound then
+      bound = a
+      a + U64.of(1)
+    else a
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a guard on a var proves nothing once the var can change before the site")
+

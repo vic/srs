@@ -1,0 +1,9 @@
+// a negative test: an index guard literal of at least 2^32
+// prompt: the kernel must reject an index whose guard literal is 2^32 + 4: a Datalog fact column holds 32 bits, so the literal
+// gives no fact and no proof, never a wrapped value 4 that would prove a(i) on a 5-element array.
+val NegTests.indexGuardWide {NegTest}: Never =
+  def Probe.wide(i: I64): U8 =
+    val a = Array.fill(5, U8.of(0))
+    if 0 <= i && i < 4294967300 then a(i) else U8.of(0)
+  NegTest.expect("index-unproved", "4294967300 is above the 32-bit fact column: no guard fact, so a(i) is unproved")
+

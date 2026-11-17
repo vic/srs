@@ -1,3 +1,5 @@
 // relaunch: a detached image process on the same socket, capped in memory and time
-def Kernel.relArgv(bin: Str, sock: Str): Os.Strs = Os.More("setsid", Os.More("-f", Os.More("prlimit", Os.More(Kernel.memCap(), Os.More("timeout", Os.More(Kernel.lifeSecs(), Os.More(bin, Os.More(sock, Os.End))))))))
+// prompt: the relaunch argv: a detached image process on the same socket, capped in memory and time; a kernel-image server passes
+// `--kernel-image` on, so a relaunch keeps its scope (a checked server never gains the flag by a relaunch).
+def Kernel.relArgv(bin: Str, sock: Str): Os.Strs = Os.More("setsid", Os.More("-f", Os.More("prlimit", Os.More(Kernel.memCap(), Os.More("timeout", Os.More(Kernel.lifeSecs(), Os.More(bin, Os.More(sock, if Kernel.isKernelImage() then Os.More("--kernel-image", Os.End) else Os.End))))))))
 

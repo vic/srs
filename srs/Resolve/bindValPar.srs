@@ -1,0 +1,9 @@
+// prompt: bind the value params (kParams groups) of an enum's parts as Resolve.bVParam scope entries.
+def Resolve.bindValPar(x: Resolve.X, parts: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, parts) then
+    val p = Ast.item(g, parts, i)
+    if Ast.kd(g, p) == Ast.kParams() then Resolve.bindValList(x, Ast.a(g, p), 0) else ()
+    Resolve.bindValPar(x, parts, i + 1)
+  else ()
+

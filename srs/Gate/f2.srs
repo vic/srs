@@ -1,7 +1,7 @@
-// prompt: run the Datalog gate over files ps (texts xs; us = user unit names) and print one diag line per rejected unit and code
-// (families F2..F5e); Res(0, "") when no rule fires.
-def Gate.f2(ps: Os.Strs, xs: Os.Strs, us: Os.Strs): Kernel.Res =
-  val Gate.In(names, rows) = Gate.f2In(ps, xs, us)
+// prompt: run the Datalog gate over files ps (texts xs; us = user unit names; cs = the units the s7 families check) and print one
+// diag line per rejected unit and code (families F2..F5e); Res(0, "") when no rule fires.
+def Gate.f2(ps: Os.Strs, xs: Os.Strs, us: Os.Strs, cs: Os.Strs): Kernel.Res =
+  val Gate.In(names, rows) = Gate.f2In(ps, xs, us, cs)
   val Planner.Res2(err, txt) = Planner.textS(Gate.rulesAll(), Planner.Mem(names, rows))
   if Str.len(err) > 0 then Kernel.Res(1, err)
   else

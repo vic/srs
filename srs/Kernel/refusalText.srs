@@ -1,0 +1,8 @@
+// prompt: the human text of a scratch refusal.
+def Kernel.refusalText(reason: Os.Refusal): Str = reason match
+  case Os.StatFailed => "lstat failed on the scratch dir"
+  case Os.NotDirectory => "the scratch path is not a directory (a symbolic link or a file)"
+  case Os.NotOwned => "the scratch dir belongs to another user"
+  case Os.NotPrivate => "the scratch dir permission bits are not 0700"
+  case Os.ParentNotPrivate => "XDG_RUNTIME_DIR is not a directory of this user with mode 0700"
+

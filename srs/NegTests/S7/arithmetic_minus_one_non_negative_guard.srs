@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `a - U64.of(1)` under `0 <= a`: the guard admits a == 0.
+val NegTests.S7.arithmetic_minus_one_non_negative_guard {NegTest}: Never =
+  def Arithmetic.rejected(a: U64, fallback: U64): U64 = if 0 <= a then a - U64.of(1) else fallback
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "0 <= a admits a == 0, where a - 1 goes below zero; the guard must be 0 < a")
+

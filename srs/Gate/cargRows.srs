@@ -1,7 +1,7 @@
-// carg(u, n, w, k, j): the call node n passes the local w (a bare name at token j) as its value arg k
+// prompt: carg(u, n, w, k, j): the call node n passes the local w (its value node, Gate.valueOf, is a bare name at token j) as its value arg k.
 def Gate.cargRows(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, l: I64, k: I64): Unit =
   if k < Ast.len(g, l) then
-    val e = Ast.item(g, l, k)
+    val e = Gate.valueOf(g, Ast.item(g, l, k))
     val t = Ast.tok(g, e)
     if Ast.kd(g, e) == Ast.kName() && 0 <= t && t < rcap && I64.ofU8(rk(t)) == Resolve.kLocal() then
       Gate.row5(u, n, I64.of(rf(t)), k, t)

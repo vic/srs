@@ -1,0 +1,6 @@
+// prompt: K NEG 2: a U64 index under index <= size (off by one) is not proved; the kernel must reject it with exactly these codes.
+val NegTests.S7.index_unsigned_off_by_one {NegTest}: Never =
+  def Ix.bad(size: U64, bytes: Array[U8](size), index: U64, fallback: U8): U8 = if index <= size then bytes(index) else fallback
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "index <= size allows index == size, one past the last byte")
+

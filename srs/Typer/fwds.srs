@@ -1,10 +1,10 @@
-// `struct E_...;` for every enum type of the store (the C file needs them before the first def; the script puts them there)
+// prompt: `struct E_...;` once per C name of the enum types of the store (the C file needs them before the first def; the script puts
+// them there): an instantiation that prints the same name as an earlier one (Typer.firstOfTag) is skipped, so no name is declared twice.
 def Typer.fwds(w: Resolve.W, s: Typer.S, t: I64): Unit =
   if t < Typer.cget(s, Typer.cTypes()) then
-    if Typer.kind(s, t) == Typer.bEnum() && Typer.closedT(s, t) then
+    if Typer.kind(s, t) == Typer.bEnum() && Typer.closedT(s, t) && Typer.firstOfTag(s, t, 0) then
       Typer.enumTag(w, s, t)
       Typer.po(s,";\n")
     else ()
     Typer.fwds(w, s, t + 1)
   else ()
-

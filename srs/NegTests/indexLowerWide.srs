@@ -1,0 +1,8 @@
+// a negative test: a literal index of at least 2^32 under a small lower bound
+// prompt: the kernel must reject a(2^32 + 4) under 10 < n on an array of length n: no ilit fact, never the wrapped 4 <= 10.
+val NegTests.indexLowerWide {NegTest}: Never =
+  def Probe.lowerWide(n: I64): U8 =
+    val a = Array.fill(n, U8.of(0))
+    if 10 < n then a(4294967300) else U8.of(0)
+  NegTest.expect("index-unproved", "4294967300 is above the 32-bit fact column: no ilit fact for the glb proof")
+

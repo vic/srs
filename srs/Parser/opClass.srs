@@ -1,3 +1,5 @@
+// prompt: the token class of an operator token of length l at o (byte c): one class per one-byte operator of Lexer.isPunct (`@` = Token.at),
+// the two-byte operators, >>> (shr); anything else Token.other.
 def Parser.opClass(src: Str, n: I64, o: I64, l: I64): I64 =
   val c = Str.at(src, o)
   if l == 1 then
@@ -23,6 +25,7 @@ def Parser.opClass(src: Str, n: I64, o: I64, l: I64): I64 =
     else if c == 37 then Token.pct()
     else if c == 33 then Token.bang()
     else if c == 126 then Token.tilde()
+    else if c == 64 then Token.at()
     else Token.other()
   else if l == 2 then
     if c == 61 && Lexer.is(src, n, o + 1, 62) then Token.arrow()

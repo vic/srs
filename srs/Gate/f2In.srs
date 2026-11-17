@@ -1,7 +1,11 @@
 // prompt: the input relations of the gate for files ps (texts xs): name pass facts, classes, families F2..F5d, and F5e user(u)
 // (us = user unit names), ptrDef(u), tref(u, v), primArith / primMem / primAdd (the rt_ptr_* units), allocU / globU (unit
-// families) and wordU (Srs.Arena.wordAdd, the one rt_ptr_add caller).
-def Gate.f2In(ps: Os.Strs, xs: Os.Strs, us: Os.Strs): Gate.In =
+// families) and wordU (Srs.Arena.wordAdd, the one rt_ptr_add caller); K2: arithShape (selector FArith), checkedUnit(u) (cs = the
+// units the s7 families check), rtAllowed(u) (rt_argc only until K-AT: the runtime unit a checked Srs.* unit may call, K3 part 3),
+// allocSym (the allocation builtins Gate.allocNames: Region requests, K3 part 2), the role
+// units by exact unit name (arith*Name), the builtin names and symbols (Gate.builtinNames) and the builtin type symbols;
+// K-AT part 2 (F5f): factAtom (selector FFact) and the kernel prelude relations factBelowUnit / factLessOrEqualUnit (Srs.Facts.*).
+def Gate.f2In(ps: Os.Strs, xs: Os.Strs, us: Os.Strs, cs: Os.Strs): Gate.In =
   val Gate.Rw(w, rs) = Gate.resolveAll(ps, xs)
   Console.captureBegin()
   Gate.refRows(w, rs, 0)
@@ -40,10 +44,34 @@ def Gate.f2In(ps: Os.Strs, xs: Os.Strs, us: Os.Strs): Gate.In =
   val globs = Gate.prefixText(ps, Os.More("Srs.Gate.", Os.More("Srs.Pages.", Os.End)))
   val padd = Gate.userText(ps, Os.More("rt_ptr_add", Os.End))
   val words = Gate.userText(ps, Os.More("Srs.Arena.wordAdd", Os.End))
+  val ariths = Gate.flowText(w, Gate.FArith, rs)
+  val facts = Gate.flowText(w, Gate.FFact, rs)
+  val belowUnits = Gate.factRelationText(w, "Srs.Facts.below", "below")
+  val lessOrEqualUnits = Gate.factRelationText(w, "Srs.Facts.lessOrEqual", "lessOrEqual")
+  val checked = Gate.userText(ps, cs)
+  val rtok = Gate.userText(ps, Os.More("rt_argc", Os.End))
+  val quotients = Gate.userText(ps, Os.More("U64.quotient", Os.End))
+  val remainders = Gate.userText(ps, Os.More("U64.remainder", Os.End))
+  val wordWidens = Gate.userText(ps, Os.More("U64.of", Os.End))
+  val byteWidens = Gate.userText(ps, Os.More("U64.ofU8", Os.End))
+  val signedOfs = Gate.userText(ps, Os.More("I64.ofU64", Os.End))
+  val unsignedOfs = Gate.userText(ps, Os.More("U64.ofI64", Os.End))
+  val byteOfs = Gate.userText(ps, Os.More("U8.of", Os.End))
+  val wordOfs = Gate.userText(ps, Os.More("I32.of", Os.End))
+  val unsignedWordOfs = Gate.userText(ps, Os.More("U32.of", Os.End))
+  val narrows = Gate.userText(ps, Os.More("U32.ofU64", Os.More("F64.ofI64", Os.End)))
+  val builtinUnits = Gate.userText(ps, Gate.builtinNames())
+  val builtinSyms = Gate.symsText(w, Gate.builtinNames())
+  val typeWord = Gate.symText(w, "U64")
+  val typeHalfWord = Gate.symText(w, "U32")
+  val typeByte = Gate.symText(w, "U8")
+  val typeSigned = Gate.symText(w, "I64")
+  val typeSignedHalf = Gate.symText(w, "I32")
   val n1 = Os.More("ref", Os.More("rt", Os.More("libc", Os.More("srs", Os.More("ext", Os.More("ptr", Os.More("worldH", Os.More("held", Os.More("mainU", Os.More("hand", Os.More("perr", Os.More("caseDecl", Os.More("req", Os.More("call", Os.More("htop", Os.More("hfor", Os.End))))))))))))))))
   val r1 = Os.More(refs, Os.More(Gate.cls(ps, xs, Gate.CRt), Os.More(Gate.cls(ps, xs, Gate.CLibc), Os.More(Gate.cls(ps, xs, Gate.CSrs), Os.More(Gate.cls(ps, xs, Gate.CExt), Os.More(ptrs, Os.More(worlds, Os.More(helds, Os.More(mains, Os.More(hands, Os.More(perrs, Os.More(cases, Os.More(reqs, Os.More(calls, Os.More(htops, Os.More(hfors, Os.End))))))))))))))))
   val n2 = Os.More("stateOf", Os.More("capStart", Os.More("stopSt", Os.More("dropOp", Os.More("trans", Os.More("opArrow", Os.More("opRel", Os.More("opFree", Os.More("hst", Os.More("xe", Os.More("ee", Os.More("xx", Os.More("ex", Os.More("opsite", Os.More("luse", Os.More("evsite", Os.More("opTok", Os.More("heldU", n1))))))))))))))))))
   val r2 = Os.More(Gate.capText(w, Gate.CState, rs), Os.More(Gate.capText(w, Gate.CStart, rs), Os.More(Gate.capText(w, Gate.CStop, rs), Os.More(Gate.capText(w, Gate.CDrop, rs), Os.More(Gate.capText(w, Gate.CTrans, rs), Os.More(Gate.capText(w, Gate.CArrow, rs), Os.More(Gate.capText(w, Gate.CRel, rs), Os.More(Gate.capText(w, Gate.CFree, rs), Os.More(Gate.flowText(w, Gate.FHst, rs), Os.More(Gate.flowText(w, Gate.FXe, rs), Os.More(Gate.flowText(w, Gate.FEe, rs), Os.More(Gate.flowText(w, Gate.FXx, rs), Os.More(Gate.flowText(w, Gate.FEx, rs), Os.More(Gate.flowText(w, Gate.FOp, rs), Os.More(Gate.flowText(w, Gate.FUse, rs), Os.More(Gate.flowText(w, Gate.FEv, rs), Os.More(Gate.flowText(w, Gate.FOpT, rs), Os.More(Gate.heldUText(w, rs), r1))))))))))))))))))
   val n3 = Os.More("retData", Os.More("vb", Os.More("callee", Os.More("ctorCall", Os.More("lastE", Os.More("regionCap", Os.More("body", Os.More("bend", Os.More("pcap", Os.More("pdata", Os.More("pin", Os.More("alias", Os.More("loopb", Os.More("rbound", Os.More("vbound", Os.More("evpos", Os.More("evarg", Os.More("carg", Os.More("ppos", Os.More("ctok", Os.More("erasedR", Os.More("capParamR", Os.More("traitU", Os.More("tvalR", Os.More("atAt", Os.More("fvarS", Os.More("psub", Os.More("nestDot", Os.More("cname", Os.More("argFirst", Os.More("putSym", Os.More("fillSym", Os.More("argLast", Os.More("isite", Os.More("iarr", Os.More("iarg", Os.More("ithen", Os.More("ge0", Os.More("glt", Os.More("mutB", Os.More("alenP", Os.More("caseLen", Os.More("pbind", Os.More("ilit", Os.More("alenLit", Os.More("gltL", Os.More("glb", Os.More("bsite", Os.More("ssite", Os.More("rargs", Os.More("gle", Os.More("gleSub", n2))))))))))))))))))))))))))))))))))))))))))))))))))))
   val r3 = Os.More(Gate.retText(w, rs), Os.More(Gate.flowText(w, Gate.FVb, rs), Os.More(Gate.flowText(w, Gate.FCallee, rs), Os.More(Gate.flowText(w, Gate.FCtor, rs), Os.More(Gate.flowText(w, Gate.FLast, rs), Os.More(Gate.regionCapText(w), Os.More(Gate.flowText(w, Gate.FBody, rs), Os.More(Gate.flowText(w, Gate.FBend, rs), Os.More(Gate.flowText(w, Gate.FPcap, rs), Os.More(Gate.flowText(w, Gate.FPdata, rs), Os.More(Gate.flowText(w, Gate.FPin, rs), Os.More(Gate.flowText(w, Gate.FAlias, rs), Os.More(Gate.flowText(w, Gate.FLoop, rs), Os.More(Gate.flowText(w, Gate.FRbound, rs), Os.More(Gate.flowText(w, Gate.FVbound, rs), Os.More(Gate.flowText(w, Gate.FEvpos, rs), Os.More(Gate.flowText(w, Gate.FEvarg, rs), Os.More(Gate.flowText(w, Gate.FCarg, rs), Os.More(Gate.flowText(w, Gate.FPpos, rs), Os.More(Gate.flowText(w, Gate.FCtok, rs), Os.More(Gate.flowText(w, Gate.FErased, rs), Os.More(Gate.flowText(w, Gate.FCapParam, rs), Os.More(Gate.flowText(w, Gate.FTrait, rs), Os.More(Gate.flowText(w, Gate.FTval, rs), Os.More(Gate.flowText(w, Gate.FAtAt, rs), Os.More(Gate.flowText(w, Gate.FFvar, rs), Os.More(Gate.flowText(w, Gate.FPsub, rs), Os.More(Gate.flowText(w, Gate.FPdot, rs), Os.More(Gate.flowText(w, Gate.FCname, rs), Os.More(Gate.flowText(w, Gate.FArg, rs), Os.More(Gate.symText(w, "Array.put"), Os.More(Gate.symText(w, "Array.fill"), Os.More(Gate.flowText(w, Gate.FArgL, rs), Os.More(Gate.flowText(w, Gate.FIsite, rs), Os.More(Gate.flowText(w, Gate.FIarr, rs), Os.More(Gate.flowText(w, Gate.FIarg, rs), Os.More(Gate.flowText(w, Gate.FIthen, rs), Os.More(Gate.flowText(w, Gate.FGe0, rs), Os.More(Gate.flowText(w, Gate.FGlt, rs), Os.More(Gate.flowText(w, Gate.FMut, rs), Os.More(Gate.flowText(w, Gate.FAlen, rs), Os.More(Gate.flowText(w, Gate.FCaseLen, rs), Os.More(Gate.flowText(w, Gate.FPbind, rs), Os.More(Gate.flowText(w, Gate.FIlit, rs), Os.More(Gate.flowText(w, Gate.FAlenLit, rs), Os.More(Gate.flowText(w, Gate.FGltL, rs), Os.More(Gate.flowText(w, Gate.FGlb, rs), Os.More(Gate.flowText(w, Gate.FBsite, rs), Os.More(Gate.flowText(w, Gate.FSsite, rs), Os.More(Gate.flowText(w, Gate.FRargs, rs), Os.More(Gate.flowText(w, Gate.FGle, rs), Os.More(Gate.flowText(w, Gate.FGleSub, rs), r2))))))))))))))))))))))))))))))))))))))))))))))))))))
-  Gate.extraIn(w, rs, Os.More("user", Os.More("ptrDef", Os.More("tref", Os.More("primArith", Os.More("primMem", Os.More("allocU", Os.More("globU", Os.More("primAdd", Os.More("wordU", n3))))))))), Os.More(users, Os.More(pdefs, Os.More(trefs, Os.More(parith, Os.More(pmem, Os.More(allocs, Os.More(globs, Os.More(padd, Os.More(words, r3))))))))))
+  Gate.extraIn(w, rs, Os.More("factAtom", Os.More("factBelowUnit", Os.More("factLessOrEqualUnit", Os.More("arithQuotientName", Os.More("arithRemainderName", Os.More("arithWordWidenName", Os.More("arithByteWidenName", Os.More("arithSignedOfName", Os.More("arithUnsignedOfName", Os.More("arithByteOfName", Os.More("arithWordOfName", Os.More("arithUnsignedWordOfName", Os.More("arithNarrowName", Os.More("arithBuiltinName", Os.More("arithBuiltinSym", Os.More("arithTypeU64", Os.More("arithTypeU32", Os.More("arithTypeU8", Os.More("arithTypeI64", Os.More("arithTypeI32", Os.More("arithShape", Os.More("checkedUnit", Os.More("rtAllowed", Os.More("user", Os.More("ptrDef", Os.More("tref", Os.More("primArith", Os.More("primMem", Os.More("allocU", Os.More("globU", Os.More("primAdd", Os.More("wordU", Os.More("unsignedB", Os.More("scrutArm", Os.More("caseParamLength", Os.More("typeArgument", Os.More("allocSym", n3))))))))))))))))))))))))))))))))))))), Os.More(facts, Os.More(belowUnits, Os.More(lessOrEqualUnits, Os.More(quotients, Os.More(remainders, Os.More(wordWidens, Os.More(byteWidens, Os.More(signedOfs, Os.More(unsignedOfs, Os.More(byteOfs, Os.More(wordOfs, Os.More(unsignedWordOfs, Os.More(narrows, Os.More(builtinUnits, Os.More(builtinSyms, Os.More(typeWord, Os.More(typeHalfWord, Os.More(typeByte, Os.More(typeSigned, Os.More(typeSignedHalf, Os.More(ariths, Os.More(checked, Os.More(rtok, Os.More(users, Os.More(pdefs, Os.More(trefs, Os.More(parith, Os.More(pmem, Os.More(allocs, Os.More(globs, Os.More(padd, Os.More(words, Os.More(Gate.flowText(w, Gate.FUnsigned, rs), Os.More(Gate.flowText(w, Gate.FScrutArm, rs), Os.More(Gate.flowText(w, Gate.FCaseParamLen, rs), Os.More(Gate.flowText(w, Gate.FTypeArg, rs), Os.More(Gate.symsText(w, Gate.allocNames()), r3))))))))))))))))))))))))))))))))))))))
+

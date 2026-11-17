@@ -6,8 +6,10 @@ def Gate.fwArms(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Arr
     else if Gate.fkB(sel) == Gate.fkB(Gate.FPdot) then Gate.psubRows(w, g, true, u, Ast.a(g, arm))
     else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FPbind) && Ast.kd(g, Ast.a(g, arm)) == Ast.kPCase() then Gate.pbindRows(w, g, u, Ast.a(g, arm), Ast.tok(g, Ast.a(g, arm)), Ast.a(g, Ast.a(g, arm)), 0) else ()
-    val bj = Ast.tok(g, body)
-    if Gate.fkB(sel) == Gate.fkB(Gate.FPtail) && Ast.kd(g, body) == Ast.kName() && 0 <= bj && bj < rcap && I64.ofU8(rk(bj)) == Resolve.kLocal() then Gate.row3(u, n, I64.of(rf(bj))) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FScrutArm) then Gate.optRow3(u, Ast.a(g, arm), Gate.localOf(g, rcap, rk, rf, e)) else ()
+    val bv = Gate.valueOf(g, body)
+    val bj = Ast.tok(g, bv)
+    if Gate.fkB(sel) == Gate.fkB(Gate.FPtail) && Ast.kd(g, bv) == Ast.kName() && 0 <= bj && bj < rcap && I64.ofU8(rk(bj)) == Resolve.kLocal() then Gate.row3(u, n, I64.of(rf(bj))) else ()
 // prompt: the flow facts of the arms l[i..] of match n (scrutinee e) of unit u: pattern subs and dots, pattern binders (pbind), an arm
 // whose body is a bare local (ptail(u, n, local): the match returns that local), the scrutinee-to-arm and arm-to-match edges, then
 // each arm body walked.

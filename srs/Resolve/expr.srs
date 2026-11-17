@@ -1,3 +1,4 @@
+// prompt: resolve the uses of expression n by kind; an assertion resolves its subject, then its atom terms in the same scope.
 def Resolve.expr(x: Resolve.X, n: I64): Unit =
   val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
   val k = Ast.kd(g, n)
@@ -33,5 +34,7 @@ def Resolve.expr(x: Resolve.X, n: I64): Unit =
     Resolve.bind(x, Ast.tok(g, bd))
     Resolve.expr(x, Ast.b(g, n))
     Resolve.setSp(x, sp)
+  else if k == Ast.kAssert() then
+    Resolve.expr(x, Ast.a(g, n))
+    Resolve.atomTerms(x, Ast.a(g, Ast.b(g, n)), 0)
   else ()
-

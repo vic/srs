@@ -1,4 +1,6 @@
 // a block: each statement in turn; a val, var, handle or val-pattern binds for the statements after it, not for its own value
+// prompt: resolve the statements r[i..] of a block in order; a bare `@<facts>` statement is an assertion node itself (no wrapper),
+// so its atom terms resolve in the current scope through Resolve.expr.
 def Resolve.stmts(x: Resolve.X, r: I64, i: I64): Unit =
   val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
   if i < Ast.len(g, r) then
@@ -16,7 +18,7 @@ def Resolve.stmts(x: Resolve.X, r: I64, i: I64): Unit =
       Resolve.use(x, Ast.tok(g, s))
       Resolve.expr(x, Ast.b(g, s))
       Resolve.bindList(x, Ast.a(g, s), 0)
+    else if k == Ast.kAssert() then Resolve.expr(x, s)
     else Resolve.expr(x, Ast.a(g, s))
     Resolve.stmts(x, r, i + 1)
   else ()
-

@@ -1,0 +1,9 @@
+// prompt: one typeArgument row per type arg position k of args l that is a bare local.
+def Gate.typeArgRows(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), b: I64, e: I64, l: I64, k: I64): Unit =
+  if k < Ast.len(g, l) then
+    Gate.localOf(g, rcap, rk, rf, Ast.item(g, l, k)) match
+      case Coll.Some(a) => Gate.row5(u, b, e, k, a)
+      case Coll.None => ()
+    Gate.typeArgRows(g, u, rcap, rk, rf, b, e, l, k + 1)
+  else ()
+

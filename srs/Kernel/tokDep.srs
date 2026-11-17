@@ -1,6 +1,8 @@
 // the unit that a resolved token (kind k, ref d) names: a global, case or capability op by decl id, a type by symbol
+// prompt: the unit a resolved token (kind k, ref d) names: a global, case or capability op by its decl's file; a type by its symbol's file,
+// except a builtin type (kind byte tBuiltin, tyk = kind + 1), which Resolve.bty declares with file 0 and so names no unit (else every
+// unit that uses I64 got an edge to unit 0 and every closure kept unit 0).
 def Kernel.tokDep(gcap: I64, gf: Array[U32](gcap), tcap: I64, tyk: Array[U8](tcap), tyf: Array[U32](tcap), lo: I64, n: I64, k: I64, d: I64): Coll.Option[I64] =
   if (k == Resolve.kGlobal() || k == Resolve.kCase() || k == Resolve.kCap()) && 0 < d && d < gcap then Kernel.unitOf(I64.of(gf(d)) - lo, n)
-  else if k >= Resolve.tBase() && 0 < d && d < tcap && I64.ofU8(tyk(d)) > 0 then Kernel.unitOf(I64.of(tyf(d)) - lo, n)
+  else if k >= Resolve.tBase() && 0 < d && d < tcap && I64.ofU8(tyk(d)) > 0 && I64.ofU8(tyk(d)) != Resolve.tBuiltin() + 1 then Kernel.unitOf(I64.of(tyf(d)) - lo, n)
   else Coll.None
-

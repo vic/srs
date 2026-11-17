@@ -1,11 +1,16 @@
-// prompt: gate BASE FILE: the gate's verdict and diagnostics for the units of FILE (user code) on top of BASE (trusted).
-def Kernel.gateAct(ws: Os.Strs): Kernel.Res = ws match
+// prompt: gate BASE FILE: the gate's verdict and diagnostics for the units of FILE (user code) on top of BASE. On a checked server
+// (no --kernel-image) BASE must be the served image (B3 of its bytes == Kernel.servedHash(im)), else the refusal `gate: base is not
+// the served image`: an arbitrary BASE file would let unchecked code count as trusted. The kernel image server takes any BASE.
+def Kernel.gateAct(ws: Os.Strs, im: Kernel.Img): Kernel.Res = ws match
   case Os.End => Kernel.Res(1, "usage: gate BASE FILE")
   case Os.More(pre, r) => r match
     case Os.End => Kernel.Res(1, "usage: gate BASE FILE")
     case Os.More(p, _) => Files.bytes(pre) match
       case Os.Fail(_) => Kernel.Res(1, "base unreadable")
-      case Os.Ok(pt) => Files.bytes(p) match
-        case Os.Fail(_) => Kernel.Res(1, "file unreadable")
-        case Os.Ok(t) => Kernel.check(Os.End, Os.End, Kernel.splitAdd(Kernel.split(Kernel.Empty, pt), t), Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, t), Os.End))
+      case Os.Ok(pt) =>
+        if Kernel.isKernelImage() || Str.eq(Blake3.hash(pt), Kernel.servedHash(im)) then
+          Files.bytes(p) match
+            case Os.Fail(_) => Kernel.Res(1, "file unreadable")
+            case Os.Ok(t) => Kernel.check(Os.End, Os.End, Kernel.splitAdd(Kernel.split(Kernel.Empty, pt), t), Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, t), Os.End))
+        else Kernel.Res(1, "gate: base is not the served image")
 

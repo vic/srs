@@ -1,3 +1,6 @@
-// shortcut: one fixed dir, one image process per host at a time; upgrade: a dir per image socket
-def Kernel.negDir(): Str = "/tmp/s4-negt"
+// prompt: the NegTest scratch dir path of this image server: <parent>/s4-negt-<socket file name> (argv 1 of the server); "" when
+// the parent is unknown or the process has no socket argument.
+def Kernel.negDir(): Str =
+  val parent = Kernel.negParent()
+  if Str.len(parent) > 0 && Args.count() >= 2 then Kernel.msg2(Kernel.msg2(parent, "/s4-negt-"), Kernel.lastPart(Args.at(1))) else ""
 

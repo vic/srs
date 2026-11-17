@@ -1,0 +1,7 @@
+// prompt: the kernel must reject W.remainder(value, 0) where W is an alias of U64: the alias names the same kernel unit.
+val NegTests.S7.arithmetic_alias_remainder_zero {NegTest}: Never =
+  alias W = U64
+  def Arithmetic.rejected(value: U64): U64 = W.remainder(value, 0)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "W is U64, so W.remainder(value, 0) is a remainder by zero")
+

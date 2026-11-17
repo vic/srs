@@ -1,22 +1,25 @@
 // prompt: the flow facts of the decls i.. of one file (selector sel): erased decls, traits, case lengths, op/fn signatures of
 // capabilities, handlers, traits and givens, type positions, givens, and per def AND per extern its header facts (Gate.defRoot; an
 // extern has no body, but its telescope is the trusted guarantee of srs, so its {} binders must be held by every caller), per
-// handler or given its fns. An extern gives only the facts of its {} binders (selectors FPcap FEvpos FEvTy): its params have no
-// body to flow through, and param facts of externs (pdata pin ...) break the put-escape rule (k148: putEsc lost, census neg 7 -> 10).
+// handler or given its fns. An extern gives only the facts of its {} binders (selectors FPcap FEvpos FEvTy) and its signature
+// (FArith: the K2 prim identities): its params have no body to flow through, and param facts of externs (pdata pin ...) break the
+// put-escape rule (k148: putEsc lost, census neg 7 -> 10).
 def Gate.flowRoots(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), rc: I64, dk: Array[U8](rc), dr: Array[U32](rc), i: I64): Unit =
   if 0 <= i && i < rc then
     val root = I64.of(dr(i))
     if Gate.fkB(sel) == Gate.fkB(Gate.FErased) then Gate.erasedDecl(g, u, rcap, rk, root) else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FTrait) && Ast.kd(g, root) == Ast.kTrait() then Gate.row1(u) else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FCaseLen) && Ast.kd(g, root) == Ast.kEnum() then Gate.caseLenRows(w, g, Ast.b(g, root), 0) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FCaseParamLen) && Ast.kd(g, root) == Ast.kEnum() then Gate.caseParamRows(w, g, Ast.b(g, root), Gate.enumParams(g, Ast.b(g, root), 0), 0) else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FCaseFty) && Ast.kd(g, root) == Ast.kEnum() then Gate.caseFtyRows(w, g, Ast.b(g, root), 0) else ()
     if Gate.fkB(sel) >= Gate.fkB(Gate.FSigP) && (I64.ofU8(dk(i)) == Split.kindByte(Split.Capability) || I64.ofU8(dk(i)) == Split.kindByte(Split.Handler) || I64.ofU8(dk(i)) == Split.kindByte(Split.Trait) || I64.ofU8(dk(i)) == Split.kindByte(Split.Given)) then Gate.sigItems(w, g, sel, u, Resolve.sym(w, Resolve.lit("self"), true), Ast.b(g, root), 0) else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FTpos) && (I64.ofU8(dk(i)) == Split.kindByte(Split.Capability) || I64.ofU8(dk(i)) == Split.kindByte(Split.Trait)) then Gate.tposRows(w, g, u, true, Ast.b(g, root), 0, 0) else ()
     if Gate.fkB(sel) == Gate.fkB(Gate.FTpos) && I64.ofU8(dk(i)) == Split.kindByte(Split.Handler) then Gate.tposRows(w, g, u, false, Ast.b(g, root), 0, 0) else ()
     if Gate.fkB(sel) >= Gate.fkB(Gate.FGTp) && I64.ofU8(dk(i)) == Split.kindByte(Split.Given) then Gate.givenRows(w, g, sel, u, root, Ast.b(g, root), 0) else ()
     if I64.ofU8(dk(i)) == Split.kindByte(Split.Def) then Gate.defRoot(w, g, sel, u, rcap, rk, rf, root)
-    else if I64.ofU8(dk(i)) == Split.kindByte(Split.Extern) && Ast.kd(g, Ast.b(g, root)) == Ast.kDef() && (Gate.fkB(sel) == Gate.fkB(Gate.FPcap) || Gate.fkB(sel) == Gate.fkB(Gate.FEvpos) || Gate.fkB(sel) == Gate.fkB(Gate.FEvTy) || Gate.fkB(sel) == Gate.fkB(Gate.FPin)) then Gate.defRoot(w, g, sel, u, rcap, rk, rf, Ast.b(g, root))
+    else if I64.ofU8(dk(i)) == Split.kindByte(Split.Extern) && Ast.kd(g, Ast.b(g, root)) == Ast.kDef() && (Gate.fkB(sel) == Gate.fkB(Gate.FPcap) || Gate.fkB(sel) == Gate.fkB(Gate.FEvpos) || Gate.fkB(sel) == Gate.fkB(Gate.FEvTy) || Gate.fkB(sel) == Gate.fkB(Gate.FPin) || Gate.fkB(sel) == Gate.fkB(Gate.FArith)) then Gate.defRoot(w, g, sel, u, rcap, rk, rf, Ast.b(g, root))
     else if I64.ofU8(dk(i)) == Split.kindByte(Split.Handler) || I64.ofU8(dk(i)) == Split.kindByte(Split.Given) then Gate.hdefs(w, g, sel, u, rcap, rk, rf, Ast.b(g, root), 0)
     else ()
     Gate.flowRoots(w, g, sel, u, rcap, rk, rf, rc, dk, dr, i + 1)
   else ()
+

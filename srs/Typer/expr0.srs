@@ -9,6 +9,7 @@ def Typer.expr0(x: Typer.X, n: I64, want: I64): I64 =
   else if k == Ast.kStr() then Typer.cget(s, Typer.tStr())
   else if k == Ast.kUnit() then Typer.cget(s, Typer.tUnit())
   else if k == Ast.kParen() then Typer.expr(x, Ast.a(g, n), want)
+  else if k == Ast.kAssert() then (if Ast.a(g, n) != 0 then Typer.expr(x, Ast.a(g, n), want) else Typer.cget(s, Typer.tUnit()))
   else if k == Ast.kName() then Typer.name(x, n, want)
   else if k == Ast.kCall() then Typer.call(x, n, want)
   else if k == Ast.kMethod() then Typer.method(x, n, want)

@@ -1,9 +1,12 @@
-// prompt: the Disk capability over libc files, no data in its state: put creates path, copies s into a byte array and writes it
-// with one write(2) (-1 = create or write failed, -2 = close failed, 0 = ok); dir makes one directory (an existing one is fine).
+// prompt: the Disk capability over libc files, no data in its state: put creates path with mode 0600 (owner only), copies s into
+// a byte array and writes it with one write(2) (-1 = create or write failed, -2 = close failed, 0 = ok); dir makes one directory
+// (an existing one is fine); private first requires lstat(parent) to show a directory of this user with mode 0700, then makes
+// path with mode 0700 (an existing one is kept) and accepts it only when lstat
+// shows a directory of this user with permission bits exactly 0700 (Srs.Disk.judge).
 handler Srs.Disk for Disk:
   def init(): Srs.Disk.State = Srs.Disk.Files
   def put(self: Srs.Disk.State, path: Str, s: Str): I64 =
-    val fd = I64.ofI32(creat(CStr.of(path), I32.of(420)))
+    val fd = I64.ofI32(creat(CStr.of(path), I32.of(384)))
     if fd < 0 then 0 - 1
     else
       val n = Str.len(s)
@@ -13,4 +16,13 @@ handler Srs.Disk for Disk:
       val c = I64.ofI32(close(I32.of(fd)))
       if c != 0 then 0 - 2 else if w != n then 0 - 1 else 0
   def dir(self: Srs.Disk.State, path: Str): Unit = if I64.ofI32(mkdir(CStr.of(path), I32.of(493))) == 0 then () else ()
+  def private(self: Srs.Disk.State, parent: Str, path: Str): Os.Private =
+    val above = Array.fill(144, U8.of(0))
+    if I64.ofI32(lstat(CStr.of(parent), above)) != 0 then Os.PrivateRefused(Os.ParentNotPrivate)
+    else Srs.Disk.judge(above, I64.ofI32(getuid())) match
+      case Os.PrivateRefused(reason) => Os.PrivateRefused(Os.ParentNotPrivate)
+      case Os.PrivateReady =>
+        if I64.ofI32(mkdir(CStr.of(path), I32.of(448))) == 0 then () else ()
+        val buf = Array.fill(144, U8.of(0))
+        if I64.ofI32(lstat(CStr.of(path), buf)) == 0 then Srs.Disk.judge(buf, I64.ofI32(getuid())) else Os.PrivateRefused(Os.StatFailed)
 

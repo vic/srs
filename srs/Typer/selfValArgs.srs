@@ -1,0 +1,10 @@
+// prompt: the Param type of every enum value-param binder (kParams groups) among the parts, pushed after the [] ones (Typer.selfArgs):
+// the enum's self type E[P1..Pn, V] carries its value param as a length-kind type arg.
+def Typer.selfValArgs(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kParams() then Typer.selfBinders(x, Ast.a(g, n), 0) else ()
+    Typer.selfValArgs(x, r, i + 1)
+  else ()
+

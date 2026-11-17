@@ -1,0 +1,9 @@
+// prompt: Resolve.use on every name token of the term token list l (from i); int tokens are skipped.
+def Resolve.termToks(x: Resolve.X, l: I64, i: I64): Unit =
+  val Resolve.X(_, g, _, _, _, _, _, _, _, _) = x
+  if i < Ast.len(g, l) then
+    val t = Ast.item(g, l, i)
+    if Token.isName(Ast.cls(g, t)) then Resolve.use(x, t) else ()
+    Resolve.termToks(x, l, i + 1)
+  else ()
+

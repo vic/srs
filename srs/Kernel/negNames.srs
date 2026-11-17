@@ -1,0 +1,6 @@
+// prompt: the names of the units of all that NegTest text t names in its body (s4 references are exact full names); the NegTest body is
+// no resolved unit, so the graph has no edges from it and gc roots its dependencies by name.
+def Kernel.negNames(t: Str, all: Kernel.Img): Os.Strs = all match
+  case Kernel.Empty => Os.End
+  case Kernel.Unit(nm, u, r) => if Kernel.mentions(t, nm, Kernel.bodyStart(t)) && !Kernel.isNegTest(u) then Os.More(nm, Kernel.negNames(t, r)) else Kernel.negNames(t, r)
+

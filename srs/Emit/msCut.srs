@@ -3,7 +3,7 @@ def Emit.msCut(e: Emit.E, n: I64): I64 =
   val g = Emit.gOf(e)
   val k = Ast.kd(g, n)
   val uk = Typer.useKind(Emit.xOf(e), Ast.tok(g, n))
-  if k == Ast.kParen() then Emit.msCut(e, Ast.a(g, n))
+  if k == Ast.kParen() || (k == Ast.kAssert() && Ast.a(g, n) != 0) then Emit.msCut(e, Ast.a(g, n))
   else if k == Ast.kMethod() && Emit.msCapOp(e, Emit.ce(e, n), 0) then 1
   else if k == Ast.kCall() && uk == Resolve.kCap() && Emit.msCapOp(e, Emit.ce(e, n), 0) then 1
   else if k == Ast.kCall() && uk == Resolve.kGlobal() && Emit.kget(Emit.kOf(e), Emit.ce(e, n)) == 6 then 2

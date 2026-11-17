@@ -1,0 +1,10 @@
+// prompt: the kernel must give no remainder bound to a user extern with the kernel text in another namespace (N27b, H3): the table read is unproved.
+val NegTests.S7.arithmetic_role_other_namespace {NegTest}: Never =
+  extern def Forged.remainder(x: U64, divisor: U32): U64
+  def Arithmetic.rejected(value: U64, digits: Array[U8](10)): U8 =
+    val position = Forged.remainder(value, 10)
+    digits(position)
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "extern-denied", "Forged.remainder is a user extern; only the kernel U64.remainder bounds its result below 10")
+
+

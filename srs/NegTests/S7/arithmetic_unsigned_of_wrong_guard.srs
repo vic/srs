@@ -1,0 +1,6 @@
+// prompt: the kernel must reject U64.ofI64 under `value <= 0`: the guard admits every negative value.
+val NegTests.S7.arithmetic_unsigned_of_wrong_guard {NegTest}: Never =
+  def Arithmetic.rejected(value: I64): U64 = if value <= 0 then U64.ofI64(value) else U64.of(0)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "value <= 0 admits negative values, which have no U64; the guard must be 0 <= value")
+

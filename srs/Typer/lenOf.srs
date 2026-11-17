@@ -1,9 +1,13 @@
 // the length of length expression e (an annotation `(e)`): a literal, or the binder of a plain local (not a var, not assigned), else lengthNotName
+// prompt: the length of length expression e: a literal, the Param node of an enum value param (Resolve tParam use inside its own enum's
+// case fields), or the binder of a plain local (not a var, not assigned); else lengthNotName.
 def Typer.lenOf(x: Typer.X, e: I64, report: Bool): I64 =
-  val Typer.X(_, g, s, _, _, _) = x
+  val Typer.X(_, g, s, rcap, rk, rf) = x
   val k = Ast.kd(g, e)
+  val j = Ast.tok(g, e)
   if k == Ast.kParen() then Typer.lenOf(x, Ast.a(g, e), report)
-  else if k == Ast.kInt() && Typer.litOk(Ast.text(g, Ast.tok(g, e)), 0) then Typer.lenLit(s, Typer.dec(Ast.text(g, Ast.tok(g, e)), 0, 0))
-  else if k == Ast.kName() && Typer.useKind(x, Ast.tok(g, e)) == Resolve.kLocal() && !Typer.isMut(s, Typer.useRef(x, Ast.tok(g, e))) then Typer.lenBind(s, Typer.useRef(x, Ast.tok(g, e)))
+  else if k == Ast.kInt() && Typer.litOk(Ast.text(g, j), 0) then Typer.lenLit(s, Typer.dec(Ast.text(g, j), 0, 0))
+  else if k == Ast.kName() && 0 <= j && j < rcap && I64.ofU8(rk(j)) - Resolve.tBase() == Resolve.tParam() then Typer.mk(s, Typer.bParam(), 0, I64.of(rf(j)), Typer.mark(s))
+  else if k == Ast.kName() && Typer.useKind(x, j) == Resolve.kLocal() && !Typer.isMut(s, Typer.useRef(x, j)) then Typer.lenBind(s, Typer.useRef(x, j))
   else Typer.lenNN(x, e, report)
 

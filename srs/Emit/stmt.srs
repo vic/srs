@@ -91,7 +91,7 @@ def Emit.stmt(e: Emit.E, st: I64, last: Bool, tail: Bool): Unit =
     else ()
     Emit.hpush(e, Ast.tok(g, st), hs)
     if last then Emit.po(e,"((int64_t)0); ") else ()
-  else if k == Ast.kCheck() then
+  else if k == Ast.kCheck() || (k == Ast.kAssert() && Ast.a(g, st) == 0) then
     if last then Emit.po(e,"((int64_t)0); ") else ()
   else if k == Ast.kDo() then
     if last then

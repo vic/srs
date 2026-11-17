@@ -1,0 +1,8 @@
+// prompt: the kernel must give no role to a user extern named U64.quotient with a U64 divisor: the signature is not the kernel one.
+val NegTests.S7.arithmetic_quotient_wrong_signature {NegTest}: Never =
+  extern def U64.quotient(x: U64, divisor: U64): U64
+  def Arithmetic.rejected(value: U64): U64 = U64.quotient(value, U64.of(10))
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "builtin-name-taken", "extern-denied", "only the kernel unit U64.quotient(x: U64, divisor: U32) has the role")
+
+

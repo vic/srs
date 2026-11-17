@@ -1,4 +1,6 @@
 // a continuation binder is no value: a value use of its name goes on to the globals
+// prompt: the value use j of the scope entry i: an implicit binder is a builtin, a continuation goes on to the globals, an enum value
+// param (Resolve.bVParam) is a type param use of its binder token (Resolve.tset tParam), any other binder is a local.
 def Resolve.useLocal(x: Resolve.X, j: I64, i: I64, sym: I64): Unit =
   val Resolve.X(w, _, _, _, _, _, _, _, _, _) = x
   val Resolve.W(_, _, sc, _) = w
@@ -6,6 +8,7 @@ def Resolve.useLocal(x: Resolve.X, j: I64, i: I64, sym: I64): Unit =
   if 0 <= i && i < cap then
     if I64.ofU8(sk(i)) == Resolve.bImplicit() then Resolve.set(x, j, Resolve.kBuiltin(), I64.of(st(i)))
     else if I64.ofU8(sk(i)) == Resolve.bCont() then Resolve.useGlobal(x, j, sym)
+    else if I64.ofU8(sk(i)) == Resolve.bVParam() then Resolve.tset(x, j, Resolve.tParam(), I64.of(st(i)))
     else Resolve.set(x, j, Resolve.kLocal(), I64.of(st(i)))
   // shortcut: Nm.look answers an index below cap; s3 Vec will make it unrepresentable
   else Resolve.over(w)

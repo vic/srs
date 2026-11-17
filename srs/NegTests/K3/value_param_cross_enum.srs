@@ -1,0 +1,8 @@
+// prompt: K3 NEG: an enum cannot name the value param of another enum.
+val NegTests.K3.value_param_cross_enum {NegTest}: Never =
+  enum K3.Neg.Owner (size: U64):
+    case K3.Neg.OwnerOne(x: Array[U8](size))
+  enum K3.Neg.Other:
+    case K3.Neg.OtherOne(x: Array[U8](size))
+  NegTest.expect("lengthNotName", "size is in scope only in the case fields of its own enum")
+

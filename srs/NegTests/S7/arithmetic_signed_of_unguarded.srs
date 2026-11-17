@@ -1,0 +1,6 @@
+// prompt: the kernel must reject I64.ofU64 with no guard: a value of 2^63 or more has no I64.
+val NegTests.S7.arithmetic_signed_of_unguarded {NegTest}: Never =
+  def Arithmetic.rejected(value: U64): I64 = I64.ofU64(value)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a U64 of 2^63 or more has no I64; guard value < 9223372036854775808")
+

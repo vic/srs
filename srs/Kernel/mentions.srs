@@ -1,0 +1,9 @@
+// prompt: true when text t names unit nm as a whole name from byte i on: an occurrence with no name byte before it and none after it.
+def Kernel.mentions(t: Str, nm: Str, i: I64): Bool = Kernel.find(t, nm, i) match
+  case Kernel.Missing => false
+  case Kernel.Found(j) =>
+    val e = j + Str.len(nm)
+    val before = j == 0 || !Kernel.isNameByte(Str.at(t, j - 1))
+    val after = e >= Str.len(t) || !Kernel.isNameByte(Str.at(t, e))
+    if before && after then true else Kernel.mentions(t, nm, j + 1)
+

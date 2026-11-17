@@ -1,0 +1,9 @@
+// prompt: the gc roots of im from unit list l (vic GC ROOTS ruling 2026-11-18): every pub def / pub val, Test and NegTest, plus the
+// units each NegTest body names (Kernel.negNames).
+def Kernel.gcRootsOf(im: Kernel.Img, l: Kernel.Img): Os.Strs = l match
+  case Kernel.Empty => Os.End
+  case Kernel.Unit(nm, t, r) =>
+    if Kernel.isNegTest(t) then Os.More(nm, Kernel.cat(Kernel.negNames(t, im), Kernel.gcRootsOf(im, r)))
+    else if Kernel.isGcRoot(t) then Os.More(nm, Kernel.gcRootsOf(im, r))
+    else Kernel.gcRootsOf(im, r)
+

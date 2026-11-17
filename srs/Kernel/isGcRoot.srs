@@ -1,0 +1,5 @@
+// prompt: true when unit text t is a gc root (vic GC ROOTS ruling 2026-11-18): its head is a top-level `pub def` or `pub val`, or it is a Test or a NegTest.
+def Kernel.isGcRoot(t: Str): Bool =
+  val h = Kernel.headAt(t, 0)
+  Kernel.startsAt(t, h, "pub def ") || Kernel.startsAt(t, h, "pub val ") || Kernel.isTest(t) || Kernel.isNegTest(t)
+

@@ -1,0 +1,10 @@
+// prompt: K3 NEG: one AllocationFailed value cannot be both an Allocation(5) and an Allocation(10).
+val NegTests.K3.indexed_failed_two_sizes {NegTest}: Never =
+  def K3.Neg.both(index: U64): U8 =
+    val five = U64.of(5)
+    val ten = U64.of(10)
+    val f = K3.Probe.AllocationFailed
+    val a = K3.Probe.byteAt(five, f, index, U8.of(0))
+    K3.Probe.byteAt(ten, f, index, a)
+  NegTest.expect("mismatch", "the size of f is fixed at its first use (five); its use as an Allocation(ten) is a mismatch")
+

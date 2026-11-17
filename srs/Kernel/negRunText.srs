@@ -1,0 +1,10 @@
+// prompt: the run for kernel binary self and base file base holding text, in scratch dir scratch: run key B3(schema, B3(kernel
+// binary bytes), B3(text)), baseHash = B3(text), baseText = text; no key when the kernel binary is unreadable. Makes the cache
+// directory inside the scratch dir.
+def Kernel.negRunText(self: Str, base: Str, text: Str, scratch: Kernel.Scratch): Kernel.NegRun =
+  Disk.dir(Kernel.negCache())
+  val bh = Blake3.hash(text)
+  Files.bytes(self) match
+    case Os.Fail(_) => Kernel.NegRun(self, base, Coll.None, bh, text, scratch)
+    case Os.Ok(kb) => Kernel.NegRun(self, base, Coll.Some(Blake3.hash(Kernel.msg2(Kernel.msg2(Kernel.negSchema(), Blake3.hash(kb)), bh))), bh, text, scratch)
+

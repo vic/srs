@@ -1,0 +1,8 @@
+// prompt: the kernel must report the gate error and the typer error of one body together (Kernel.checkIn joins both reports, srs5
+// ruling (2)): a body with an unproved I64 add (gate arith-unproved) and a Str literal for an I64 val (typer mismatch) is rejected
+// with both codes, and the image is unchanged.
+val NegTests.checkInBoth {NegTest}: Never =
+  def CheckInBoth.addOne(x: I64): I64 =
+    val text: I64 = "s"
+    x + 1
+  NegTest.expect("arith-unproved", "mismatch", "x + 1 is an unproved I64 add (gate) and the Str literal is no I64 (typer); checkIn reports both")

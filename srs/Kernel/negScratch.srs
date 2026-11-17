@@ -1,0 +1,9 @@
+// prompt: make or check the scratch dir (Kernel.negDir) as a private directory inside a private parent (Disk.private); any doubt
+// is a refusal (fail closed).
+def Kernel.negScratch(): Kernel.Scratch =
+  val dir = Kernel.negDir()
+  if Str.len(dir) == 0 then Kernel.ScratchRefused("XDG_RUNTIME_DIR is unset or the server has no socket argument")
+  else Disk.private(Kernel.negParent(), dir) match
+    case Os.PrivateReady => Kernel.ScratchReady(dir)
+    case Os.PrivateRefused(reason) => Kernel.ScratchRefused(Kernel.refusalText(reason))
+

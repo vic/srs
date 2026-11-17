@@ -1,0 +1,9 @@
+// prompt: the postfix assertion of expression e: `e@<atoms>` -> Ast.kAssert(@ token, e, the kGFacts node of Parser.facts, the same
+// parser as a signature group); `@` not followed by `<` is a parse error; no `@` -> e itself.
+def Parser.postAt(g: Ast.G, e: I64): I64 =
+  if Parser.is(g, Token.at()) then
+    val j = Parser.cur(g)
+    Parser.adv(g)
+    if Parser.is(g, Token.lt()) then Ast.mk(g, Ast.kAssert(), j, e, Parser.facts(g, Ast.kGFacts())) else Parser.fail(g)
+  else e
+

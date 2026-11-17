@@ -1,0 +1,5 @@
+// prompt: the text t of a unit declares a libc extern: the ABI tag `extern 'libc'` at the head, then a def, a struct or a val (a libc
+// struct is a libc layout and a libc val a libc constant, classed like a libc def).
+def Gate.isLibcDeclaration(t: Str): Bool =
+  val h = Kernel.headAt(t, 0)
+  Kernel.matchAt(t, "extern 'libc'", h, 0, 13) && (Kernel.matchAt(t, "def ", Kernel.kwAt(t, h), 0, 4) || Kernel.matchAt(t, "struct ", Kernel.kwAt(t, h), 0, 7) || Kernel.matchAt(t, "val ", Kernel.kwAt(t, h), 0, 4))

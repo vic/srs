@@ -1,0 +1,6 @@
+// prompt: true when no closed enum type id from u up to t prints the same C name as t: t is the first of its name, the one id the
+// emitter declares and defines (Typer.fwds, Emit.enumTypes).
+def Typer.firstOfTag(s: Typer.S, t: I64, u: I64): Bool =
+  if u < t then
+    if Typer.kind(s, u) == Typer.bEnum() && Typer.closedT(s, u) && Typer.sameName(s, u, t) then false else Typer.firstOfTag(s, t, u + 1)
+  else true

@@ -1,0 +1,9 @@
+// prompt: the row of term token t of atom a: a local binder (tag lt) or an int literal in the fact range (tag it); any other term has no row (fails closed).
+def Gate.factTerm(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), lt: Gate.FactTag, it: Gate.FactTag, a: I64, t: I64): Unit =
+  if 0 <= t && t < rcap && I64.ofU8(rk(t)) == Resolve.kLocal() then Gate.factRow(lt, u, a, I64.of(rf(t)), 0)
+  else if Ast.cls(g, t) == Token.int() then
+    Gate.decVal(Ast.text(g, t), 0, 0) match
+      case Coll.Some(v) => Gate.factRow(it, u, a, v, 0)
+      case Coll.None => ()
+  else ()
+

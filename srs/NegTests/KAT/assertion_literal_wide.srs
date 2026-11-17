@@ -1,0 +1,10 @@
+// prompt: K-AT neg: the guard i < 12 does not prove below(i, 10): assertion-unproved.
+val NegTests.KAT.assertion_literal_wide {NegTest}: Never =
+  def G.pick(i: U64): U64 =
+    if i < 12 then
+      @<below(i, 10)>
+      i
+    else 0
+  def main(): I64 = 0
+  NegTest.expect("assertion-unproved", "i < 12 does not give i < 10")
+

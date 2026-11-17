@@ -1,0 +1,17 @@
+// prompt: family F1 over unit names all (base unit names first, then the image): a name declared by two units is error[duplicate].
+def Gate.dupNames(all: Os.Strs): Kernel.Res =
+  Console.captureBegin()
+  Gate.unitRows(all, all, 0)
+  val rows = Console.captureEnd()
+  val Planner.Res2(err, txt) = Planner.textS(Gate.dupRules(), Planner.Mem(Os.More("unit", Os.End), Os.More(rows, Os.End)))
+  if Str.len(err) > 0 then Kernel.Res(1, err)
+  else
+    val ds = Gate.section(Planner.run(txt), "@1\n")
+    if Str.len(ds) == 0 then Kernel.Res(0, "")
+    else
+      Console.captureBegin()
+      Console.print("error[duplicate]")
+      Gate.namesOf(all, ds, 0)
+      Console.print("\n")
+      Kernel.Res(1, Console.captureEnd())
+

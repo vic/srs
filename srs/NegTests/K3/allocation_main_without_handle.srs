@@ -1,0 +1,7 @@
+// prompt: K3 part 2 NEG: main allocates with no Region handle in scope; every allocation needs a Region cover (ruling R1b: main's effect row reduces to empty).
+val NegTests.K3.allocation_main_without_handle {NegTest}: Never =
+  def main(): I64 =
+    val block = Array.fill(3, U8.of(0))
+    0
+  NegTest.expect("no-capability", "Array.fill needs a Region handle before it in main; there is none")
+

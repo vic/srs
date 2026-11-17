@@ -1,0 +1,6 @@
+// prompt: the kernel must reject U32.of(-1): a negative value has no U32 (the low 32 bits would read 4294967295).
+val NegTests.S7.arithmetic_unsigned_word_of_negative {NegTest}: Never =
+  def Arithmetic.rejected(): U32 = U32.of(-1)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "-1 has no U32; keeping the low 32 bits would read 4294967295")
+

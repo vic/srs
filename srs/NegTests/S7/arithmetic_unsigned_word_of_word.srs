@@ -1,0 +1,6 @@
+// prompt: the kernel must reject U32.ofU64: no proved form (a U64 above 4294967295 loses its high bits).
+val NegTests.S7.arithmetic_unsigned_word_of_word {NegTest}: Never =
+  def Arithmetic.rejected(value: U64): U32 = U32.ofU64(value)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "U32.ofU64 keeps only the low 32 bits; it has no proved form")
+

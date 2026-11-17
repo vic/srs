@@ -1,0 +1,10 @@
+// prompt: the binder tokens of the enum value params (kParams groups) among the parts, pushed after the [] ones (Typer.tpToks): each
+// binder gets its Param type entry (Typer.pushToks), so the value param has a typer entry (no missingEntry) and is a type param slot.
+def Typer.valToks(x: Typer.X, r: I64, i: I64): Unit =
+  val Typer.X(_, g, s, _, _, _) = x
+  if i < Ast.len(g, r) then
+    val n = Ast.item(g, r, i)
+    if Ast.kd(g, n) == Ast.kParams() then Typer.pushToks(x, Ast.a(g, n), 0) else ()
+    Typer.valToks(x, r, i + 1)
+  else ()
+

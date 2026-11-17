@@ -1,0 +1,9 @@
+// prompt: the FactCredit row of statement s of block blk: s is an assertion statement, or a val whose value node is an assertion; the
+// assertion node p then dominates every later statement of blk (FFact only).
+def Gate.factCredit(g: Ast.G, sel: Gate.Fk, u: I64, blk: I64, s: I64): Unit =
+  if Gate.fkB(sel) == Gate.fkB(Gate.FFact) then
+    if Ast.kd(g, s) == Ast.kAssert() then Gate.factRow(Gate.FactCredit, u, s, s, blk)
+    else if Ast.kd(g, s) == Ast.kVal() && Ast.kd(g, Ast.b(g, s)) == Ast.kAssert() then Gate.factRow(Gate.FactCredit, u, Ast.b(g, s), s, blk)
+    else ()
+  else ()
+

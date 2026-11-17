@@ -6,11 +6,10 @@ def Kernel.negT(r: Kernel.NegRun, n: Str, t: Str): Kernel.NegR =
   val b = Kernel.bodyStart(t)
   val form = Kernel.msg2(n, " error[negtest-form] the last body line must be NegTest.expect(\"code\", .., \"why\")\n")
   Kernel.expectAt(t, b) match
-    case Coll.None => Kernel.NegR(1, 0, form)
+    case Coll.None => Kernel.NegR(1, 0, 0, form)
     case Coll.Some(q) =>
       Kernel.lits(t, q, Kernel.lineAfter(t, q), Os.End) match
-        case Os.End => Kernel.NegR(1, 0, form)
+        case Os.End => Kernel.NegR(1, 0, 0, form)
         case Os.More(why, want) =>
-          if Kernel.wsLen(want, 0) == 0 then Kernel.NegR(1, 0, form) else Kernel.negRun1(r, n, t, b, q, why, want)
-
+          if Kernel.wsLen(want, 0) == 0 then Kernel.NegR(1, 0, 0, form) else Kernel.negRun1(r, n, t, b, q, why, want)
 

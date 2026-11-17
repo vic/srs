@@ -1,4 +1,9 @@
-// prompt: one diag line per unit and code for every output relation of families F5c, F5d and F5e (Gate.relMsg).
+// prompt: one diag line per unit and code for every output relation of families F5c, F5d, F5e and F5f (Gate.relMsg); K2 adds
+// arith-unproved (badArith), ptr-outside-srs (badPtrChecked), rt-outside-srs (badRtChecked) for checked units, and
+// builtin-name-taken (badBuiltinName) for any unit named like a builtin and for a checked unit named like a role unit; K2-fix2 adds
+// extern-denied (badExternChecked) for a checked extern that is not libc (K3 part 3: no runtime exemption); K3 part 2 adds
+// unhandled-effect (badNoRegion) for a unit that allocates in a program with no Region capability; K-AT part 2 (F5f) adds
+// assertion-unproved (badAssertion) and fact-unchecked (badFactUnchecked).
 def Gate.sigMsgs(ps: Os.Strs, out: Str): Str =
   val t = Gate.rulesAll()
   Console.captureBegin()
@@ -48,5 +53,12 @@ def Gate.sigMsgs(ps: Os.Strs, out: Str): Str =
   Gate.relMsg("error[ptr-access-outside-allocator]", "badPtrMem", t, ps, out)
   Gate.relMsg("error[raw-ptr]", "badRawPtr", t, ps, out)
   Gate.relMsg("error[ptr-align]", "badAlign", t, ps, out)
+  Gate.relMsg("error[arith-unproved]", "badArith", t, ps, out)
+  Gate.relMsg("error[ptr-outside-srs]", "badPtrChecked", t, ps, out)
+  Gate.relMsg("error[rt-outside-srs]", "badRtChecked", t, ps, out)
+  Gate.relMsg("error[builtin-name-taken]", "badBuiltinName", t, ps, out)
+  Gate.relMsg("error[extern-denied]", "badExternChecked", t, ps, out)
+  Gate.relMsg("error[unhandled-effect]", "badNoRegion", t, ps, out)
+  Gate.relMsg("error[assertion-unproved]", "badAssertion", t, ps, out)
+  Gate.relMsg("error[fact-unchecked]", "badFactUnchecked", t, ps, out)
   Console.captureEnd()
-

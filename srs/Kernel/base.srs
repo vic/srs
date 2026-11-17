@@ -1,9 +1,15 @@
+// prompt: read the base files Args.at(i).. into a Kernel.Base: each readable file is split into its units by Kernel.splitAdd (a
+// base unit enters under its unit name, as load and factsAct give it, never under its file path); a file with no unit goes to
+// none; an unreadable file counts in bad.
 def Kernel.base(i: I64): Kernel.Base =
-  if i >= Args.count() then Kernel.Base(Os.End, Os.End, 0)
+  if i >= Args.count() then Kernel.Base(Os.End, Os.End, Os.End, 0)
   else
     val p = Args.at(i)
-    val Kernel.Base(ps, xs, bad) = Kernel.base(i + 1)
+    val Kernel.Base(ps, xs, no, bad) = Kernel.base(i + 1)
     Files.bytes(p) match
-      case Os.Ok(src) => Kernel.Base(Os.More(p, ps), Os.More(src, xs), bad)
-      case Os.Fail(_) => Kernel.Base(ps, xs, bad + 1)
+      case Os.Ok(src) =>
+        val u = Kernel.splitAdd(Kernel.Empty, src)
+        if Kernel.count(u, 0) == 0 then Kernel.Base(ps, xs, Os.More(p, no), bad)
+        else Kernel.Base(Kernel.cat(Kernel.paths(u), ps), Kernel.cat(Kernel.texts(u), xs), no, bad)
+      case Os.Fail(_) => Kernel.Base(ps, xs, no, bad + 1)
 

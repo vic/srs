@@ -1,11 +1,12 @@
-// the value args of a call node n, left to right: n's entry flows into the first arg, each arg's exit into the next, the last exit into n's exit; argFirst(u, n, a, t) / argLast(u, n, a, t) name the first / last arg node a at token t
+// prompt: the value args of a call node n, left to right: n's entry flows into the first arg, each arg's exit into the next, the last exit into n's exit; argFirst(u, n, a, t) / argLast(u, n, a, t) name the value node (Gate.valueOf) of the first / last arg node a at its token t; the walk visits a itself
 def Gate.fwArgs(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), blk: I64, n: I64, l: I64, i: I64): Unit =
   if i < Ast.len(g, l) then
     val a = Ast.item(g, l, i)
-    if Gate.fkB(sel) == Gate.fkB(Gate.FArg) && i == 0 then Gate.row4(u, n, a, Ast.tok(g, a)) else ()
-    if Gate.fkB(sel) == Gate.fkB(Gate.FArgL) && i + 1 == Ast.len(g, l) then Gate.row4(u, n, a, Ast.tok(g, a)) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FArg) && i == 0 then Gate.row4(u, n, Gate.valueOf(g, a), Ast.tok(g, Gate.valueOf(g, a))) else ()
+    if Gate.fkB(sel) == Gate.fkB(Gate.FArgL) && i + 1 == Ast.len(g, l) then Gate.row4(u, n, Gate.valueOf(g, a), Ast.tok(g, Gate.valueOf(g, a))) else ()
     if i == 0 then Gate.fe(sel, Gate.FEe, u, n, a) else ()
     Gate.fw(w, g, sel, u, rcap, rk, rf, blk, a)
     if i + 1 < Ast.len(g, l) then Gate.fe(sel, Gate.FXe, u, a, Ast.item(g, l, i + 1)) else Gate.fe(sel, Gate.FXx, u, a, n)
     Gate.fwArgs(w, g, sel, u, rcap, rk, rf, blk, n, l, i + 1)
   else ()
+

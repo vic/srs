@@ -1,0 +1,9 @@
+// prompt: K-AT neg: a guard of a sibling branch gives no fact after the if: assertion-unproved.
+val NegTests.KAT.assertion_sibling_scope {NegTest}: Never =
+  def G.pick(i: U64, n: U64): U64 =
+    val r = if i < n then i@<below(i, n)> else n
+    @<below(i, n)>
+    r
+  def main(): I64 = 0
+  NegTest.expect("assertion-unproved", "the then-branch guard does not hold after the if")
+

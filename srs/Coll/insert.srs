@@ -1,8 +1,0 @@
-// m with k bound to v (a binding of k is replaced)
-def Coll.insert [V: Type] (m: Coll.IMap[V], k: I64, v: V): Coll.IMap[V] = m match
-  case Coll.Tip => Coll.Bin(1, k, v, Coll.Tip, Coll.Tip)
-  case Coll.Bin(s, k2, v2, l, r2) =>
-    if k < k2 then Coll.balance(k2, v2, Coll.insert(l, k, v), r2)
-    else if k > k2 then Coll.balance(k2, v2, l, Coll.insert(r2, k, v))
-    else Coll.Bin(s, k, v, l, r2)
-

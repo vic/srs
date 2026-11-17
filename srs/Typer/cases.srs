@@ -1,3 +1,6 @@
+// prompt: the sig of every case of an enum: params = the field types (their lengths: literals, sibling fields, or the enum's value
+// param), type params = the enum's [] binders then its value param (Typer.tpToks, Typer.valToks), length binders = the fields; the
+// case count in the evidence column (exhaustiveness) and the case tag.
 def Typer.cases(x: Typer.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
   val Typer.X(_, g, s, _, _, _) = x
   if i < Ast.len(g, parts) then
@@ -8,6 +11,7 @@ def Typer.cases(x: Typer.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
       Typer.binderTys(x, if k == Ast.kCase() then Ast.a(g, n) else 0, 0)
       val np = Typer.mark(s) - m
       Typer.tpToks(x, parts, 0)
+      Typer.valToks(x, parts, 0)
       Typer.binderLens(x, if k == Ast.kCase() then Ast.a(g, n) else 0, 0)
       // the evidence column of a case sig holds the case count of its enum (a case has no evidence): exhaustiveness reads it
       Typer.sigStore(s, Typer.symOf(x, Ast.tok(g, n)), self, np, tps, Typer.caseCount(g, parts, 0, 0), m)
@@ -17,4 +21,3 @@ def Typer.cases(x: Typer.X, parts: I64, i: I64, self: I64, tps: I64): Unit =
     else ()
     Typer.cases(x, parts, i + 1, self, tps)
   else ()
-

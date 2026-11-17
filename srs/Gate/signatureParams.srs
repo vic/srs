@@ -1,0 +1,9 @@
+// prompt: the paramType rows of the params of group l from position i: a bound param whose declared type resolves (name pass) to
+// a builtin type gives (u, position, type symbol); any other param type gives no row (no identity: fail closed).
+def Gate.signatureParams(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val n = Ast.item(g, l, i)
+    if Ast.kd(g, n) == Ast.kBind() then Gate.signatureType(g, u, rcap, rk, rf, Gate.TagParamType, i, Ast.a(g, n)) else ()
+    Gate.signatureParams(g, u, rcap, rk, rf, l, i + 1)
+  else ()
+

@@ -19,7 +19,9 @@ def Typer.tyUse(x: Typer.X, t: I64, ln: I64): I64 =
       case Coll.None =>
         Typer.un(s, Typer.uTypeOther())
         Typer.mk(s, Typer.bOther(), 0, Typer.symOf(x, j), m)
-  else if tk == Resolve.tEnum() then Typer.mk(s, Typer.bEnum(), 0, Typer.symOf(x, j), m)
+  else if tk == Resolve.tEnum() then
+    if ln != 0 then Typer.push(s, ln) else ()
+    Typer.mk(s, Typer.bEnum(), 0, Typer.symOf(x, j), m)
   else if tk == Resolve.tParam() then Typer.mk(s, Typer.bParam(), 0, if 0 <= j && j < rcap then I64.of(rf(j)) else 0, m)
   else if tk == Resolve.tCap() || tk == Resolve.tHandler() || tk == Resolve.tTrait() then Typer.mk(s, Typer.bCap(), 0, Typer.symOf(x, j), m)
   else if tk == Resolve.tDecl() && Typer.isCStruct(s, Typer.symIns(x, j)) then Typer.mk(s, Typer.bBuiltin(), Typer.clsPtr(), Typer.symIns(x, j), m)

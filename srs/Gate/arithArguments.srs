@@ -1,0 +1,13 @@
+// prompt: the argument rows of call node n from argument index i: argumentLiteral(u, n, i, l) and argumentLocal(u, n, i, x).
+def Gate.arithArguments(g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val e = Gate.valueOf(g, Ast.item(g, l, i))
+    Gate.intOf(g, e) match
+      case Coll.Some(v) => Gate.arithRow(Gate.TagArgumentLiteral, u, n, i, v)
+      case Coll.None => ()
+    Gate.localOf(g, rcap, rk, rf, e) match
+      case Coll.Some(x) => Gate.arithRow(Gate.TagArgumentLocal, u, n, i, x)
+      case Coll.None => ()
+    Gate.arithArguments(g, u, rcap, rk, rf, n, l, i + 1)
+  else ()
+

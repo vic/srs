@@ -1,0 +1,7 @@
+// prompt: test: Ix.Probe.readUnsigned reads byte 4 of the zero block of 10 bytes under only index < size (U64 never negative).
+val Tests.Ix.read_unsigned {Test}: Test.Result =
+  handle a = Srs.Arena()
+  K3.Probe.build10() match
+    case K3.Probe.Allocated(block) => Test.expect(I64.ofU8(Ix.Probe.readUnsigned(10, block, U64.of(4), U8.of(9))), 0, "byte 4 of the zero block is 0")
+    case K3.Probe.AllocationFailed => Test.expect(1, 0, "the 10 byte block must be allocated")
+

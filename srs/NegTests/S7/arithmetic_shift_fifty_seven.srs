@@ -1,0 +1,6 @@
+// prompt: the kernel must reject a byte widened to a word and shifted by 57: bits leave the word.
+val NegTests.S7.arithmetic_shift_fifty_seven {NegTest}: Never =
+  def Arithmetic.rejected(byte: U8): U64 = U64.ofU8(byte) << 57
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a byte shifted left by 57 loses its top bits; at most 56 keeps all eight")
+

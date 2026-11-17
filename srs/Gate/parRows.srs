@@ -1,3 +1,6 @@
+// prompt: the facts of the binder groups of def r (items from i) for fact selector sel: evidence, params, result and fact groups,
+// one branch per selector; FUnsigned = U64 params (Gate.unsignedBinds); FArith = the signature rows (param count, param types,
+// result type) of defs and externs (Gate.signatureGroup, Gate.signatureType).
 def Gate.parRows(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), r: I64, i: I64): Unit =
   if i < Ast.len(g, r) then
     val p = Ast.item(g, r, i)
@@ -21,6 +24,11 @@ def Gate.parRows(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Ar
     else if (k == Ast.kGFacts() || k == Ast.kExit()) && Gate.fkB(sel) == Gate.fkB(Gate.FRel) then Gate.relRows(w, g, u, Ast.a(g, p), 0)
     else if k == Ast.kParams() && Gate.fkB(sel) == Gate.fkB(Gate.FAlen) then Gate.alenBinds(g, u, rcap, rk, rf, Ast.a(g, p), 0)
     else if k == Ast.kParams() && Gate.fkB(sel) == Gate.fkB(Gate.FAlenLit) then Gate.alenLitBinds(g, u, Ast.a(g, p), 0)
+    else if k == Ast.kParams() && Gate.fkB(sel) == Gate.fkB(Gate.FTypeArg) then Gate.typeArgBinds(w, g, u, rcap, rk, rf, Ast.a(g, p), 0)
+    else if k == Ast.kParams() && Gate.fkB(sel) == Gate.fkB(Gate.FUnsigned) then Gate.unsignedBinds(w, g, u, rcap, rk, rf, Ast.a(g, p), 0)
+    else if k == Ast.kParams() && Gate.fkB(sel) == Gate.fkB(Gate.FArith) then Gate.signatureGroup(g, u, rcap, rk, rf, Ast.a(g, p))
+    else if k == Ast.kRet() && Gate.fkB(sel) == Gate.fkB(Gate.FArith) then Gate.signatureType(g, u, rcap, rk, rf, Gate.TagResultType, 0, Ast.a(g, p))
     else ()
     Gate.parRows(w, g, sel, u, rcap, rk, rf, r, i + 1)
   else ()
+

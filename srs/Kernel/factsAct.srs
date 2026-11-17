@@ -1,4 +1,5 @@
-// prompt: facts BASE FILE: the input relations of the gate for the units of FILE (user code) on top of BASE, then ref targets and tokens.
+// prompt: facts BASE FILE: the input relations of the gate for the units of FILE (user code) on top of BASE, then ref targets and
+// tokens; the units of FILE are the user units and the checked units (cs = us, as in Kernel.check).
 def Kernel.factsAct(ws: Os.Strs): Kernel.Res = ws match
   case Os.End => Kernel.Res(1, "usage: facts BASE FILE")
   case Os.More(pre, r) => r match
@@ -13,7 +14,8 @@ def Kernel.factsAct(ws: Os.Strs): Kernel.Res = ws match
           val im = Kernel.splitAdd(base, t)
           val ps = Kernel.paths(im)
           val xs = Kernel.texts(im)
-          val Gate.In(ns, rs) = Gate.f2In(ps, xs, Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, t), Os.End))
+          val us = Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, t), Os.End)
+          val Gate.In(ns, rs) = Gate.f2In(ps, xs, us, us)
           val Gate.Rw(w, rr) = Gate.resolveAll(ps, xs)
           Console.captureBegin()
           Gate.unitsFrom(ps, lo, 0)
@@ -23,4 +25,3 @@ def Kernel.factsAct(ws: Os.Strs): Kernel.Res = ws match
           Console.print("## tokens (unit kind ref)\n")
           Gate.tokRows(rr, lo, 0)
           Kernel.Res(0, Console.captureEnd())
-

@@ -1,15 +1,18 @@
-// prompt: child of a NegTest run: BASE = the plain image text, PROBE = the body as top-level decls (user code); check the closure
-// Kernel.negSub and write its diag lines to OUT.
+// prompt: child of a NegTest run: BASE = the server base unit texts, then the plain image text; PROBE = the body as top-level
+// decls (user code); first write the B3 of the base bytes it read to OUT.base (the echo the server compares with its run), then
+// check the closure Kernel.negSub and write its diag lines to OUT.
 def Kernel.negtMain(bp: Str, pp: Str, op: Str): Kernel.Verdict = Files.bytes(bp) match
   case Os.Fail(_) => Kernel.VUnread
   case Os.Ok(bt) => Files.bytes(pp) match
     case Os.Fail(_) => Kernel.VUnread
     case Os.Ok(pt) =>
-      val sub = Kernel.negSub(Kernel.split(Kernel.Empty, bt), pt)
-      val Kernel.Res(c, out) = Kernel.check(Os.End, Os.End, sub, Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, pt), Os.End))
-      Console.captureBegin()
-      Kernel.diagLines(out, 0)
-      if Disk.put(op, Console.captureEnd()) != 0 then Kernel.VUnread
-      else if c == 0 then Kernel.VAccept
-      else Kernel.VReject
+      if Disk.put(Kernel.msg2(op, ".base"), Blake3.hash(bt)) != 0 then Kernel.VUnread
+      else
+        val sub = Kernel.negSub(Kernel.split(Kernel.Empty, bt), pt)
+        val Kernel.Res(c, out) = Kernel.check(Os.End, Os.End, sub, Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, pt), Os.End))
+        Console.captureBegin()
+        Kernel.diagLines(out, 0)
+        if Disk.put(op, Console.captureEnd()) != 0 then Kernel.VUnread
+        else if c == 0 then Kernel.VAccept
+        else Kernel.VReject
 

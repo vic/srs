@@ -1,0 +1,7 @@
+// prompt: K3 NEG: index <= size allows index == size, one past the size-indexed block.
+val NegTests.K3.indexed_block_off_by_one {NegTest}: Never =
+  def K3.Neg.pastEnd(size: U64, result: K3.Probe.Allocation(size), index: U64, fallback: U8): U8 = result match
+    case K3.Probe.Allocated(block) => if index <= size then block(index) else fallback
+    case K3.Probe.AllocationFailed => fallback
+  NegTest.expect("index-unproved", "index <= size allows index == size, one past the last byte of the size-indexed block")
+

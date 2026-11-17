@@ -1,0 +1,14 @@
+// prompt: the shared inputs of one NegTest run over plain image pl on a server with base unit texts bt: check the scratch dir;
+// write the base texts and then the image text to its base file (a child checks a probe with the same base its server checks
+// with), then build the run from the SAME text (Kernel.negRunText); the base file is never read back (check a2). A refused
+// scratch dir gives a run with no key whose every child is refused (Kernel.negChild).
+def Kernel.negRunWritten(self: Str, bt: Os.Strs, pl: Kernel.Img): Kernel.NegRun = Kernel.negScratch() match
+  case Kernel.ScratchRefused(reason) => Kernel.NegRun(self, "", Coll.None, "", "", Kernel.ScratchRefused(reason))
+  case Kernel.ScratchReady(dir) =>
+    Console.captureBegin()
+    Kernel.printBase(bt)
+    Kernel.printTexts(pl)
+    val text = Console.captureEnd()
+    val path = Kernel.msg2(dir, "/base.srs")
+    if Disk.put(path, text) == 0 then Kernel.negRunText(self, path, text, Kernel.ScratchReady(dir)) else Kernel.NegRun(self, Kernel.msg2(path, ".unwritten"), Coll.None, "", "", Kernel.ScratchReady(dir))
+

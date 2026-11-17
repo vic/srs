@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `a - b` with no guard: the difference can go below zero.
+val NegTests.S7.arithmetic_subtract_unguarded {NegTest}: Never =
+  def Arithmetic.rejected(a: U64, b: U64): U64 = a - b
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a - b without a guard b <= a can go below zero")
+

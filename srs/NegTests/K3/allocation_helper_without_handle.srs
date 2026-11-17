@@ -1,0 +1,8 @@
+// prompt: K3 part 2 NEG: a helper allocates and main calls it with no Region handle; the helper's Region need reaches main.
+val NegTests.K3.allocation_helper_without_handle {NegTest}: Never =
+  def AllocationProbe.make(): Array[U8](3) = Array.fill(3, U8.of(0))
+  def main(): I64 =
+    val block = AllocationProbe.make()
+    0
+  NegTest.expect("unhandled-effect", "AllocationProbe.make allocates; main handles no Region for the call")
+

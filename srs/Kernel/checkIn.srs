@@ -1,0 +1,17 @@
+// prompt: check image im (base paths bp and texts bt first): duplicates over the base names and the image (an image unit named
+// like a base unit is error[duplicate]), the Datalog gate (Gate.f2) and the typer. us = the names of the units that are user code
+// (fil-c FC66: only the runtime is unsafe code); cs = the units the s7 families check (checkedUnit). The typer runs even when the
+// gate rejects, and both reports are joined (every error at once); the result code is the gate's when it rejects, so a gate
+// rejection is never admitted (srs5 ruling (2), K2 recode).
+def Kernel.checkIn(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, us: Os.Strs, cs: Os.Strs): Kernel.Res =
+  val ps = Kernel.cat(bp, Kernel.paths(im))
+  val Kernel.Res(dc, dout) = Gate.dupNames(ps)
+  if dc != 0 then Kernel.Res(dc, dout)
+  else
+    val xs = Kernel.cat(bt, Kernel.texts(im))
+    val Kernel.Res(fc, fout) = Gate.f2(ps, xs, us, cs)
+    Console.captureBegin()
+    val code = Typer.runFs(Resolve.loadMem(ps, xs), Kernel.len(ps, 0), 0)
+    val tout = Console.captureEnd()
+    if fc != 0 then Kernel.Res(fc, Kernel.msg2(fout, tout)) else Kernel.Res(code, tout)
+

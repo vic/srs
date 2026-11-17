@@ -1,0 +1,8 @@
+// prompt: a call through a function value has no form in s7 today: `step(value)` on a local parses as an index read, so it is rejected (stated limit, pinned).
+val NegTests.S7.arithmetic_call_through_value {NegTest}: Never =
+  def Arithmetic.next(value: U64): U64 = value
+  def Arithmetic.rejected(value: U64): U64 =
+    val step = Arithmetic.next
+    step(value)
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "untyped", "step is a value, not an array; a call through a value has no form, so it is rejected")

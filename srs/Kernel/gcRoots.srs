@@ -1,0 +1,5 @@
+// prompt: the names of the gc roots of image im: Kernel.gcRootsOf, plus Kernel.implicitRoots when im holds a Test or NegTest (the test
+// runner and every NegTest child reach those units by text).
+def Kernel.gcRoots(im: Kernel.Img): Os.Strs =
+  val rs = Kernel.gcRootsOf(im, im)
+  if Kernel.hasTestUnit(im) then Kernel.cat(rs, Kernel.implicitRoots()) else rs

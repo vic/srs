@@ -1,16 +1,18 @@
-// prompt: admit image im only when no unit name is duplicated, every NegTest header has the NegTest form, the plain image (no
-// NegTests, all trusted: no user units) passes Kernel.check, and every NegTest body is rejected with exactly its expected codes
-// (Kernel.negRunT; results cached by kernel binary, plain image and body).
+// prompt: admit image im only when no unit name is duplicated (over the base names and the image), every NegTest header has the
+// NegTest form, the plain image (no NegTests, all trusted: no user units; checked units per Kernel.checkedNames) passes
+// Kernel.checkIn, and every NegTest body is rejected with exactly its expected codes (Kernel.negRunT over Kernel.negRunWritten
+// with the server base texts bt, so a child checks with the base its server checks with; results cached by kernel binary,
+// base and plain image text, and body).
 def Kernel.checkAll(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img): Kernel.Res =
-  val Kernel.Res(dc, dout) = Gate.dup(im)
+  val Kernel.Res(dc, dout) = Gate.dupNames(Kernel.cat(bp, Kernel.paths(im)))
   if dc != 0 then Kernel.Res(dc, dout)
   else Kernel.negForm(im) match
     case Coll.Some(n) => Kernel.Res(1, Kernel.msg2("error[negtest-form] NegTest takes only val NAME {NegTest}: Never = e: ", n))
     case Coll.None =>
       val pl = Kernel.plain(im)
-      val Kernel.Res(c, out) = Kernel.check(bp, bt, pl, Os.End)
+      val Kernel.Res(c, out) = Kernel.checkIn(bp, bt, pl, Os.End, Kernel.checkedNames(pl))
       if c != 0 then Kernel.Res(c, out)
       else
-        val Kernel.NegR(nc, _, nout) = Kernel.negRunT(Kernel.negRunOf(Args.at(0), Kernel.negBase(pl)), im, Os.End, 0, 0)
+        val Kernel.NegR(nc, _, _, nout) = Kernel.negRunT(Kernel.negRunWritten(Args.at(0), bt, pl), im, Os.End, 0, 0, 0)
         if nc != 0 then Kernel.Res(1, Kernel.msg2("error[negtest-failed]\n", nout)) else Kernel.Res(0, out)
 

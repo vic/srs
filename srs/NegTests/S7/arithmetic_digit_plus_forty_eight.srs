@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `digit + 48`: a digit byte comes from the digit table, never from arithmetic.
+val NegTests.S7.arithmetic_digit_plus_forty_eight {NegTest}: Never =
+  def Arithmetic.rejected(digit: I64): I64 = digit + 48
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "digit + 48 has no proved form; index the 10-byte digit table by U64.remainder(v, 10)")
+

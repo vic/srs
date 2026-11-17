@@ -1,0 +1,13 @@
+// prompt: one child run of a NegTest body (probe file pp, out file op, echo file ep) over base file base: Some(judgement) when
+// the child echoed the run's base B3 baseHash, or when its verdict is not final (a crash or an unread input is reported as it
+// is and never cached); None when a final verdict comes with another echo: the child checked another program.
+def Kernel.negChildRun(self: Str, base: Str, pp: Str, op: Str, ep: Str, baseHash: Str): Coll.Option[Kernel.Judged] =
+  val v = Kernel.verdict(Process.run(Kernel.negtArgv(self, base, pp, op)))
+  val echo = Files.bytes(ep) match
+    case Os.Ok(o) => o
+    case Os.Fail(_) => ""
+  val diags = Files.bytes(op) match
+    case Os.Ok(o) => o
+    case Os.Fail(_) => ""
+  if Str.eq(echo, baseHash) || !Kernel.isFinal(v) then Coll.Some(Kernel.Judged(v, diags)) else Coll.None
+

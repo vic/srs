@@ -1,16 +1,17 @@
-// every NegTest of im; fail = the count of failed ones, ran = child processes started; reports reversed in acc
-// prompt: run every NegTest of image im in run r; the report holds one line per NegTest and a last line "children=N" with the
-// count of child processes started (0 when every result came from the cache).
-def Kernel.negRunT(r: Kernel.NegRun, im: Kernel.Img, acc: Os.Strs, bad: I64, ran: I64): Kernel.NegR = im match
+// every NegTest of im; fail = the count of failed ones, judged = NegTests judged without a cache hit, spawned = child processes
+// started; reports reversed in acc
+// prompt: run every NegTest of image im in run r; the report holds one line per NegTest and two last lines "judged=N" (NegTests
+// judged without a cache hit) and "spawned=M" (child processes started; 0 when every result came from the cache or the
+// scratch dir was refused).
+def Kernel.negRunT(r: Kernel.NegRun, im: Kernel.Img, acc: Os.Strs, bad: I64, judged: I64, spawned: I64): Kernel.NegR = im match
   case Kernel.Empty =>
-    val cs = Kernel.msg2(Kernel.msg2("children=", Kernel.num(ran)), "\n")
+    val cs = Kernel.msg2(Kernel.msg2(Kernel.msg2(Kernel.msg2("judged=", Kernel.num(judged)), "\nspawned="), Kernel.num(spawned)), "\n")
     Console.captureBegin()
     Kernel.joinRev(Os.More(cs, acc))
-    Kernel.NegR(bad, ran, Console.captureEnd())
+    Kernel.NegR(bad, judged, spawned, Console.captureEnd())
   case Kernel.Unit(n, t, rest) =>
     if Kernel.isNegTest(t) then
-      val Kernel.NegR(c, k, rep) = Kernel.negT(r, n, t)
-      Kernel.negRunT(r, rest, Os.More(rep, acc), bad + c, ran + k)
-    else Kernel.negRunT(r, rest, acc, bad, ran)
-
+      val Kernel.NegR(c, k, s, rep) = Kernel.negT(r, n, t)
+      Kernel.negRunT(r, rest, Os.More(rep, acc), bad + c, judged + k, spawned + s)
+    else Kernel.negRunT(r, rest, acc, bad, judged, spawned)
 

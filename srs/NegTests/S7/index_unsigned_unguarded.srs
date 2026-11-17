@@ -1,0 +1,6 @@
+// prompt: K NEG 1: a U64 index with no upper bound guard is not proved; the kernel must reject it with exactly these codes.
+val NegTests.S7.index_unsigned_unguarded {NegTest}: Never =
+  def Ix.bad(size: U64, bytes: Array[U8](size), index: U64): U8 = bytes(index)
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "U64 >= 0 gives only the lower bound; with no index < size guard the read is not proved")
+

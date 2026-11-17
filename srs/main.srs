@@ -1,6 +1,9 @@
 // prompt: the kernel entry: handles the world capabilities (Console Args Mut Arena Files Sock Net Disk Process Env) and runs one mode:
-// --neg, --negt, --tests, --emit, --build (Kernel.buildMain), or the s4-cc server on the socket path argv[1] with the base files argv[2..].
-def main(): I64 =
+// --neg, --negt, --tests, --emit, --build (Kernel.buildMain), or the s4-cc server on the socket path argv[1], with `--kernel-image` as
+// argv[2] when it serves the kernel image (Kernel.isKernelImage), and the base files after it. The server refuses to start (exit 1,
+// before listen, reason on stderr) when a base file is unreadable, a base file holds no unit, or the base alone fails Kernel.checkIn
+// on an empty image (duplicate base names, parse or type errors). `pub`: the program entry is the gc root of the kernel image.
+pub def main(): I64 =
   handle io = Srs.Console()
   handle a = Srs.Args()
   handle m = Srs.Mut()
@@ -12,7 +15,7 @@ def main(): I64 =
   handle pr = Srs.Process()
   handle e = Srs.Env()
   if Args.count() < 2 then
-    Console.eprint("usage: k0img <sock path> [<base file>...] | k0img --neg <base file> <file> | k0img --negt <base> <probe> <out> | k0img --tests <base> <out.c> <report> | k0img --emit <base> <file> <out.c> | k0img --build <image dir> <out.c>\n")
+    Console.eprint("usage: k0img <sock path> [--kernel-image] [<base file>...] | k0img --neg <base file> <file> | k0img --negt <base> <probe> <out> | k0img --tests <base> <out.c> <report> | k0img --emit <base> <file> <out.c> | k0img --build <image dir> <out.c>\n")
     2
   else if Kernel.isNeg() then Kernel.vCode(Kernel.negMain(Args.at(2), Args.at(3)))
   else if Kernel.isNegT() then Kernel.vCode(Kernel.negtMain(Args.at(2), Args.at(3), Args.at(4)))
@@ -20,15 +23,27 @@ def main(): I64 =
   else if Kernel.isEmit() then Kernel.vCode(Kernel.emitMain(Args.at(2), Args.at(3), Args.at(4)))
   else if Kernel.isBuild() then Kernel.buildMain(Args.at(2), Args.at(3))
   else
-    val Kernel.Base(bp, bt, bad) = Kernel.base(2)
+    val Kernel.Base(bp, bt, no, bad) = Kernel.base(if Kernel.isKernelImage() then 3 else 2)
     if bad > 0 then
       Console.eprint("base file unreadable\n")
       1
-    else
-      val lfd = Sock.open(Args.at(1))
-      if lfd < 0 then
-        Console.eprint("open failed\n")
+    else no match
+      case Os.More(p, _) =>
+        Console.eprint("base file has no unit: ")
+        Console.eprint(p)
+        Console.eprint("\n")
         1
-      else
-        Console.eprint("listening\n")
-        Kernel.serve(lfd, Args.at(1), 1, bp, bt, Kernel.Empty)
+      case Os.End =>
+        val Kernel.Res(bc, bout) = Kernel.checkIn(bp, bt, Kernel.Empty, Os.End, Os.End)
+        if bc != 0 then
+          Console.eprint("base refused\n")
+          Console.eprint(bout)
+          1
+        else
+          val lfd = Sock.open(Args.at(1))
+          if lfd < 0 then
+            Console.eprint("open failed\n")
+            1
+          else
+            Console.eprint("listening\n")
+            Kernel.serve(lfd, Args.at(1), 1, bp, bt, Kernel.Empty)

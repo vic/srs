@@ -1,0 +1,6 @@
+// prompt: the kernel must reject `a + U64.of(1)` under `a <= b`: a can already be the largest U64.
+val NegTests.S7.arithmetic_add_one_less_or_equal {NegTest}: Never =
+  def Arithmetic.rejected(a: U64, b: U64, fallback: U64): U64 = if a <= b then a + U64.of(1) else fallback
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "a <= b allows a == b == the largest U64, so a + 1 can wrap; the guard must be a < b")
+

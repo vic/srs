@@ -1,0 +1,8 @@
+// prompt: the kernel must reject a user extern with the exact text of the kernel unit U64.remainder (N27a, H3: a checked unit never gets the role).
+val NegTests.S7.arithmetic_role_same_name {NegTest}: Never =
+  extern def U64.remainder(x: U64, divisor: U32): U64
+  def Arithmetic.rejected(value: U64): U64 = U64.remainder(value, 10)
+  def main(): I64 = 0
+  NegTest.expect("arith-unproved", "builtin-name-taken", "extern-denied", "a user unit with the kernel text is still a user unit: it gets no role")
+
+

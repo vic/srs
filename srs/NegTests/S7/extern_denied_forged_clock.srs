@@ -1,0 +1,6 @@
+// prompt: the kernel must deny a checked extern that is neither libc nor an allowed runtime unit (K2-fix2 R3, deny by default).
+val NegTests.S7.extern_denied_forged_clock {NegTest}: Never =
+  extern def Forged.clock(): I64
+  def main(): I64 = 0
+  NegTest.expect("extern-denied", "Forged.clock is no libc extern and not rt_init, rt_argc or rt_arg_bytes: a checked program may not declare it")
+

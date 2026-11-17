@@ -1,7 +1,9 @@
 // guard atoms of the condition c (an && tree): ge0(u, c, i) for 0 <= i or i >= 0; glt(u, c, i, nb) for i < nb (bare local names)
+// prompt: the guard rows of condition c (an && tree) for selector sel: ge0, gle/gleSub, glb, gltL, glt, and for FArith the
+// belowTwo63 row of `v < 9223372036854775808` (v a bare local).
 def Gate.condRows(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), c: I64, e: I64): Unit =
   val k = Ast.kd(g, e)
-  if k == Ast.kParen() then Gate.condRows(g, sel, u, rcap, rk, rf, c, Ast.a(g, e))
+  if k == Ast.kParen() || (k == Ast.kAssert() && Ast.a(g, e) != 0) then Gate.condRows(g, sel, u, rcap, rk, rf, c, Ast.a(g, e))
   else if k == Ast.kBin() then
     val op = Ast.text(g, Ast.tok(g, e))
     val a = Ast.a(g, e)
@@ -27,6 +29,7 @@ def Gate.condRows(g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap)
             case Coll.Some(l) => Gate.row4(u, c, i, l)
             case Coll.None => ()
         case Coll.None => ()
+    else if Str.eq(op, "<") && Gate.fkB(sel) == Gate.fkB(Gate.FArith) && Gate.isTwo63(g, b) then Gate.arithOpt(Gate.TagBelowTwo63, u, c, Gate.localOf(g, rcap, rk, rf, a))
     else if Str.eq(op, "<") && Gate.fkB(sel) == Gate.fkB(Gate.FGlt) then
       Gate.localOf(g, rcap, rk, rf, a) match
         case Coll.Some(i) =>

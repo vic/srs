@@ -1,15 +1,15 @@
-// prompt: judge the dedented body t[b, q) of NegTest n: from the result cache when the entry of its key is complete, else in a
-// child process (Kernel.negChild), whose final verdict is then cached; report it (Kernel.negJudge).
+// prompt: judge the dedented body t[b, q) of NegTest n: from the result cache when the entry of its key is complete (judged 0,
+// spawned 0), else in a child process (Kernel.negChild: judged 1, spawned = the children it started), whose final verdict is
+// then cached; report it (Kernel.negJudge).
 def Kernel.negRun1(r: Kernel.NegRun, n: Str, t: Str, b: I64, q: I64, why: Str, want: Os.Strs): Kernel.NegR =
   Console.captureBegin()
   Kernel.dedent(t, b, q)
   val probe = Console.captureEnd()
   val ek = Kernel.negKey(r, probe)
   Kernel.negGet(ek) match
-    case Coll.Some(j) => Kernel.negJudge(n, j, why, want, 0)
+    case Coll.Some(j) => Kernel.negJudge(n, j, why, want, 0, 0)
     case Coll.None =>
-      val j = Kernel.negChild(r, n, probe)
+      val Kernel.Spawned(j, s) = Kernel.negChild(r, n, probe)
       Kernel.negPut(ek, j)
-      Kernel.negJudge(n, j, why, want, 1)
-
+      Kernel.negJudge(n, j, why, want, 1, s)
 

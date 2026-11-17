@@ -1,0 +1,9 @@
+// a negative test: a literal index of at least 2^32
+// prompt: the kernel must reject the literal index 2^32 + 4 into a 5-element array: the literal gives no ilit fact (never the
+// wrapped 4 < 5).
+val NegTests.indexLiteralWide {NegTest}: Never =
+  def Probe.literalWide(): U8 =
+    val a = Array.fill(5, U8.of(0))
+    a(4294967300)
+  NegTest.expect("index-unproved", "4294967300 is above the 32-bit fact column: no ilit fact, so a(4294967300) is unproved")
+

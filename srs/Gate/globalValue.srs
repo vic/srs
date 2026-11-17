@@ -1,0 +1,7 @@
+// prompt: the globalValue row of a name node n that resolves to a global decl (a function or value used as a value, not as a call
+// head): the Datalog rule rejects a checked unit that uses an arithmetic kernel unit this way (srs5 H2).
+def Gate.globalValue(w: Resolve.W, g: Ast.G, sel: Gate.Fk, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), n: I64): Unit =
+  val t = Ast.tok(g, n)
+  if Gate.fkB(sel) == Gate.fkB(Gate.FArith) && Ast.kd(g, n) == Ast.kName() && 0 <= t && t < rcap && I64.ofU8(rk(t)) == Resolve.kGlobal() then Gate.arithOpt(Gate.TagGlobalValue, u, n, Gate.declUnit(w, I64.of(rf(t))))
+  else ()
+

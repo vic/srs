@@ -1,0 +1,19 @@
+// prompt: the factAtom rows of the atoms of list l from i, asserted at node p: exact head unit, head name symbol, assertion point, arity,
+// and the first two terms (a local binder or an int literal; any other term has no row, so its atom fails closed).
+def Gate.factRows(w: Resolve.W, g: Ast.G, u: I64, rcap: I64, rk: Array[U8](rcap), rf: Array[U32](rcap), p: I64, l: I64, i: I64): Unit =
+  if i < Ast.len(g, l) then
+    val a = Ast.item(g, l, i)
+    Gate.factRow(Gate.FactAssert, u, a, p, 0)
+    if Ast.kd(g, a) == Ast.kAtomCall() then
+      val ts = Ast.a(g, a)
+      Gate.factHead(w, g, a) match
+        case Coll.Some(v) => Gate.factRow(Gate.FactHead, u, a, v, 0)
+        case Coll.None => ()
+      Gate.factRow(Gate.FactHeadName, u, a, Gate.tsym(w, g, Ast.tok(g, a)), 0)
+      Gate.factRow(Gate.FactArity, u, a, Ast.len(g, ts), 0)
+      if Ast.len(g, ts) >= 1 then Gate.factTerm(g, u, rcap, rk, rf, Gate.FactLeftLocal, Gate.FactLeftLiteral, a, Ast.item(g, ts, 0)) else ()
+      if Ast.len(g, ts) >= 2 then Gate.factTerm(g, u, rcap, rk, rf, Gate.FactRightLocal, Gate.FactRightLiteral, a, Ast.item(g, ts, 1)) else ()
+    else ()
+    Gate.factRows(w, g, u, rcap, rk, rf, p, l, i + 1)
+  else ()
+

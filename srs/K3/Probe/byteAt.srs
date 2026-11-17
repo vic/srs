@@ -1,0 +1,5 @@
+// prompt: K3 POS: the byte at index of a size-indexed allocation's block under index < size (typer: block has length size; gate: alen).
+def K3.Probe.byteAt(size: U64, result: K3.Probe.Allocation(size), index: U64, fallback: U8): U8 = result match
+  case K3.Probe.Allocated(block) => if index < size then block(index) else fallback
+  case K3.Probe.AllocationFailed => fallback
+

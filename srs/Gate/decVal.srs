@@ -1,7 +1,9 @@
-// the value of a decimal digit string from i; none when a char is not a digit or the string is empty
+// prompt: the value of a decimal digit string from i, only when it is at most Gate.factMax(); none when a char is not a digit,
+// the string is empty, or the value is above factMax (a wrapped literal in a fact column proved a false index bound, P0
+// 2026-11-18). acc never exceeds factMax before a step, so acc * 10 + 9 never overflows I64.
 def Gate.decVal(s: Str, i: I64, acc: I64): Coll.Option[I64] =
-  if i >= Str.len(s) then (if i == 0 then Coll.None else Coll.Some(acc))
+  if acc > Gate.factMax() then Coll.None
+  else if i >= Str.len(s) then (if i == 0 then Coll.None else Coll.Some(acc))
   else
     val c = Str.at(s, i)
     if 48 <= c && c <= 57 then Gate.decVal(s, i + 1, acc * 10 + (c - 48)) else Coll.None
-

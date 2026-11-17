@@ -1,0 +1,6 @@
+// prompt: K NEG 3: an I64 index under only index < size is not proved; the kernel must reject it with exactly these codes.
+val NegTests.S7.index_signed_upper_only {NegTest}: Never =
+  def Ix.bad(size: I64, bytes: Array[U8](size), index: I64, fallback: U8): U8 = if index < size then bytes(index) else fallback
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "an I64 index can be negative; index < size without 0 <= index is not a proof")
+

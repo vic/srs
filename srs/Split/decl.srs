@@ -1,18 +1,23 @@
-// the decl whose head is token h: its kind, name, body range and diags, then on from where it ends
+// the decl whose head is token h: its kind, name, body range and diags, then on from where it ends; a leading `pub` (namepath.md 4a
+// visibility marker) is skipped: the keyword after it gives the kind and is the parse head, the decl range starts at `pub`
+// prompt: one decl of the skeleton at head token h: a leading `pub` word is skipped (the keyword token after it is the kind and parse head,
+// so Parser.decl never sees `pub`), then kind, name, body range and diags, and the scan goes on from where the decl ends.
 def Split.decl(src: Str, n: I64, tcap: I64, tk: Array[U8](tcap), to: Array[U32](tcap), tl: Array[U32](tcap), t: I64, h: I64, cap: I64, kd: Array[U8](cap), nm: Array[U32](cap), hd: Array[U32](cap), lo: Array[U32](cap), hi: Array[U32](cap), c: I64, dcap: I64, dw: Array[U8](dcap), dt: Array[U32](dcap), d: I64): Split.Out =
-  val k = Split.kindOrOther(src, tcap, tk, to, tl, t, h)
+  val kh = if Split.wordIs(src, tcap, tk, to, tl, t, h, "pub") then h + 1 else h
+  val k = Split.kindOrOther(src, tcap, tk, to, tl, t, kh)
   val e1 = Split.nextEnd(src, n, tcap, tk, to, t, h + 1)
   // a def with clauses puts its `=` at column 0 (s2/parse.srs Parse.bodyOf): that `=` continues the def, not a new decl
   val e = if Split.isDef(k) && Split.isEqAt(src, tcap, tk, to, tl, t, e1) then Split.nextEnd(src, n, tcap, tk, to, t, e1 + 1) else e1
   val hi0 = Split.trim(tcap, tk, t, e, h)
   val nl = Split.firstNl(tcap, tk, t, h, hi0)
   val lo0 = if nl < hi0 then nl + 1 else hi0
-  val nj = Split.nameTok(src, tcap, tk, to, tl, t, h, k)
+  val nj = Split.nameTok(src, tcap, tk, to, tl, t, kh, k)
   // a given has no name (it is named by its head type)
   val named = Split.isOther(k) || Split.kindByte(k) == Split.kindByte(Split.Given) || Split.isKind(tcap, tk, t, nj, Lexer.KIdent)
-  val n0 = if named then nj else h
-  val i1 = Split.diagIf(Split.isOther(k), dcap, dw, dt, d, Split.UnknownDecl, h)
+  val n0 = if named then nj else kh
+  val i1 = Split.diagIf(Split.isOther(k), dcap, dw, dt, d, Split.UnknownDecl, kh)
   val i2 = Split.diagIf(!named, dcap, dw, dt, d + i1, Split.MissingName, nj)
   val i3 = Split.diagIf(Split.depth(tcap, tk, t, h, e, 0) != 0, dcap, dw, dt, d + i1 + i2, Split.UnbalancedLayout, h)
-  val i4 = Split.putDecl(cap, kd, nm, hd, lo, hi, c, k, n0, h, lo0, hi0, dcap, dw, dt, d + i1 + i2 + i3)
+  val i4 = Split.putDecl(cap, kd, nm, hd, lo, hi, c, k, n0, kh, lo0, hi0, dcap, dw, dt, d + i1 + i2 + i3)
   Split.go(src, n, tcap, tk, to, tl, t, e, cap, kd, nm, hd, lo, hi, c + 1, dcap, dw, dt, d + i1 + i2 + i3 + i4)
+

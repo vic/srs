@@ -1,0 +1,5 @@
+// prompt: K3 NEG: a block of 5 bytes cannot build an Allocation(10) (no forged size).
+val NegTests.K3.indexed_block_forge {NegTest}: Never =
+  def K3.Neg.forge(): K3.Probe.Allocation(10) = K3.Probe.Allocated(Array.fill(5, U8.of(0)))
+  NegTest.expect("mismatch", "a block of 5 bytes is no block of 10 bytes: the size of an allocation is the length of its block")
+

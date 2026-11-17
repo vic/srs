@@ -1,0 +1,8 @@
+// prompt: true when a [] group (kGTypes) comes after a value param group (kParams) among the parts (from item i; seen = a kParams
+// group was already passed).
+def Typer.valParamEarly(g: Ast.G, r: I64, i: I64, seen: Bool): Bool =
+  if i < Ast.len(g, r) then
+    val k = Ast.kd(g, Ast.item(g, r, i))
+    if k == Ast.kGTypes() && seen then true else Typer.valParamEarly(g, r, i + 1, seen || k == Ast.kParams())
+  else false
+
