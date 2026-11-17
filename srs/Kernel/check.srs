@@ -1,12 +1,16 @@
-def Kernel.check(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img): Kernel.Res =
+// prompt: check image im (base paths bp and texts bt first): duplicates, the Datalog gate (Gate.f2) and the typer. us = the names of
+// the units that are user code (the program checked against the image: NegTest probe, gate FILE, --neg, --emit); every other unit
+// is the trusted image (fil-c FC66: only the runtime is unsafe code).
+def Kernel.check(bp: Os.Strs, bt: Os.Strs, im: Kernel.Img, us: Os.Strs): Kernel.Res =
   val Kernel.Res(dc, dout) = Gate.dup(im)
   if dc != 0 then Kernel.Res(dc, dout)
   else
     val ps = Kernel.cat(bp, Kernel.paths(im))
     val xs = Kernel.cat(bt, Kernel.texts(im))
-    val Kernel.Res(fc, fout) = Gate.f2(ps, xs)
+    val Kernel.Res(fc, fout) = Gate.f2(ps, xs, us)
     if fc != 0 then Kernel.Res(fc, fout)
     else
       Console.captureBegin()
       val code = Typer.runFs(Resolve.loadMem(ps, xs), Kernel.len(ps, 0), 0)
       Kernel.Res(code, Console.captureEnd())
+

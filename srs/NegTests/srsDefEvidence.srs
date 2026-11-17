@@ -1,6 +1,7 @@
 // prompt: control: a def call under the Srs prefix that asks for {p: Process} from a def holding no Process is rejected with
-// error[no-capability].
+// error[no-capability]; a NegTest body is user code, so its Srs.* units are also reserved-name (F5e).
 val NegTests.srsDefEvidence {NegTest}: Never =
   def Srs.NtSd.g {p: Process} (): I64 = 1
   def Srs.NtSd.f(): I64 = Srs.NtSd.g()
-  NegTest.expect("no-capability", "Srs.NtSd.g asks for {p: Process}; Srs.NtSd.f holds no Process")
+  NegTest.expect("no-capability", "reserved-name", "Srs.NtSd.g asks for {p: Process}; Srs.NtSd.f holds no Process; user code may not name Srs.*")
+

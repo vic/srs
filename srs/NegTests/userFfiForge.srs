@@ -1,0 +1,7 @@
+// prompt: user code may not write an extern that names a refined Ptr type of the image (F5e badFfi): a user extern returning
+// Srs.Heap.State forges an allocator state; the kernel must reject it with error[ffi-forge].
+val NegTests.userFfiForge {NegTest}: Never =
+  extern "libc" def malloc(n: U64): Srs.Heap.State
+  def main(): I64 = 0
+  NegTest.expect("ffi-forge", "a user extern that returns an image pointer type forges a pointer the image never made")
+

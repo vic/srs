@@ -1,0 +1,11 @@
+// prompt: a next fact names an operation that the capability does not declare: the kernel must reject it with fact-not-op, and the entry facts cannot be solved.
+val NegTests.factNotOp {NegTest}: Never =
+  capability ZqDoor:
+    state Shut, Open1, Open2
+    start Shut
+    stop Open2
+    transition knocks Shut -> Open1, Open1 -> Open2
+    def knock <s knocks t> (): I64 <t>
+  def zqNotOp {d: ZqDoor} <d: Shut, next(Shut, nope, t)> (): I64 = 0
+  def main(): I64 = 0
+  NegTest.expect("entry-facts-unsolvable", "fact-not-op", "next names nope, which is no operation of ZqDoor, so no transition can solve the entry facts")

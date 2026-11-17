@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg rule_clauses: the kernel must reject it with exactly these codes (s2 expects error[rule-arity])
+val NegTests.S2.rule_clauses {NegTest}: Never =
+  capability Door:
+    state Shut, Open1
+    start Shut
+    stop Open1
+    def knock <Shut> (): I64 <Open1>
+    rule def can(s) = next(s, knock, s2)
+    rule def can(s, t) = next(s, knock, t)
+  def main(): I64 = 0
+  NegTest.expect("rule-shape", "s2 expects error[rule-arity] for rule_clauses; s4 rejects it with other codes (code fidelity gap)")
+

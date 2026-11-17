@@ -1,0 +1,6 @@
+// prompt: no bare Ptr in trusted code (vic 2026-11-16: Ptr only on the RHS of a constrained type; F5e badRawPtr, fil-c FC01/02/08):
+// a Srs.* def that names the bare Ptr type must be rejected with error[raw-ptr]; the NegTest body is user code, so its Srs.* unit is
+// also error[reserved-name].
+val NegTests.rawPtrSrs {NegTest}: Never =
+  def Srs.NtRp.f(p: Ptr): I64 = 0
+  NegTest.expect("reserved-name", "raw-ptr", "Srs.NtRp.f names the bare Ptr type; trusted code takes pointers only as refined types such as Srs.Mem")

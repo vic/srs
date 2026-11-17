@@ -1,0 +1,8 @@
+// prompt: the tref rows of every unit (Gate.trefTok), unit index u from 0.
+def Gate.trefRows(w: Resolve.W, rs: Coll.List[Typer.R], u: I64): Unit = rs match
+  case Coll.Nil => ()
+  case Coll.Cons(r, rest) =>
+    val Typer.R(f, rcap, rk, rf) = r
+    Gate.trefTok(w, u, rcap, rk, rf, 0)
+    Gate.trefRows(w, rest, u + 1)
+

@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg bytes_len: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.bytes_len {NegTest}: Never =
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val n = 2
+    val m = 3
+    val xs: Array[U8](n) = Array.fill(n, U8.of(65))
+    Str.len(Str.ofBytes(m, xs))
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for bytes_len")
+

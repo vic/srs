@@ -1,0 +1,8 @@
+// prompt: s2 corpus neg dup_lib: two defs of one name in one program must be rejected with exactly error[duplicate] (s2: a user
+// def named like a library def; in the image a NegTest body declares the name twice).
+val NegTests.S2.dup_lib {NegTest}: Never =
+  def sum(x: I64): I64 = x
+  def sum(x: I64): I64 = x + 1
+  def main(): I64 = 0
+  NegTest.expect("duplicate", "the s2 corpus expects error[duplicate] for dup_lib: sum is defined twice")
+

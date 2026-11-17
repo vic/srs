@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg ms_k_value: the kernel must reject it with exactly these codes (s2 expects error[unknown-name])
+val NegTests.S2.ms_k_value {NegTest}: Never =
+  capability NonDet:
+    def choose(): Bool
+  handler AllAnswers [A: Type] for NonDet:
+    def choose(k): A =
+      val q = k
+      resume k(true)
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "untyped", "s2 expects error[unknown-name] for ms_k_value; s4 rejects it with other codes (code fidelity gap)")
+

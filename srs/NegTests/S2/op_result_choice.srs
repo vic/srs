@@ -1,0 +1,14 @@
+// prompt: s2 corpus neg op_result_choice: the kernel must reject it with exactly these codes (s2 expects error[op-result-choice])
+val NegTests.S2.op_result_choice {NegTest}: Never =
+  type Words {r: Srs.Region} <r: Open> = Ptr
+  capability Pool:
+    def take (n: I64): Words{self}
+
+  handler HPool for Pool:
+    def take(n: I64): Ptr = Srs.noState()
+
+  def main(): I64 =
+    handle p = HPool()
+    0
+  NegTest.expect("mismatch", "ptr-outside-srs", "s2 expects error[op-result-choice] for op_result_choice; s4 rejects it with other codes (code fidelity gap)")
+

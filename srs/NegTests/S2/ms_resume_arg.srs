@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg ms_resume_arg: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.ms_resume_arg {NegTest}: Never =
+  capability NonDet:
+    def choose(): Bool
+  handler AllAnswers [A: Type] for NonDet:
+    def choose(k): A = resume k(3)
+  def main(): I64 = 0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for ms_resume_arg")
+

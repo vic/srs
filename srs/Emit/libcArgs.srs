@@ -1,0 +1,15 @@
+// prompt: the args of a libc (class 2) extern call: an Array arg is a pointer to its elements and goes as (void*), so C converts
+// it to the parameter type glibc declares (the struct sockaddr transparent unions of bind and accept, socklen_t*); other args as is.
+def Emit.libcArgs(e: Emit.E, r: I64, i: I64): Unit =
+  val g = Emit.gOf(e)
+  if i < Ast.len(g, r) then
+    if i > 0 then Emit.po(e,", ") else ()
+    val a = Ast.item(g, r, i)
+    if Typer.isArrayT(Emit.xOf(e), Emit.tyS(e, a)) then
+      Emit.po(e,"(void*)(")
+      Emit.expr(e, a, false)
+      Emit.po(e,")")
+    else Emit.expr(e, a, false)
+    Emit.libcArgs(e, r, i + 1)
+  else ()
+

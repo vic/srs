@@ -1,0 +1,29 @@
+// prompt: s2 corpus neg cap_seq_many: the kernel must reject it with exactly these codes (s2 expects error[op-not-allowed])
+val NegTests.S2.cap_seq_many {NegTest}: Never =
+  capability Seq:
+    state S0, S1, S2, S3, S4, Done
+    start S0
+    stop Done
+    transition as S0 -> S1, S2 -> S4, S3 -> S4
+    transition bs S1 -> S2, S2 -> S3
+    transition cs S4 -> Done
+    def a <s as t> (): Unit <t>
+    def b <s bs t> (): Unit <t>
+    def c <s cs t> (): Unit <t>
+
+  handler HSeq for Seq:
+    def a(): Unit = ()
+    def b(): Unit = ()
+    def c(): Unit = ()
+
+  def main(): I64 =
+    handle x = HSeq()
+    x.a()
+    x.b()
+    x.b()
+    x.b()
+    x.a()
+    x.c()
+    0
+  NegTest.expect("op-not-allowed", "the s2 corpus expects error[op-not-allowed] for cap_seq_many")
+

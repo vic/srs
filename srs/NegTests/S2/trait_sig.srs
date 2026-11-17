@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg trait_sig: the kernel must reject it with exactly these codes (s2 expects error[method-signature])
+val NegTests.S2.trait_sig {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def show(x: Bool): I64 = 1
+  def main(): I64 = 0
+  NegTest.expect("method-signature", "the s2 corpus expects error[method-signature] for trait_sig")
+

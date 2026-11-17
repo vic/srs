@@ -1,5 +1,5 @@
-// advise len bytes at a (a fresh, 2 MiB aligned reservation) while the gate is On
-def Srs.Pages.advise(g: Ptr, a: Ptr, len: I64): Unit = Srs.Gate.read(g) match
+// prompt: advise len bytes at a (a fresh, 2 MiB aligned reservation) for huge pages while the gate is On.
+def Srs.Pages.advise(g: Array[I64](16), a: Srs.Mem, len: I64): Unit = Srs.Gate.read(g) match
   case Srs.GateIdle => ()
   case Srs.GateShut => ()
   case Srs.GateOn => Srs.Pages.step(g, a, len, Srs.Pages.sample(g))

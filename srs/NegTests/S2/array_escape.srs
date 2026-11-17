@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg array_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.array_escape {NegTest}: Never =
+  def Ar.mk(n: I64): Array[I64](n) = Array.fill(n, 0)
+  def Ar.leak(n: I64): Array[I64](n) =
+    handle r = Srs.Arena()
+    Ar.mk(n)
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for array_escape")
+

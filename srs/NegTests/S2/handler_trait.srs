@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg handler_trait: the kernel must reject it with exactly these codes (s2 expects error[not-a-capability])
+val NegTests.S2.handler_trait {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  handler HS for Show:
+    def show(x: I64): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("mismatch", "not-a-capability", "the s2 corpus expects error[not-a-capability] for handler_trait")
+

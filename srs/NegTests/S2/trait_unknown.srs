@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg trait_unknown: a given for a trait name that resolves to no type (Eq) must be rejected with exactly
+// error[unknown-type] (Typer.dUnknownTy).
+val NegTests.S2.trait_unknown {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Eq[I64]:
+    def show(x: I64): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("unknown-type", "the s2 corpus expects error[unknown-type] for trait_unknown: Eq names no trait")

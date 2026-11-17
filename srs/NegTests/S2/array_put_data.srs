@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg array_put_data: the kernel must reject it with exactly these codes (s2 expects error[put-data])
+val NegTests.S2.array_put_data {NegTest}: Never =
+  enum Ap.E:
+    case Ap.A
+    case Ap.B(x: I64)
+  def Ap.set(n: I64, xs: Array[Ap.E](n), i: I64): Unit =
+    if 0 <= i && i < n then Array.put(xs, i, Ap.B(1)) else ()
+  def main(): I64 = 0
+  NegTest.expect("put-data", "the s2 corpus expects error[put-data] for array_put_data")
+

@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg tval_arity: the kernel must reject it with exactly these codes (s2 expects error[type-arity])
+val NegTests.S2.tval_arity {NegTest}: Never =
+  type Bits (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def tf(x: Bits(1, 2)): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "type-arity", "untyped", "the s2 corpus expects error[type-arity] for tval_arity")
+

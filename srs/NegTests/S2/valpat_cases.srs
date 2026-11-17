@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg valpat_cases: the kernel must reject it with exactly these codes (s2 expects error[not-exhaustive])
+val NegTests.S2.valpat_cases {NegTest}: Never =
+  enum VOpt:
+    case VNone
+    case VSome(v: I64)
+  def get(o: VOpt): I64 =
+    val VSome(v) = o
+    v
+  def main(): I64 = 0
+  NegTest.expect("nonexhaustive", "s2 expects error[not-exhaustive] for valpat_cases; s4 rejects it with other codes (code fidelity gap)")
+

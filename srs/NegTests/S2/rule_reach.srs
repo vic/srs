@@ -1,0 +1,14 @@
+// prompt: s2 corpus neg rule_reach: the kernel must reject it with exactly these codes (s2 expects error[exit-state])
+val NegTests.S2.rule_reach {NegTest}: Never =
+  capability Door:
+    state Shut, Open1, Open2
+    start Shut
+    stop Open2
+    transition knocks Shut -> Open1, Open1 -> Open2
+    def knock <s knocks t> (): I64 <t>
+    rule def reach(s, t) = next(s, knock, t)
+    rule def reach(s, t) = next(s, knock, u), reach(u, t)
+  def once {d: Door} <d: Shut, reach(Shut, t)> (): I64 <d: t> = d.knock()
+  def main(): I64 = 0
+  NegTest.expect("exit-state", "fact-ambiguous", "the s2 corpus expects error[exit-state] for rule_reach")
+

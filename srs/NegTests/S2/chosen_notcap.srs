@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg chosen_notcap: the kernel must reject it with exactly these codes (s2 expects error[chosen-not-capability])
+val NegTests.S2.chosen_notcap {NegTest}: Never =
+  def make {r: Srs.Region} (n: I64): I64 = n
+  def main(): I64 =
+    handle a = Srs.Heap()
+    val x = 1
+    make{x}(1)
+  NegTest.expect("chosen-not-capability", "the s2 corpus expects error[chosen-not-capability] for chosen_notcap")
+

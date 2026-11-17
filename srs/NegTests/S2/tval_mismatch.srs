@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg tval_mismatch: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.tval_mismatch {NegTest}: Never =
+  type Bits (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def tf(x: Bits(8)): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for tval_mismatch")
+

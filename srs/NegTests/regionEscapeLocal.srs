@@ -1,0 +1,12 @@
+// prompt: a def returns a list allocated in a region it opens itself: the kernel must reject the return with region-escape.
+val NegTests.regionEscapeLocal {NegTest}: Never =
+  enum ZqList:
+    case ZqNil
+    case ZqCons(h: I64, t: ZqList)
+  def zqBuild {r: Srs.Region} (n: I64): ZqList =
+    if n == 0 then ZqNil else ZqCons(n, zqBuild(n - 1))
+  def zqLeak(): ZqList =
+    handle r = Srs.Arena()
+    zqBuild(2)
+  def main(): I64 = 0
+  NegTest.expect("region-escape", "the list lives in region r, which ends when zqLeak returns; the result would point at freed memory")

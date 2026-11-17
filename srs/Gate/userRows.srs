@@ -1,0 +1,8 @@
+// prompt: the rows of the user input relation: the index i of every unit whose name (in ps) is in us, the units of the program
+// checked against the image; the image units are the trusted base.
+def Gate.userRows(ps: Os.Strs, us: Os.Strs, i: I64): Unit = ps match
+  case Os.End => ()
+  case Os.More(n, r) =>
+    if Kernel.inStrs(n, us) then Gate.row1(i) else ()
+    Gate.userRows(r, us, i + 1)
+

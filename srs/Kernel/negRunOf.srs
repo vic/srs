@@ -1,6 +1,7 @@
 // prompt: the shared inputs of one NegTest run for kernel binary self and plain image file base. The run key is
 // B3(schema, B3(kernel binary bytes), B3(plain image text)): a changed kernel (rules, checker) or a changed image re-runs every
-// NegTest. Makes the cache directory.
+// NegTest. A closure-scoped key (B3 of Kernel.negSub per NegTest) was tried at k226: Kernel.graph per NegTest in the server's
+// never-freed arena ran it out of memory (8 GB) on self-load. Makes the cache directory.
 def Kernel.negRunOf(self: Str, base: Str): Kernel.NegRun =
   Disk.dir(Kernel.negCache())
   Files.bytes(self) match
@@ -11,5 +12,4 @@ def Kernel.negRunOf(self: Str, base: Str): Kernel.NegRun =
         val kh = Blake3.hash(kb)
         val bh = Blake3.hash(bt)
         Kernel.NegRun(self, base, Coll.Some(Blake3.hash(Kernel.msg2(Kernel.msg2(Kernel.negSchema(), kh), bh))))
-
 

@@ -1,7 +1,8 @@
-def Srs.Arena.fresh(g: Ptr, spare: I64): Ptr =
+// prompt: a chunk: the spare one at address spare (popped from the spare list), else fresh pages.
+def Srs.Arena.fresh(g: Array[I64](16), spare: I64): Srs.Mem =
   if spare != 0 then
     val s = Srs.Arena.at(spare)
-    rt_ptr_set(g, Srs.Arena.gSpare(), rt_ptr_get(s, Srs.Arena.hNext()))
+    Srs.Globals.set(g, Srs.Arena.gSpare(), rt_ptr_get(s, Srs.Arena.hNext()))
     s
   else Srs.Arena.pages(Srs.Arena.header() + Srs.Arena.chunk())
 

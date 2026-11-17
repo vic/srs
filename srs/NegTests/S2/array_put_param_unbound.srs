@@ -1,0 +1,7 @@
+// prompt: s2 corpus neg array_put_param_unbound: the kernel must reject it with exactly these codes (s2 expects error[put-data])
+val NegTests.S2.array_put_param_unbound {NegTest}: Never =
+  def Pu.push {r: Srs.Region} (n: I64, xs: Array[Str](n), i: I64, s: Str<r>): Unit =
+    if 0 <= i && i < n then Array.put(xs, i, s) else ()
+  def main(): I64 = 0
+  NegTest.expect("put-data", "the s2 corpus expects error[put-data] for array_put_param_unbound")
+

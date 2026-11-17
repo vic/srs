@@ -1,9 +1,8 @@
-// prompt: print the kept named Diags as `KIND path:line text` (annotate, missingEntry, lengthNotName, type-arity, type-fuel, nonexhaustive).
+// prompt: print the kept named Diags as `KIND path:line text` (annotate, missingEntry, lengthNotName, type-arity, type-fuel, nonexhaustive, unknown-type).
 def Typer.showDg(s: Typer.S, fs: Coll.List[Resolve.F], i: I64): Unit =
   if i < Typer.nMisShown() && i < Typer.cget(s, Typer.cDg()) then
     val dk = Typer.cget(s, Typer.cDg() + 1 + 3 * i)
-    Typer.showAt(s, fs, Typer.cDg() + 2 + 3 * i, if dk == Typer.dAnnotate() then "annotate" else if dk == Typer.dMissing() then "missingEntry" else if dk == Typer.dLenNN() then "lengthNotName" else if dk == Typer.dTyArity() then "type-arity" else if dk == Typer.dTyFuel() then "type-fuel" else if dk == Typer.dTyNoCase() then "no-type-case" else if dk == Typer.dNoGiven() then "no-given" else if dk == Typer.dExtSlot() then "extern-slot" else if Typer.isValDg(dk) then Typer.dgVal(dk) else "nonexhaustive", 0)
+    Typer.showAt(s, fs, Typer.cDg() + 2 + 3 * i, if dk == Typer.dAnnotate() then "annotate" else if dk == Typer.dMissing() then "missingEntry" else if dk == Typer.dLenNN() then "lengthNotName" else if dk == Typer.dTyArity() then "type-arity" else if dk == Typer.dTyFuel() then "type-fuel" else if dk == Typer.dTyNoCase() then "no-type-case" else if dk == Typer.dNoGiven() then "no-given" else if dk == Typer.dExtSlot() then "extern-slot" else if dk == Typer.dUnknownTy() then "unknown-type" else if Typer.isValDg(dk) then Typer.dgVal(dk) else "nonexhaustive", 0)
     Typer.showDg(s, fs, i + 1)
   else ()
-
 

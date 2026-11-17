@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg pure_handle: the kernel must reject it with exactly these codes (s2 expects error[impure-call])
+val NegTests.S2.pure_handle {NegTest}: Never =
+  def h(x: I64): I64 =
+    handle a = Srs.Arena()
+    x
+  val g: I64 = h(1)
+  def main(): I64 = 0
+  NegTest.expect("impure-call", "the s2 corpus expects error[impure-call] for pure_handle")
+

@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg pure_evidence: the kernel must reject it with exactly these codes (s2 expects error[impure-call])
+val NegTests.S2.pure_evidence {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  given Show[I64]:
+    def show(x: I64): I64 = x
+  def sh {s: Show[I64]} (x: I64): I64 = s.show(x)
+  val g: I64 = sh(1)
+  def main(): I64 = 0
+  NegTest.expect("impure-call", "the s2 corpus expects error[impure-call] for pure_evidence")
+

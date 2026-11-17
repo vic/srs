@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg op_param_type: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.op_param_type {NegTest}: Never =
+  capability Pt:
+    def put(x: I64): I64
+
+  handler Hpt for Pt:
+    def put(x: Str): I64 = Str.len(x)
+
+  def main(): I64 =
+    handle io = Srs.Console()
+    handle h = Hpt()
+    Console.printI64(Pt.put(3))
+    0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for op_param_type")
+

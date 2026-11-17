@@ -1,0 +1,14 @@
+// prompt: s2 corpus neg array_put_data_var: the kernel must reject it with exactly these codes (s2 expects error[put-data])
+val NegTests.S2.array_put_data_var {NegTest}: Never =
+  enum Ap.E:
+    case Ap.A
+    case Ap.B(x: I64)
+  def Ap.f(n: I64, ys: Array[Ap.E](n)): Unit =
+    handle r = Srs.Arena()
+    val i = 0
+    var xs = Array.fill(n, Ap.A)
+    xs = ys
+    if 0 <= i && i < n then Array.put(xs, i, Ap.B(1)) else ()
+  def main(): I64 = 0
+  NegTest.expect("index-unproved", "put-data", "the s2 corpus expects error[put-data] for array_put_data_var")
+

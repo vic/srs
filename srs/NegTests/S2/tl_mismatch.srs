@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg tl_mismatch: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.tl_mismatch {NegTest}: Never =
+  type Id [A: Type] = A
+  type Wide [A: Type] = A match
+    case Bool => I64
+  def main(): I64 =
+    val n: Id[I64] = true
+    0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for tl_mismatch")
+

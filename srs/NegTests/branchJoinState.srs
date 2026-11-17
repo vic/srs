@@ -1,0 +1,22 @@
+// prompt: after an if whose branches leave a capability in different states, an operation that one path does not allow must be rejected with op-not-allowed (every path is checked).
+val NegTests.branchJoinState {NegTest}: Never =
+  capability ZqFile:
+    state R0, R1, R2, Done
+    start R0
+    stop Done
+    transition rd R0 -> R1, R1 -> R2
+    transition cl R0 -> Done, R1 -> Done, R2 -> Done
+    def read <s rd t> (): I64 <t>
+    def close <s cl t> (): Unit <t>
+  handler ZqH for ZqFile:
+    def read(): I64 = 1
+    def close(): Unit = ()
+  def main(): I64 =
+    handle f = ZqH()
+    val n = if true then f.read() else 0
+    val a = f.read()
+    val b = f.read()
+    f.close()
+    n + a + b
+  NegTest.expect("op-not-allowed", "on the then-path f is in R1, so the second read after the if starts in R2, where read is not allowed")
+

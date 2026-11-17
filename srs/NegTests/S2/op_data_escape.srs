@@ -1,0 +1,21 @@
+// prompt: s2 corpus neg op_data_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.op_data_escape {NegTest}: Never =
+  enum Od.Pr:
+    case Od.Pr.Mk(a: I64, b: I64)
+
+  capability Od:
+    def pair(): Od.Pr
+
+  handler Hod for Od:
+    def pair(): Od.Pr = Od.Pr.Mk(3, 4)
+
+  def main(): I64 =
+    handle a = Srs.Arena()
+    val s: Od.Pr =
+      handle b = Srs.Arena()
+      handle h = Hod()
+      Od.pair()
+    s match
+      case Od.Pr.Mk(x, y) => x + y
+  NegTest.expect("unhandled-effect", "s2 expects error[region-escape] for op_data_escape; s4 rejects it with other codes (code fidelity gap)")
+

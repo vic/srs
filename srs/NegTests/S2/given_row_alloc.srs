@@ -1,0 +1,16 @@
+// prompt: s2 corpus neg given_row_alloc: the kernel must reject it with exactly these codes (s2 expects error[given-row])
+val NegTests.S2.given_row_alloc {NegTest}: Never =
+  enum Box:
+    case Box(v: I64)
+
+  trait Size [A: Type]:
+    def size(x: A): I64
+
+  given Size[I64]:
+    def size(x: I64): I64 =
+      val Box(v) = Box(x)
+      v
+
+  def main(): I64 = 0
+  NegTest.expect("given-row", "the s2 corpus expects error[given-row] for given_row_alloc")
+

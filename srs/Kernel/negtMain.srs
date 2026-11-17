@@ -1,12 +1,12 @@
-// child of a NegTest run: BASE = the plain image text, PROBE = the body as top-level decls; writes its diag lines to OUT
+// prompt: child of a NegTest run: BASE = the plain image text, PROBE = the body as top-level decls (user code); check the closure
+// Kernel.negSub and write its diag lines to OUT.
 def Kernel.negtMain(bp: Str, pp: Str, op: Str): Kernel.Verdict = Files.bytes(bp) match
   case Os.Fail(_) => Kernel.VUnread
   case Os.Ok(bt) => Files.bytes(pp) match
     case Os.Fail(_) => Kernel.VUnread
     case Os.Ok(pt) =>
-      val probe = Kernel.splitAdd(Kernel.Empty, pt)
-      val sub = Kernel.closure(Kernel.split(Kernel.split(Kernel.Empty, bt), pt), Kernel.cat(Kernel.namesOf(probe, Os.End), Kernel.implicitRoots()))
-      val Kernel.Res(c, out) = Kernel.check(Os.End, Os.End, sub)
+      val sub = Kernel.negSub(Kernel.split(Kernel.Empty, bt), pt)
+      val Kernel.Res(c, out) = Kernel.check(Os.End, Os.End, sub, Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, pt), Os.End))
       Console.captureBegin()
       Kernel.diagLines(out, 0)
       if Disk.put(op, Console.captureEnd()) != 0 then Kernel.VUnread

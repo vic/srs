@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg cell_seal_call: the kernel must reject it with exactly these codes (s2 expects error[cell-seal])
+val NegTests.S2.cell_seal_call {NegTest}: Never =
+  def CS.set(c: Cell[Str], s: Str): Unit = Cell.put(c, s)
+  def CS.inner(c: Cell[Str]): Unit =
+    handle q = Srs.Arena()
+    val n = 3
+    CS.set(c, Str.ofBytes(n, Array.fill(n, U8.of(65))))
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r = Srs.Arena()
+    val c = Cell.new("x")
+    CS.inner(c)
+    0
+  NegTest.expect("cell-seal", "the s2 corpus expects error[cell-seal] for cell_seal_call")
+

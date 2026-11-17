@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg genum_field: the kernel must reject it with exactly these codes (s2 expects error[mismatch])
+val NegTests.S2.genum_field {NegTest}: Never =
+  enum Opt [A: Type]:
+    case None
+    case Some(v: A)
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val o = Some(1)
+    o match
+      case None => 0
+      case Some(v) => if v then 1 else 0
+  NegTest.expect("mismatch", "the s2 corpus expects error[mismatch] for genum_field")
+

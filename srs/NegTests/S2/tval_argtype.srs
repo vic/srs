@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg tval_argtype: the kernel must reject it with exactly these codes (s2 expects error[value-arg-type])
+val NegTests.S2.tval_argtype {NegTest}: Never =
+  type Bits (n: I64) = n match
+    case 8 => Bool
+    case _ => I64
+  def tf(x: Bits(true)): I64 = x
+  def main(): I64 = 0
+  NegTest.expect("missingEntry", "untyped", "value-arg-type", "the s2 corpus expects error[value-arg-type] for tval_argtype")
+

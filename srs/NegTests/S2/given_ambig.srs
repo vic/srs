@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg given_ambig: the kernel must reject it with exactly these codes (s2 expects error[ambiguous-givens])
+val NegTests.S2.given_ambig {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+  given Show[I64]:
+    def show(x: I64): I64 = x
+  given Show[I64]:
+    def show(x: I64): I64 = 0
+  def main(): I64 = print(1)
+  NegTest.expect("duplicate", "s2 expects error[ambiguous-givens] for given_ambig; s4 rejects it with other codes (code fidelity gap)")
+

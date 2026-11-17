@@ -1,5 +1,6 @@
 // prompt: the interned type of the type use node t with length ln: builtins, enums, params, capabilities, type decls (Typer.tdefUse),
-// pending in type definition mode (Typer.cTdMode: an unset type decl, counted in Typer.cTdPend, no Diag), else untyped.
+// pending in type definition mode (Typer.cTdMode: an unset type decl, counted in Typer.cTdPend, no Diag), else the Diag
+// unknown-type at the name token (Typer.dUnknownTy, s2 error[unknown-type]).
 def Typer.tyUse(x: Typer.X, t: I64, ln: I64): I64 =
   val Typer.X(_, g, s, rcap, rk, rf) = x
   val j = Ast.tok(g, t)
@@ -28,17 +29,9 @@ def Typer.tyUse(x: Typer.X, t: I64, ln: I64): I64 =
     Typer.cset(s, Typer.cSp(), m)
     0
   else if tk == Resolve.tUnres() then
-    Typer.un(s, Typer.uTypeUnres())
+    Typer.diag(s, Typer.dUnknownTy(), j)
     Typer.cset(s, Typer.cSp(), m)
     0
   else
     Typer.un(s, Typer.uTypeOther())
     Typer.mk(s, Typer.bOther(), 0, Typer.symOf(x, j), m)
-
-
-
-
-// a named Diag (annotate, nonexhaustive): counted, the first few kept as (kind, file, token)
-
-
-

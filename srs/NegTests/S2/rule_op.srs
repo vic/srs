@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg rule_op: the kernel must reject it with exactly these codes (s2 expects error[rule-op])
+val NegTests.S2.rule_op {NegTest}: Never =
+  capability Door:
+    state Shut, Open1
+    start Shut
+    stop Open1
+    def knock <Shut> (): I64 <Open1>
+    rule def bad(s) = next(s, fly, s2)
+  def main(): I64 = 0
+  NegTest.expect("rule-shape", "s2 expects error[rule-op] for rule_op; s4 rejects it with other codes (code fidelity gap)")
+

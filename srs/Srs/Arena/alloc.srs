@@ -1,4 +1,5 @@
-def Srs.Arena.alloc(self: Ptr, size: I64): Ptr =
+// prompt: size bytes (rounded up to 8) from the head chunk of arena self, or from a new head chunk (Srs.Arena.open).
+def Srs.Arena.alloc(self: Srs.Mem, size: I64): Srs.Mem =
   val n = Srs.Arena.up(size, 8)
   val head = rt_ptr_get(self, 0)
   if head != 0 && rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hUsed()) + n <= rt_ptr_get(Srs.Arena.at(head), Srs.Arena.hCap()) then

@@ -1,7 +1,8 @@
+// prompt: --neg of one file p on top of image base: the units of p are user code; accept or reject.
 def Kernel.negOne(base: Kernel.Img, p: Str): Kernel.Verdict =
   Files.bytes(p) match
     case Os.Ok(t) =>
-      val Kernel.Res(code, out) = Kernel.check(Os.End, Os.End, Kernel.splitAdd(base, t))
+      val Kernel.Res(code, out) = Kernel.check(Os.End, Os.End, Kernel.splitAdd(base, t), Kernel.namesOf(Kernel.splitAdd(Kernel.Empty, t), Os.End))
       if code == 0 then Kernel.VAccept else Kernel.VReject
     case Os.Fail(_) => Kernel.VUnread
 

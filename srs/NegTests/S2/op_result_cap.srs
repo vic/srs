@@ -1,0 +1,13 @@
+// prompt: s2 corpus neg op_result_cap: the kernel must reject it with exactly these codes (s2 expects error[op-result-capability])
+val NegTests.S2.op_result_cap {NegTest}: Never =
+  capability Pool:
+    def take (n: I64): Ptr<other>
+
+  handler HPool for Pool:
+    def take(n: I64): Ptr = Srs.noState()
+
+  def main(): I64 =
+    handle p = HPool()
+    0
+  NegTest.expect("ptr-outside-srs", "s2 expects error[op-result-capability] for op_result_cap; s4 rejects it with other codes (code fidelity gap)")
+

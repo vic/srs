@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg op_ptr_binder: the kernel must reject it with exactly these codes (s2 expects error[use-after-free])
+val NegTests.S2.op_ptr_binder {NegTest}: Never =
+  def peek(p: Ptr): I64 = 7
+  def grab {r: Srs.Region} <r: Open> (): I64 <r: Freed> =
+    val p = r.alloc(8)
+    r.free()
+    peek(p)
+  def main(): I64 =
+    handle tmp = Srs.Arena()
+    grab{tmp}()
+  NegTest.expect("ptr-outside-srs", "region-escape", "s2 expects error[use-after-free] for op_ptr_binder; s4 rejects it with other codes (code fidelity gap)")
+

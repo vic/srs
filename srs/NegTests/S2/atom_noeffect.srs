@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg atom_noeffect: the kernel must reject it with exactly these codes (s2 expects error[unhandled-effect])
+val NegTests.S2.atom_noeffect {NegTest}: Never =
+  def At.get(c: ACell[I64]): I64 = ACell.load(c)
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val c = ACell.new(0)
+    At.get(c)
+  NegTest.expect("unhandled-effect", "the s2 corpus expects error[unhandled-effect] for atom_noeffect")
+

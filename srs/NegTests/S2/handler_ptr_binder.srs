@@ -1,0 +1,23 @@
+// prompt: s2 corpus neg handler_ptr_binder: the kernel must reject it with exactly these codes (s2 expects error[capability-bound])
+val NegTests.S2.handler_ptr_binder {NegTest}: Never =
+  capability Pool:
+    state Open, Shut
+    start Open
+    stop Shut
+    def take <Open> (n: I64): Ptr<self> <Open>
+    def shut <Open> (): Unit <Shut>
+    drop shut
+
+  handler HPool for Pool:
+    def take {r: Srs.Region} (n: I64): Ptr = r.alloc(n)
+    def shut(): Unit = ()
+
+  def main(): I64 =
+    handle a = Srs.Arena()
+    handle p = HPool()
+    val x = p.take(8)
+    p.shut()
+    a.free()
+    0
+  NegTest.expect("ptr-outside-srs", "s2 expects error[capability-bound] for handler_ptr_binder; s4 rejects it with other codes (code fidelity gap)")
+

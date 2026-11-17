@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg valpat_arity: the kernel must reject it with exactly these codes (s2 expects error[pattern-arity])
+val NegTests.S2.valpat_arity {NegTest}: Never =
+  enum VAcc:
+    case VAcc(a: I64, b: I64)
+  def get(s: VAcc): I64 =
+    val VAcc(a) = s
+    a
+  def main(): I64 = 0
+  NegTest.expect("mismatch", "s2 expects error[pattern-arity] for valpat_arity; s4 rejects it with other codes (code fidelity gap)")
+

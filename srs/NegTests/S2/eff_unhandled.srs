@@ -1,0 +1,25 @@
+// prompt: s2 corpus neg eff_unhandled: the kernel must reject it with exactly these codes (s2 expects error[unhandled-effect])
+val NegTests.S2.eff_unhandled {NegTest}: Never =
+  capability Log:
+    state Live
+    start Live
+    stop Live
+    def say(n: I64): Unit
+
+  handler Out for Log:
+    def say(n: I64): Unit = Console.printI64(n)
+
+  enum Box:
+    case Box(v: I64)
+
+  def tell(n: I64): Unit = Log.say(n)
+
+  def main(): I64 =
+    tell(1)
+    Log.say(2)
+    handle o = Out()
+    val Box(v) = Box(3)
+    Log.say(v)
+    0
+  NegTest.expect("unhandled-effect", "the s2 corpus expects error[unhandled-effect] for eff_unhandled")
+

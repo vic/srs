@@ -1,6 +1,9 @@
-def Srs.Arena.free(self: Ptr): Unit =
+// prompt: free the arena self: its chunks go back (Srs.Arena.release), then the struct joins the free list; the one Mut handle
+// of this allocator entry.
+def Srs.Arena.free(self: Srs.Mem): Unit =
+  handle m = Srs.Mut()
   val g = rt_globals()
   Srs.Arena.release(g, rt_ptr_get(self, 0))
-  rt_ptr_set(self, 0, rt_ptr_get(g, Srs.Arena.gFree()))
-  rt_ptr_set(g, Srs.Arena.gFree(), Srs.Arena.addr(self))
+  rt_ptr_set(self, 0, Srs.Globals.get(g, Srs.Arena.gFree()))
+  Srs.Globals.set(g, Srs.Arena.gFree(), Srs.Arena.addr(self))
 

@@ -1,0 +1,15 @@
+// prompt: s2 corpus neg names_order: the kernel must reject it with exactly these codes (s2 expects error[duplicate])
+val NegTests.S2.names_order {NegTest}: Never =
+  def g(): I64 = 1
+  enum T:
+    case A
+    case B
+  def g(): I64 = 2
+  enum T:
+    case A
+  def h(): I64 = 3
+  def g(): I64 = zz()
+  def h(x: Nope): I64 = yy
+  def main(): I64 = g()
+  NegTest.expect("duplicate", "the s2 corpus expects error[duplicate] for names_order")
+

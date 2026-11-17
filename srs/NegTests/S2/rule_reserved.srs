@@ -1,0 +1,11 @@
+// prompt: s2 corpus neg rule_reserved: the kernel must reject it with exactly these codes (s2 expects error[reserved-relation])
+val NegTests.S2.rule_reserved {NegTest}: Never =
+  capability Door:
+    state Shut, Open1
+    start Shut
+    stop Open1
+    def knock <Shut> (): I64 <Open1>
+    rule def next(s, o, t) = next(s, knock, t)
+  def main(): I64 = 0
+  NegTest.expect("rule-shape", "s2 expects error[reserved-relation] for rule_reserved; s4 rejects it with other codes (code fidelity gap)")
+

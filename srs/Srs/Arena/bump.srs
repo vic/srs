@@ -1,5 +1,7 @@
-def Srs.Arena.bump(c: Ptr, n: I64): Ptr =
+// prompt: n bytes at the used mark of chunk c, the mark advanced by n (n and used are multiples of 8: Srs.Arena.alloc rounds every
+// size up to 8, the header is 3 words), so the result is c plus whole words (Srs.Arena.wordAdd).
+def Srs.Arena.bump(c: Srs.Mem, n: I64): Srs.Mem =
   val used = rt_ptr_get(c, Srs.Arena.hUsed())
   rt_ptr_set(c, Srs.Arena.hUsed(), used + n)
-  rt_ptr_add(c, Srs.Arena.header() + used)
+  Srs.Arena.wordAdd(c, (Srs.Arena.header() + used) / 8)
 

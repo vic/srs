@@ -1,0 +1,18 @@
+// prompt: s2 corpus neg hstate_mixed: the kernel must reject it with exactly these codes (s2 expects error[handler-state-type])
+val NegTests.S2.hstate_mixed {NegTest}: Never =
+  capability Hm:
+    def tick(): I64
+    def tock(): I64
+
+  handler Hmm for Hm:
+    def init(): Cell[I64] = Cell.new(0)
+    def tick(self: Cell[I64]): I64 = Cell.get(self)
+    def tock(self: Ptr): I64 = 2
+
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle a = Srs.Arena()
+    handle h = Hmm()
+    Hm.tick()
+  NegTest.expect("ptr-outside-srs", "s2 expects error[handler-state-type] for hstate_mixed; s4 rejects it with other codes (code fidelity gap)")
+

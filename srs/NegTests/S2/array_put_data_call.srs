@@ -1,0 +1,16 @@
+// prompt: s2 corpus neg array_put_data_call: the kernel must reject it with exactly these codes (s2 expects error[put-data])
+val NegTests.S2.array_put_data_call {NegTest}: Never =
+  enum Ap.E:
+    case Ap.A
+    case Ap.B(x: I64)
+  def Ap.mk {r: Srs.Region} (n: I64): Array[Ap.E](n)<r> = Array.fill(n, Ap.A)
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r = Srs.Arena()
+    val n = 2
+    val ys = Ap.mk(n)
+    val i = 0
+    if 0 <= i && i < n then Array.put(ys, i, Ap.B(1)) else ()
+    0
+  NegTest.expect("index-unproved", "put-data", "the s2 corpus expects error[put-data] for array_put_data_call")
+

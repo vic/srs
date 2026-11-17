@@ -1,0 +1,16 @@
+// prompt: s2 corpus neg array_put_param_caller: the kernel must reject it with exactly these codes (s2 expects error[capability-bound])
+val NegTests.S2.array_put_param_caller {NegTest}: Never =
+  def Pc.push {r: Srs.Region} (n: I64, xs: Array[Str](n)<r>, i: I64, s: Str<r>): Unit =
+    if 0 <= i && i < n then Array.put(xs, i, s) else ()
+  def main(): I64 =
+    handle m = Srs.Mut()
+    handle r1 = Srs.Arena()
+    val n = 2
+    val xs = Array.fill(n, "")
+    handle r2 = Srs.Arena()
+    val bs = Array.fill(n, U8.of(104))
+    val s = Str.ofBytes{r2}(n, bs)
+    Pc.push{r2}(n, xs, 0, s)
+    0
+  NegTest.expect("capability-bound", "the s2 corpus expects error[capability-bound] for array_put_param_caller")
+

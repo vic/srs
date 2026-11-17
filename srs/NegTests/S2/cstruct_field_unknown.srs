@@ -1,0 +1,10 @@
+// prompt: s2 corpus neg cstruct_field_unknown: the kernel must reject it with exactly these codes (s2 expects error[no-op])
+val NegTests.S2.cstruct_field_unknown {NegTest}: Never =
+  extern "libc" struct flock:
+    l_start: I64
+  def main(): I64 =
+    handle r = Srs.Arena()
+    val s = flock.new()
+    s.l_nope()
+  NegTest.expect("region-escape", "s2 expects error[no-op] for cstruct_field_unknown; s4 rejects it with other codes (code fidelity gap)")
+

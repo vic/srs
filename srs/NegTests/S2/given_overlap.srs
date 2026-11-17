@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg given_overlap: the kernel must reject it with exactly these codes (s2 expects error[ambiguous-givens])
+val NegTests.S2.given_overlap {NegTest}: Never =
+  trait Show [A: Type]:
+    def show(x: A): I64
+  def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+  given [A: Type] Show[A]:
+    def show(x: A): I64 = 1
+  given [B: Type] Show[B]:
+    def show(x: B): I64 = 2
+  def main(): I64 = print(1)
+  NegTest.expect("ambiguous-givens", "the s2 corpus expects error[ambiguous-givens] for given_overlap")
+

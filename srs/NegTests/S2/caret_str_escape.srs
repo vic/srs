@@ -1,0 +1,9 @@
+// prompt: s2 corpus neg caret_str_escape: the kernel must reject it with exactly these codes (s2 expects error[region-escape])
+val NegTests.S2.caret_str_escape {NegTest}: Never =
+  def mk {r: Srs.Region} (): Str<r> = "x"
+  def leak(): Str =
+    handle r = Srs.Arena()
+    mk{r}()
+  def main(): I64 = Str.len(leak())
+  NegTest.expect("region-escape", "the s2 corpus expects error[region-escape] for caret_str_escape")
+

@@ -1,0 +1,12 @@
+// prompt: s2 corpus neg given_fuel: the kernel must reject it with exactly these codes (s2 expects error[given-fuel])
+val NegTests.S2.given_fuel {NegTest}: Never =
+  enum Box [A: Type]:
+    case Box(v: A)
+  trait Show [A: Type]:
+    def show(x: A): I64
+  def print [A: Type] {s: Show[A]} (x: A): I64 = s.show(x)
+  given [A: Type] {s: Show[Box[A]]} Show[A]:
+    def show(x: A): I64 = 0
+  def main(): I64 = print(1)
+  NegTest.expect("given-fuel", "the s2 corpus expects error[given-fuel] for given_fuel")
+
